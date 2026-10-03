@@ -5,8 +5,8 @@ contains the Fastify Program, the built browser application, the tracked
 entrypoint, and no provider credentials, operator sessions, tenant data, or
 runtime database.
 
-Source snapshot: `SOURCE_SNAPSHOT_COMMIT`
-Source archive SHA256: recorded in `SOURCE-SHA256`
+Source snapshot: `8cb985c723f4745407c66d02b72e833bfbf8e3b4`
+Source archive SHA256: `eec1f8b4aeeff85499317e585db87a7ee295d5ce1768b9d34f0f2bfdce5f8c07`
 Image: `ghcr.io/tealbrick/marketplace:0.1.0`
 
 ## Runtime contract
