@@ -1,0 +1,160 @@
+@font-face {
+  font-family: "DG Switzer";
+  src: url("../assets/fonts/Switzer-Variable.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "DG Cormorant";
+  src: url("../assets/fonts/CormorantGaramond.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "DG JetBrains Mono";
+  src: url("../assets/fonts/JetBrainsMono-Regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light;
+  --dg-canvas: #faf8f4;
+  --dg-paper: #fffdf9;
+  --dg-ink: #1c1917;
+  --dg-muted: #655f59;
+  --dg-faint: #938980;
+  --dg-line: #ddd5ca;
+  --dg-line-strong: #b9aca0;
+  --dg-burgundy: #7c2d36;
+  --dg-burgundy-deep: #5f2029;
+  --dg-burgundy-wash: #f4e9e9;
+  --dg-danger: #a73242;
+  --dg-danger-wash: #f8e9eb;
+  --dg-warning: #9a641d;
+  --dg-warning-wash: #f7efe0;
+  --dg-success: #39755a;
+  --dg-success-wash: #eaf3ed;
+  --dg-info: #536777;
+  --dg-info-wash: #eaf0f3;
+  --dg-focus: rgb(124 45 54 / 22%);
+  --dg-font-interface: "DG Switzer", "Helvetica Neue", sans-serif;
+  --dg-font-editorial: "DG Cormorant", Georgia, serif;
+  --dg-font-technical: "DG JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  --dg-space-1: 4px;
+  --dg-space-2: 8px;
+  --dg-space-3: 12px;
+  --dg-space-4: 16px;
+  --dg-space-5: 20px;
+  --dg-space-6: 24px;
+  --dg-space-8: 32px;
+  --dg-space-10: 40px;
+  --dg-space-12: 48px;
+  --dg-radius-control: 4px;
+  --dg-radius-surface: 6px;
+  --dg-radius-modal: 8px;
+  --dg-shadow-modal: 0 28px 80px -34px rgb(47 32 25 / 46%);
+  --dg-transition: 140ms ease-out;
+  /* Stable semantic aliases used by application layouts. */
+  --dg-panel: var(--dg-paper);
+  --dg-canvas-sunken: #f1ede7;
+  --dg-text: var(--dg-ink);
+  --dg-text-muted: var(--dg-muted);
+  --dg-text-subtle: var(--dg-faint);
+  --dg-accent: var(--dg-burgundy);
+  --dg-accent-soft: var(--dg-burgundy-wash);
+  --dg-font-ui: var(--dg-font-interface);
+  --dg-font-mono: var(--dg-font-technical);
+  --dg-radius-sm: var(--dg-radius-control);
+  --dg-radius-md: var(--dg-radius-surface);
+  --dg-radius-lg: var(--dg-radius-modal);
+  --dg-shadow-sm: 0 1px 3px rgb(47 32 25 / 9%);
+  --dg-shadow-lg: var(--dg-shadow-modal);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --dg-canvas: #171513;
+  --dg-paper: #201d1a;
+  --dg-ink: #f5f0e9;
+  --dg-muted: #b9b0a7;
+  --dg-faint: #8e847b;
+  --dg-line: #3d3731;
+  --dg-line-strong: #665b52;
+  --dg-burgundy: #c87a84;
+  --dg-burgundy-deep: #dc929b;
+  --dg-burgundy-wash: #352326;
+  --dg-danger: #e17c88;
+  --dg-danger-wash: #392326;
+  --dg-warning: #d8a356;
+  --dg-warning-wash: #352b1d;
+  --dg-success: #73b18f;
+  --dg-success-wash: #203128;
+  --dg-info: #91a9ba;
+  --dg-info-wash: #243039;
+  --dg-focus: rgb(200 122 132 / 28%);
+  --dg-canvas-sunken: #12100f;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-width: 0;
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--dg-canvas);
+  color: var(--dg-ink);
+  font-family: var(--dg-font-interface);
+  font-size: 14px;
+  line-height: 1.45;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+textarea,
+select {
+  color: inherit;
+  font: inherit;
+}
+
+button,
+a,
+input,
+textarea,
+select {
+  outline: none;
+}
+
+:focus-visible {
+  box-shadow: 0 0 0 3px var(--dg-focus);
+}
+
+::selection {
+  background: var(--dg-burgundy);
+  color: var(--dg-paper);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "id": "marketplace",
+  "name": "Doppelganger Plugins",
+  "kind": "microapp-extension",
+  "status": "registered-manifest-first",
+  "hostSlots": ["settingsPanels", "surfaces", "dataTransports", "sidecars"],
+  "programBaseUrlEnv": "MARKETPLACE_BASE_URL",
+  "registryManifest": "../.codex-plugin/plugin.json",
+  "hdda": {
+    "registryFragment": "hdda/registry.fragment.json",
+    "gatewayAdapter": "../plugin/hermes/gateway-dashboard/marketplace-hub",
+    "capabilitiesProjection": {
+      "gatewayPluginId": "marketplace-hub",
+      "recordEndpoint": "/api/plugins/marketplace-hub/records",
+      "recordSchema": "doppelganger.marketplace.capabilities-host.v1",
+      "settingsSurfaceSchema": "doppelganger.capability-settings.v1"
+    },
+    "externalAuthDependency": "hdda-host-sdk:auth"
+  },
+  "dependsOn": ["rules-approvals", "local-runtime-bridge"],
+  "screens": [
+    "Plugin Catalog",
+    "Installed Plugins",
+    "Composio Connect",
+    "Provider Health",
+    "Capability Bindings",
+    "Execution Audit",
+    "Promotion Candidates",
+    "Plugin Settings"
+  ],
+  "capabilitySettings": {
+    "schemaVersion": "doppelganger.capability-settings.v1",
+    "state": "none",
+    "posture": "dynamic-provider",
+    "reason": "Marketplace retains provider-, connector-, and Plugin-owned dynamic settings rather than one Extension-wide form."
+  }
+}

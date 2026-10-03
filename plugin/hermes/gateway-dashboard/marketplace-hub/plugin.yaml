@@ -1,0 +1,24 @@
+name: marketplace-hub
+version: 0.2.0
+description: "Authenticated gateway adapter between the HDDA Capabilities host and the Marketplace Program."
+author: Doppelganger
+kind: standalone
+requires_env:
+  - MARKETPLACE_BASE_URL
+  - MARKETPLACE_INTERNAL_AUTH_TOKEN
+provides_api:
+  - method: GET
+    path: /api/plugins/marketplace-hub/records
+  - method: GET
+    path: /api/plugins/marketplace-hub/plugins/{plugin_id}
+  - method: POST
+    path: /api/plugins/marketplace-hub/plugins/mcp
+  - method: PATCH
+    path: /api/plugins/marketplace-hub/plugins/{plugin_id}
+  - method: DELETE
+    path: /api/plugins/marketplace-hub/plugins/{plugin_id}
+  - method: POST
+    path: /api/plugins/marketplace-hub/plugins/{plugin_id}/lifecycle
+  - method: POST
+    path: /api/plugins/marketplace-hub/reconcile
+failure_policy: fail-closed-when-program-or-internal-auth-is-unavailable

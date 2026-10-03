@@ -1,0 +1,93 @@
+{
+  "contractVersion": "tealbrick.marketplace.operator-handoff.v1.1",
+  "handoff": {
+    "launch": {
+      "method": "GET",
+      "path": "/auth/launch?ticket=<opaque>&deploymentId=<deploymentId>",
+      "authority": "Portal launch ticket redeemed server-to-server",
+      "response": {
+        "success": "HTML closeout only; the Portal session remains server-held",
+        "failure": "HTML closeout with no session token"
+      }
+    },
+    "grantRequest": {
+      "method": "POST",
+      "path": "/api/marketplace/v1/agent/grants/request",
+      "authority": ["Marketplace internal service bearer", "Marketplace operator session with same-origin Origin and CSRF"],
+      "responseFields": ["ok", "schema", "contractVersion", "authority", "request.requestId", "request.approvalUrl", "request.expiresAt", "projection"]
+    },
+    "grantRedeem": {
+      "method": "POST",
+      "path": "/api/marketplace/v1/agent/grants/redeem",
+      "authority": ["Marketplace internal service bearer", "Marketplace operator session with same-origin Origin and CSRF"],
+      "responseFields": ["ok", "schema", "contractVersion", "authority", "traceId", "reconciled", "created", "consent", "projection"],
+      "consentIdentity": ["portalOrgId", "productTenantId", "workspaceId", "deploymentId", "userId", "agentId", "consentId", "consentRevision"],
+      "forbiddenFields": ["portalSession", "agentCredential", "attachmentToken", "providerToken", "rawSecret"]
+    },
+    "grantStorage": {
+      "key": ["portalIssuer", "deploymentId", "consentId"],
+      "revoke": "local Marketplace revoke immediately blocks future runtime dispatch",
+      "uncertainRedeem": "read-only grant receipt reconciliation; never remint or extend consent"
+    }
+  },
+  "runtimeReceiver": {
+    "method": "POST",
+    "path": "/api/marketplace/v1/runtime/composio/execute",
+    "authority": "Portal ES256 attachment lease only",
+    "forbiddenAuthority": "MARKETPLACE_INTERNAL_AUTH_TOKEN is rejected on this route",
+    "request": {
+      "schema": 1,
+      "requiredFields": ["schema", "consentId", "selection", "input", "idempotencyKey"],
+      "selection": ["pluginId", "actionKey", "accountId", "resourceKind", "resourceRef"],
+      "fixedSelection": {
+        "pluginId": "github-composio",
+        "actionKey": "github.list.repositories",
+        "resourceKind": "github.connected-account",
+        "resourceRef": "account:<accountId>"
+      },
+      "bodyLimitBytes": 16384,
+      "unknownFields": "rejected"
+    },
+    "success": {
+      "fields": ["ok", "schema", "traceId", "result", "usageId"],
+      "resultFields": ["pluginId", "workspaceSlug", "provider", "capability", "actionType", "performedAt", "simulated", "summary", "details"],
+      "detailsFields": ["toolName", "result"],
+      "boundedResultBytes": 65536,
+      "secretPolicy": "provider credentials and Portal leases are never returned"
+    },
+    "errors": {
+      "fields": ["ok", "schema", "traceId", "error", "detail", "usageId"],
+      "codes": [
+        "runtime_service_bearer_forbidden",
+        "runtime_service_request_required",
+        "runtime_lease_required",
+        "runtime_validation_failed",
+        "runtime_request_too_large",
+        "portal_runtime_invalid",
+        "portal_runtime_denied",
+        "portal_runtime_unavailable",
+        "runtime_tenant_mismatch",
+        "runtime_consent_mismatch",
+        "runtime_consent_revoked",
+        "runtime_consent_not_found",
+        "runtime_scope_mismatch",
+        "runtime_connection_unavailable",
+        "connector_capability_denied",
+        "runtime_idempotency_conflict",
+        "runtime_operation_in_progress",
+        "runtime_operation_reconciliation_required"
+      ],
+      "uncertainProviderDispatch": "HTTP 502 with reconciliation-required state; retrying the same idempotency key never dispatches again"
+    },
+    "runtimeAuthorization": {
+      "checks": [
+        "verify Portal ES256 signature, issuer, audience marketplace, typ attachment, purpose marketplace-runtime, status active, and <=300 second lifetime",
+        "online Portal grant introspection on every dispatch",
+        "match attested Portal org, product tenant, workspace, deployment, agent, consent, lease, capability, and exact selection",
+        "match local Marketplace consent, enabled install/action, connected Composio account, resource, and capability",
+        "evaluate the canonical Rules marketplace.plugin execute path as agent:<agentId>"
+      ],
+      "positiveAuthorizationCache": false
+    }
+  }
+}

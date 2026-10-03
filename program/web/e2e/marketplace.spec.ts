@@ -1,0 +1,95 @@
+import { expect, test } from "@playwright/test";
+
+async function assertNoViewportOverflow(page: import("@playwright/test").Page) {
+  await expect.poll(() => page.evaluate(() => ({
+    documentWidth: document.documentElement.scrollWidth,
+    viewportWidth: document.documentElement.clientWidth,
+  }))).toEqual(expect.objectContaining({ documentWidth: expect.any(Number), viewportWidth: expect.any(Number) }));
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+}
+
+async function assertContained(locator: import("@playwright/test").Locator, viewport: { width: number; height: number }) {
+  const box = await locator.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.y).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width + 1);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height + 1);
+}
+
+async function unlockMarketplace(page: import("@playwright/test").Page, route = "/") {
+  await page.goto(route);
+  await expect(page.getByRole("heading", { name: "Unlock Marketplace" })).toBeVisible();
+  await page.getByLabel("Operator access token").fill("marketplace-e2e-operator-token");
+  await page.getByRole("button", { name: "Unlock Marketplace" }).click();
+  await expect(page.getByRole("heading", { name: "Discover" })).toBeVisible();
+}
+
+for (const viewport of [
+  { label: "wide", width: 1152, height: 820 },
+  { label: "tablet", width: 820, height: 900 },
+  { label: "phone", width: 390, height: 844 },
+]) {
+  test(`${viewport.label} standalone, settings, and controls stay contained`, async ({ page }) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await unlockMarketplace(page);
+    await expect(page.locator(".catalog-row").first()).toBeVisible();
+    await expect(page.locator(".plugin-workspace, .detail-empty")).toBeVisible();
+    await assertNoViewportOverflow(page);
+
+    const supportedRow = page.locator(".catalog-row").filter({ hasText: "Composio" }).first();
+    await expect(supportedRow).toBeVisible();
+    await supportedRow.click();
+    const installButton = page.getByRole("button", { name: "Install", exact: true });
+    await expect(installButton).toBeEnabled();
+    await installButton.click();
+    const confirm = page.getByRole("dialog", { name: /Install .+\?/u });
+    await expect(confirm).toBeVisible();
+    await assertContained(confirm, viewport);
+    await expect(confirm.getByRole("button", { name: "Cancel" })).toBeVisible();
+    await expect(confirm.getByRole("button", { name: "Install", exact: true })).toBeVisible();
+    await confirm.getByRole("button", { name: "Cancel" }).click();
+
+    await page.getByRole("button", { name: "Open settings" }).last().click();
+    const modal = page.getByRole("dialog", { name: "Settings" });
+    await expect(modal).toBeVisible();
+    await assertContained(modal, viewport);
+    await modal.getByRole("tab", { name: "Developer" }).click();
+    await expect(modal.getByText("Developer contract")).toBeVisible();
+    await assertNoViewportOverflow(page);
+    await page.screenshot({ path: test.info().outputPath(`${viewport.label}-settings.png`), fullPage: true });
+    await modal.getByRole("tab", { name: "Security" }).click();
+    await expect(modal.getByText("marketplace-e2e-operator")).toBeVisible();
+    await modal.getByRole("button", { name: "Close settings" }).click();
+  });
+}
+
+test("embed renders independently and catalog search is server-backed", async ({ page }) => {
+  await page.setViewportSize({ width: 820, height: 900 });
+  const requests: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/api/marketplace/cards/summary")) requests.push(request.url());
+  });
+  await unlockMarketplace(page, "/embed");
+  await page.getByRole("textbox", { name: "Search catalog" }).fill("definitely absent capability");
+  await expect(page.getByText("No matching capabilities.")).toBeVisible();
+  expect(requests.some((url) => url.includes("search=definitely+absent+capability"))).toBe(true);
+  await assertNoViewportOverflow(page);
+});
+
+test("embed works inside a same-origin host iframe with the operator session", async ({ page }) => {
+  await page.setViewportSize({ width: 820, height: 900 });
+  await unlockMarketplace(page);
+  await page.goto("/healthz");
+  await page.evaluate(() => {
+    document.body.innerHTML = '<iframe title="Marketplace host frame" src="/embed" style="position:fixed;inset:0;width:100%;height:100%;border:0"></iframe>';
+  });
+  const frame = page.frameLocator('iframe[title="Marketplace host frame"]');
+  await expect(frame.getByRole("heading", { name: "Discover" })).toBeVisible();
+  const geometry = await frame.locator("html").evaluate((element) => ({
+    width: element.scrollWidth,
+    viewport: element.clientWidth,
+  }));
+  expect(geometry.width - geometry.viewport).toBeLessThanOrEqual(1);
+});

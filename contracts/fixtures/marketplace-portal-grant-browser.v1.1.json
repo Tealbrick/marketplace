@@ -1,0 +1,97 @@
+{
+  "contractVersion": "tealbrick.marketplace.operator-handoff.v1.1",
+  "browserAuthority": {
+    "surface": "Portal deployment browser",
+    "requires": ["same-origin Portal browser session cookie", "Portal issuer Origin", "org-owner role"],
+    "forbidden": ["Marketplace service bearer", "Portal session token in browser code", "agent credential", "runtime attachment lease"]
+  },
+  "launch": {
+    "method": "POST",
+    "path": "/api/deployment-browser/launch",
+    "body": {
+      "schema": 1,
+      "product": "marketplace",
+      "deploymentId": "<deploymentId>"
+    },
+    "responseFields": ["ticket", "action", "deploymentId", "product", "workspaceId", "orgId", "userId", "endpoint", "instanceProofAudience", "productTenantId", "expiresAt"],
+    "next": "Navigate the browser to Marketplace /auth/launch?ticket=<ticket>&deploymentId=<deploymentId>; Marketplace redeems the ticket server-to-server and stores the opaque Portal session server-side."
+  },
+  "review": {
+    "method": "POST",
+    "path": "/api/deployment-browser/grant-review",
+    "body": {
+      "schema": 1,
+      "product": "marketplace",
+      "deploymentId": "<deploymentId>",
+      "requestId": "<opaqueRequestId>"
+    },
+    "responseFields": ["requestId", "status", "expiresAt", "consent"],
+    "authorization": "Portal browser session only"
+  },
+  "approve": {
+    "method": "POST",
+    "path": "/api/deployment-browser/grant-approve",
+    "body": {
+      "schema": 1,
+      "product": "marketplace",
+      "deploymentId": "<deploymentId>",
+      "requestId": "<opaqueRequestId>",
+      "approve": true
+    },
+    "responseFields": ["status", "expiresAt"],
+    "authorization": "Portal browser session only",
+    "marketplaceRole": "Marketplace does not approve on behalf of the human."
+  },
+  "revoke": {
+    "method": "POST",
+    "path": "/api/deployment-browser/grant-revoke",
+    "body": {
+      "schema": 1,
+      "product": "marketplace",
+      "deploymentId": "<deploymentId>",
+      "consentId": "<consentId>"
+    },
+    "responseFields": ["ok"],
+    "authorization": "Portal browser session only"
+  },
+  "marketplaceBrowserGateway": {
+    "authority": "Marketplace operator session cookie plus same-origin Origin and x-csrf-token",
+    "forbidden": ["Portal session token", "Portal instance proof", "agent credential", "runtime attachment lease"],
+    "request": {
+      "method": "POST",
+      "path": "/api/marketplace/v1/agent/grants/request",
+      "body": {
+        "deploymentId": "<deploymentId>",
+        "agentId": "<agentId>",
+        "selection": "<exact supported selection>",
+        "idempotencyKey": "<8-100 character opaque client key>"
+      },
+      "responseFields": ["ok", "schema", "contractVersion", "authority", "request", "projection"],
+      "projectionFields": ["requestId", "approvalUrl", "expiresAt", "state"]
+    },
+    "redeem": {
+      "method": "POST",
+      "path": "/api/marketplace/v1/agent/grants/redeem",
+      "body": { "deploymentId": "<deploymentId>", "requestId": "<opaqueRequestId>" },
+      "responseFields": ["ok", "schema", "contractVersion", "authority", "traceId", "reconciled", "created", "consent", "projection"],
+      "reconcile": "If Portal redeem is unavailable, Marketplace performs read-only Portal receipt reconciliation; it never remints or extends consent."
+    }
+  },
+  "marketplaceProjection": {
+    "method": "GET",
+    "path": "/api/marketplace/agent/grants?workspaceSlug=<productTenantId>",
+    "authority": "Marketplace operator session",
+    "fields": ["grants", "handoffRequests", "consents", "handoffContractVersion", "grantCreation"],
+    "handoffRequestFields": ["id", "portalOrgId", "productTenantId", "workspaceId", "deploymentId", "agentId", "requestId", "approvalUrl", "expiresAt", "idempotencyKey", "selection", "state", "consentId", "createdAt", "updatedAt"],
+    "directCreation": {
+      "available": false,
+      "code": "portal_handoff_required",
+      "reason": "Direct browser creation cannot mint or accept agent/runtime credentials."
+    }
+  },
+  "historicalConsentReview": {
+    "source": "Portal WEB-STAGE-B-HANDOFF.md",
+    "portalCoreSha256": "431c98a68c9181d1e7f9d62f766d7a41cea9f77236dc97ac4ba7a9c9826d13f9",
+    "semantics": "Portal may return a redeemed active or revoked consent for owner-only historical review with expiresAt=null and authorized=false; this does not restore execution authority or change Marketplace receiver redemption/lease semantics."
+  }
+}

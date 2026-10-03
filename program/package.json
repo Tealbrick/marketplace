@@ -1,0 +1,52 @@
+{
+  "name": "@doppelganger/marketplace-program",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=22.22.0",
+    "pnpm": ">=9.15.4"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "dev:web": "vite --config web/vite.config.ts",
+    "build": "pnpm run build:web",
+    "build:web": "vite build --config web/vite.config.ts",
+    "build:miniapp": "pnpm run build:web && node scripts/build-miniapp.mjs",
+    "dev:miniapp": "node scripts/run-miniapp.mjs",
+    "start:miniapp": "node dist/marketplace-program.mjs",
+    "smoke:live-app-home": "tsx ../smoke/live-app-home-smoke.ts",
+    "smoke:operator-pov": "node ../smoke/operator-pov-workflow.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
+    "test": "vitest run && vitest run --config web/vitest.config.ts",
+    "test:e2e": "pnpm run build:web && playwright test --config web/playwright.config.ts",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@doppelganger/ui": "file:../.sdk/doppelganger-ui",
+    "@fastify/static": "^8.3.0",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "@tanstack/react-query": "^5.90.20",
+    "fastify": "^5.6.1",
+    "lucide-react": "^0.468.0",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^24.12.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.4",
+    "esbuild": "^0.28.1",
+    "jsdom": "^28.0.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vitest": "^3.2.4"
+  }
+}

@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "doppelganger.marketplace.agent-connector-grant.v1",
+  "title": "Doppelganger Marketplace Agent Connector Grant v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "provider",
+    "pluginId",
+    "action",
+    "identity",
+    "account",
+    "grant",
+    "ownerMappings",
+    "revocation",
+    "cases"
+  ],
+  "properties": {
+    "contractVersion": {
+      "const": "doppelganger.marketplace.agent-connector-grant.v1"
+    },
+    "provider": { "const": "composio" },
+    "pluginId": { "type": "string", "minLength": 1 },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "toolName", "capability", "resourceMapping", "providerInput"],
+      "properties": {
+        "key": { "type": "string", "minLength": 1 },
+        "toolName": { "type": "string", "minLength": 1 },
+        "capability": { "const": "connector.observe" },
+        "resourceMapping": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "ref", "mode", "argument"],
+          "properties": {
+            "kind": { "type": "string", "minLength": 1 },
+            "ref": { "type": "string", "minLength": 1 },
+            "mode": { "enum": ["connected-account"] },
+            "argument": { "type": ["string", "null"] }
+          }
+        },
+        "providerInput": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["required", "allowedArguments"],
+          "properties": {
+            "required": { "type": "array", "items": { "type": "string" } },
+            "allowedArguments": {
+              "type": "array",
+              "items": { "type": "string" },
+              "uniqueItems": true
+            }
+          }
+        }
+      }
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "agentCredentialHeader", "attachmentHeader", "claims", "attachmentAudience"],
+      "properties": {
+        "source": { "const": "portal" },
+        "agentCredentialHeader": { "const": "x-tealbrick-agent-token" },
+        "attachmentHeader": { "const": "x-tealbrick-attachment" },
+        "claims": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["agentId", "organizationId", "attachmentId", "audience", "capabilities"],
+          "properties": {
+            "agentId": { "const": "sub" },
+            "organizationId": { "const": "orgId" },
+            "attachmentId": { "const": "jti" },
+            "audience": { "const": "aud" },
+            "capabilities": { "const": "capabilities" }
+          }
+        },
+        "attachmentAudience": { "type": "string", "minLength": 1 }
+      }
+    },
+    "account": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "connectedAccountIdField"],
+      "properties": {
+        "source": { "const": "marketplace.connector_connection.metadata" },
+        "connectedAccountIdField": { "const": "connectedAccountId" }
+      }
+    },
+    "grant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agentId", "accountId", "resourceKind", "resourceRef", "attachmentId", "state", "tokenStorage"],
+      "properties": {
+        "agentId": { "const": "verified Portal agent sub" },
+        "accountId": { "const": "connected account metadata" },
+        "resourceKind": { "type": "string", "minLength": 1 },
+        "resourceRef": { "type": "string", "minLength": 1 },
+        "attachmentId": { "const": "verified Portal attachment jti" },
+        "state": { "enum": ["active", "revoked"] },
+        "tokenStorage": { "const": "never store raw tokens" }
+      }
+    },
+    "ownerMappings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["packages", "portal", "rules"],
+      "properties": {
+        "packages": { "type": "object" },
+        "portal": { "type": "object" },
+        "rules": { "type": "object" }
+      }
+    },
+    "revocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["marketplaceGrant", "portalAttachment"],
+      "properties": {
+        "marketplaceGrant": { "type": "string", "minLength": 1 },
+        "portalAttachment": { "type": "string", "minLength": 1 }
+      }
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "expected", "agentId", "accountId", "resourceKind", "resourceRef", "reason"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "expected": { "enum": ["allow", "deny"] },
+          "agentId": { "type": "string", "minLength": 1 },
+          "accountId": { "type": "string", "minLength": 1 },
+          "resourceKind": { "type": "string", "minLength": 1 },
+          "resourceRef": { "type": "string", "minLength": 1 },
+          "reason": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,211 @@
+{
+  "id": "marketplace",
+  "name": "Doppelganger Plugins",
+  "kind": "full-on",
+  "version": "0.1.0",
+  "description": "First-party Doppelganger Plugins Micro-app for plugin catalog, credentials, Composio/MCP runtime sources, installs, provider health, capability bindings, execution, audit, and promotion candidates.",
+  "system": {
+    "required": true,
+    "enabledByDefault": true,
+    "disableAllowed": false,
+    "systemRole": "doppelganger-plugins"
+  },
+  "source": {
+    "type": "first-party-public-release",
+    "repo": "https://github.com/Tealbrick/marketplace",
+    "paths": [
+      "program",
+      "contracts",
+      "extension",
+      "plugin",
+      "smoke",
+      ".sdk"
+    ]
+  },
+  "program": {
+    "path": "program",
+    "workspace": "pnpm",
+    "runtime": "node",
+    "servicePackage": "@doppelganger/marketplace-program",
+    "health": "/healthz",
+    "status": "/api/status",
+    "events": "/events",
+    "defaultHost": "127.0.0.1",
+    "defaultPort": 0,
+    "portStrategy": "dynamic-ephemeral",
+    "observerUi": "/",
+    "database": {
+      "kind": "sqlite",
+      "mode": "configured-persistent-file",
+      "defaultPath": "MARKETPLACE_DATA_DIR/marketplace.sqlite",
+      "owner": "program/src/store.ts",
+      "tables": [
+        "marketplace_listing",
+        "plugin_registry",
+        "workspace_plugin_install",
+        "plugin_capability_binding",
+        "plugin_action_binding",
+        "connector_connection",
+        "agent_connector_grant",
+        "credential_ref",
+        "activepieces_pack_binding",
+        "composio_import",
+        "connector_usage_ledger",
+        "broker_grant",
+        "promotion_candidate",
+        "health_event",
+        "audit_event"
+      ]
+    },
+    "env": [
+      "MARKETPLACE_HOST",
+      "MARKETPLACE_PORT",
+      "MARKETPLACE_DATA_DIR",
+      "MARKETPLACE_DATABASE_PATH",
+      "MARKETPLACE_SETTINGS_PATH",
+      "MARKETPLACE_SECRETS_PATH",
+      "DOPPELGANGER_DEBUG",
+      "MARKETPLACE_DEBUG",
+      "MARKETPLACE_INTERNAL_AUTH_TOKEN",
+      "MARKETPLACE_OPERATOR_ACCESS_TOKEN",
+      "MARKETPLACE_OPERATOR_ID",
+      "MARKETPLACE_OPERATOR_SESSION_TTL_SECONDS",
+      "MARKETPLACE_ORGANIZATION_ID",
+      "MARKETPLACE_PORTAL_ISSUER_URL",
+      "MARKETPLACE_PORTAL_ATTACHMENT_AUDIENCE",
+      "MARKETPLACE_PORTAL_INSTANCE_PROOF",
+      "RULES_BASE_URL",
+      "RULES_INTERNAL_AUTH_TOKEN",
+      "RULES_COMPANY_ID",
+      "NANGO_SECRET_KEY",
+      "NANGO_BASE_URL",
+      "ACTIVEPIECES_BASE_URL",
+      "ACTIVEPIECES_API_KEY",
+      "COMPOSIO_API_KEY",
+      "COMPOSIO_BASE_URL",
+      "DOPPELGANGER_MCP_CONFIG_PATH"
+    ],
+    "settings": {
+      "provider": "marketplace-program",
+      "nonSecretPathEnv": "MARKETPLACE_SETTINGS_PATH",
+      "secretPathEnv": "MARKETPLACE_SECRETS_PATH",
+      "secretMode": "0600",
+      "environmentPolicy": "bootstrap-fallback-only",
+      "status": "/api/settings/providers/composio",
+      "update": "/api/settings/providers/composio"
+    },
+    "debug": {
+      "enabledByEnv": "DOPPELGANGER_DEBUG=1",
+      "events": "/api/debug/events",
+      "logs": "/api/debug/logs",
+      "traceHeader": "x-trace-id"
+    }
+  },
+  "plugin": {
+    "path": "plugin/hermes",
+    "status": "candidate-adapter-manifest",
+    "tools": [
+      "marketplace_health",
+      "marketplace_status",
+      "marketplace_events",
+      "marketplace_catalog_list",
+      "marketplace_listing_get",
+      "marketplace_plugin_register",
+      "marketplace_plugin_unregister",
+      "marketplace_plugin_install",
+      "marketplace_plugin_uninstall",
+      "marketplace_cards",
+      "marketplace_provider_health",
+      "marketplace_connection_register",
+      "marketplace_composio_connection_start",
+      "marketplace_composio_oauth_callback",
+      "marketplace_capability_bind",
+      "marketplace_action_bind",
+      "marketplace_plugin_execute",
+      "marketplace_agent_capabilities",
+      "marketplace_audit_list",
+      "marketplace_debug_events",
+      "marketplace_debug_logs",
+      "marketplace_activepieces_catalog",
+      "marketplace_activepieces_scaffold",
+      "marketplace_composio_catalog",
+      "marketplace_composio_tools",
+      "marketplace_composio_import",
+      "marketplace_broker_grant",
+      "marketplace_broker_composio_execute"
+    ]
+  },
+  "extension": {
+    "path": "extension/app",
+    "status": "registered-manifest-first",
+    "hostSlots": ["settingsPanels", "surfaces", "dataTransports", "sidecars"],
+    "hdda": {
+      "registryFragment": "extension/hdda/registry.fragment.json",
+      "gatewayAdapter": "plugin/hermes/gateway-dashboard/marketplace-hub",
+      "capabilitiesProjection": {
+        "gatewayPluginId": "marketplace-hub",
+        "recordEndpoint": "/api/plugins/marketplace-hub/records",
+        "recordSchema": "doppelganger.marketplace.capabilities-host.v1",
+        "settingsSurfaceSchema": "doppelganger.capability-settings.v1"
+      }
+    }
+  },
+  "dependencies": ["rules-approvals", "local-runtime-bridge"],
+  "sidecars": {
+    "required": [
+      {
+        "id": "marketplace-program",
+        "kind": "fastify-program",
+        "mode": "packaged",
+        "env": ["MARKETPLACE_BASE_URL", "MARKETPLACE_INTERNAL_AUTH_TOKEN"]
+      },
+      {
+        "id": "marketplace-db",
+        "kind": "database",
+        "mode": "hidden-home-file",
+        "env": ["MARKETPLACE_DATA_DIR", "MARKETPLACE_DATABASE_PATH"]
+      }
+    ],
+    "optional": [
+      {
+        "id": "nango",
+        "kind": "oauth-provider",
+        "mode": "configured-external",
+        "env": [
+          "NANGO_SECRET_KEY",
+          "NANGO_BASE_URL",
+          "NANGO_PUBLIC_SERVER_URL",
+          "NANGO_PUBLIC_CONNECT_URL"
+        ]
+      },
+      {
+        "id": "activepieces",
+        "kind": "connector-action-runtime",
+        "mode": "configured-external",
+        "env": [
+          "ACTIVEPIECES_BASE_URL",
+          "ACTIVEPIECES_API_KEY",
+          "ACTIVEPIECES_SHARED_SECRET"
+        ]
+      },
+      {
+        "id": "composio",
+        "kind": "primary-connector-runtime",
+        "mode": "configured-external",
+        "env": [
+          "COMPOSIO_API_KEY",
+          "COMPOSIO_BASE_URL",
+          "COMPOSIO_DEFAULT_USER_ID",
+          "COMPOSIO_DEFAULT_CONNECTED_ACCOUNT_ID"
+        ]
+      },
+      {
+        "id": "mcp",
+        "kind": "plugin-tool-transport",
+        "mode": "configured-local-or-external",
+        "env": ["DOPPELGANGER_MCP_CONFIG_PATH"]
+      }
+    ]
+  },
+  "failurePolicy": "fail-closed-for-governed-actions"
+}

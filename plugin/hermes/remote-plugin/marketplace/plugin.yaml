@@ -1,0 +1,33 @@
+name: marketplace
+version: 0.1.0
+description: "Remote Hermes adapter for the Doppelganger Marketplace Program."
+author: Doppelganger
+toolset: marketplace
+requires_env:
+  - MARKETPLACE_BASE_URL
+  - MARKETPLACE_INTERNAL_AUTH_TOKEN
+provides_tools:
+  - marketplace_health
+  - marketplace_status
+  - marketplace_events
+  - marketplace_catalog_list
+  - marketplace_listing_get
+  - marketplace_plugin_register
+  - marketplace_plugin_unregister
+  - marketplace_plugin_install
+  - marketplace_plugin_uninstall
+  - marketplace_provider_health
+  - marketplace_connection_register
+  - marketplace_capability_bind
+  - marketplace_action_bind
+  - marketplace_plugin_execute
+  - marketplace_agent_capabilities
+  - marketplace_agent_tool_call
+  - marketplace_audit_list
+  - marketplace_debug_events
+  - marketplace_debug_logs
+  - marketplace_activepieces_catalog
+  - marketplace_activepieces_scaffold
+  - marketplace_composio_catalog
+  - marketplace_composio_tools
+  - marketplace_composio_import

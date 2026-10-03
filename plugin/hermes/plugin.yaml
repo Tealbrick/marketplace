@@ -1,0 +1,151 @@
+name: marketplace
+version: 0.1.0
+description: "Agent adapter manifest for the Doppelganger Marketplace Micro-app. Connector admin, dispatch, generation, and execution are Rules-gated and fail closed when Rules is unavailable."
+author: Doppelganger
+kind: full-on
+depends_on:
+  - rules-approvals
+  - local-runtime-bridge
+program:
+  base_url_env: MARKETPLACE_BASE_URL
+  health: /healthz
+provides_tools:
+  - marketplace_health
+  - marketplace_status
+  - marketplace_events
+  - marketplace_catalog_list
+  - marketplace_listing_get
+  - marketplace_plugin_register
+  - marketplace_plugin_unregister
+  - marketplace_plugin_install
+  - marketplace_plugin_uninstall
+  - marketplace_provider_health
+  - marketplace_connection_register
+  - marketplace_capability_bind
+  - marketplace_plugin_execute
+  - marketplace_agent_capabilities
+  - marketplace_audit_list
+  - marketplace_debug_events
+  - marketplace_debug_logs
+  - marketplace_activepieces_catalog
+  - marketplace_activepieces_scaffold
+  - marketplace_composio_catalog
+  - marketplace_composio_tools
+  - marketplace_composio_import
+requires_env:
+  - MARKETPLACE_BASE_URL
+  - MARKETPLACE_INTERNAL_AUTH_TOKEN
+tool_contract:
+  marketplace_health:
+    method: GET
+    path: /healthz
+    auth_required: false
+  marketplace_status:
+    method: GET
+    path: /api/status
+    auth_required: true
+  marketplace_events:
+    method: GET
+    path: /events
+    auth_required: true
+  marketplace_catalog_list:
+    method: GET
+    path: /api/marketplace/catalog
+    auth_required: true
+  marketplace_listing_get:
+    method: GET
+    path: /api/marketplace/plugins/:pluginId
+    auth_required: true
+  marketplace_plugin_install:
+    method: POST
+    path: /api/marketplace/plugins/:pluginId/install
+    rules_gate: true
+    governed_capability: connector.admin
+    posture: governed_connector_admin
+  marketplace_plugin_register:
+    method: POST
+    path: /api/marketplace/plugins/:pluginId/register
+    rules_gate: true
+    governed_capability: connector.admin
+    posture: governed_connector_admin
+  marketplace_plugin_unregister:
+    method: POST
+    path: /api/marketplace/plugins/:pluginId/unregister
+    rules_gate: true
+    governed_capability: connector.admin
+    posture: governed_connector_admin
+  marketplace_plugin_uninstall:
+    method: POST
+    path: /api/marketplace/plugins/:pluginId/uninstall
+    rules_gate: true
+    governed_capability: connector.admin
+    posture: governed_connector_admin
+  marketplace_provider_health:
+    method: GET
+    path: /api/marketplace/provider-health
+    auth_required: true
+  marketplace_connection_register:
+    method: POST
+    path: /api/marketplace/plugins/:pluginId/connection
+    rules_gate: true
+    governed_capability: connector.admin
+    posture: governed_connection_setup
+  marketplace_capability_bind:
+    method: POST
+    path: /api/marketplace/plugins/:pluginId/capability-binding
+    rules_gate: true
+    governed_capability: connector.admin
+    posture: governed_connector_admin
+  marketplace_plugin_execute:
+    method: POST
+    path: /api/marketplace/plugins/:pluginId/execute
+    rules_gate: true
+    governed_capability: request.capability
+    posture: governed_connector_execution
+  marketplace_agent_capabilities:
+    method: GET
+    path: /api/agent/capabilities
+    auth_required: true
+    posture: agent_capability_discovery
+  marketplace_audit_list:
+    method: GET
+    path: /api/marketplace/audit
+    auth_required: true
+  marketplace_debug_events:
+    method: GET
+    path: /api/debug/events
+    auth_required: true
+  marketplace_debug_logs:
+    method: GET
+    path: /api/debug/logs
+    auth_required: true
+  marketplace_activepieces_catalog:
+    method: GET
+    path: /api/marketplace/catalog/activepieces
+    sidecar: activepieces
+    failure_policy: fail_closed_when_unconfigured
+  marketplace_activepieces_scaffold:
+    method: POST
+    path: /api/marketplace/catalog/activepieces/scaffold
+    rules_gate: true
+    governed_capability: connector.admin
+    sidecar: activepieces
+    failure_policy: fail_closed_when_unconfigured
+  marketplace_composio_catalog:
+    method: GET
+    path: /api/marketplace/catalog/composio
+    sidecar: composio
+    failure_policy: fail_closed_when_unconfigured
+  marketplace_composio_tools:
+    method: GET
+    path: /api/marketplace/catalog/composio/tools
+    sidecar: composio
+    failure_policy: fail_closed_when_unconfigured
+  marketplace_composio_import:
+    method: POST
+    path: /api/marketplace/catalog/composio/import
+    rules_gate: true
+    governed_capability: connector.admin
+    sidecar: composio
+    failure_policy: fail_closed_when_unconfigured
+failure_policy: fail-closed-for-governed-actions

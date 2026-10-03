@@ -1,0 +1,89 @@
+{
+  "schemaVersion": "doppelganger.microapp.sidecars.v1",
+  "microappId": "marketplace",
+  "program": {
+    "id": "marketplace-program",
+    "kind": "fastify-program",
+    "mode": "packaged",
+    "baseUrlEnv": "MARKETPLACE_BASE_URL",
+    "health": "/healthz",
+    "status": "/api/status",
+    "events": "/events",
+    "launch": {
+      "command": "pnpm",
+      "args": ["--dir", "program", "dev:miniapp"],
+      "hostEnv": "MARKETPLACE_HOST",
+      "portEnv": "MARKETPLACE_PORT",
+      "defaultHost": "127.0.0.1",
+      "defaultPort": 0
+    },
+    "storage": {
+      "kind": "sqlite",
+      "pathEnv": "MARKETPLACE_DATABASE_PATH",
+      "dataDirEnv": "MARKETPLACE_DATA_DIR",
+      "defaultPath": "~/.doppelganger/programs/marketplace/data/marketplace.sqlite"
+    }
+  },
+  "eventBus": {
+    "kind": "http-json-or-sse",
+    "path": "/events",
+    "producer": "marketplace-program",
+    "envelope": ["eventId", "sourceProgram", "type", "workspaceSlug", "occurredAt", "payload", "traceId"]
+  },
+  "debug": {
+    "env": ["DOPPELGANGER_DEBUG", "MARKETPLACE_DEBUG"],
+    "logs": {
+      "defaultDir": "~/.doppelganger/programs/marketplace/logs"
+    }
+  },
+  "required": [
+    {
+      "id": "marketplace-program",
+      "kind": "fastify-program",
+      "mode": "packaged",
+      "health": "/healthz"
+    },
+    {
+      "id": "marketplace-db",
+      "kind": "sqlite",
+      "mode": "hidden-home-file",
+      "pathEnv": "MARKETPLACE_DATABASE_PATH",
+      "dataDirEnv": "MARKETPLACE_DATA_DIR"
+    }
+  ],
+  "optional": [
+    {
+      "id": "nango",
+      "kind": "oauth-provider",
+      "mode": "configured-external",
+      "env": [
+        "NANGO_SECRET_KEY",
+        "NANGO_BASE_URL",
+        "NANGO_PUBLIC_SERVER_URL",
+        "NANGO_PUBLIC_CONNECT_URL"
+      ]
+    },
+    {
+      "id": "activepieces",
+      "kind": "connector-action-runtime",
+      "mode": "configured-external",
+      "env": [
+        "ACTIVEPIECES_BASE_URL",
+        "ACTIVEPIECES_API_KEY",
+        "ACTIVEPIECES_SHARED_SECRET"
+      ]
+    },
+    {
+      "id": "composio",
+      "kind": "connector-bootstrap-runtime",
+      "mode": "configured-external",
+      "env": [
+        "COMPOSIO_API_KEY",
+        "COMPOSIO_BASE_URL",
+        "COMPOSIO_DEFAULT_USER_ID",
+        "COMPOSIO_DEFAULT_CONNECTED_ACCOUNT_ID"
+      ]
+    }
+  ],
+  "dependencies": ["rules-approvals", "local-runtime-bridge"]
+}

@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "doppelganger.marketplace.plugin-record.v1",
+  "recordId": "plugin:workspace-files",
+  "providerId": "marketplace",
+  "pluginId": "workspace-files",
+  "displayName": "Workspace Files",
+  "description": "Required first-party file capability.",
+  "version": "1.0.0",
+  "kind": "native",
+  "lifecycle": "installed",
+  "enabled": true,
+  "required": true,
+  "connection": {
+    "state": "connected",
+    "detail": "No external authentication required."
+  },
+  "contributions": [
+    {
+      "id": "workspace-files.browser",
+      "type": "extension-surface",
+      "label": "Files",
+      "mount": "right-rail",
+      "routeSegment": "files",
+      "settings": {
+        "settingsSurfaceId": "marketplace.extension.workspace-files.browser.settings",
+        "title": "Files settings",
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      },
+      "enabled": true
+    }
+  ],
+  "adapter": {
+    "type": "native",
+    "native": { "provider": "doppelganger", "runtimeSources": [] }
+  },
+  "capabilities": ["connector.observe"],
+  "actions": ["workspace.files.list"],
+  "allowedActions": ["configure", "update", "reload"],
+  "settingsSurfaceIds": ["marketplace.plugin.workspace-files.settings"],
+  "registry": {
+    "authority": "doppelganger-registry",
+    "unitId": "workspace-files",
+    "contributionIds": ["workspace-files.browser"]
+  },
+  "custom": false,
+  "createdAt": "2026-07-10T00:00:00.000Z",
+  "updatedAt": "2026-07-10T00:00:00.000Z"
+}

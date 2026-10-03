@@ -1,0 +1,127 @@
+{
+  "contractVersion": "doppelganger.marketplace.agent-connector-grant.v1",
+  "provider": "composio",
+  "pluginId": "github-composio",
+  "action": {
+    "key": "github.list.repositories",
+    "toolName": "GITHUB_LIST_REPOSITORIES",
+    "capability": "connector.observe",
+    "resourceMapping": {
+      "kind": "github.connected-account",
+      "ref": "account:<connectedAccountId>",
+      "mode": "connected-account",
+      "argument": null
+    },
+    "providerInput": {
+      "required": [],
+      "allowedArguments": [
+        "page",
+        "sort",
+        "type",
+        "since",
+        "before",
+        "per_page",
+        "direction",
+        "visibility",
+        "affiliation"
+      ]
+    }
+  },
+  "identity": {
+    "source": "portal",
+    "agentCredentialHeader": "x-tealbrick-agent-token",
+    "attachmentHeader": "x-tealbrick-attachment",
+    "claims": {
+      "agentId": "sub",
+      "organizationId": "orgId",
+      "attachmentId": "jti",
+      "audience": "aud",
+      "capabilities": "capabilities"
+    },
+    "attachmentAudience": "marketplace"
+  },
+  "account": {
+    "source": "marketplace.connector_connection.metadata",
+    "connectedAccountIdField": "connectedAccountId"
+  },
+  "grant": {
+    "agentId": "verified Portal agent sub",
+    "accountId": "connected account metadata",
+    "resourceKind": "github.connected-account",
+    "resourceRef": "account:<accountId>",
+    "attachmentId": "verified Portal attachment jti",
+    "state": "active",
+    "tokenStorage": "never store raw tokens"
+  },
+  "ownerMappings": {
+    "packages": {
+      "surface": "native MCP adapter / bounded tool invocation",
+      "contract": "publish this mapping before mounting a Marketplace capability"
+    },
+    "portal": {
+      "surface": "/api/agents/credential + /api/attachments/issue",
+      "agentCredential": "Portal-signed ES256 JWT",
+      "attachment": "Portal-signed ES256 JWT with aud=marketplace",
+      "genericRevoke": "prevents future issuance; an already-issued attachment remains valid until its <=300 second expiry"
+    },
+    "rules": {
+      "ruleKey": "marketplace.plugin",
+      "grantOperation": "execute",
+      "executeOperation": "execute",
+      "grantPhase": "grant",
+      "actorId": "agent:<verified agentId>",
+      "targetKind": "plugin",
+      "payloadFields": [
+        "agentId",
+        "attachmentId",
+        "accountId",
+        "actionKey",
+        "resourceKind",
+        "resourceRef",
+        "grantId"
+      ]
+    }
+  },
+  "revocation": {
+    "marketplaceGrant": "local revoke immediately blocks Marketplace capability and execution",
+    "portalAttachment": "fresh Portal signature, audience, capability, and expiry are rechecked; Marketplace does not claim generic Portal DB revoke introspection"
+  },
+  "cases": [
+    {
+      "id": "allowed",
+      "expected": "allow",
+      "agentId": "agent-1",
+      "accountId": "ca_agent_1",
+      "resourceKind": "github.connected-account",
+      "resourceRef": "account:ca_agent_1",
+      "reason": "verified agent, connected account, attachment capability, and account resource match"
+    },
+    {
+      "id": "foreign-resource",
+      "expected": "deny",
+      "agentId": "agent-1",
+      "accountId": "ca_agent_1",
+      "resourceKind": "github.connected-account",
+      "resourceRef": "account:ca_other",
+      "reason": "resource_mismatch"
+    },
+    {
+      "id": "foreign-agent",
+      "expected": "deny",
+      "agentId": "agent-2",
+      "accountId": "ca_agent_1",
+      "resourceKind": "github.connected-account",
+      "resourceRef": "account:ca_agent_1",
+      "reason": "agent_mismatch"
+    },
+    {
+      "id": "revoked",
+      "expected": "deny",
+      "agentId": "agent-1",
+      "accountId": "ca_agent_1",
+      "resourceKind": "github.connected-account",
+      "resourceRef": "account:ca_agent_1",
+      "reason": "grant_revoked"
+    }
+  ]
+}

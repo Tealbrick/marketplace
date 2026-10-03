@@ -1,0 +1,344 @@
+{
+  "name": "marketplace",
+  "version": "0.1.0",
+  "description": "First-party Doppelganger Plugins Micro-app: plugin catalog, credentials, Composio/MCP runtime sources, installs, provider health, capability bindings, execution ledger, audit, and promotion candidates.",
+  "interface": {
+    "displayName": "Doppelganger Plugins",
+    "shortDescription": "Install, bind, run, and audit plugin capabilities",
+    "developerName": "Doppelganger",
+    "category": "Plugins",
+    "capabilities": [
+      "Read",
+      "Write",
+      "Interactive",
+      "Connectors",
+      "MCP",
+      "Audit"
+    ],
+    "brandColor": "#4d7c67",
+    "screenshots": []
+  },
+  "doppelganger": {
+    "trust": "first-party",
+    "system": {
+      "required": true,
+      "enabledByDefault": true,
+      "disableAllowed": false,
+      "systemRole": "doppelganger-plugins"
+    },
+    "dependencies": ["rules-approvals", "local-runtime-bridge"],
+    "hdda": {
+      "registryAuthority": "doppelganger-registry",
+      "registryFragment": "extension/hdda/registry.fragment.json",
+      "gatewayAdapter": "plugin/hermes/gateway-dashboard/marketplace-hub",
+      "capabilitiesProjection": {
+        "gatewayPluginId": "marketplace-hub",
+        "recordEndpoint": "/api/plugins/marketplace-hub/records",
+        "recordSchema": "doppelganger.marketplace.capabilities-host.v1",
+        "settingsSurfaceSchema": "doppelganger.capability-settings.v1"
+      },
+      "externalAuthDependency": "hdda-host-sdk:auth"
+    },
+    "settingsPanels": [
+      {
+        "panelId": "marketplace",
+        "label": "Plugins",
+        "routeSegment": "plugin-runtime",
+        "scope": "settings",
+        "mount": "web/settings/plugin-runtime",
+        "settings": {
+          "jsonSchema": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "composioApiKey": {
+                "type": "string",
+                "title": "Composio API key",
+                "writeOnly": true
+              },
+              "composioBaseUrl": {
+                "type": "string",
+                "format": "uri",
+                "title": "Base URL",
+                "default": "https://backend.composio.dev/api/v3.1"
+              },
+              "composioDefaultUserId": {
+                "type": "string",
+                "title": "Default user ID",
+                "default": "doppelganger"
+              },
+              "composioDefaultConnectedAccountId": {
+                "type": "string",
+                "title": "Connected account ID"
+              }
+            }
+          },
+          "uiSchema": {
+            "sections": [
+              {
+                "id": "composio",
+                "title": "Composio provider",
+                "description": "Connect the Marketplace Program to Composio. The API key is stored by the remote Program and is never returned to Desktop or Hermes.",
+                "fields": [
+                  "composioApiKey",
+                  "composioBaseUrl",
+                  "composioDefaultUserId",
+                  "composioDefaultConnectedAccountId"
+                ]
+              }
+            ],
+            "fields": {
+              "composioApiKey": {
+                "widget": "password",
+                "help": "Leave blank to keep the configured key.",
+                "secretStatusKey": "composioApiKeyConfigured"
+              },
+              "composioBaseUrl": {
+                "widget": "url",
+                "help": "Composio API base. HTTPS is recommended."
+              },
+              "composioDefaultUserId": {
+                "widget": "text"
+              },
+              "composioDefaultConnectedAccountId": {
+                "widget": "text",
+                "help": "Optional default account used for tool execution."
+              }
+            }
+          },
+          "loadAction": {
+            "label": "Load provider settings",
+            "method": "GET",
+            "path": "/api/settings/providers/composio"
+          },
+          "submitAction": {
+            "label": "Save settings",
+            "method": "PUT",
+            "path": "/api/settings/providers/composio"
+          }
+        }
+      }
+    ],
+    "surfaces": [
+      {
+        "surfaceId": "marketplace",
+        "kind": "panel",
+        "presentationClass": "workspace",
+        "routeSegment": "marketplace",
+        "mount": "web/surfaces/marketplace",
+        "requiresHostCapabilities": [
+          "host.embeddedViews",
+          "host.localServerDiscovery"
+        ]
+      }
+    ],
+    "workspaceModes": [],
+    "sidecars": [
+      {
+        "sidecarId": "marketplace-program",
+        "system": "marketplace-fastify-program",
+        "launchStrategy": "pnpm-workspace-service",
+        "supportedPlatforms": ["mac", "linux"],
+        "capabilities": [
+          "marketplace.health",
+          "marketplace.catalog",
+          "marketplace.cards",
+          "marketplace.install",
+          "marketplace.register",
+          "marketplace.providerHealth",
+          "marketplace.connection",
+          "marketplace.composioConnect",
+          "marketplace.composioCallback",
+          "marketplace.composioTools",
+          "marketplace.capabilityBinding",
+          "marketplace.actionBinding",
+          "marketplace.execute",
+          "marketplace.audit",
+          "marketplace.debug",
+          "marketplace.agentCapabilities",
+          "plugins.composioRuntime",
+          "plugins.mcpRuntime"
+        ],
+        "requestedScopes": [
+          "network:loopback:ephemeral",
+          "database:marketplace"
+        ],
+        "requestedSubscriptions": []
+      }
+    ],
+    "bridges": [],
+    "permissions": [
+      "marketplace.read",
+      "marketplace.write",
+      "marketplace.install",
+      "marketplace.execute",
+      "marketplace.audit",
+      "rules.evaluate",
+      "plugins.register"
+    ],
+    "themeTokens": [],
+    "dataTransports": [
+      {
+        "transportId": "marketplace-api",
+        "label": "Marketplace Program API",
+        "kind": "sidecar",
+        "sidecarId": "marketplace-program",
+        "permissions": ["marketplace.read", "marketplace.write"],
+        "operations": [
+          {
+            "operationId": "marketplace.health",
+            "resource": "marketplace",
+            "action": "get",
+            "method": "GET",
+            "path": "/healthz",
+            "permissions": ["marketplace.read"]
+          },
+          {
+            "operationId": "marketplace.status",
+            "resource": "marketplace.status",
+            "action": "get",
+            "method": "GET",
+            "path": "/api/status",
+            "permissions": ["marketplace.read"]
+          },
+          {
+            "operationId": "marketplace.catalog.list",
+            "resource": "marketplace.catalog",
+            "action": "list",
+            "method": "GET",
+            "path": "/api/marketplace/catalog",
+            "permissions": ["marketplace.read"]
+          },
+          {
+            "operationId": "marketplace.cards",
+            "resource": "marketplace.cards",
+            "action": "list",
+            "method": "GET",
+            "path": "/api/marketplace/cards",
+            "permissions": ["marketplace.read"]
+          },
+          {
+            "operationId": "marketplace.plugins.list",
+            "resource": "marketplace.plugins",
+            "action": "list",
+            "method": "GET",
+            "path": "/api/marketplace/plugins",
+            "permissions": ["marketplace.read"]
+          },
+          {
+            "operationId": "marketplace.plugins.install",
+            "resource": "marketplace.plugins",
+            "action": "create",
+            "method": "POST",
+            "path": "/api/marketplace/plugins/:pluginId/install",
+            "permissions": ["marketplace.install", "rules.evaluate"]
+          },
+          {
+            "operationId": "marketplace.plugins.register",
+            "resource": "marketplace.plugins",
+            "action": "create",
+            "method": "POST",
+            "path": "/api/marketplace/plugins/:pluginId/register",
+            "permissions": ["marketplace.install", "rules.evaluate"]
+          },
+          {
+            "operationId": "marketplace.plugins.unregister",
+            "resource": "marketplace.plugins",
+            "action": "delete",
+            "method": "POST",
+            "path": "/api/marketplace/plugins/:pluginId/unregister",
+            "permissions": ["marketplace.install", "rules.evaluate"]
+          },
+          {
+            "operationId": "marketplace.capability.bind",
+            "resource": "marketplace.capabilityBindings",
+            "action": "create",
+            "method": "POST",
+            "path": "/api/marketplace/plugins/:pluginId/capability-binding",
+            "permissions": ["marketplace.write"]
+          },
+          {
+            "operationId": "marketplace.action.bind",
+            "resource": "marketplace.actionBindings",
+            "action": "create",
+            "method": "POST",
+            "path": "/api/marketplace/plugins/:pluginId/action-binding",
+            "permissions": ["marketplace.write"]
+          },
+          {
+            "operationId": "marketplace.connection.start",
+            "resource": "marketplace.connections",
+            "action": "create",
+            "method": "POST",
+            "path": "/api/marketplace/plugins/:pluginId/connection",
+            "permissions": ["marketplace.write", "rules.evaluate"]
+          },
+          {
+            "operationId": "marketplace.plugins.execute",
+            "resource": "marketplace.execution",
+            "action": "create",
+            "method": "POST",
+            "path": "/api/marketplace/plugins/:pluginId/execute",
+            "permissions": ["marketplace.execute", "rules.evaluate"]
+          },
+          {
+            "operationId": "marketplace.agent.capabilities",
+            "resource": "marketplace.agentCapabilities",
+            "action": "list",
+            "method": "GET",
+            "path": "/api/agent/capabilities",
+            "permissions": ["marketplace.read"]
+          },
+          {
+            "operationId": "marketplace.audit.list",
+            "resource": "marketplace.audit",
+            "action": "list",
+            "method": "GET",
+            "path": "/api/marketplace/audit",
+            "permissions": ["marketplace.audit"]
+          },
+          {
+            "operationId": "marketplace.debug.events",
+            "resource": "marketplace.debug",
+            "action": "list",
+            "method": "GET",
+            "path": "/api/debug/events",
+            "permissions": ["marketplace.audit"]
+          },
+          {
+            "operationId": "marketplace.debug.logs",
+            "resource": "marketplace.debug",
+            "action": "list",
+            "method": "GET",
+            "path": "/api/debug/logs",
+            "permissions": ["marketplace.audit"]
+          },
+          {
+            "operationId": "marketplace.composio.catalog",
+            "resource": "marketplace.composio",
+            "action": "list",
+            "method": "GET",
+            "path": "/api/marketplace/catalog/composio",
+            "permissions": ["marketplace.read"]
+          },
+          {
+            "operationId": "marketplace.composio.tools",
+            "resource": "marketplace.composio",
+            "action": "list",
+            "method": "GET",
+            "path": "/api/marketplace/catalog/composio/tools",
+            "permissions": ["marketplace.read"]
+          },
+          {
+            "operationId": "marketplace.composio.import",
+            "resource": "marketplace.composio",
+            "action": "create",
+            "method": "POST",
+            "path": "/api/marketplace/catalog/composio/import",
+            "permissions": ["marketplace.install", "rules.evaluate"]
+          }
+        ]
+      }
+    ]
+  }
+}

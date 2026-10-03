@@ -1,0 +1,41 @@
+{
+  "contractVersion": "doppelganger.marketplace.agent-connector-grant.browser.v1",
+  "projection": {
+    "method": "GET",
+    "path": "/api/marketplace/agent/grants?workspaceSlug=atlas",
+    "authority": "marketplace-operator-session",
+    "fields": [
+      "id",
+      "workspaceSlug",
+      "agentId",
+      "pluginId",
+      "actionKey",
+      "capability",
+      "connectionId",
+      "accountId",
+      "resourceKind",
+      "resourceRef",
+      "state",
+      "expiresAt",
+      "createdAt",
+      "updatedAt"
+    ],
+    "forbiddenFields": [
+      "attachmentId",
+      "agentToken",
+      "attachmentToken",
+      "metadata"
+    ]
+  },
+  "revoke": {
+    "method": "POST",
+    "path": "/api/marketplace/agent/grants/{grantId}/revoke",
+    "authority": "marketplace-operator-session-csrf",
+    "idempotent": true
+  },
+  "creation": {
+    "available": false,
+    "code": "portal_handoff_required",
+    "reason": "Portal must provide a server-side or opaque human-authorized handoff before browser grant creation is enabled."
+  }
+}

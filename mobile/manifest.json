@@ -1,0 +1,25 @@
+{
+  "id": "marketplace",
+  "name": "Doppelganger Plugins",
+  "version": "0.1.0",
+  "description": "Mobile overview for active plugins, connectors, and agent capability bindings.",
+  "slots": ["home-card", "settings-panel"],
+  "permissions": [],
+  "tools": [
+    {
+      "id": "marketplace.mobile.catalog",
+      "name": "marketplace.mobile.catalog",
+      "description": "Inspect active plugin and connector capability state from mobile.",
+      "capabilityIds": [
+        "marketplace_catalog_list",
+        "marketplace_provider_health",
+        "marketplace_agent_capabilities",
+        "marketplace_connection_register"
+      ],
+      "permissions": []
+    }
+  ],
+  "settings": {
+    "route": "/settings/extensions"
+  }
+}

@@ -1,0 +1,54 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { ApiError, getBootstrap, getCardDetail, getCardSummaries, getOperatorSession, saveProviderSettings, unlockOperator } from "./api";
+
+afterEach(() => vi.restoreAllMocks());
+
+describe("frontend API client", () => {
+  it("builds bounded summary and encoded detail URLs", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({}), { status: 200 }));
+    await getCardSummaries({ workspaceSlug: "team one", search: "mail & files", source: "composio", installed: true, offset: 60, limit: 60 });
+    await getCardDetail("composio/foo bar", "team one");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/marketplace/cards/summary?workspaceSlug=team+one&search=mail+%26+files&source=composio&installed=true&offset=60&limit=60");
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/marketplace/cards/composio%2Ffoo%20bar?workspaceSlug=team%20one");
+  });
+
+  it("falls back to a truthful bootstrap only when an older Program returns 404", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("missing", { status: 404, statusText: "Not Found" }));
+    const result = await getBootstrap();
+    expect(result.authorization).toMatchObject({ credentialExposedToBrowser: false, hubRoutesRequireBearer: true });
+  });
+
+  it("preserves non-404 bootstrap failures", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ detail: "offline" }), { status: 503 }));
+    await expect(getBootstrap()).rejects.toBeInstanceOf(ApiError);
+  });
+
+  it("keeps the operator credential in an HttpOnly session and adds CSRF only to writes", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ session: { configured: true, authenticated: true, mode: "session", principal: { kind: "operator", id: "operator", organizationId: "verified-org" }, csrfToken: "csrf-proof", expiresAt: "2026-08-28T12:00:00.000Z" } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    await unlockOperator("operator-access-token");
+    await saveProviderSettings({
+      composioBaseUrl: "https://backend.composio.dev/api/v3.1",
+      composioDefaultUserId: "verified-org",
+      composioDefaultConnectedAccountId: "",
+    });
+
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ credentials: "include", method: "POST" });
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ credentials: "include", method: "PUT" });
+    expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get("x-csrf-token")).toBe("csrf-proof");
+  });
+
+  it("signals an expired authenticated session on a protected 401", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ session: { configured: true, authenticated: true, mode: "session", principal: { kind: "operator", id: "operator", organizationId: "verified-org" }, csrfToken: "csrf-proof", expiresAt: "2026-08-28T12:00:00.000Z" } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: "marketplace_unauthorized" }), { status: 401 }));
+    await getOperatorSession();
+    const expired = vi.fn();
+    window.addEventListener("marketplace-auth-expired", expired, { once: true });
+    await expect(getCardSummaries({ workspaceSlug: "verified-org", search: "", source: "all", installed: false, offset: 0, limit: 60 })).rejects.toBeInstanceOf(ApiError);
+    expect(expired).toHaveBeenCalledTimes(1);
+  });
+});

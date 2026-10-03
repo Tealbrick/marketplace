@@ -1,0 +1,11 @@
+{
+  "name": "marketplace-hub",
+  "label": "Doppelganger Plugins",
+  "description": "Authenticated Marketplace normalized-record provider for the HDDA Capabilities host.",
+  "icon": "Blocks",
+  "version": "0.2.0",
+  "tab": { "path": "/marketplace-hub", "position": "end", "hidden": true },
+  "slots": [],
+  "entry": "entry.js",
+  "api": "plugin_api.py"
+}
