@@ -1,4 +1,4 @@
-# Marketplace 0.1.2 release boundary
+# Marketplace 0.1.3 release boundary
 
 This document describes the public standalone artifact. It is not a claim of
 provider authorization, production readiness, or human acceptance.
@@ -6,9 +6,9 @@ provider authorization, production readiness, or human acceptance.
 ## Source and image
 
 The public source repository is `https://github.com/Tealbrick/marketplace`.
-The OCI image is `ghcr.io/tealbrick/marketplace:0.1.2`; consumers should pin
+The OCI image is `ghcr.io/tealbrick/marketplace:0.1.3`; consumers should pin
 the immutable digest recorded in the release receipt rather than a mutable
-tag. This acceptance-corrected release supersedes `0.1.1`; the security-
+tag. This acceptance-corrected release supersedes `0.1.2`; the security-
 corrected `0.1.1` line superseded `0.1.0`, whose Portal handoff session rows
 were plaintext.
 
@@ -49,8 +49,9 @@ separately. Restore the database and settings into an isolated instance, load
 the exact same key before starting, and run health, auth, tenant, Rules,
 Portal, and idempotency checks before cutover. Do not rotate the key for a
 retry, restart, or routine upgrade. A wrong or missing key must fail closed
-without rewriting the restored files. Rollback from `0.1.2` to `0.1.1` is
-valid with the same encrypted database and key. Rollback from `0.1.1` to
+without rewriting the restored files. Rollback from `0.1.3` to `0.1.2` is
+valid with the same encrypted database and key. Rollback from `0.1.2` to
+`0.1.1` is also valid with the same encrypted database and key. Rollback from `0.1.1` to
 `0.1.0` is only valid with a pre-`0.1.1` backup that contains no encrypted
 handoff rows; otherwise restore the prior image and its pre-upgrade backup
 together.

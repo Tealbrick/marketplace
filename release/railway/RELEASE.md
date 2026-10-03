@@ -1,14 +1,14 @@
-# Marketplace standalone 0.1.2 image
+# Marketplace standalone 0.1.3 image
 
-This bundle is the public Marketplace 0.1.2 release line and supersedes
-0.1.1. The release image
+This bundle is the public Marketplace 0.1.3 release line and supersedes
+0.1.2. The release image
 contains the Fastify Program, the built browser application, the tracked
 entrypoint, and no provider credentials, operator sessions, tenant data, or
 runtime database.
 
 Source snapshot: `dd3d9571e104ac8521be33ad9bf9925d4a61af3a`
 Source archive SHA256: `a743e3fc979d0ddced418d9e2f63933de015ea96b9c69e79b867d033c257fcf4`
-Image: `ghcr.io/tealbrick/marketplace:0.1.2`
+Image: `ghcr.io/tealbrick/marketplace:0.1.3`
 
 ## Runtime contract
 

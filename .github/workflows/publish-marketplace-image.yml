@@ -9,7 +9,7 @@ on:
       image_tag:
         description: Image tag to publish, without the leading v
         required: true
-        default: 0.1.2
+        default: 0.1.3
         type: string
 
 permissions:
@@ -157,12 +157,14 @@ jobs:
           cp "$state_dir/marketplace.sqlite" "$backup_dir/marketplace.sqlite"
           cp "$backup_dir/marketplace.sqlite" "$restored_dir/marketplace.sqlite"
           chmod 0777 "$restored_dir"
+          chmod 0666 "$restored_dir/marketplace.sqlite"
           start_marketplace "$restored_dir"
           SMOKE_MODE=verify node smoke/release-image-contract-smoke.mjs
           stop_marketplace
 
           cp "$backup_dir/marketplace.sqlite" "$wrong_key_dir/marketplace.sqlite"
           chmod 0777 "$wrong_key_dir"
+          chmod 0666 "$wrong_key_dir/marketplace.sqlite"
           before_wrong_key="$(sha256sum "$wrong_key_dir/marketplace.sqlite" | awk '{print $1}')"
           if docker run --rm --name "$name" \
             --add-host host.docker.internal:host-gateway \
