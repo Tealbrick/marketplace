@@ -9,7 +9,7 @@ on:
       image_tag:
         description: Image tag to publish, without the leading v
         required: true
-        default: 0.1.1
+        default: 0.1.2
         type: string
 
 permissions:
@@ -141,7 +141,7 @@ jobs:
           }
 
           stop_marketplace() {
-            docker rm -f "$name" >/dev/null 2>&1 || true
+            docker stop --time 10 "$name" >/dev/null 2>&1 || docker rm -f "$name" >/dev/null 2>&1 || true
           }
 
           trap stop_marketplace EXIT
@@ -153,14 +153,15 @@ jobs:
           SMOKE_MODE=verify node smoke/release-image-contract-smoke.mjs
           stop_marketplace
 
-          cp -a "$state_dir/." "$backup_dir/"
-          cp -a "$backup_dir/." "$restored_dir/"
+          test -f "$state_dir/marketplace.sqlite"
+          cp "$state_dir/marketplace.sqlite" "$backup_dir/marketplace.sqlite"
+          cp "$backup_dir/marketplace.sqlite" "$restored_dir/marketplace.sqlite"
           chmod 0777 "$restored_dir"
           start_marketplace "$restored_dir"
           SMOKE_MODE=verify node smoke/release-image-contract-smoke.mjs
           stop_marketplace
 
-          cp -a "$backup_dir/." "$wrong_key_dir/"
+          cp "$backup_dir/marketplace.sqlite" "$wrong_key_dir/marketplace.sqlite"
           chmod 0777 "$wrong_key_dir"
           before_wrong_key="$(sha256sum "$wrong_key_dir/marketplace.sqlite" | awk '{print $1}')"
           if docker run --rm --name "$name" \

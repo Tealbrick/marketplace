@@ -5,8 +5,8 @@ connector lifecycle. It owns catalog records, install/configure/connect/enable
 state, capability and action bindings, scoped Agent grants, provider health,
 execution, usage accounting, audit events, and the browser operator surface.
 
-This `v0.1.1` public source release is the security-corrected successor to
-`v0.1.0`; the earlier image/tag must not be used for Portal handoff data. It
+This `v0.1.2` public source release is the acceptance-corrected successor to
+`v0.1.1` and the security-corrected `v0.1.0` line. Earlier image/tags must not be used for Portal handoff data. It
 contains no
 provider credentials, operator sessions, tenant data, runtime databases, or
 private repository history.
