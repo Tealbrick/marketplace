@@ -1,13 +1,14 @@
-# Marketplace standalone 0.1.0 image
+# Marketplace standalone 0.1.1 image
 
-This bundle is the public Marketplace 0.1.0 release line. The release image
+This bundle is the public Marketplace 0.1.1 release line and supersedes
+0.1.0. The release image
 contains the Fastify Program, the built browser application, the tracked
 entrypoint, and no provider credentials, operator sessions, tenant data, or
 runtime database.
 
 Source snapshot: `8cb985c723f4745407c66d02b72e833bfbf8e3b4`
 Source archive SHA256: `eec1f8b4aeeff85499317e585db87a7ee295d5ce1768b9d34f0f2bfdce5f8c07`
-Image: `ghcr.io/tealbrick/marketplace:0.1.0`
+Image: `ghcr.io/tealbrick/marketplace:0.1.1`
 
 ## Runtime contract
 
@@ -27,7 +28,14 @@ Image: `ghcr.io/tealbrick/marketplace:0.1.0`
 `MARKETPLACE_INTERNAL_AUTH_TOKEN`, `MARKETPLACE_OPERATOR_ACCESS_TOKEN`,
 `MARKETPLACE_OPERATOR_ID`, `MARKETPLACE_ORGANIZATION_ID`, and exact
 `MARKETPLACE_ALLOWED_ORIGINS` plus the exact callback origin
-`MARKETPLACE_PUBLIC_ORIGIN` are deployment-owned settings. Provider OAuth
+`MARKETPLACE_PUBLIC_ORIGIN` are deployment-owned settings. Set
+`MARKETPLACE_HANDOFF_ENCRYPTION_KEY` to a separately managed 32-byte key before
+enabling Portal handoff; it is used to encrypt handoff session bearers in
+SQLite and must not be included in database backups. Generate it with
+`node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))'`,
+store it in the deployment secret manager, and reuse the same value across
+retries, restarts, upgrades, and restores. Missing or wrong keys fail closed
+before migration writes. Provider OAuth
 callbacks ignore caller-supplied URLs and are built only from that configured
 origin. Portal v1.1
 requires its issuer, audience, and instance proof. Rules-gated operation

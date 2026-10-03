@@ -8,7 +8,9 @@ import { MarketplaceProviderSettingsStore } from "./provider-settings.js";
 import { SqliteMarketplaceStore } from "./store.js";
 
 const config = loadConfig();
-const store = new SqliteMarketplaceStore(config.dbPath);
+const store = new SqliteMarketplaceStore(config.dbPath, {
+  handoffEncryptionKey: config.handoffEncryptionKey,
+});
 const providerSettings = new MarketplaceProviderSettingsStore(
   config.settingsPath,
   config.secretsPath,

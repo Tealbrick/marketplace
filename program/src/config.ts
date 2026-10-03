@@ -7,6 +7,7 @@ export type MarketplaceConfig = {
   host: string;
   port: number;
   dbPath: string;
+  handoffEncryptionKey?: string;
   internalAuthToken?: string;
   settingsPath: string;
   secretsPath: string;
@@ -35,6 +36,9 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     host: env.MARKETPLACE_HOST?.trim() || "127.0.0.1",
     port: numberFromEnv(env.MARKETPLACE_PORT, 0),
     dbPath,
+    ...(env.MARKETPLACE_HANDOFF_ENCRYPTION_KEY?.trim()
+      ? { handoffEncryptionKey: env.MARKETPLACE_HANDOFF_ENCRYPTION_KEY.trim() }
+      : {}),
     settingsPath:
       env.MARKETPLACE_SETTINGS_PATH?.trim() ||
       path.join(path.dirname(dbPath), "provider-settings.json"),

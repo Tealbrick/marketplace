@@ -5,7 +5,9 @@ connector lifecycle. It owns catalog records, install/configure/connect/enable
 state, capability and action bindings, scoped Agent grants, provider health,
 execution, usage accounting, audit events, and the browser operator surface.
 
-This `v0.1.0` public source release is a clean snapshot. It contains no
+This `v0.1.1` public source release is the security-corrected successor to
+`v0.1.0`; the earlier image/tag must not be used for Portal handoff data. It
+contains no
 provider credentials, operator sessions, tenant data, runtime databases, or
 private repository history.
 
@@ -46,6 +48,12 @@ are stored through the server-side settings boundary with private file modes;
 the browser receives status and redacted projections only. Governed writes
 require idempotency keys or reconciliation, and audit events retain the
 decision and trace identifiers needed to inspect the operation.
+
+Portal handoff session bearers are encrypted in SQLite with the deployment's
+unique `MARKETPLACE_HANDOFF_ENCRYPTION_KEY`. Keep that key in a trusted secret
+store, reuse it across retries, restarts, upgrades, and restores, and never
+include it in a database backup or release artifact. A missing or wrong key
+fails closed without rewriting the database.
 
 ## Local development
 

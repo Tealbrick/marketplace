@@ -1,4 +1,4 @@
-# Marketplace 0.1.0 release boundary
+# Marketplace 0.1.1 release boundary
 
 This document describes the public standalone artifact. It is not a claim of
 provider authorization, production readiness, or human acceptance.
@@ -6,9 +6,10 @@ provider authorization, production readiness, or human acceptance.
 ## Source and image
 
 The public source repository is `https://github.com/Tealbrick/marketplace`.
-The OCI image is `ghcr.io/tealbrick/marketplace:0.1.0`; consumers should pin
+The OCI image is `ghcr.io/tealbrick/marketplace:0.1.1`; consumers should pin
 the immutable digest recorded in the release receipt rather than a mutable
-tag.
+tag. This security-corrected release supersedes `0.1.0`, whose Portal handoff
+session rows were plaintext.
 
 The image is built from `release/railway/` with the tracked lockfile and
 generated bundle. The release workflow verifies the source snapshot and the
@@ -25,6 +26,10 @@ secret store. Never put them in browser configuration or a public fixture.
 * `MARKETPLACE_OPERATOR_ACCESS_TOKEN`, `MARKETPLACE_OPERATOR_ID`, and
   `MARKETPLACE_ORGANIZATION_ID` for the standalone operator boundary.
 * `MARKETPLACE_ALLOWED_ORIGINS` with exact HTTPS origins; do not use `*`.
+* `MARKETPLACE_HANDOFF_ENCRYPTION_KEY`, a unique per-instance 32-byte key in a
+  trusted secret store. Generate it with `node -e
+  'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))'`;
+  never commit or log it, and do not place it in the database backup.
 * Portal issuer, audience, and instance proof variables when the Portal v1.1
   handoff is enabled.
 * `RULES_BASE_URL` and a tenant-scoped evaluation-only
@@ -38,9 +43,14 @@ secret store. Never put them in browser configuration or a public fixture.
 
 Mount a private persistent volume at `/data`. The image uses `/data/state` for
 SQLite state and `/data/logs` for optional debug logs. Back up the SQLite file
-and protected settings before upgrades; restore into an isolated instance and
-run health, auth, tenant, Rules, Portal, and idempotency checks before cutover.
-Rollback is the prior verified image digest plus its compatible data backup.
+and protected settings before upgrades, but store the handoff encryption key
+separately. Restore the database and settings into an isolated instance, load
+the exact same key before starting, and run health, auth, tenant, Rules,
+Portal, and idempotency checks before cutover. Do not rotate the key for a
+retry, restart, or routine upgrade. A wrong or missing key must fail closed
+without rewriting the restored files. Rollback from `0.1.1` to `0.1.0` is
+only valid with a pre-`0.1.1` backup that contains no encrypted handoff rows;
+otherwise restore the prior image and its pre-upgrade backup together.
 
 ## Acceptance checklist
 

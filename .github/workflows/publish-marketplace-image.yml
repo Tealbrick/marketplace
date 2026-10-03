@@ -1,4 +1,4 @@
-name: Publish Marketplace 0.1.0 image
+name: Publish Marketplace image
 
 on:
   push:
@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: Image tag to publish; v0.1.0 is the public release tag
+        description: Image tag to publish, without the leading v
         required: true
-        default: 0.1.0
+        default: 0.1.1
         type: string
 
 permissions:
@@ -33,7 +33,14 @@ jobs:
           set -eu
           tag="${{ inputs.image_tag }}"
           if [ -z "$tag" ]; then tag="${RELEASE_TAG#v}"; fi
-          test "$tag" = "0.1.0"
+          test -n "$tag"
+          case "$tag" in
+            *.*.*) ;;
+            *) echo "image_tag must be a semantic version" >&2; exit 1 ;;
+          esac
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            test "$tag" = "${RELEASE_TAG#v}"
+          fi
           shasum -a 256 -c release/railway/build-input-manifest.sha256
           shasum -a 256 -c release/railway/bundle-manifest.sha256
           source_ref="$(sed -n 's/.*Source snapshot: `\([^`]*\)`.*/\1/p' release/railway/RELEASE.md)"
@@ -78,3 +85,96 @@ jobs:
           test "$code" = 401 || test "$code" = 403 || test "$code" = 503
           docker rm -f "$name" >/dev/null
           trap - EXIT
+
+      - name: Verify persistence, encrypted recovery, idempotency, and revocation
+        env:
+          SMOKE_BASE_URL: http://127.0.0.1:5314
+          SMOKE_PORTAL_ISSUER: http://host.docker.internal:5317
+          SMOKE_ORGANIZATION_ID: smoke-org
+          SMOKE_INTERNAL_TOKEN: smoke-internal-token
+          MARKETPLACE_HANDOFF_ENCRYPTION_KEY: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        run: |
+          set -eu
+          state_dir="$(mktemp -d)"
+          backup_dir="$(mktemp -d)"
+          restored_dir="$(mktemp -d)"
+          wrong_key_dir="$(mktemp -d)"
+          chmod 0777 "$state_dir" "$restored_dir" "$wrong_key_dir"
+          image="$IMAGE_REF"
+          name="marketplace-contract-smoke-${GITHUB_RUN_ID}"
+
+          start_marketplace() {
+            mount_dir="$1"
+            docker run -d --rm --name "$name" \
+              --add-host host.docker.internal:host-gateway \
+              -p 5314:5314 \
+              -v "$mount_dir:/data/state" \
+              -e NODE_ENV=production \
+              -e MARKETPLACE_HOST=0.0.0.0 \
+              -e MARKETPLACE_PORT=5314 \
+              -e MARKETPLACE_DATA_DIR=/data/state \
+              -e MARKETPLACE_OPERATOR_ACCESS_TOKEN=smoke-operator-token \
+              -e MARKETPLACE_OPERATOR_ID=operator-smoke \
+              -e MARKETPLACE_ORGANIZATION_ID=smoke-org \
+              -e MARKETPLACE_INTERNAL_AUTH_TOKEN=smoke-internal-token \
+              -e MARKETPLACE_ALLOWED_ORIGINS=http://127.0.0.1:5314 \
+              -e MARKETPLACE_PUBLIC_ORIGIN=http://127.0.0.1:5314 \
+              -e MARKETPLACE_HANDOFF_ENCRYPTION_KEY="$MARKETPLACE_HANDOFF_ENCRYPTION_KEY" \
+              -e RULES_BASE_URL=http://host.docker.internal:5315 \
+              -e RULES_COMPANY_ID=smoke-org \
+              -e COMPOSIO_API_KEY=smoke-provider-key \
+              -e COMPOSIO_BASE_URL=http://host.docker.internal:5316/v3.1 \
+              -e COMPOSIO_CONNECT_BASE_URL=http://host.docker.internal:5316/v3 \
+              -e COMPOSIO_EXECUTE_BASE_URL=http://host.docker.internal:5316/v3 \
+              -e MARKETPLACE_PORTAL_ISSUER_URL=http://host.docker.internal:5317 \
+              -e MARKETPLACE_PORTAL_INSTANCE_PROOF=ppppppppppppppppppppppppppppppppppppppppppp \
+              -e MARKETPLACE_PORTAL_DEPLOYMENT_ID=deployment-smoke \
+              -e MARKETPLACE_PORTAL_ORG_ID=portal-org-smoke \
+              -e MARKETPLACE_PORTAL_WORKSPACE_ID=smoke-org \
+              "$image" >/dev/null
+            for attempt in $(seq 1 30); do
+              if curl --fail --silent http://127.0.0.1:5314/healthz >/dev/null; then return 0; fi
+              test "$attempt" -lt 30
+              sleep 2
+            done
+            return 1
+          }
+
+          stop_marketplace() {
+            docker rm -f "$name" >/dev/null 2>&1 || true
+          }
+
+          trap stop_marketplace EXIT
+          start_marketplace "$state_dir"
+          SMOKE_MODE=setup SMOKE_REDEEM_FAILURE_ONCE=1 node smoke/release-image-contract-smoke.mjs
+          stop_marketplace
+
+          start_marketplace "$state_dir"
+          SMOKE_MODE=verify node smoke/release-image-contract-smoke.mjs
+          stop_marketplace
+
+          cp -a "$state_dir/." "$backup_dir/"
+          cp -a "$backup_dir/." "$restored_dir/"
+          chmod 0777 "$restored_dir"
+          start_marketplace "$restored_dir"
+          SMOKE_MODE=verify node smoke/release-image-contract-smoke.mjs
+          stop_marketplace
+
+          cp -a "$backup_dir/." "$wrong_key_dir/"
+          chmod 0777 "$wrong_key_dir"
+          before_wrong_key="$(sha256sum "$wrong_key_dir/marketplace.sqlite" | awk '{print $1}')"
+          if docker run --rm --name "$name" \
+            --add-host host.docker.internal:host-gateway \
+            -v "$wrong_key_dir:/data/state" \
+            -e NODE_ENV=production \
+            -e MARKETPLACE_HOST=0.0.0.0 \
+            -e MARKETPLACE_PORT=5314 \
+            -e MARKETPLACE_DATA_DIR=/data/state \
+            -e MARKETPLACE_HANDOFF_ENCRYPTION_KEY=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
+            "$image" >/tmp/marketplace-wrong-key.log 2>&1; then
+            echo "wrong handoff encryption key unexpectedly started the image" >&2
+            exit 1
+          fi
+          after_wrong_key="$(sha256sum "$wrong_key_dir/marketplace.sqlite" | awk '{print $1}')"
+          test "$before_wrong_key" = "$after_wrong_key"
+          echo "image persistence/restart/restore, uncertain-write reconciliation, idempotency, revocation, and wrong-key no-overwrite checks passed" >> "$GITHUB_STEP_SUMMARY"

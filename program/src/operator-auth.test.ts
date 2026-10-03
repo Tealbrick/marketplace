@@ -184,7 +184,9 @@ describe("Marketplace operator and service authorization", () => {
   it("lets the operator session drive Portal grant request/redeem without browser credentials", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "marketplace-handoff-auth-"));
     roots.push(root);
-    const store = new SqliteMarketplaceStore(path.join(root, "marketplace.sqlite"));
+    const store = new SqliteMarketplaceStore(path.join(root, "marketplace.sqlite"), {
+      handoffEncryptionKey: "a".repeat(64),
+    });
     const requestId = "r".repeat(43);
     const consentId = "portal_consent_1";
     const selection = {

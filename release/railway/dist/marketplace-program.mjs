@@ -55986,6 +55986,7 @@ function loadConfig(env = process.env) {
     host: env.MARKETPLACE_HOST?.trim() || "127.0.0.1",
     port: numberFromEnv(env.MARKETPLACE_PORT, 0),
     dbPath,
+    ...env.MARKETPLACE_HANDOFF_ENCRYPTION_KEY?.trim() ? { handoffEncryptionKey: env.MARKETPLACE_HANDOFF_ENCRYPTION_KEY.trim() } : {},
     settingsPath: env.MARKETPLACE_SETTINGS_PATH?.trim() || path5.join(path5.dirname(dbPath), "provider-settings.json"),
     secretsPath: env.MARKETPLACE_SECRETS_PATH?.trim() || path5.join(path5.dirname(dbPath), "provider-secrets.json"),
     ...env.MARKETPLACE_INTERNAL_AUTH_TOKEN?.trim() ? { internalAuthToken: env.MARKETPLACE_INTERNAL_AUTH_TOKEN.trim() } : env.DOPPELGANGER_MARKETPLACE_INTERNAL_AUTH_TOKEN?.trim() ? {
@@ -56136,7 +56137,12 @@ function makeRulesClient(config2) {
 // src/store.ts
 import fs2 from "node:fs";
 import path6 from "node:path";
-import { randomUUID as randomUUID2 } from "node:crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  randomBytes as randomBytes2,
+  randomUUID as randomUUID2
+} from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 
 // src/usage-ledger.ts
@@ -56153,6 +56159,54 @@ function shapeOf(value) {
 }
 
 // src/store.ts
+var PORTAL_HANDOFF_CIPHERTEXT_PREFIX = "v1:";
+function handoffEncryptionKeyFromSecret(secret) {
+  const value = secret?.trim();
+  if (!value) return null;
+  if (/^[0-9a-f]{64}$/iu.test(value)) {
+    return Buffer.from(value, "hex");
+  }
+  const decoded = Buffer.from(value, "base64url");
+  if (decoded.length !== 32) {
+    throw new Error(
+      "MARKETPLACE_HANDOFF_ENCRYPTION_KEY must be a 32-byte base64url value or 64-character hex value."
+    );
+  }
+  return decoded;
+}
+function encryptPortalHandoffToken(token, key) {
+  const iv = randomBytes2(12);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  const ciphertext = Buffer.concat([
+    cipher.update(token, "utf8"),
+    cipher.final()
+  ]);
+  return [
+    PORTAL_HANDOFF_CIPHERTEXT_PREFIX.slice(0, -1),
+    iv.toString("base64url"),
+    cipher.getAuthTag().toString("base64url"),
+    ciphertext.toString("base64url")
+  ].join(":");
+}
+function decryptPortalHandoffToken(value, key) {
+  const [version, ivValue, authTagValue, ciphertextValue] = value.split(":");
+  if (`${version}:` !== PORTAL_HANDOFF_CIPHERTEXT_PREFIX || !ivValue || !authTagValue || !ciphertextValue) {
+    throw new Error("Stored Portal handoff session token has an invalid format.");
+  }
+  const decipher = createDecipheriv(
+    "aes-256-gcm",
+    key,
+    Buffer.from(ivValue, "base64url")
+  );
+  decipher.setAuthTag(Buffer.from(authTagValue, "base64url"));
+  return Buffer.concat([
+    decipher.update(Buffer.from(ciphertextValue, "base64url")),
+    decipher.final()
+  ]).toString("utf8");
+}
+function isEncryptedPortalHandoffToken(value) {
+  return value.startsWith(PORTAL_HANDOFF_CIPHERTEXT_PREFIX);
+}
 function nowIso() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
@@ -56257,7 +56311,7 @@ function agentConnectorGrantFromRow(row) {
     updatedAt: String(row.updated_at)
   };
 }
-function portalHandoffSessionFromRow(row) {
+function portalHandoffSessionFromRow(row, sessionToken) {
   return {
     id: String(row.id),
     portalIssuer: String(row.portal_issuer),
@@ -56266,7 +56320,7 @@ function portalHandoffSessionFromRow(row) {
     productTenantId: String(row.product_tenant_id),
     workspaceId: String(row.workspace_id),
     userId: String(row.user_id),
-    sessionToken: String(row.session_token),
+    sessionToken,
     expiresAt: String(row.expires_at),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
@@ -56444,15 +56498,24 @@ var SqliteMarketplaceStore = class {
       "marketplace-debug.jsonl"
     );
     this.debug = options.debug ?? process.env.DOPPELGANGER_DEBUG === "1";
+    this.handoffEncryptionKey = handoffEncryptionKeyFromSecret(
+      options.handoffEncryptionKey ?? process.env.MARKETPLACE_HANDOFF_ENCRYPTION_KEY
+    );
     fs2.mkdirSync(path6.dirname(this.logPath), { recursive: true });
     this.db = new DatabaseSync(dbPath);
-    this.migrate();
-    this.seedListings();
+    try {
+      this.migrate();
+      this.seedListings();
+    } catch (error) {
+      this.db.close();
+      throw error;
+    }
   }
   dbPath;
   db;
   logPath;
   debug;
+  handoffEncryptionKey;
   migrate() {
     this.db.exec(`
       PRAGMA journal_mode = WAL;
@@ -56779,6 +56842,60 @@ var SqliteMarketplaceStore = class {
         throw error;
       }
     }
+    this.migratePortalHandoffSessions();
+  }
+  migratePortalHandoffSessions() {
+    const rows = this.db.prepare("SELECT id, session_token FROM marketplace_portal_handoff_session").all();
+    if (rows.length === 0) return;
+    if (!this.handoffEncryptionKey) {
+      throw new Error(
+        "MARKETPLACE_HANDOFF_ENCRYPTION_KEY is required to open stored Portal handoff sessions."
+      );
+    }
+    for (const row of rows) {
+      if (isEncryptedPortalHandoffToken(String(row.session_token))) {
+        this.decryptHandoffSessionToken(String(row.session_token));
+      }
+    }
+    const legacyRows = rows.filter(
+      (row) => !isEncryptedPortalHandoffToken(String(row.session_token))
+    );
+    if (legacyRows.length === 0) return;
+    this.db.exec("BEGIN");
+    try {
+      const update = this.db.prepare(
+        "UPDATE marketplace_portal_handoff_session SET session_token = ? WHERE id = ?"
+      );
+      for (const row of legacyRows) {
+        update.run(
+          encryptPortalHandoffToken(
+            String(row.session_token),
+            this.handoffEncryptionKey
+          ),
+          String(row.id)
+        );
+      }
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+  encryptHandoffSessionToken(token) {
+    if (!this.handoffEncryptionKey) {
+      throw new Error(
+        "MARKETPLACE_HANDOFF_ENCRYPTION_KEY is required for Portal handoff sessions."
+      );
+    }
+    return encryptPortalHandoffToken(token, this.handoffEncryptionKey);
+  }
+  decryptHandoffSessionToken(value) {
+    if (!this.handoffEncryptionKey) {
+      throw new Error(
+        "MARKETPLACE_HANDOFF_ENCRYPTION_KEY is required for Portal handoff sessions."
+      );
+    }
+    return decryptPortalHandoffToken(value, this.handoffEncryptionKey);
   }
   seedListings() {
     for (const listing of [
@@ -57462,7 +57579,7 @@ var SqliteMarketplaceStore = class {
       input.productTenantId,
       input.workspaceId,
       input.userId,
-      input.sessionToken,
+      this.encryptHandoffSessionToken(input.sessionToken),
       input.expiresAt,
       existing ? String(existing.created_at) : timestamp,
       timestamp
@@ -57473,7 +57590,10 @@ var SqliteMarketplaceStore = class {
     const row = this.db.prepare(
       "SELECT * FROM marketplace_portal_handoff_session WHERE deployment_id = ?"
     ).get(deploymentId);
-    return row ? portalHandoffSessionFromRow(row) : null;
+    return row ? portalHandoffSessionFromRow(
+      row,
+      this.decryptHandoffSessionToken(String(row.session_token))
+    ) : null;
   }
   upsertMarketplacePortalGrantRequest(input) {
     const timestamp = nowIso();
@@ -57935,7 +58055,10 @@ var SqliteMarketplaceStore = class {
     if (!row) {
       throw new Error(`Portal handoff session ${deploymentId} was not found`);
     }
-    return portalHandoffSessionFromRow(row);
+    return portalHandoffSessionFromRow(
+      row,
+      this.decryptHandoffSessionToken(String(row.session_token))
+    );
   }
   requireMarketplacePortalGrantRequest(input) {
     const row = this.db.prepare(
@@ -57986,7 +58109,9 @@ var SqliteMarketplaceStore = class {
 
 // src/index.ts
 var config = loadConfig();
-var store = new SqliteMarketplaceStore(config.dbPath);
+var store = new SqliteMarketplaceStore(config.dbPath, {
+  handoffEncryptionKey: config.handoffEncryptionKey
+});
 var providerSettings = new MarketplaceProviderSettingsStore(
   config.settingsPath,
   config.secretsPath
