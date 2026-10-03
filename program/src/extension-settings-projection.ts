@@ -1,5 +1,5 @@
 import { readdir, readFile } from "node:fs/promises";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -79,13 +79,36 @@ export function gatewayProgramProxyEndpoint(unitId: string, declaredPath: unknow
 }
 
 function manifestPathForUnit(root: string, unitId: string) {
+  const standaloneManifest = path.join(root, "extension", "manifest.json");
+  const standaloneProduct = path.join(root, "manifest.json");
+  if (existsSync(standaloneManifest) && existsSync(standaloneProduct)) {
+    try {
+      const product = JSON.parse(readFileSync(standaloneProduct, "utf8")) as JsonRecord;
+      if (product.id === unitId) return standaloneManifest;
+    } catch {
+      // The normal manifest reader below will report malformed source details.
+    }
+  }
   const direct = path.join(root, unitId, "extension", "manifest.json");
   if (existsSync(direct)) return direct;
   const installed = path.join(root, unitId, "current", "extension", "manifest.json");
   return existsSync(installed) ? installed : null;
 }
 
+function standaloneUnitId(root: string) {
+  const extensionManifest = path.join(root, "extension", "manifest.json");
+  const productManifest = path.join(root, "manifest.json");
+  if (!existsSync(extensionManifest) || !existsSync(productManifest)) return null;
+  try {
+    const product = JSON.parse(readFileSync(productManifest, "utf8")) as JsonRecord;
+    return typeof product.id === "string" && product.id ? product.id : null;
+  } catch {
+    return null;
+  }
+}
+
 function isManifestRoot(root: string) {
+  if (standaloneUnitId(root)) return true;
   try {
     return readdirSync(root, { withFileTypes: true }).some(
       entry => !entry.name.startsWith(".") && (entry.isDirectory() || entry.isSymbolicLink()) && manifestPathForUnit(root, entry.name),
@@ -109,6 +132,7 @@ export function defaultMicroappsRoot(
   }
 
   const candidates = [
+    path.resolve(moduleDir, "../.."),
     path.resolve(moduleDir, "../../.."),
     path.resolve(moduleDir, "../../../../.."),
   ];
@@ -125,6 +149,16 @@ export async function loadExtensionManifests(microappsRoot?: string) {
   const resolvedRoot = microappsRoot ? path.resolve(microappsRoot) : defaultMicroappsRoot();
   if (!isManifestRoot(resolvedRoot)) {
     throw new Error(`Micro-app root contains no Extension manifests: ${resolvedRoot}`);
+  }
+  const standaloneId = standaloneUnitId(resolvedRoot);
+  if (standaloneId) {
+    const standalonePath = manifestPathForUnit(resolvedRoot, standaloneId);
+    if (!standalonePath) throw new Error(`Micro-app root contains no readable Extension manifests: ${resolvedRoot}`);
+    const manifest = JSON.parse(await readFile(standalonePath, "utf8")) as JsonRecord;
+    if (manifest.capabilitySettings !== undefined) {
+      validateSettingsDeclaration(manifest.capabilitySettings);
+    }
+    return [manifest];
   }
   const entries = await readdir(resolvedRoot, { withFileTypes: true });
   const manifests: JsonRecord[] = [];

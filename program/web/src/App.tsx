@@ -52,7 +52,7 @@ function MarketplaceNav({ section, onSection, providers, onSettings }: { section
 export function App() {
   const queryClient = useQueryClient();
   const [section, setSection] = useState<Section>("catalog");
-  const [workspaceSlug, setWorkspaceSlug] = useState("default");
+  const [workspaceSlug, setWorkspaceSlug] = useState("");
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search.trim());
   const [source, setSource] = useState("all");
@@ -70,23 +70,34 @@ export function App() {
     queryKey: ["cards", workspaceSlug, deferredSearch, source, installed, offset],
     queryFn: () => getCardSummaries({ workspaceSlug, search: deferredSearch, source, installed, offset, limit: PAGE_SIZE }),
     retry: false,
-    enabled: authenticated,
+    enabled: authenticated && Boolean(workspaceSlug),
     placeholderData: (previous) => previous,
   });
   const detail = useQuery({
     queryKey: ["card-detail", workspaceSlug, selectedId],
     queryFn: () => getCardDetail(selectedId!, workspaceSlug),
-    enabled: authenticated && Boolean(selectedId) && (section === "catalog" || section === "installed"),
+    enabled: authenticated && Boolean(workspaceSlug) && Boolean(selectedId) && (section === "catalog" || section === "installed"),
     retry: false,
   });
 
   useEffect(() => { setOffset(0); }, [workspaceSlug, deferredSearch, source, installed]);
   useEffect(() => {
     const principalScope = operatorSession.data?.session.principal?.organizationId;
-    if (principalScope) setWorkspaceSlug(principalScope);
+    setWorkspaceSlug(principalScope ?? "");
   }, [operatorSession.data?.session.principal?.organizationId]);
+  const clearAuthenticatedData = () => {
+    queryClient.removeQueries({ predicate: ({ queryKey }) => queryKey[0] !== "marketplace-session" });
+    setWorkspaceSlug("");
+    setSelectedId(null);
+    setSettingsOpen(false);
+    setConfirm(null);
+    setNotice(null);
+  };
   useEffect(() => {
-    const expired = () => void queryClient.invalidateQueries({ queryKey: ["marketplace-session"] });
+    const expired = () => {
+      clearAuthenticatedData();
+      void queryClient.invalidateQueries({ queryKey: ["marketplace-session"] });
+    };
     window.addEventListener("marketplace-auth-expired", expired);
     return () => window.removeEventListener("marketplace-auth-expired", expired);
   }, [queryClient]);
@@ -110,6 +121,7 @@ export function App() {
   if (!authenticated) return <UnlockScreen session={operatorSession.data?.session ?? { configured: false, authenticated: false, mode: "unconfigured", principal: null, csrfToken: null, expiresAt: null }} onUnlocked={() => void queryClient.invalidateQueries({ queryKey: ["marketplace-session"] })} />;
   if (bootstrap.isLoading) return <main className="boot-state"><BrandMark /><LoaderCircle className="spin" /><span>Opening Marketplace…</span></main>;
   if (bootstrap.error) return <main className="boot-state"><StatePanel error={bootstrap.error} onRetry={() => void bootstrap.refetch()} /></main>;
+  if (!workspaceSlug) return <main className="boot-state"><BrandMark /><LoaderCircle className="spin" /><span>Resolving organization scope…</span></main>;
 
   return <main className="app-shell">
     <MarketplaceNav section={section} onSection={setSection} providers={cards.data?.providers} onSettings={() => setSettingsOpen(true)} />
@@ -122,6 +134,6 @@ export function App() {
       {notice && <div className="toast" role="status"><CheckCircle2 size={16} />{notice}<button aria-label="Dismiss notification" onClick={() => setNotice(null)}><X size={14} /></button></div>}
     </section>
     <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} onSuccess={() => { setNotice("Marketplace recorded the governed lifecycle change."); refresh(); }} />
-    <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} bootstrap={bootstrap.data!} workspaceSlug={workspaceSlug} session={operatorSession.data!.session} onLogout={() => void queryClient.invalidateQueries({ queryKey: ["marketplace-session"] })} />
+    <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} bootstrap={bootstrap.data!} workspaceSlug={workspaceSlug} session={operatorSession.data!.session} onLogout={() => { clearAuthenticatedData(); void queryClient.invalidateQueries({ queryKey: ["marketplace-session"] }); }} />
   </main>;
 }

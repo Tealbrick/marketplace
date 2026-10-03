@@ -26,7 +26,10 @@ Image: `ghcr.io/tealbrick/marketplace:0.1.0`
 `MARKETPLACE_HOST`, `MARKETPLACE_PORT`, `MARKETPLACE_DATA_DIR`,
 `MARKETPLACE_INTERNAL_AUTH_TOKEN`, `MARKETPLACE_OPERATOR_ACCESS_TOKEN`,
 `MARKETPLACE_OPERATOR_ID`, `MARKETPLACE_ORGANIZATION_ID`, and exact
-`MARKETPLACE_ALLOWED_ORIGINS` are deployment-owned settings. Portal v1.1
+`MARKETPLACE_ALLOWED_ORIGINS` plus the exact callback origin
+`MARKETPLACE_PUBLIC_ORIGIN` are deployment-owned settings. Provider OAuth
+callbacks ignore caller-supplied URLs and are built only from that configured
+origin. Portal v1.1
 requires its issuer, audience, and instance proof. Rules-gated operation
 requires `RULES_BASE_URL` and a tenant-scoped evaluation-only
 `RULES_INTERNAL_AUTH_TOKEN`. Configure `COMPOSIO_API_KEY` and connected-account

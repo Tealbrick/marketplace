@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { buildMarketplaceApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { buildComposioCatalogListing } from "./connectors.js";
+import { type MarketplaceListing } from "./types.js";
 import { makeRulesClient } from "./rules-client.js";
 import { MARKETPLACE_TABLES, SqliteMarketplaceStore } from "./store.js";
 import { scanConnectorPromotionCandidates } from "./usage-ledger.js";
@@ -261,6 +262,7 @@ describe("Marketplace Program", () => {
     const app = await buildMarketplaceApp({
       store,
       env: { COMPOSIO_API_KEY: "test-composio-key" },
+      environment: { MARKETPLACE_PUBLIC_ORIGIN: "http://127.0.0.1:5314" },
       rulesClient: async () => ({
         effect: "allow",
         decisionId: "rules-connect",
@@ -382,6 +384,7 @@ describe("Marketplace Program", () => {
       store,
       internalAuthToken: "projection-token",
       env: { COMPOSIO_API_KEY: "test-composio-key" },
+      environment: { MARKETPLACE_PUBLIC_ORIGIN: "http://127.0.0.1:5314" },
       rulesClient: async () => ({
         effect: "allow",
         decisionId: "rules-connect-api-key",
@@ -534,8 +537,8 @@ describe("Marketplace Program", () => {
       },
       settingsSurfaces: expect.arrayContaining([
         expect.objectContaining({
-          settingsSurfaceId: "local-runtime-bridge.settings",
-          submitActionId: "extension:local-runtime-bridge:configure",
+          settingsSurfaceId: "marketplace.settings",
+          submitActionId: "extension:marketplace:configure",
         }),
       ]),
     });
@@ -594,7 +597,7 @@ describe("Marketplace Program", () => {
         hermesStoredSessionId: "20260630_111111_abcd",
         profile: "max",
         runtimeMode: "full-access",
-        cwd: "/Users/puma/work/active/HDDA",
+        cwd: "/tmp/marketplace-fixture",
         eventType: "session.create",
       },
     });
@@ -1284,6 +1287,47 @@ describe("Marketplace Program", () => {
     store.close();
   });
 
+  it("redacts MCP env and headers from browser listing routes", async () => {
+    const store = new SqliteMarketplaceStore(await tempDbPath());
+    const listing = store.getListing("mcp-runtime") as MarketplaceListing;
+    store.upsertListing({
+      ...listing,
+      pluginId: "mcp-sensitive",
+      displayName: "Sensitive MCP fixture",
+      manifest: {
+        ...listing.manifest,
+        skillsHub: {
+          custom: true,
+          adapter: {
+            type: "mcp",
+            mcp: {
+              transport: "stdio",
+              command: "sensitive-mcp",
+              env: { MCP_TOKEN: "secret-value" },
+              headers: { authorization: "Bearer secret-value" },
+            },
+          },
+        },
+      },
+    });
+    const app = await buildMarketplaceApp({ store });
+
+    for (const url of [
+      "/api/marketplace/catalog?workspaceSlug=default",
+      "/api/marketplace/plugins?workspaceSlug=default",
+      "/api/marketplace/plugins/mcp-sensitive?workspaceSlug=default",
+    ]) {
+      const response = await app.inject({ method: "GET", url });
+      expect(response.statusCode).toBe(200);
+      expect(response.body).not.toContain("secret-value");
+      expect(response.body).not.toContain("MCP_TOKEN");
+      expect(response.body).not.toContain("authorization");
+    }
+
+    await app.close();
+    store.close();
+  });
+
   it("starts and completes a Composio auth popup without storing raw secrets", async () => {
     const store = new SqliteMarketplaceStore(await tempDbPath());
     const fetchCalls: string[] = [];
@@ -1315,6 +1359,7 @@ describe("Marketplace Program", () => {
     const app = await buildMarketplaceApp({
       store,
       env: { COMPOSIO_API_KEY: "test-composio-key" },
+      environment: { MARKETPLACE_PUBLIC_ORIGIN: "http://localhost:5733" },
       providerFetch,
       rulesClient: async () => ({
         effect: "allow",
@@ -1332,7 +1377,8 @@ describe("Marketplace Program", () => {
         provider: "linear",
         toolkit: "linear",
         backend: "composio",
-        callbackBaseUrl: "http://localhost:5733",
+        callbackUrl: "https://attacker.invalid/oauth/callback",
+        callbackBaseUrl: "https://attacker.invalid",
       },
     });
 

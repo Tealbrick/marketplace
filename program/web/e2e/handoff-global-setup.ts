@@ -127,6 +127,12 @@ export default async function globalSetup(config: FullConfig) {
     store,
     providerSettings,
     organizationId: "default",
+    environment: {
+      ...process.env,
+      NODE_ENV: "test",
+      MARKETPLACE_ALLOWED_ORIGINS: baseUrl.origin,
+      MARKETPLACE_PUBLIC_ORIGIN: baseUrl.origin,
+    },
     internalAuthToken: "marketplace-service-token",
     portalIssuerUrl: portalOrigin,
     portalInstanceProof: "p".repeat(43),

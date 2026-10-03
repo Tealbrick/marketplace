@@ -55,6 +55,14 @@ describe("Marketplace operator and service authorization", () => {
     expect(serviceRead.statusCode).toBe(200);
     expect(serviceRead.json()).toMatchObject({ workspaceSlug: "verified-org" });
 
+    const unscopedServiceRead = await app.inject({
+      method: "GET",
+      url: "/api/marketplace/cards/summary",
+      headers: { authorization: "Bearer marketplace-service-token-1234" },
+    });
+    expect(unscopedServiceRead.statusCode).toBe(200);
+    expect(unscopedServiceRead.json()).toMatchObject({ workspaceSlug: "verified-org" });
+
     const serviceSettings = await app.inject({
       method: "GET",
       url: "/api/settings/providers/composio",
@@ -95,6 +103,14 @@ describe("Marketplace operator and service authorization", () => {
     });
     expect(scoped.statusCode).toBe(200);
     expect(scoped.json()).toMatchObject({ workspaceSlug: "verified-org" });
+
+    const unscoped = await app.inject({
+      method: "GET",
+      url: "/api/marketplace/cards/summary",
+      headers: { cookie },
+    });
+    expect(unscoped.statusCode).toBe(200);
+    expect(unscoped.json()).toMatchObject({ workspaceSlug: "verified-org" });
 
     const missingCsrf = await app.inject({
       method: "PUT",

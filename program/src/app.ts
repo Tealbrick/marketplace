@@ -528,12 +528,6 @@ type RulesGateInput = {
   rulesClient?: RulesClient;
 };
 
-const DEFAULT_ALLOWED_ORIGIN_HOSTS = new Set([
-  "localhost",
-  "127.0.0.1",
-  "[::1]",
-]);
-
 function configuredAllowedOrigins(
   env: Record<string, string | undefined> = process.env,
 ) {
@@ -559,8 +553,9 @@ function allowedCorsOrigin(
   try {
     const url = new URL(origin);
     if (
+      env.NODE_ENV === "test" &&
       (url.protocol === "http:" || url.protocol === "https:") &&
-      DEFAULT_ALLOWED_ORIGIN_HOSTS.has(url.hostname)
+      ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
     ) {
       return origin;
     }
@@ -570,8 +565,11 @@ function allowedCorsOrigin(
   return null;
 }
 
-function corsHeadersForOrigin(origin: unknown) {
-  const allowedOrigin = allowedCorsOrigin(origin);
+function corsHeadersForOrigin(
+  origin: unknown,
+  env: Record<string, string | undefined> = process.env,
+) {
+  const allowedOrigin = allowedCorsOrigin(origin, env);
   if (!allowedOrigin) {
     return {};
   }
@@ -681,11 +679,18 @@ function marketplacePublicPath(pathname: string) {
 }
 
 function bindMarketplacePrincipalScope(request: FastifyRequest, principal: MarketplacePrincipal) {
+  const pathname = request.url.split("?", 1)[0] ?? request.url;
+  const strictBodyPaths = new Set([
+    "/api/marketplace/v1/agent/grants/request",
+    "/api/marketplace/v1/agent/grants/redeem",
+    "/api/marketplace/v1/runtime/composio/execute",
+  ]);
   for (const value of [request.query, request.body]) {
     if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    if (value === request.body && strictBodyPaths.has(pathname)) continue;
     const record = value as Record<string, unknown>;
-    if ("workspaceSlug" in record) record.workspaceSlug = principal.organizationId;
-    if ("actorId" in record) record.actorId = principal.id;
+    record.workspaceSlug = principal.organizationId;
+    record.actorId = principal.id;
   }
 }
 
@@ -1338,6 +1343,33 @@ function pluginSummaryForListing(input: {
   };
 }
 
+function browserListingForListing(listing: MarketplaceListing) {
+  const manifest = recordValue(listing.manifest);
+  return {
+    pluginId: listing.pluginId,
+    displayName: listing.displayName,
+    kind: listing.kind,
+    provider: listing.provider,
+    description: listing.description,
+    capabilities: listing.capabilities,
+    actions: listing.actions,
+    source: listing.source,
+    authOwner: listing.authOwner,
+    executionOwner: listing.executionOwner,
+    enabledByDefault: listing.enabledByDefault,
+    manifest: {
+      ...(typeof manifest?.version === "string"
+        ? { version: manifest.version }
+        : {}),
+      ...(typeof manifest?.required === "boolean"
+        ? { required: manifest.required }
+        : {}),
+    },
+    createdAt: listing.createdAt,
+    updatedAt: listing.updatedAt,
+  };
+}
+
 function browserPluginCardForListing(input: {
   store: SqliteMarketplaceStore;
   workspaceSlug: string;
@@ -1345,7 +1377,6 @@ function browserPluginCardForListing(input: {
   providers: Awaited<ReturnType<typeof readProviderHealthWithReachability>>;
 }) {
   const card = pluginCardForListing(input);
-  const manifest = recordValue(input.listing.manifest);
   const launchSupported = input.listing.executionOwner === "composio";
   return {
     addon: {
@@ -1386,29 +1417,7 @@ function browserPluginCardForListing(input: {
     installStateByTarget: card.installStateByTarget,
     installPlan: card.installPlan,
     toolSelection: card.toolSelection,
-    listing: {
-      pluginId: input.listing.pluginId,
-      displayName: input.listing.displayName,
-      kind: input.listing.kind,
-      provider: input.listing.provider,
-      description: input.listing.description,
-      capabilities: input.listing.capabilities,
-      actions: input.listing.actions,
-      source: input.listing.source,
-      authOwner: input.listing.authOwner,
-      executionOwner: input.listing.executionOwner,
-      enabledByDefault: input.listing.enabledByDefault,
-      manifest: {
-        ...(typeof manifest?.version === "string"
-          ? { version: manifest.version }
-          : {}),
-        ...(typeof manifest?.required === "boolean"
-          ? { required: manifest.required }
-          : {}),
-      },
-      createdAt: input.listing.createdAt,
-      updatedAt: input.listing.updatedAt,
-    },
+    listing: browserListingForListing(input.listing),
     install: card.install
       ? {
           enabled: card.install.enabled,
@@ -1749,32 +1758,23 @@ function agentCapabilitiesForWorkspace(
 }
 
 function callbackUrlForRequest(input: {
-  requestHeaders: Record<string, unknown>;
   pluginId: string;
-  callbackUrl?: string;
-  callbackBaseUrl?: string;
+  publicOrigin?: string;
 }) {
-  if (input.callbackUrl) {
-    return input.callbackUrl;
-  }
   const path = `/api/marketplace/plugins/${encodeURIComponent(input.pluginId)}/oauth/composio/callback`;
-  if (input.callbackBaseUrl) {
-    return `${input.callbackBaseUrl.replace(/\/+$/u, "")}${path}`;
+  if (!input.publicOrigin?.trim()) {
+    throw new Error("MARKETPLACE_PUBLIC_ORIGIN is required for Composio OAuth callbacks.");
   }
-  const forwardedProto = input.requestHeaders["x-forwarded-proto"];
-  const proto =
-    typeof forwardedProto === "string" && forwardedProto.trim()
-      ? forwardedProto.trim()
-      : "http";
-  const forwardedHost = input.requestHeaders["x-forwarded-host"];
-  const hostHeader = input.requestHeaders.host;
-  const host =
-    typeof forwardedHost === "string" && forwardedHost.trim()
-      ? forwardedHost.trim()
-      : typeof hostHeader === "string" && hostHeader.trim()
-        ? hostHeader.trim()
-        : "127.0.0.1";
-  return `${proto}://${host}${path}`;
+  const origin = new URL(input.publicOrigin);
+  if (
+    !["http:", "https:"].includes(origin.protocol) ||
+    origin.pathname !== "/" ||
+    origin.search ||
+    origin.hash
+  ) {
+    throw new Error("MARKETPLACE_PUBLIC_ORIGIN must be an exact HTTP(S) origin.");
+  }
+  return `${origin.origin}${path}`;
 }
 
 function htmlCloseout(input: { title: string; detail: string; ok: boolean }) {
@@ -1886,6 +1886,16 @@ function htmlShell() {
         statusEl.className = error ? "status error" : "status";
       }
 
+      function escapeHtml(value) {
+        return String(value).replace(/[&<>\"']/g, (character) => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          "\"": "&quot;",
+          "'": "&#39;",
+        }[character]));
+      }
+
       async function jsonFetch(url, options = {}) {
         const response = await fetch(url, {
           ...options,
@@ -1903,10 +1913,10 @@ function htmlShell() {
         const data = await jsonFetch("/api/marketplace/plugins?workspaceSlug=" + workspace);
         pluginsEl.innerHTML = data.items.map((item) => (
           "<tr>" +
-          "<td>" + item.displayName + "<br><code>" + item.pluginId + "</code></td>" +
-          "<td>" + item.source + "</td>" +
-          "<td>" + (item.install?.lifecycle || "not installed") + "</td>" +
-          "<td>" + (item.connection?.state || "not connected") + "</td>" +
+          "<td>" + escapeHtml(item.displayName) + "<br><code>" + escapeHtml(item.pluginId) + "</code></td>" +
+          "<td>" + escapeHtml(item.source) + "</td>" +
+          "<td>" + escapeHtml(item.install?.lifecycle || "not installed") + "</td>" +
+          "<td>" + escapeHtml(item.connection?.state || "not connected") + "</td>" +
           "<td>" + item.actions.length + "</td>" +
           "</tr>"
         )).join("");
@@ -2160,7 +2170,7 @@ export async function buildMarketplaceApp(
   };
 
   app.addHook("onRequest", async (request, reply) => {
-    const headers = corsHeadersForOrigin(request.headers.origin);
+    const headers = corsHeadersForOrigin(request.headers.origin, environment);
     for (const [key, value] of Object.entries(headers)) {
       reply.header(key, value);
     }
@@ -2210,7 +2220,7 @@ export async function buildMarketplaceApp(
     }
 
     if (isMutation(request.method)) {
-      if (!allowedCorsOrigin(request.headers.origin)) {
+      if (!allowedCorsOrigin(request.headers.origin, environment)) {
         reply.code(403).send({ ok: false, error: "marketplace_origin_denied" });
         return;
       }
@@ -2454,7 +2464,7 @@ export async function buildMarketplaceApp(
   }));
 
   app.post("/api/marketplace/auth/session", async (request, reply) => {
-    if (!allowedCorsOrigin(request.headers.origin)) {
+    if (!allowedCorsOrigin(request.headers.origin, environment)) {
       reply.code(403);
       return { ok: false, error: "marketplace_origin_denied" };
     }
@@ -2478,7 +2488,7 @@ export async function buildMarketplaceApp(
       reply.code(401);
       return { ok: false, error: "marketplace_unauthorized" };
     }
-    if (!allowedCorsOrigin(request.headers.origin)) {
+    if (!allowedCorsOrigin(request.headers.origin, environment)) {
       reply.code(403);
       return { ok: false, error: "marketplace_origin_denied" };
     }
@@ -2937,7 +2947,7 @@ export async function buildMarketplaceApp(
 
   app.get("/events", async (request, reply) => {
     reply.raw.writeHead(200, {
-      ...corsHeadersForOrigin(request.headers.origin),
+      ...corsHeadersForOrigin(request.headers.origin, environment),
       "content-type": "text/event-stream",
       "cache-control": "no-cache",
       connection: "keep-alive",
@@ -2952,7 +2962,7 @@ export async function buildMarketplaceApp(
     const query = WorkspaceQuerySchema.parse(request.query);
     await ensureComposioCatalog(query.workspaceSlug);
     return {
-      items: options.store.listListings(),
+      items: options.store.listListings().map(browserListingForListing),
       providers: await readProviderHealthWithReachability(
         providerEnvironment(),
         options.providerFetch,
@@ -3068,7 +3078,7 @@ export async function buildMarketplaceApp(
     return {
       workspaceSlug: query.workspaceSlug,
       items: options.store.listListings().map((listing) => ({
-        ...listing,
+        ...browserListingForListing(listing),
         install: options.store.getInstall(
           query.workspaceSlug,
           listing.pluginId,
@@ -3098,7 +3108,7 @@ export async function buildMarketplaceApp(
     }
     const query = WorkspaceQuerySchema.partial().parse(request.query);
     return {
-      listing,
+      listing: browserListingForListing(listing),
       ...(query.workspaceSlug
         ? {
             install: options.store.getInstall(query.workspaceSlug, pluginId),
@@ -3350,12 +3360,20 @@ export async function buildMarketplaceApp(
             detail: error instanceof Error ? error.message : String(error),
           };
         }
-        const callbackUrl = callbackUrlForRequest({
-          requestHeaders: request.headers,
-          pluginId,
-          callbackUrl: input.callbackUrl,
-          callbackBaseUrl: input.callbackBaseUrl,
-        });
+        let callbackUrl: string;
+        try {
+          callbackUrl = callbackUrlForRequest({
+            pluginId,
+            publicOrigin: environment.MARKETPLACE_PUBLIC_ORIGIN,
+          });
+        } catch (error) {
+          reply.code(503);
+          return {
+            ok: false,
+            error: "marketplace_public_origin_unconfigured",
+            detail: error instanceof Error ? error.message : String(error),
+          };
+        }
         const auth = await createComposioAuthLink({
           toolkit,
           state,

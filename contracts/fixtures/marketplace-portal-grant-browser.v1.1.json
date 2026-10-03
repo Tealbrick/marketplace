@@ -90,7 +90,7 @@
     }
   },
   "historicalConsentReview": {
-    "source": "Portal WEB-STAGE-B-HANDOFF.md",
+    "source": "Portal grant handoff fixture v1.1",
     "portalCoreSha256": "431c98a68c9181d1e7f9d62f766d7a41cea9f77236dc97ac4ba7a9c9826d13f9",
     "semantics": "Portal may return a redeemed active or revoked consent for owner-only historical review with expiresAt=null and authorized=false; this does not restore execution authority or change Marketplace receiver redemption/lease semantics."
   }

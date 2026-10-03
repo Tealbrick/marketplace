@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
@@ -18,33 +19,14 @@ const noSettings = {
   posture: "none",
   reason: "Fixture has no settings.",
 };
+const standaloneRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
 describe("Extension settings projection", () => {
   it("projects only operational forms and keeps intentional no-settings units form-free", async () => {
-    const projection = await projectExtensionSettings();
-    expect(projection.extensionRecords).toHaveLength((await loadExtensionManifests()).length);
-    expect(projection.settingsSurfaces).toHaveLength(3);
+    const projection = await projectExtensionSettings({ microappsRoot: standaloneRoot });
+    expect(projection.extensionRecords).toHaveLength((await loadExtensionManifests(standaloneRoot)).length);
+    expect(projection.settingsSurfaces).toHaveLength(1);
     expect(projection.settingsSurfaces).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        settingsSurfaceId: "local-runtime-bridge.settings",
-        ownerRecordId: "extension:local-runtime-bridge",
-        schemaVersion: "doppelganger.capability-settings.v1",
-        applyMode: "live",
-        presentation: "modal",
-        jsonSchema: expect.objectContaining({
-          properties: expect.objectContaining({
-            localConnectorStatus: expect.objectContaining({ readOnly: true }),
-            desktopPairingStatus: expect.objectContaining({ readOnly: true }),
-            remoteGatewayPosture: expect.objectContaining({ readOnly: true }),
-            relayEnabled: expect.objectContaining({ readOnly: true }),
-            allowedRoots: expect.objectContaining({ type: "array" }),
-            scopePresets: expect.objectContaining({ readOnly: true }),
-            availableTools: expect.objectContaining({ readOnly: true }),
-            shellExecutionEnabled: expect.objectContaining({ type: "boolean" }),
-            allowedCommands: expect.objectContaining({ type: "array" }),
-          }),
-        }),
-      }),
       expect.objectContaining({
         settingsSurfaceId: "marketplace.settings",
         ownerRecordId: "extension:marketplace",
@@ -54,29 +36,8 @@ describe("Extension settings projection", () => {
         submitActionId: "extension:marketplace:configure",
         applyMode: "live",
       }),
-      expect.objectContaining({
-        settingsSurfaceId: "observer-backfill.settings",
-        ownerRecordId: "extension:observer-backfill",
-        schemaVersion: "doppelganger.capability-settings.v1",
-        presentation: "modal",
-        loadActionId: "extension:observer-backfill:load-settings",
-        submitActionId: "extension:observer-backfill:configure",
-        applyMode: "immediate",
-      }),
     ]));
     expect(projection.actions).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        actionId: "extension:local-runtime-bridge:load-settings",
-        endpoint: "/api/plugins/doppelganger-registry/proxy/local-runtime-bridge/api/plugins/local-runtime-bridge/settings",
-        method: "GET",
-        transport: "desktop-runtime-bridge",
-      }),
-      expect.objectContaining({
-        actionId: "extension:local-runtime-bridge:configure",
-        endpoint: "/api/plugins/doppelganger-registry/proxy/local-runtime-bridge/api/plugins/local-runtime-bridge/settings",
-        method: "PATCH",
-        transport: "desktop-runtime-bridge",
-      }),
       expect.objectContaining({
         actionId: "extension:marketplace:load-settings",
         ownerRecordId: "extension:marketplace",
@@ -89,45 +50,15 @@ describe("Extension settings projection", () => {
         endpoint: "/api/plugins/doppelganger-registry/proxy/marketplace/api/settings/providers/composio",
         method: "PUT",
       }),
-      expect.objectContaining({
-        actionId: "extension:observer-backfill:load-settings",
-        ownerRecordId: "extension:observer-backfill",
-        endpoint: "/api/plugins/doppelganger-registry/proxy/observer-backfill/api/observer/settings",
-        method: "GET",
-      }),
-      expect.objectContaining({
-        actionId: "extension:observer-backfill:configure",
-        ownerRecordId: "extension:observer-backfill",
-        endpoint: "/api/plugins/doppelganger-registry/proxy/observer-backfill/api/observer/settings",
-        method: "PATCH",
-      }),
     ]));
     expect(projection.extensionRecords).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        recordId: "extension:operator-inbox",
-        settingsPosture: "none",
-        status: { state: "connected", detail: "No configurable settings." },
-      }),
       expect.objectContaining({
         recordId: "extension:marketplace",
         displayName: "Doppelganger Plugins",
         settingsPosture: "dynamic-provider",
         settingsSurfaceId: "marketplace.settings",
       }),
-      expect.objectContaining({
-        recordId: "extension:local-runtime-bridge",
-        displayName: "Runtime Bridge",
-        settingsSurfaceId: "local-runtime-bridge.settings",
-      }),
-      expect.objectContaining({
-        recordId: "extension:observer-backfill",
-        displayName: "Observer Backfill",
-        settingsPosture: "operational",
-        settingsSurfaceId: "observer-backfill.settings",
-      }),
     ]));
-    expect(projection.extensionRecords.find(record => record.recordId === "extension:operator-inbox"))
-      .not.toHaveProperty("settingsSurfaceId");
 
     const pluginManifest = JSON.parse(await readFile(
       new URL("../../.codex-plugin/plugin.json", import.meta.url),
@@ -166,7 +97,7 @@ describe("Extension settings projection", () => {
       actions: [{ actionId: "plugin:composio-gmail:configure", ownerRecordId: "plugin:composio-gmail" }],
       settingsSurfaces: [{ settingsSurfaceId: "composio.gmail.settings", ownerRecordId: "plugin:composio-gmail" }],
     };
-    const projection = await projectExtensionSettings({ baseProjection: base });
+    const projection = await projectExtensionSettings({ baseProjection: base, microappsRoot: standaloneRoot });
     expect(projection.pluginRecords[0]).toBe(base.pluginRecords[0]);
     expect(projection.actions[0]).toBe(base.actions[0]);
     expect(projection.settingsSurfaces[0]).toBe(base.settingsSurfaces[0]);
@@ -186,7 +117,7 @@ describe("Extension settings projection", () => {
       actions: [],
       settingsSurfaces: [],
     };
-    await expect(projectExtensionSettings({ baseProjection: base })).rejects.toThrow(
+    await expect(projectExtensionSettings({ baseProjection: base, microappsRoot: standaloneRoot })).rejects.toThrow(
       /duplicate Plugin record ownership/i,
     );
   });
