@@ -1,4 +1,9 @@
 import { resolveActionRequirement } from "./connectors.js";
+import {
+  customMcpManifest,
+  customMcpToolForAction,
+  listingIsOperatorCustomMcp,
+} from "./custom-mcp.js";
 import type { SqliteMarketplaceStore } from "./store.js";
 import type {
   ConnectorCapability,
@@ -65,8 +70,8 @@ export type AgentActionCatalogEntry = {
 
 export type AgentActionCatalogStore = Pick<
   SqliteMarketplaceStore,
-  | "listListings"
-  | "getListing"
+  | "listListingsForWorkspace"
+  | "getListingForWorkspace"
   | "isRegistered"
   | "getInstall"
   | "getConnection"
@@ -98,12 +103,58 @@ const LEGACY_GITHUB_LIST_REPOSITORIES = {
 } as const;
 
 /**
- * Whether Marketplace can execute this listing's actions on behalf of an
- * agent. Composio-backed listings only today; other execution owners (for
- * example custom MCP connectors) plug in here once they can execute.
+ * Synthetic account for custom MCP connectors. They authenticate with
+ * operator-configured headers rather than a provider account, so the
+ * connector itself is the one account an agent can be scoped to.
  */
-export function listingExecutableForAgents(listing: MarketplaceListing) {
-  return listing.executionOwner === "composio";
+export const CUSTOM_MCP_AGENT_ACCOUNT_ID = "connector" as const;
+
+/** Operator custom MCP connector owned by `workspaceSlug`. */
+export function listingIsAgentCustomMcp(
+  listing: MarketplaceListing,
+  workspaceSlug: string,
+) {
+  return (
+    listing.executionOwner === "mcp" &&
+    listingIsOperatorCustomMcp(listing) &&
+    listing.ownerWorkspaceSlug === workspaceSlug
+  );
+}
+
+/**
+ * Whether Marketplace can execute this listing's actions on behalf of an
+ * agent in `workspaceSlug`: Composio-backed listings, and operator custom
+ * MCP connectors owned by that workspace. Another workspace's custom
+ * connector is never executable.
+ */
+export function listingExecutableForAgents(
+  listing: MarketplaceListing,
+  workspaceSlug: string,
+) {
+  return (
+    listing.executionOwner === "composio" ||
+    listingIsAgentCustomMcp(listing, workspaceSlug)
+  );
+}
+
+/**
+ * The account an agent grant binds to for this listing's live connection:
+ * the Composio connected account, or the synthetic connector account for a
+ * custom MCP connector whose last tool refresh succeeded. `undefined` when
+ * nothing usable is connected.
+ */
+export function agentAccountIdForConnection(input: {
+  listing: MarketplaceListing;
+  workspaceSlug: string;
+  connection: ConnectorConnection | null | undefined;
+}) {
+  if (input.connection?.state !== "connected") return undefined;
+  if (listingIsAgentCustomMcp(input.listing, input.workspaceSlug)) {
+    return customMcpManifest(input.listing).lastRefresh?.ok === true
+      ? CUSTOM_MCP_AGENT_ACCOUNT_ID
+      : undefined;
+  }
+  return connectedAccountIdFromConnection(input.connection);
 }
 
 export function connectedAccountIdFromConnection(
@@ -150,6 +201,10 @@ function composioToolRecord(listing: MarketplaceListing, actionKey: string) {
 function allowedArgumentsFromTool(tool: Record<string, unknown> | undefined) {
   const names = tool?.inputArguments;
   if (!Array.isArray(names)) return null;
+  return allowedArgumentNames(names);
+}
+
+function allowedArgumentNames(names: readonly unknown[]) {
   return [
     ...new Set(
       names.filter(
@@ -191,21 +246,21 @@ function entriesForListing(input: {
   onlyActionKey?: string;
 }): AgentActionCatalogEntry[] {
   const { store, workspaceSlug, listing } = input;
-  if (!listingExecutableForAgents(listing)) return [];
+  if (!listingExecutableForAgents(listing, workspaceSlug)) return [];
   if (!store.isRegistered(listing.pluginId)) return [];
   const install = store.getInstall(workspaceSlug, listing.pluginId);
   if (!install?.enabled || install.lifecycle !== "installed") return [];
   const connection = store.getConnection(workspaceSlug, listing.pluginId);
-  const accountId = connectedAccountIdFromConnection(connection);
+  const accountId = agentAccountIdForConnection({ listing, workspaceSlug, connection });
   if (
     !connection ||
-    connection.state !== "connected" ||
     !accountId ||
     !AGENT_SELECTION_ACCOUNT_ID_PATTERN.test(accountId)
   ) {
     return [];
   }
-  const label = accountLabel(connection);
+  const customMcp = listingIsAgentCustomMcp(listing, workspaceSlug);
+  const label = customMcp ? listing.displayName : accountLabel(connection);
   const account: AgentActionCatalogAccount = label
     ? { accountId, label }
     : { accountId };
@@ -235,6 +290,30 @@ function entriesForListing(input: {
       : agentResourceKindForProvider(listing.provider);
     if (!selectionShapeIsValid({ pluginId: listing.pluginId, actionKey, resourceKind })) {
       return [];
+    }
+    if (customMcp) {
+      const mcpTool = customMcpToolForAction(listing, actionKey);
+      if (!mcpTool) return [];
+      const properties = mcpTool.inputSchema.properties;
+      return [
+        {
+          pluginId: listing.pluginId,
+          pluginName: listing.displayName,
+          provider: listing.provider,
+          actionKey,
+          label: mcpTool.title ?? mcpTool.name,
+          description: mcpTool.description ?? "",
+          capability: requirement.capability,
+          resourceKind,
+          mode: "connected-account" as const,
+          accounts: [account],
+          allowedArguments:
+            properties && typeof properties === "object" && !Array.isArray(properties)
+              ? allowedArgumentNames(Object.keys(properties))
+              : null,
+          toolName: mcpTool.name,
+        },
+      ];
     }
     const tool = composioToolRecord(listing, actionKey);
     return [
@@ -274,7 +353,7 @@ export function publishedAgentActionCatalog(input: {
 }): AgentActionCatalogEntry[] {
   const enabledCapabilities = enabledCapabilityKeys(input.store, input.workspaceSlug);
   return input.store
-    .listListings()
+    .listListingsForWorkspace(input.workspaceSlug)
     .flatMap((listing) =>
       entriesForListing({
         store: input.store,
@@ -298,7 +377,7 @@ export function resolvePublishedAgentAction(input: {
   pluginId: string;
   actionKey: string;
 }): AgentActionCatalogEntry | null {
-  const listing = input.store.getListing(input.pluginId);
+  const listing = input.store.getListingForWorkspace(input.pluginId, input.workspaceSlug);
   if (!listing) return null;
   return (
     entriesForListing({

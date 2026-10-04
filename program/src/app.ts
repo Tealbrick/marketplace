@@ -96,6 +96,7 @@ import {
   AGENT_SELECTION_ACTION_KEY_PATTERN,
   AGENT_SELECTION_PLUGIN_ID_PATTERN,
   AGENT_SELECTION_RESOURCE_KIND_PATTERN,
+  agentAccountIdForConnection,
   connectedAccountIdFromConnection,
   listingExecutableForAgents,
   MARKETPLACE_AGENT_ACTION_CATALOG_CONTRACT_VERSION,
@@ -5029,15 +5030,20 @@ export async function buildMarketplaceApp(
         reply.code(403);
         return { ok: false, schema: 1, traceId, error: "portal_consent_invalid" };
       }
-      const listing = options.store.getListing(consent.selection.pluginId);
+      const listing = options.store.getListingForWorkspace(
+        consent.selection.pluginId,
+        organizationId,
+      );
       const connection = options.store.getConnection(
         organizationId,
         consent.selection.pluginId,
       );
-      const accountId = connectedAccountIdFromConnection(connection);
+      const accountId = listing
+        ? agentAccountIdForConnection({ listing, workspaceSlug: organizationId, connection })
+        : undefined;
       if (
         !listing ||
-        !listingExecutableForAgents(listing) ||
+        !listingExecutableForAgents(listing, organizationId) ||
         !listing.actions.includes(consent.selection.actionKey) ||
         !options.store.getInstall(organizationId, consent.selection.pluginId)?.enabled ||
         !options.store.isActionEnabled({
@@ -5190,12 +5196,12 @@ export async function buildMarketplaceApp(
       const traceId = traceIdFrom(request);
       const service = requestPrincipals.get(request);
       const workspaceSlug = service?.organizationId ?? input.workspaceSlug;
-      const listing = options.store.getListing(input.pluginId);
+      const listing = options.store.getListingForWorkspace(input.pluginId, workspaceSlug);
       if (!listing) {
         reply.code(404);
         return { ok: false, error: "plugin_not_found" };
       }
-      if (!listingExecutableForAgents(listing)) {
+      if (!listingExecutableForAgents(listing, workspaceSlug)) {
         reply.code(409);
         return { ok: false, error: "plugin_not_composio_backed" };
       }
@@ -5224,8 +5230,8 @@ export async function buildMarketplaceApp(
         return { ok: false, error: "connector_action_denied" };
       }
       const connection = options.store.getConnection(workspaceSlug, input.pluginId);
-      const accountId = connectedAccountIdFromConnection(connection);
-      if (connection?.state !== "connected" || accountId !== input.accountId) {
+      const accountId = agentAccountIdForConnection({ listing, workspaceSlug, connection });
+      if (!connection || !accountId || accountId !== input.accountId) {
         reply.code(409);
         return { ok: false, error: "agent_grant_account_mismatch" };
       }
@@ -5487,7 +5493,11 @@ export async function buildMarketplaceApp(
       if (
         scopedGrant &&
         (connection?.id !== scopedGrant.connectionId ||
-          connectedAccountIdFromConnection(connection) !== scopedGrant.accountId)
+          agentAccountIdForConnection({
+            listing,
+            workspaceSlug: input.workspaceSlug,
+            connection,
+          }) !== scopedGrant.accountId)
       ) {
         reply.code(403);
         return { ok: false, error: "agent_grant_connection_mismatch" };
@@ -5811,14 +5821,17 @@ export async function buildMarketplaceApp(
           error: "runtime_scope_mismatch",
         });
       }
-      const listing = options.store.getListing(input.selection.pluginId);
+      const listing = options.store.getListingForWorkspace(
+        input.selection.pluginId,
+        organizationId,
+      );
       const connection = options.store.getConnection(
         organizationId,
         input.selection.pluginId,
       );
       if (
         !listing ||
-        !listingExecutableForAgents(listing) ||
+        !listingExecutableForAgents(listing, organizationId) ||
         !listing.actions.includes(input.selection.actionKey) ||
         !options.store.getInstall(organizationId, input.selection.pluginId)?.enabled ||
         !options.store.isActionEnabled({
@@ -5826,8 +5839,9 @@ export async function buildMarketplaceApp(
           pluginId: input.selection.pluginId,
           actionKey: input.selection.actionKey,
         }) ||
-        connection?.state !== "connected" ||
-        connectedAccountIdFromConnection(connection) !== consent.accountId ||
+        !connection ||
+        agentAccountIdForConnection({ listing, workspaceSlug: organizationId, connection }) !==
+          consent.accountId ||
         connection.id !== consent.connectionId
       ) {
         reply.code(409);
@@ -5932,6 +5946,23 @@ export async function buildMarketplaceApp(
           error: rules.error,
         });
       }
+      // Custom MCP connectors run through the same runtime contract; build
+      // their outbound connection before reserving the idempotency key so a
+      // missing secret store never leaves an operation needing reconciliation.
+      let mcpConnection: ReturnType<typeof customMcpConnection> | null = null;
+      if (listingIsWorkspaceCustomMcp(listing, organizationId)) {
+        try {
+          mcpConnection = customMcpConnection(listing, organizationId);
+        } catch (error) {
+          if (!(error instanceof ConnectorSecretStoreUnavailableError)) throw error;
+          reply.code(503);
+          return runtimeResponse({
+            ok: false,
+            traceId,
+            error: "connector_secret_store_unavailable",
+          });
+        }
+      }
       const fingerprint = createHash("sha256")
         .update(
           stableJson({
@@ -5973,19 +6004,36 @@ export async function buildMarketplaceApp(
               : "runtime_operation_reconciliation_required",
         });
       }
-      const toolName = composioToolNameForAction(listing, input.selection.actionKey);
+      const toolName = mcpConnection
+        ? published.toolName
+        : composioToolNameForAction(listing, input.selection.actionKey);
       try {
-        const providerOutput = await executeComposioTool({
-          toolName,
-          arguments: { ...scopedAction.action, type: undefined },
-          connectedAccountId: connectedAccountIdFromConnection(connection),
-          userId:
-            typeof connection?.metadata.userId === "string"
-              ? connection.metadata.userId
-              : undefined,
-          env: providerEnvironment(),
-          fetchImpl: options.providerFetch,
-        });
+        let providerOutput: unknown;
+        if (mcpConnection) {
+          const { type: _type, ...args } = scopedAction.action;
+          const output = await callMcpTool(mcpConnection, toolName, args);
+          if (output.isError) {
+            throw new Error("mcp_tool_failed");
+          }
+          providerOutput = {
+            content: output.content,
+            ...(output.structuredContent === undefined
+              ? {}
+              : { structuredContent: output.structuredContent }),
+          };
+        } else {
+          providerOutput = await executeComposioTool({
+            toolName,
+            arguments: { ...scopedAction.action, type: undefined },
+            connectedAccountId: connectedAccountIdFromConnection(connection),
+            userId:
+              typeof connection?.metadata.userId === "string"
+                ? connection.metadata.userId
+                : undefined,
+            env: providerEnvironment(),
+            fetchImpl: options.providerFetch,
+          });
+        }
         const result = {
           pluginId: input.selection.pluginId,
           workspaceSlug: organizationId,
@@ -5994,7 +6042,9 @@ export async function buildMarketplaceApp(
           actionType: input.selection.actionKey,
           performedAt: new Date().toISOString(),
           simulated: false,
-          summary: `Executed ${toolName} through Composio.`,
+          summary: mcpConnection
+            ? `Ran ${toolName} on ${listing.displayName}.`
+            : `Executed ${toolName} through Composio.`,
           details: { toolName, result: runtimeSafeProviderResult(providerOutput) },
         };
         if (JSON.stringify(result).length > 65536) {

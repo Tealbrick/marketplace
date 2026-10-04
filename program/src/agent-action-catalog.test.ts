@@ -176,8 +176,8 @@ describe("published agent action catalog", () => {
     {
       const { store, github } = await fixture();
       const mcp: MarketplaceListing = { ...github, executionOwner: "mcp" };
-      expect(listingExecutableForAgents(mcp)).toBe(false);
-      expect(listingExecutableForAgents(github)).toBe(true);
+      expect(listingExecutableForAgents(mcp, WORKSPACE)).toBe(false);
+      expect(listingExecutableForAgents(github, WORKSPACE)).toBe(true);
       store.upsertListing(mcp);
       expect(resolve(store)).toBeNull();
     }
