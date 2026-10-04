@@ -61,8 +61,8 @@ function DeveloperPanel() {
 
 const LIMITATION_COPY: Record<string, string> = {
   browserEnableDisable: "Turning plugins on or off is managed from Teal Brick Portal.",
-  browserMcpCrud: "Custom MCP servers are set up from Teal Brick Portal.",
-  runtimeAdapterExecution: "Only Composio connectors can run actions today. Other sources are listed for reference.",
+  browserMcpCrud: "Custom connectors added here must be HTTPS MCP servers. Servers that run as a local command are set up from Teal Brick Portal.",
+  runtimeAdapterExecution: "Composio connectors and your custom MCP connectors can run actions. Other sources are listed for reference.",
 };
 
 export type HealthSnapshot = { online: boolean | null; rules?: RulesConnectionStatus };

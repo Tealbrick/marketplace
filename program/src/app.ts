@@ -1476,6 +1476,7 @@ function browserListingForListing(listing: MarketplaceListing) {
       ...(typeof manifest?.required === "boolean"
         ? { required: manifest.required }
         : {}),
+      ...(listingIsOperatorCustomMcp(listing) ? { operatorManaged: true } : {}),
     },
     createdAt: listing.createdAt,
     updatedAt: listing.updatedAt,

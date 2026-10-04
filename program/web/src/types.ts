@@ -309,3 +309,57 @@ export type RuntimeHealth = {
   rules: RulesConnectionStatus;
   checkedAt: string;
 };
+
+export type ConnectorCapabilityName = "connector.observe" | "connector.dispatch" | "connector.admin";
+
+export interface CustomConnectorTool {
+  name: string;
+  action: string;
+  title: string | null;
+  description: string | null;
+  capability: ConnectorCapabilityName;
+}
+
+/** Browser-safe custom MCP connector view; secret values are never included. */
+export interface CustomConnector {
+  pluginId: string;
+  displayName: string;
+  description: string;
+  transport: "streamable-http" | "sse";
+  /** Origin and path only. */
+  url: string;
+  headers: Array<{ name: string; value: string }>;
+  secretHeaders: Array<{ name: string; configured: boolean; fingerprint: string }>;
+  tools: CustomConnectorTool[];
+  lastRefresh: { at: string; ok: boolean; errorCode: string | null } | null;
+  install: { installed: boolean; enabled: boolean; lifecycle: PluginInstall["lifecycle"] | null };
+  connection: { state: PluginConnection["state"]; detail: string; updatedAt: string } | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CustomConnectorsResponse {
+  ok: true;
+  workspaceSlug: string;
+  secretStoreAvailable: boolean;
+  items: CustomConnector[];
+}
+
+export interface CustomConnectorCreate {
+  displayName: string;
+  description?: string;
+  transport: CustomConnector["transport"];
+  url: string;
+  headers?: Record<string, string>;
+  secretHeaders?: Record<string, string>;
+}
+
+export interface CustomConnectorPatch {
+  displayName?: string;
+  description?: string;
+  transport?: CustomConnector["transport"];
+  url?: string;
+  headers?: Record<string, string>;
+  /** string = replace, null = remove, omitted = keep. */
+  secretHeaders?: Record<string, string | null>;
+}

@@ -1,4 +1,4 @@
-import type { AuditResponse, CardDetailResponse, CardsResponse, CardsSummaryResponse, FrontendBootstrap, OperatorSession, ProviderSettings, RuntimeHealth } from "./types";
+import type { AuditResponse, CardDetailResponse, CardsResponse, CardsSummaryResponse, CustomConnector, CustomConnectorCreate, CustomConnectorPatch, CustomConnectorsResponse, FrontendBootstrap, OperatorSession, ProviderSettings, RuntimeHealth } from "./types";
 
 let operatorCsrfToken: string | null = null;
 
@@ -73,8 +73,8 @@ export async function getBootstrap(): Promise<FrontendBootstrap> {
       surfaces: { standalone: "/", embed: "/embed", openapi: "/openapi.json" },
       contractGaps: {
         browserEnableDisable: "hub-auth-required",
-        browserMcpCrud: "hub-auth-required",
-        runtimeAdapterExecution: "not-wired",
+        browserMcpCrud: "remote-only",
+        runtimeAdapterExecution: "composio-and-custom-mcp",
       },
     };
   }
@@ -142,3 +142,22 @@ export const testProviderKey = (composioApiKey?: string) =>
 
 export const removeProviderKey = () =>
   api<ProviderSettings & { removed: boolean }>("/api/settings/providers/composio/key", { method: "DELETE" });
+
+// Custom MCP connectors. The workspace comes from the operator session, so
+// no workspaceSlug is sent. Secret values go up once and never come back.
+const customConnectorRoute = (pluginId?: string, suffix = "") =>
+  `/api/marketplace/connectors/custom${pluginId ? `/${encodeURIComponent(pluginId)}` : ""}${suffix}`;
+
+export const getCustomConnectors = () => api<CustomConnectorsResponse>(customConnectorRoute());
+
+export const createCustomConnector = (input: CustomConnectorCreate) =>
+  api<{ ok: true; connector: CustomConnector }>(customConnectorRoute(), { method: "POST", body: JSON.stringify(input) });
+
+export const updateCustomConnector = (pluginId: string, patch: CustomConnectorPatch) =>
+  api<{ ok: true; connector: CustomConnector }>(customConnectorRoute(pluginId), { method: "PATCH", body: JSON.stringify(patch) });
+
+export const deleteCustomConnector = (pluginId: string) =>
+  api<{ ok: true; pluginId: string; deleted: true }>(customConnectorRoute(pluginId), { method: "DELETE" });
+
+export const refreshCustomConnector = (pluginId: string) =>
+  api<{ ok: true; connector: CustomConnector }>(customConnectorRoute(pluginId, "/refresh"), { method: "POST" });

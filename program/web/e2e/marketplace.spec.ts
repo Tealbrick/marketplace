@@ -114,7 +114,7 @@ test("customer copy: Rules outage, catalog-only listing, and session expiry", as
   await expect(listedOnly).toBeVisible();
   await listedOnly.click();
   await expect(page.getByRole("button", { name: "Install", exact: true })).toBeDisabled();
-  await expect(page.locator(".action-tooltip").first()).toHaveAttribute("title", /Only Composio connectors can be installed today/u);
+  await expect(page.locator(".action-tooltip").first()).toHaveAttribute("title", /Only Composio connectors and your own custom connectors can be installed today/u);
   await expect(page.locator("body")).not.toContainText("CatalogOnly");
   await expect(page.locator("body")).not.toContainText("bearer");
 

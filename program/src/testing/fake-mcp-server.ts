@@ -53,6 +53,8 @@ export type FakeMcpServerOptions = {
   /** Override the legacy SSE endpoint event payload. */
   legacyEndpoint?: string;
   pageSize?: number;
+  /** Fixed port (E2E fixture); defaults to an ephemeral port. */
+  port?: number;
 };
 
 function readBody(request: IncomingMessage): Promise<string> {
@@ -189,7 +191,7 @@ export async function startFakeMcpServer(options: FakeMcpServerOptions = {}) {
     response.writeHead(404).end();
   });
 
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => server.listen(options.port ?? 0, "127.0.0.1", resolve));
   const { port } = server.address() as AddressInfo;
   const origin = `http://127.0.0.1:${port}`;
   return {
