@@ -1,14 +1,14 @@
-# Marketplace standalone 0.1.5 image
+# Marketplace standalone 0.1.6 image
 
-This bundle is the public Marketplace 0.1.5 release line and supersedes
-0.1.4 for Portal browser launch-to-UI compatibility. The release image
+This bundle is the public Marketplace 0.1.6 release line and supersedes
+0.1.5 for Portal browser launch-to-UI compatibility. The release image
 contains the Fastify Program, the built browser application, the tracked
 entrypoint, and no provider credentials, operator sessions, tenant data, or
 runtime database.
 
-Source snapshot: `3a1c72c8c52cc91e9d1bdbb9087d5d29cbf15e3a`
+Source snapshot: `3a1c72c135b4b5dcbaf1f126381796830e3a32e2`
 Source archive SHA256: `007860f0ec7885542f0ff0fe4e21c26512ff894b2f0048babcc3e8a3e41cef47`
-Image: `ghcr.io/tealbrick/marketplace:0.1.5`
+Image: `ghcr.io/tealbrick/marketplace:0.1.6`
 
 ## Runtime contract
 
@@ -26,14 +26,14 @@ Image: `ghcr.io/tealbrick/marketplace:0.1.5`
   into the image or returned to browser code.
 
 The source-backed Railway path uses the fixed public release branch
-`release/marketplace-v0.1.5`; its exact tag target, branch ruleset, and image
+`release/marketplace-v0.1.6`; its exact tag target, branch ruleset, and image
 digest are recorded in the successor receipt. Set the service root directory
 to `release/railway`, keep the Dockerfile entrypoint, and use the relay
 contract in `deploy/railway/recipe.json` and `deploy/railway/railway-blueprint.json`.
 GHCR is optional for the source-build path; no template ID or publication is
 implied by these files.
 
-## v0.1.5 launch-contract disposition
+## v0.1.6 launch-contract disposition
 
 This successor completes the Portal-compatible `POST /auth/launch` form adapter.
 The adapter accepts exactly one form field (`ticket`), requires the exact
