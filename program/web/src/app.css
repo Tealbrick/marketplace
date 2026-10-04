@@ -363,6 +363,9 @@ code, .mono { font-family: var(--dg-font-mono); overflow-wrap: anywhere; }
 .plain-list { margin: 4px 0 0; padding-left: 16px; color: var(--dg-text-muted); font-size: 9px; line-height: 1.6; }
 @media (max-width: 600px) {
   .action-tooltip, .action-tooltip .dg-button { width: 100%; min-width: 0; }
+  /* Phone navigation: all five sections visible, no horizontal clipping. */
+  .navigation-rail nav { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px; overflow: visible; padding: 6px; }
+  .navigation-rail nav button { min-width: 0; min-height: 52px; flex-direction: column; justify-content: center; gap: 4px; padding: 5px 0; font-size: 9px; letter-spacing: -.01em; line-height: 1.15; text-align: center; white-space: normal; overflow-wrap: normal; }
 }
 
 /* Runtime health indicators */

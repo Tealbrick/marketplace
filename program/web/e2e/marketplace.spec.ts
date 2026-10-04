@@ -38,6 +38,9 @@ for (const viewport of [
     await expect(page.locator(".catalog-row").first()).toBeVisible();
     await expect(page.locator(".plugin-workspace, .detail-empty")).toBeVisible();
     await assertNoViewportOverflow(page);
+    for (const name of ["Catalog", "Installed", "Connections", "Agent grants", "Activity"]) {
+      await assertContained(page.getByRole("navigation").getByRole("button", { name }), viewport);
+    }
 
     const supportedRow = page.locator(".catalog-row").filter({ hasText: "Composio" }).first();
     await expect(supportedRow).toBeVisible();

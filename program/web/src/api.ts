@@ -62,7 +62,7 @@ export async function getBootstrap(): Promise<FrontendBootstrap> {
   } catch (error) {
     if (!(error instanceof ApiError) || error.status !== 404) throw error;
     return {
-      program: { id: "marketplace", name: "Marketplace", version: "0.1.0" },
+      program: { id: "marketplace", name: "Marketplace", version: "unknown" },
       authorization: {
         browserOperatorRoutes: "rules-governed-local-program",
         hubRoutesRequireBearer: true,
@@ -111,10 +111,12 @@ export const uninstallPlugin = (pluginId: string, workspaceSlug: string) => life
 export const registerPlugin = (pluginId: string, workspaceSlug: string) => lifecycle(pluginId, "register", workspaceSlug);
 export const unregisterPlugin = (pluginId: string, workspaceSlug: string) => lifecycle(pluginId, "unregister", workspaceSlug);
 
-export const connectPlugin = (pluginId: string, workspaceSlug: string, provider: string, backend: "composio" | "native") =>
+// Only Composio-backed connectors can be connected from the browser in this
+// launch profile; the Connect action is disabled for every other source.
+export const connectPlugin = (pluginId: string, workspaceSlug: string, provider: string) =>
   api<{ auth?: { redirectUrl?: string | null }; connection?: Record<string, unknown> }>(`/api/marketplace/plugins/${encodeURIComponent(pluginId)}/connection`, {
     method: "POST",
-    body: JSON.stringify({ workspaceSlug, actorId: "operator", provider, backend }),
+    body: JSON.stringify({ workspaceSlug, actorId: "operator", provider, backend: "composio" }),
   });
 
 export const bindAction = (pluginId: string, workspaceSlug: string, actionKey: string, enabled: boolean) =>

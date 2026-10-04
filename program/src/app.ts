@@ -48,6 +48,7 @@ import {
   type CapabilitiesHostProjection,
 } from "./extension-settings-projection.js";
 import { registerMarketplaceFrontend } from "./frontend.js";
+import { MARKETPLACE_VERSION } from "./version.js";
 import {
   MarketplaceAuthenticationError,
   MarketplaceOperatorSessionManager,
@@ -2315,10 +2316,40 @@ export async function buildMarketplaceApp(
       });
       return;
     }
+    const statusCode =
+      typeof (error as { statusCode?: unknown }).statusCode === "number" &&
+      (error as { statusCode: number }).statusCode >= 400 &&
+      (error as { statusCode: number }).statusCode < 500
+        ? (error as { statusCode: number }).statusCode
+        : 500;
+    if (statusCode < 500) {
+      // Fastify client errors (malformed JSON, body too large, ...) carry
+      // their own safe codes; keep the status but not the raw message.
+      reply.code(statusCode).send({
+        ok: false,
+        error: "marketplace_request_invalid",
+        code: (error as { code?: unknown }).code ?? null,
+      });
+      return;
+    }
+    const errorId = `err_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
+    // Raw messages can include file paths, upstream provider responses, or
+    // configuration names: log them server-side only.
+    console.error(
+      JSON.stringify({
+        event: "marketplace.request.error",
+        errorId,
+        method: request.method,
+        route: request.routeOptions?.url ?? null,
+        name: error instanceof Error ? error.name : typeof error,
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      }),
+    );
     reply.code(500).send({
       ok: false,
       error: "marketplace_program_error",
-      detail: error instanceof Error ? error.message : String(error),
+      errorId,
     });
   });
 
@@ -2618,6 +2649,7 @@ export async function buildMarketplaceApp(
   app.get("/api/marketplace/health", async () => ({
     ok: true,
     program: "ok" as const,
+    version: MARKETPLACE_VERSION,
     rules: await probeRulesConnection(),
     checkedAt: new Date().toISOString(),
   }));
@@ -2664,7 +2696,12 @@ export async function buildMarketplaceApp(
     return { ok: true };
   });
 
-  app.get("/api/status", async () => ({
+  app.get("/api/status", async (request, reply) => {
+    if (!requireService(request, reply)) {
+      return { ok: false, error: "marketplace_service_bearer_required" };
+    }
+    return {
+    version: MARKETPLACE_VERSION,
     ok: true,
     service: "marketplace",
     database: {
@@ -2680,7 +2717,8 @@ export async function buildMarketplaceApp(
       providerEnvironment(),
       options.providerFetch,
     ),
-  }));
+    };
+  });
 
   app.get("/api/settings/providers/composio", async (request, reply) => {
     if (!requireOperator(request, reply)) return { ok: false, error: "marketplace_operator_required" };
@@ -5898,6 +5936,9 @@ export async function buildMarketplaceApp(
   });
 
   app.get("/api/debug/logs", async (request, reply) => {
+    if (!requireService(request, reply)) {
+      return { ok: false, error: "marketplace_service_bearer_required" };
+    }
     const query = z
       .object({
         tail: z.coerce.number().int().positive().max(500).default(100),

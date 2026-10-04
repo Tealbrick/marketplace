@@ -45,7 +45,7 @@ export function RulesStatusDot({ status }: { status: RulesConnectionStatus | und
   return <span className={`provider-dot provider-dot--${copy ? DOT_FOR_TONE[copy.tone] : "unknown"}`} title={copy?.detail ?? "Checking approvals…"} />;
 }
 
-function MarketplaceNav({ section, onSection, providers, rules, onSettings }: { section: Section; onSection: (section: Section) => void; providers?: Record<string, BrowserProviderHealth>; rules?: RulesConnectionStatus; onSettings: () => void }) {
+function MarketplaceNav({ section, onSection, providers, rules, version, onSettings }: { section: Section; onSection: (section: Section) => void; providers?: Record<string, BrowserProviderHealth>; rules?: RulesConnectionStatus; version?: string; onSettings: () => void }) {
   const entries: Array<{ id: Section; label: string; icon: typeof Boxes }> = [
     { id: "catalog", label: "Catalog", icon: Boxes },
     { id: "installed", label: "Installed", icon: PackageCheck },
@@ -62,7 +62,7 @@ function MarketplaceNav({ section, onSection, providers, rules, onSettings }: { 
         <div className="rules-status-row" title={rules ? RULES_STATUS_COPY[rules].detail : undefined}><RulesStatusDot status={rules} /><span>Approvals</span><small>{rules ? RULES_STATUS_COPY[rules].label.toLowerCase() : "checking"}</small></div>
         {providers ? Object.entries(providers).map(([name, provider]) => <div key={name}><ProviderDot provider={provider} /><span>{words(name)}</span><small>{provider.reachable ? "reachable" : provider.configured ? "configured" : "not configured"}</small></div>) : <p className="muted">Loading provider state…</p>}
       </section>
-      <footer><span>Marketplace</span><IconButton aria-label="Open settings" onClick={onSettings}><Settings size={16} /></IconButton></footer>
+      <footer><span>Marketplace{version && version !== "unknown" ? ` ${version}` : ""}</span><IconButton aria-label="Open settings" onClick={onSettings}><Settings size={16} /></IconButton></footer>
     </aside>
   );
 }
@@ -155,7 +155,7 @@ export function App() {
   if (!workspaceSlug) return <main className="boot-state"><BrandMark /><LoaderCircle className="spin" /><span>Loading your organization…</span></main>;
 
   return <main className="app-shell">
-    <MarketplaceNav section={section} onSection={setSection} providers={cards.data?.providers} rules={runtimeHealth.data?.rules} onSettings={() => setSettingsOpen(true)} />
+    <MarketplaceNav section={section} onSection={setSection} providers={cards.data?.providers} rules={runtimeHealth.data?.rules} version={bootstrap.data?.program.version} onSettings={() => setSettingsOpen(true)} />
     <section className="application-frame">
       <header className="topbar"><div className="verified-scope"><span className="eyebrow">Organization</span><code>{workspaceSlug}</code></div><div><ProgramState online={liveness.isError ? false : liveness.data ? true : null} rules={runtimeHealth.data?.rules} /><Button size="small" onClick={refresh}><RefreshCw size={14} />Refresh</Button><IconButton className="topbar-settings" aria-label="Open settings" onClick={() => setSettingsOpen(true)}><Settings size={16} /></IconButton></div></header>
       {section === "grants" ? <AgentGrantsPage workspaceSlug={workspaceSlug} onRevoke={requestRevoke} /> : cards.error ? <StatePanel error={cards.error} onRetry={() => void cards.refetch()} /> : section === "connections" && cards.data ? <ConnectionsPage connections={cards.data.connections} providers={cards.data.providers} /> : section === "activity" ? <ActivityPage workspaceSlug={workspaceSlug} /> : installed && cards.data && cards.data.filteredTotal === 0 && !deferredSearch && source === "all" ? <section className="collection-page"><div className="collection-empty"><PackageCheck size={28} /><h2>Nothing installed yet</h2><p>Install connectors from the catalog to make them available to your workspace and agents.</p><Button tone="primary" onClick={() => setSection("catalog")}><Boxes size={15} />Browse the catalog</Button></div></section> : <div className="catalog-layout">

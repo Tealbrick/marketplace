@@ -1,3 +1,5 @@
+import { MARKETPLACE_VERSION } from "./version.js";
+
 const jsonObject = { type: "object", additionalProperties: true } as const;
 const bearerSecurity = [{ bearerAuth: [] }] as const;
 const operatorSecurity = [{ operatorSession: [] }] as const;
@@ -7,7 +9,7 @@ export function buildMarketplaceOpenApi(baseUrl = "/") {
     openapi: "3.1.0",
     info: {
       title: "Doppelganger Marketplace API",
-      version: "0.2.0",
+      version: MARKETPLACE_VERSION,
       description:
         "Program-owned catalog, Rules-governed plugin lifecycle, provider connections, capability bindings, Composio execution, and audit. The launch profile treats every non-Composio source as catalog-only. Hub and cross-app service routes require an internal bearer credential that is never exposed to the browser.",
     },
@@ -50,7 +52,7 @@ export function buildMarketplaceOpenApi(baseUrl = "/") {
         post: { security: [], tags: ["Runtime"], summary: "Exchange the provisioned operator access token for an HttpOnly session", requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["accessToken"], properties: { accessToken: { type: "string", writeOnly: true } } } } } }, responses: { "200": { description: "Session created" }, "401": { description: "Invalid token" }, "429": { description: "Rate limited" }, "503": { description: "Operator access is not configured" } } },
         delete: { security: operatorSecurity, tags: ["Runtime"], summary: "Revoke the current operator session", responses: { "200": { description: "Session revoked" }, "401": { description: "Unauthorized" } } },
       },
-      "/api/status": { get: { security: operatorSecurity, tags: ["Runtime"], summary: "Detailed authenticated Program status", responses: { "200": { description: "Runtime status" } } } },
+      "/api/status": { get: { security: bearerSecurity, tags: ["Runtime"], summary: "Detailed Program status (internal service bearer only)", responses: { "200": { description: "Runtime status" } } } },
       "/api/marketplace/health": { get: { security: [...operatorSecurity, ...bearerSecurity], tags: ["Runtime"], summary: "Authenticated runtime health: Program and Rules connection state", description: "Returns { program: 'ok', rules: 'connected' | 'not-connected' | 'unavailable' }. The Rules probe is cached briefly and never returns configuration or credentials.", responses: { "200": { description: "Runtime health" }, "401": { description: "Session or bearer required" } } } },
       "/api/marketplace/cards": { get: { tags: ["Catalog"], summary: "List operator-facing plugin cards", parameters: [{ name: "workspaceSlug", in: "query", schema: { type: "string", default: "default" } }], responses: { "200": { description: "Cards and provider state" } } } },
       "/api/marketplace/cards/summary": { get: { tags: ["Catalog"], summary: "List a bounded, searchable browser-safe catalog projection", description: "Returns exact catalog totals, redacted provider and connection status, and at most 100 lightweight records from the canonical Marketplace catalog. Arbitrary manifests and provider metadata are omitted.", parameters: [{ name: "workspaceSlug", in: "query", schema: { type: "string", default: "default" } }, { name: "search", in: "query", schema: { type: "string", maxLength: 200 } }, { name: "source", in: "query", schema: { type: "string", enum: ["all", "native", "activepieces", "composio", "nango", "mcp"], default: "all" } }, { name: "installed", in: "query", schema: { type: "boolean", default: false } }, { name: "offset", in: "query", schema: { type: "integer", minimum: 0, default: 0 } }, { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 60 } }], responses: { "200": { description: "Bounded browser-safe catalog projection" } } } },

@@ -75,7 +75,6 @@ export function ConfirmDialog({ state, onClose, onSuccess }: { state: ConfirmSta
 }
 
 function ConnectDialog({ card, workspaceSlug, open, onOpenChange, onConnected }: { card: PluginCard; workspaceSlug: string; open: boolean; onOpenChange: (open: boolean) => void; onConnected: () => void }) {
-  const backend: "composio" | "native" = card.listing.source === "composio" ? "composio" : "native";
   const authorizationWindow = useRef<Window | null>(null);
   const [popupBlocked, setPopupBlocked] = useState(false);
   const closeAuthorizationWindow = () => {
@@ -85,7 +84,7 @@ function ConnectDialog({ card, workspaceSlug, open, onOpenChange, onConnected }:
     authorizationWindow.current = null;
   };
   const mutation = useMutation({
-    mutationFn: () => connectPlugin(card.listing.pluginId, workspaceSlug, card.listing.provider, backend),
+    mutationFn: () => connectPlugin(card.listing.pluginId, workspaceSlug, card.listing.provider),
     onSuccess: (result) => {
       if (result.auth?.redirectUrl) {
         if (authorizationWindow.current && !authorizationWindow.current.closed) {
@@ -108,9 +107,9 @@ function ConnectDialog({ card, workspaceSlug, open, onOpenChange, onConnected }:
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal><Dialog.Overlay className="dialog-overlay" /><Dialog.Content className="form-dialog">
-        <header className="modal-header"><div><p className="eyebrow">Provider connection</p><Dialog.Title>Connect {card.addon.displayName}</Dialog.Title><Dialog.Description>{backend === "composio" ? "A Composio window opens so you can sign in to the provider. Your sign-in details stay with Composio; Marketplace only keeps a reference to the connection." : "This records a connection for this workspace. No passwords or keys are collected here."}</Dialog.Description></div><Dialog.Close asChild><IconButton aria-label="Close connection dialog"><X size={17} /></IconButton></Dialog.Close></header>
+        <header className="modal-header"><div><p className="eyebrow">Provider connection</p><Dialog.Title>Connect {card.addon.displayName}</Dialog.Title><Dialog.Description>A Composio window opens so you can sign in to the provider. Your sign-in details stay with Composio; Marketplace only keeps a reference to the connection.</Dialog.Description></div><Dialog.Close asChild><IconButton aria-label="Close connection dialog"><X size={17} /></IconButton></Dialog.Close></header>
         <div className="modal-body">
-          <dl className="contract-list"><dt>Backend</dt><dd>{backend}</dd><dt>Provider</dt><dd>{card.listing.provider}</dd><dt>Current state</dt><dd>{card.connection?.state ?? "disconnected"}</dd><dt>External impact</dt><dd>{backend === "composio" ? "Opens provider authorization; no grant is completed until you approve there." : "Registers a native Program connection."}</dd></dl>
+          <dl className="contract-list"><dt>Connects through</dt><dd>Composio</dd><dt>Provider</dt><dd>{card.listing.provider}</dd><dt>Current state</dt><dd>{statusLabel(card.connection?.state ?? "disconnected")}</dd><dt>What happens</dt><dd>Opens the provider's sign-in page. Nothing is connected until you approve there.</dd></dl>
           {mutation.error && <InlineError error={mutation.error} />}
           {popupBlocked && <p className="inline-error"><AlertTriangle size={14} />The authorization window was blocked. Allow popups for Marketplace, then retry the connection.</p>}
         </div>
