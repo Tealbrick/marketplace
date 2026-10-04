@@ -6,13 +6,24 @@
   "distribution": "public-source",
   "source": {
     "repository": "https://github.com/Tealbrick/marketplace",
-    "ref": "v0.1.3",
+    "ref": "release/marketplace-v0.1.3",
+    "branch": "release/marketplace-v0.1.3",
     "commit": "28552dcf4917c8d3bb449b13473b8645c780e9a4",
-    "sourceUrl": "https://github.com/Tealbrick/marketplace/tree/v0.1.3",
+    "sourceUrl": "https://github.com/Tealbrick/marketplace/tree/release/marketplace-v0.1.3",
     "rootDirectory": "release/railway",
     "mutableRefsForbidden": true,
     "portalMustResolveAndRecordCommit": true,
-    "providerSemanticsGate": "Portal must verify that the Railway GitHub source/template configuration can deploy this exact tag or resolved commit. If it only supports a mutable branch, stop; do not substitute main."
+    "providerSemanticsGate": "Portal's templateDeployV2 source.branch must be release/marketplace-v0.1.3; source.commitSha is not relied on because the provider ignores it. The repository ruleset below must remain active before deployment.",
+    "branchImmutability": {
+      "rulesetId": 24444361,
+      "rulesetUrl": "https://github.com/Tealbrick/marketplace/rules/24444361",
+      "enforcement": "active",
+      "target": "refs/heads/release/marketplace-v0.1.3",
+      "rules": ["deletion", "non_fast_forward", "update"],
+      "bypassActors": [],
+      "currentUserCanBypass": "never",
+      "verifiedAt": "2026-10-04"
+    }
   },
   "sourceBuild": {
     "mode": "railway-build-from-public-git-source",
@@ -228,7 +239,8 @@
     "publicationClaim": false,
     "requiredPortalEvidence": [
       "Railway-resolved source commit equals the pinned source commit.",
-      "Railway source/template semantics preserve the pinned source identity rather than silently following a mutable branch.",
+      "Railway templateDeployV2 uses branch release/marketplace-v0.1.3 and does not silently fall back to main or rely on ignored source.commitSha.",
+      "The repository ruleset remains active with update, non-fast-forward and deletion restrictions and no bypass actor.",
       "Customer project builds the public source without GHCR or private registry credentials.",
       "Persistent volume ownership/bootstrap, health, protected readiness and exact source identity are recorded.",
       "Portal-owned deployment binding and consented provider read-canary are separately accepted."

@@ -25,11 +25,13 @@ Image: `ghcr.io/tealbrick/marketplace:0.1.3`
 * Provider, Rules, and Portal values are injected at runtime and never baked
   into the image or returned to browser code.
 
-The source-backed Railway path uses the public tag and tracked bundle: set the
-service root directory to `release/railway`, keep the Dockerfile entrypoint,
-and use the relay contract in `deploy/railway/recipe.json` and
-`deploy/railway/railway-blueprint.json`. GHCR is optional for this path; no
-template ID or publication is implied by these files.
+The source-backed Railway path uses the fixed public release branch
+`release/marketplace-v0.1.3` at reviewed runtime commit
+`28552dcf4917c8d3bb449b13473b8645c780e9a4`; set the service root directory to
+`release/railway`, keep the Dockerfile entrypoint, and use the relay contract in
+`deploy/railway/recipe.json` and `deploy/railway/railway-blueprint.json`. GHCR
+is optional for this path; no template ID or publication is implied by these
+files.
 
 ## Required server configuration
 

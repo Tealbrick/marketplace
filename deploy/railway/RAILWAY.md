@@ -8,16 +8,25 @@ creation, customer-project writes, deployment identity, and acceptance.
 ## Pinned source and build
 
 Use the public repository
-`https://github.com/Tealbrick/marketplace` at tag `v0.1.3`, resolved and
-recorded as commit
-`28552dcf4917c8d3bb449b13473b8645c780e9a4`. Do not connect `main` or another
-mutable branch. Set the service root directory to `release/railway`; Railway
-then builds the tracked `Dockerfile` in that directory.
+`https://github.com/Tealbrick/marketplace` at branch
+`release/marketplace-v0.1.3`, resolved and recorded as commit
+`28552dcf4917c8d3bb449b13473b8645c780e9a4`. Do not connect `main`, the
+rejected tag source, or another mutable branch. Set the service root directory
+to `release/railway`; Railway then builds the tracked `Dockerfile` in that
+directory.
 
-Portal must verify the Railway GitHub source/template behavior for this exact
-tag or its resolved commit before creating the template. If the provider only
-offers a mutable branch reference in the selected configuration surface, stop
-and resolve that provider limitation; do not substitute `main`.
+Portal's actual `templateDeployV2` probe showed that `source.branch=v0.1.3`
+fails with Branch not found and `source.commitSha` is ignored. Use
+`source.branch=release/marketplace-v0.1.3`; the branch is fixed to the reviewed
+runtime commit by repository ruleset `24444361`:
+
+- target: `refs/heads/release/marketplace-v0.1.3`
+- enforcement: `active`
+- rules: `update`, `non_fast_forward`, `deletion`
+- bypass actors: none; GitHub reports `current_user_can_bypass=never`
+
+Portal must re-check that ruleset before template creation and record the
+resolved branch SHA. Do not substitute `main` or rely on `source.commitSha`.
 
 Railway builds the selected public source in the customer project. The build
 does not pull GHCR and does not require private registry credentials. The
