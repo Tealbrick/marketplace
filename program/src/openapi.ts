@@ -8,7 +8,7 @@ export function buildMarketplaceOpenApi(baseUrl = "/") {
   return {
     openapi: "3.1.0",
     info: {
-      title: "Doppelganger Marketplace API",
+      title: "Teal Brick Marketplace API",
       version: MARKETPLACE_VERSION,
       description:
         "Program-owned catalog, Rules-governed plugin lifecycle, provider connections, capability bindings, Composio execution, and audit. The launch profile treats every non-Composio source as catalog-only. Hub and cross-app service routes require an internal bearer credential that is never exposed to the browser.",

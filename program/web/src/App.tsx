@@ -55,7 +55,7 @@ function MarketplaceNav({ section, onSection, providers, rules, version, onSetti
   ];
   return (
     <aside className="navigation-rail">
-      <header className="brand-lockup"><BrandMark /><span><strong>Marketplace</strong><small>Doppelganger capabilities</small></span></header>
+      <header className="brand-lockup"><BrandMark /><span><strong>Marketplace</strong><small>Teal Brick capabilities</small></span></header>
       <nav aria-label="Marketplace sections">{entries.map(({ id, label, icon: Icon }) => <button className={section === id ? "is-active" : ""} key={id} onClick={() => onSection(id)}><Icon size={17} />{label}</button>)}</nav>
       <section className="provider-summary">
         <p className="eyebrow">Status</p>
