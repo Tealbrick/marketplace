@@ -3775,8 +3775,8 @@ var require_req = __commonJS({
       if (req.originalUrl) {
         _req.url = req.originalUrl;
       } else {
-        const path8 = req.path;
-        _req.url = typeof path8 === "string" ? path8 : req.url ? req.url.path || req.url : void 0;
+        const path9 = req.path;
+        _req.url = typeof path9 === "string" ? path9 : req.url ? req.url.path || req.url : void 0;
       }
       if (req.query) {
         _req.query = req.query;
@@ -3941,14 +3941,14 @@ var require_redact = __commonJS({
       }
       return obj;
     }
-    function parsePath(path8) {
+    function parsePath(path9) {
       const parts = [];
       let current = "";
       let inBrackets = false;
       let inQuotes = false;
       let quoteChar = "";
-      for (let i = 0; i < path8.length; i++) {
-        const char = path8[i];
+      for (let i = 0; i < path9.length; i++) {
+        const char = path9[i];
         if (!inBrackets && char === ".") {
           if (current) {
             parts.push(current);
@@ -4079,10 +4079,10 @@ var require_redact = __commonJS({
       return current;
     }
     function redactPaths(obj, paths, censor, remove = false) {
-      for (const path8 of paths) {
-        const parts = parsePath(path8);
+      for (const path9 of paths) {
+        const parts = parsePath(path9);
         if (parts.includes("*")) {
-          redactWildcardPath(obj, parts, censor, path8, remove);
+          redactWildcardPath(obj, parts, censor, path9, remove);
         } else {
           if (remove) {
             removeKey(obj, parts);
@@ -4167,8 +4167,8 @@ var require_redact = __commonJS({
           }
         } else {
           if (afterWildcard.includes("*")) {
-            const wrappedCensor = typeof censor === "function" ? (value, path8) => {
-              const fullPath = [...pathArray.slice(0, pathLength), ...path8];
+            const wrappedCensor = typeof censor === "function" ? (value, path9) => {
+              const fullPath = [...pathArray.slice(0, pathLength), ...path9];
               return censor(value, fullPath);
             } : censor;
             redactWildcardPath(current, afterWildcard, wrappedCensor, originalPath, remove);
@@ -4203,8 +4203,8 @@ var require_redact = __commonJS({
         return null;
       }
       const pathStructure = /* @__PURE__ */ new Map();
-      for (const path8 of pathsToClone) {
-        const parts = parsePath(path8);
+      for (const path9 of pathsToClone) {
+        const parts = parsePath(path9);
         let current = pathStructure;
         for (let i = 0; i < parts.length; i++) {
           const part = parts[i];
@@ -4256,24 +4256,24 @@ var require_redact = __commonJS({
       }
       return cloneSelectively(obj, pathStructure);
     }
-    function validatePath(path8) {
-      if (typeof path8 !== "string") {
+    function validatePath(path9) {
+      if (typeof path9 !== "string") {
         throw new Error("Paths must be (non-empty) strings");
       }
-      if (path8 === "") {
+      if (path9 === "") {
         throw new Error("Invalid redaction path ()");
       }
-      if (path8.includes("..")) {
-        throw new Error(`Invalid redaction path (${path8})`);
+      if (path9.includes("..")) {
+        throw new Error(`Invalid redaction path (${path9})`);
       }
-      if (path8.includes(",")) {
-        throw new Error(`Invalid redaction path (${path8})`);
+      if (path9.includes(",")) {
+        throw new Error(`Invalid redaction path (${path9})`);
       }
       let bracketCount = 0;
       let inQuotes = false;
       let quoteChar = "";
-      for (let i = 0; i < path8.length; i++) {
-        const char = path8[i];
+      for (let i = 0; i < path9.length; i++) {
+        const char = path9[i];
         if ((char === '"' || char === "'") && bracketCount > 0) {
           if (!inQuotes) {
             inQuotes = true;
@@ -4287,20 +4287,20 @@ var require_redact = __commonJS({
         } else if (char === "]" && !inQuotes) {
           bracketCount--;
           if (bracketCount < 0) {
-            throw new Error(`Invalid redaction path (${path8})`);
+            throw new Error(`Invalid redaction path (${path9})`);
           }
         }
       }
       if (bracketCount !== 0) {
-        throw new Error(`Invalid redaction path (${path8})`);
+        throw new Error(`Invalid redaction path (${path9})`);
       }
     }
     function validatePaths(paths) {
       if (!Array.isArray(paths)) {
         throw new TypeError("paths must be an array");
       }
-      for (const path8 of paths) {
-        validatePath(path8);
+      for (const path9 of paths) {
+        validatePath(path9);
       }
     }
     function slowRedact(options = {}) {
@@ -4468,8 +4468,8 @@ var require_redaction = __commonJS({
         if (shape[k] === null) {
           o[k] = (value) => topCensor(value, [k]);
         } else {
-          const wrappedCensor = typeof censor === "function" ? (value, path8) => {
-            return censor(value, [k, ...path8]);
+          const wrappedCensor = typeof censor === "function" ? (value, path9) => {
+            return censor(value, [k, ...path9]);
           } : censor;
           o[k] = Redact({
             paths: shape[k],
@@ -4687,10 +4687,10 @@ var require_atomic_sleep = __commonJS({
 var require_sonic_boom = __commonJS({
   "node_modules/.pnpm/sonic-boom@4.2.1/node_modules/sonic-boom/index.js"(exports, module) {
     "use strict";
-    var fs3 = __require("fs");
+    var fs4 = __require("fs");
     var EventEmitter = __require("events");
     var inherits = __require("util").inherits;
-    var path8 = __require("path");
+    var path9 = __require("path");
     var sleep = require_atomic_sleep();
     var assert = __require("assert");
     var BUSY_WRITE_TIMEOUT = 100;
@@ -4744,20 +4744,20 @@ var require_sonic_boom = __commonJS({
       const mode = sonic.mode;
       if (sonic.sync) {
         try {
-          if (sonic.mkdir) fs3.mkdirSync(path8.dirname(file), { recursive: true });
-          const fd = fs3.openSync(file, flags, mode);
+          if (sonic.mkdir) fs4.mkdirSync(path9.dirname(file), { recursive: true });
+          const fd = fs4.openSync(file, flags, mode);
           fileOpened(null, fd);
         } catch (err) {
           fileOpened(err);
           throw err;
         }
       } else if (sonic.mkdir) {
-        fs3.mkdir(path8.dirname(file), { recursive: true }, (err) => {
+        fs4.mkdir(path9.dirname(file), { recursive: true }, (err) => {
           if (err) return fileOpened(err);
-          fs3.open(file, flags, mode, fileOpened);
+          fs4.open(file, flags, mode, fileOpened);
         });
       } else {
-        fs3.open(file, flags, mode, fileOpened);
+        fs4.open(file, flags, mode, fileOpened);
       }
     }
     function SonicBoom(opts) {
@@ -4798,8 +4798,8 @@ var require_sonic_boom = __commonJS({
         this.flush = flushBuffer;
         this.flushSync = flushBufferSync;
         this._actualWrite = actualWriteBuffer;
-        fsWriteSync = () => fs3.writeSync(this.fd, this._writingBuf);
-        fsWrite = () => fs3.write(this.fd, this._writingBuf, this.release);
+        fsWriteSync = () => fs4.writeSync(this.fd, this._writingBuf);
+        fsWrite = () => fs4.write(this.fd, this._writingBuf, this.release);
       } else if (contentMode === void 0 || contentMode === kContentModeUtf8) {
         this._writingBuf = "";
         this.write = write;
@@ -4808,15 +4808,15 @@ var require_sonic_boom = __commonJS({
         this._actualWrite = actualWrite;
         fsWriteSync = () => {
           if (Buffer.isBuffer(this._writingBuf)) {
-            return fs3.writeSync(this.fd, this._writingBuf);
+            return fs4.writeSync(this.fd, this._writingBuf);
           }
-          return fs3.writeSync(this.fd, this._writingBuf, "utf8");
+          return fs4.writeSync(this.fd, this._writingBuf, "utf8");
         };
         fsWrite = () => {
           if (Buffer.isBuffer(this._writingBuf)) {
-            return fs3.write(this.fd, this._writingBuf, this.release);
+            return fs4.write(this.fd, this._writingBuf, this.release);
           }
-          return fs3.write(this.fd, this._writingBuf, "utf8", this.release);
+          return fs4.write(this.fd, this._writingBuf, "utf8", this.release);
         };
       } else {
         throw new Error(`SonicBoom supports "${kContentModeUtf8}" and "${kContentModeBuffer}", but passed ${contentMode}`);
@@ -4873,7 +4873,7 @@ var require_sonic_boom = __commonJS({
           }
         }
         if (this._fsync) {
-          fs3.fsyncSync(this.fd);
+          fs4.fsyncSync(this.fd);
         }
         const len = this._len;
         if (this._reopening) {
@@ -4987,7 +4987,7 @@ var require_sonic_boom = __commonJS({
       const onDrain = () => {
         if (!this._fsync) {
           try {
-            fs3.fsync(this.fd, (err) => {
+            fs4.fsync(this.fd, (err) => {
               this._flushPending = false;
               cb(err);
             });
@@ -5089,7 +5089,7 @@ var require_sonic_boom = __commonJS({
       const fd = this.fd;
       this.once("ready", () => {
         if (fd !== this.fd) {
-          fs3.close(fd, (err) => {
+          fs4.close(fd, (err) => {
             if (err) {
               return this.emit("error", err);
             }
@@ -5138,7 +5138,7 @@ var require_sonic_boom = __commonJS({
           buf = this._bufs[0];
         }
         try {
-          const n = Buffer.isBuffer(buf) ? fs3.writeSync(this.fd, buf) : fs3.writeSync(this.fd, buf, "utf8");
+          const n = Buffer.isBuffer(buf) ? fs4.writeSync(this.fd, buf) : fs4.writeSync(this.fd, buf, "utf8");
           const releasedBufObj = releaseWritingBuf(buf, this._len, n);
           buf = releasedBufObj.writingBuf;
           this._len = releasedBufObj.len;
@@ -5154,7 +5154,7 @@ var require_sonic_boom = __commonJS({
         }
       }
       try {
-        fs3.fsyncSync(this.fd);
+        fs4.fsyncSync(this.fd);
       } catch {
       }
     }
@@ -5175,7 +5175,7 @@ var require_sonic_boom = __commonJS({
           buf = mergeBuf(this._bufs[0], this._lens[0]);
         }
         try {
-          const n = fs3.writeSync(this.fd, buf);
+          const n = fs4.writeSync(this.fd, buf);
           buf = buf.subarray(n);
           this._len = Math.max(this._len - n, 0);
           if (buf.length <= 0) {
@@ -5203,13 +5203,13 @@ var require_sonic_boom = __commonJS({
       this._writingBuf = this._writingBuf.length ? this._writingBuf : this._bufs.shift() || "";
       if (this.sync) {
         try {
-          const written = Buffer.isBuffer(this._writingBuf) ? fs3.writeSync(this.fd, this._writingBuf) : fs3.writeSync(this.fd, this._writingBuf, "utf8");
+          const written = Buffer.isBuffer(this._writingBuf) ? fs4.writeSync(this.fd, this._writingBuf) : fs4.writeSync(this.fd, this._writingBuf, "utf8");
           release(null, written);
         } catch (err) {
           release(err);
         }
       } else {
-        fs3.write(this.fd, this._writingBuf, release);
+        fs4.write(this.fd, this._writingBuf, release);
       }
     }
     function actualWriteBuffer() {
@@ -5218,7 +5218,7 @@ var require_sonic_boom = __commonJS({
       this._writingBuf = this._writingBuf.length ? this._writingBuf : mergeBuf(this._bufs.shift(), this._lens.shift());
       if (this.sync) {
         try {
-          const written = fs3.writeSync(this.fd, this._writingBuf);
+          const written = fs4.writeSync(this.fd, this._writingBuf);
           release(null, written);
         } catch (err) {
           release(err);
@@ -5227,7 +5227,7 @@ var require_sonic_boom = __commonJS({
         if (kCopyBuffer) {
           this._writingBuf = Buffer.from(this._writingBuf);
         }
-        fs3.write(this.fd, this._writingBuf, release);
+        fs4.write(this.fd, this._writingBuf, release);
       }
     }
     function actualClose(sonic) {
@@ -5243,12 +5243,12 @@ var require_sonic_boom = __commonJS({
       sonic._lens = [];
       assert(typeof sonic.fd === "number", `sonic.fd must be a number, got ${typeof sonic.fd}`);
       try {
-        fs3.fsync(sonic.fd, closeWrapped);
+        fs4.fsync(sonic.fd, closeWrapped);
       } catch {
       }
       function closeWrapped() {
         if (sonic.fd !== 1 && sonic.fd !== 2) {
-          fs3.close(sonic.fd, done);
+          fs4.close(sonic.fd, done);
         } else {
           done();
         }
@@ -6084,15 +6084,15 @@ var require_transport = __commonJS({
       if (!unquoted) {
         return false;
       }
-      let path8 = unquoted;
-      if (path8.startsWith("file://")) {
+      let path9 = unquoted;
+      if (path9.startsWith("file://")) {
         try {
-          path8 = fileURLToPath3(path8);
+          path9 = fileURLToPath3(path9);
         } catch {
           return false;
         }
       }
-      return isAbsolute(path8) && !existsSync2(path8);
+      return isAbsolute(path9) && !existsSync2(path9);
     }
     function stripQuotes(value) {
       const first = value[0];
@@ -15566,8 +15566,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path8) {
-      let input = path8;
+    function removeDotSegments(path9) {
+      let input = path9;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -15644,8 +15644,8 @@ var require_utils = __commonJS({
     var HOST_DELIMS = { "@": "%40", "/": "%2F", "?": "%3F", "#": "%23", ":": "%3A" };
     var HOST_DELIM_RE = /[@/?#:]/g;
     var HOST_DELIM_NO_COLON_RE = /[@/?#]/g;
-    function reescapeHostDelimiters(host, isIP) {
-      const re = isIP ? HOST_DELIM_NO_COLON_RE : HOST_DELIM_RE;
+    function reescapeHostDelimiters(host, isIP2) {
+      const re = isIP2 ? HOST_DELIM_NO_COLON_RE : HOST_DELIM_RE;
       re.lastIndex = 0;
       return host.replace(re, (ch) => HOST_DELIMS[ch]);
     }
@@ -15819,8 +15819,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path8, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path8 && path8 !== "/" ? path8 : void 0;
+        const [path9, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path9 && path9 !== "/" ? path9 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -16127,7 +16127,7 @@ var require_fast_uri = __commonJS({
         fragment: void 0
       };
       let malformedAuthorityOrPort = false;
-      let isIP = false;
+      let isIP2 = false;
       if (options.reference === "suffix") {
         if (options.scheme) {
           uri = options.scheme + ":" + uri;
@@ -16157,9 +16157,9 @@ var require_fast_uri = __commonJS({
           if (ipv4result === false) {
             const ipv6result = normalizeIPv6(parsed.host);
             parsed.host = ipv6result.host.toLowerCase();
-            isIP = ipv6result.isIPV6;
+            isIP2 = ipv6result.isIPV6;
           } else {
-            isIP = true;
+            isIP2 = true;
           }
         }
         if (parsed.scheme === void 0 && parsed.userinfo === void 0 && parsed.host === void 0 && parsed.port === void 0 && parsed.query === void 0 && !parsed.path) {
@@ -16176,7 +16176,7 @@ var require_fast_uri = __commonJS({
         }
         const schemeHandler = getSchemeHandler(options.scheme || parsed.scheme);
         if (!options.unicodeSupport && (!schemeHandler || !schemeHandler.unicodeSupport)) {
-          if (parsed.host && (options.domainHost || schemeHandler && schemeHandler.domainHost) && isIP === false && nonSimpleDomain(parsed.host)) {
+          if (parsed.host && (options.domainHost || schemeHandler && schemeHandler.domainHost) && isIP2 === false && nonSimpleDomain(parsed.host)) {
             try {
               parsed.host = URL.domainToASCII(parsed.host.toLowerCase());
             } catch (e) {
@@ -16190,7 +16190,7 @@ var require_fast_uri = __commonJS({
               parsed.scheme = unescape(parsed.scheme);
             }
             if (parsed.host !== void 0) {
-              parsed.host = reescapeHostDelimiters(unescape(parsed.host), isIP);
+              parsed.host = reescapeHostDelimiters(unescape(parsed.host), isIP2);
             }
           }
           if (parsed.path) {
@@ -19993,37 +19993,37 @@ var require_parseJson = __commonJS({
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.parseJsonString = exports.parseJsonNumber = exports.parseJson = void 0;
     var rxParseJson = /position\s(\d+)(?: \(line \d+ column \d+\))?$/;
-    function parseJson(s, pos) {
+    function parseJson2(s, pos) {
       let endPos;
-      parseJson.message = void 0;
+      parseJson2.message = void 0;
       let matches;
       if (pos)
         s = s.slice(pos);
       try {
-        parseJson.position = pos + s.length;
+        parseJson2.position = pos + s.length;
         return JSON.parse(s);
       } catch (e) {
         matches = rxParseJson.exec(e.message);
         if (!matches) {
-          parseJson.message = "unexpected end";
+          parseJson2.message = "unexpected end";
           return void 0;
         }
         endPos = +matches[1];
         const c = s[endPos];
         s = s.slice(0, endPos);
-        parseJson.position = pos + endPos;
+        parseJson2.position = pos + endPos;
         try {
           return JSON.parse(s);
         } catch (e1) {
-          parseJson.message = `unexpected token ${c}`;
+          parseJson2.message = `unexpected token ${c}`;
           return void 0;
         }
       }
     }
-    exports.parseJson = parseJson;
-    parseJson.message = void 0;
-    parseJson.position = 0;
-    parseJson.code = 'require("ajv/dist/runtime/parseJson").parseJson';
+    exports.parseJson = parseJson2;
+    parseJson2.message = void 0;
+    parseJson2.position = 0;
+    parseJson2.code = 'require("ajv/dist/runtime/parseJson").parseJson';
     function parseJsonNumber(s, pos, maxDigits) {
       let numStr = "";
       let c;
@@ -20926,12 +20926,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs3, exportName) {
+    function addFormats(ajv, list, fs4, exportName) {
       var _a;
       var _b;
       (_a = (_b = ajv.opts.code).formats) !== null && _a !== void 0 ? _a : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs3[f]);
+        ajv.addFormat(f, fs4[f]);
     }
     module.exports = exports = formatsPlugin;
     Object.defineProperty(exports, "__esModule", { value: true });
@@ -28554,40 +28554,40 @@ var require_node = __commonJS({
         super();
         this.staticChildren = {};
       }
-      findStaticMatchingChild(path8, pathIndex) {
-        const staticChild = this.staticChildren[path8.charAt(pathIndex)];
-        if (staticChild === void 0 || !staticChild.matchPrefix(path8, pathIndex)) {
+      findStaticMatchingChild(path9, pathIndex) {
+        const staticChild = this.staticChildren[path9.charAt(pathIndex)];
+        if (staticChild === void 0 || !staticChild.matchPrefix(path9, pathIndex)) {
           return null;
         }
         return staticChild;
       }
-      getStaticChild(path8, pathIndex = 0) {
-        if (path8.length === pathIndex) {
+      getStaticChild(path9, pathIndex = 0) {
+        if (path9.length === pathIndex) {
           return this;
         }
-        const staticChild = this.findStaticMatchingChild(path8, pathIndex);
+        const staticChild = this.findStaticMatchingChild(path9, pathIndex);
         if (staticChild) {
-          return staticChild.getStaticChild(path8, pathIndex + staticChild.prefix.length);
+          return staticChild.getStaticChild(path9, pathIndex + staticChild.prefix.length);
         }
         return null;
       }
-      createStaticChild(path8) {
-        if (path8.length === 0) {
+      createStaticChild(path9) {
+        if (path9.length === 0) {
           return this;
         }
-        let staticChild = this.staticChildren[path8.charAt(0)];
+        let staticChild = this.staticChildren[path9.charAt(0)];
         if (staticChild) {
           let i = 1;
           for (; i < staticChild.prefix.length; i++) {
-            if (path8.charCodeAt(i) !== staticChild.prefix.charCodeAt(i)) {
+            if (path9.charCodeAt(i) !== staticChild.prefix.charCodeAt(i)) {
               staticChild = staticChild.split(this, i);
               break;
             }
           }
-          return staticChild.createStaticChild(path8.slice(i));
+          return staticChild.createStaticChild(path9.slice(i));
         }
-        const label = path8.charAt(0);
-        this.staticChildren[label] = new StaticNode(path8);
+        const label = path9.charAt(0);
+        this.staticChildren[label] = new StaticNode(path9);
         return this.staticChildren[label];
       }
     };
@@ -28647,8 +28647,8 @@ var require_node = __commonJS({
         parentNode.staticChildren[parentPrefix.charAt(0)] = staticNode;
         return staticNode;
       }
-      getNextNode(path8, pathIndex, nodeStack, paramsCount) {
-        let node = this.findStaticMatchingChild(path8, pathIndex);
+      getNextNode(path9, pathIndex, nodeStack, paramsCount) {
+        let node = this.findStaticMatchingChild(path9, pathIndex);
         let parametricBrotherNodeIndex = 0;
         if (node === null) {
           if (this.parametricChildren.length === 0) {
@@ -28695,8 +28695,8 @@ var require_node = __commonJS({
         this.kind = NODE_TYPES.PARAMETRIC;
         this.nodePaths = /* @__PURE__ */ new Set([nodePath]);
       }
-      getNextNode(path8, pathIndex) {
-        return this.findStaticMatchingChild(path8, pathIndex);
+      getNextNode(path9, pathIndex) {
+        return this.findStaticMatchingChild(path9, pathIndex);
       }
     };
     var WildcardNode = class extends Node {
@@ -29034,33 +29034,33 @@ var require_url_sanitizer = __commonJS({
       }
       return null;
     }
-    function safeDecodeURI(path8, useSemicolonDelimiter) {
+    function safeDecodeURI(path9, useSemicolonDelimiter) {
       let shouldDecode = false;
       let shouldDecodeParam = false;
       let querystring = "";
-      for (let i = 1; i < path8.length; i++) {
-        const charCode = path8.charCodeAt(i);
+      for (let i = 1; i < path9.length; i++) {
+        const charCode = path9.charCodeAt(i);
         if (charCode === 37) {
-          const highCharCode = path8.charCodeAt(i + 1);
-          const lowCharCode = path8.charCodeAt(i + 2);
+          const highCharCode = path9.charCodeAt(i + 1);
+          const lowCharCode = path9.charCodeAt(i + 2);
           if (decodeComponentChar(highCharCode, lowCharCode) === null) {
             shouldDecode = true;
           } else {
             shouldDecodeParam = true;
             if (highCharCode === 50 && lowCharCode === 53) {
               shouldDecode = true;
-              path8 = path8.slice(0, i + 1) + "25" + path8.slice(i + 1);
+              path9 = path9.slice(0, i + 1) + "25" + path9.slice(i + 1);
               i += 2;
             }
             i += 2;
           }
         } else if (charCode === 63 || charCode === 35 || charCode === 59 && useSemicolonDelimiter) {
-          querystring = path8.slice(i + 1);
-          path8 = path8.slice(0, i);
+          querystring = path9.slice(i + 1);
+          path9 = path9.slice(0, i);
           break;
         }
       }
-      const decodedPath = shouldDecode ? decodeURI(path8) : path8;
+      const decodedPath = shouldDecode ? decodeURI(path9) : path9;
       return { path: decodedPath, querystring, shouldDecodeParam };
     }
     function safeDecodeURIComponent(uriComponent) {
@@ -29154,7 +29154,7 @@ var require_find_my_way = __commonJS({
       this.routes = [];
       this.trees = {};
     }
-    Router.prototype.on = function on(method, path8, opts, handler, store2) {
+    Router.prototype.on = function on(method, path9, opts, handler, store2) {
       if (typeof opts === "function") {
         if (handler !== void 0) {
           store2 = handler;
@@ -29162,34 +29162,34 @@ var require_find_my_way = __commonJS({
         handler = opts;
         opts = {};
       }
-      assert(typeof path8 === "string", "Path should be a string");
-      assert(path8.length > 0, "The path could not be empty");
-      assert(path8[0] === "/" || path8[0] === "*", "The first character of a path should be `/` or `*`");
+      assert(typeof path9 === "string", "Path should be a string");
+      assert(path9.length > 0, "The path could not be empty");
+      assert(path9[0] === "/" || path9[0] === "*", "The first character of a path should be `/` or `*`");
       assert(typeof handler === "function", "Handler should be a function");
-      const optionalParamMatch = path8.match(OPTIONAL_PARAM_REGEXP);
+      const optionalParamMatch = path9.match(OPTIONAL_PARAM_REGEXP);
       if (optionalParamMatch) {
-        assert(path8.length === optionalParamMatch.index + optionalParamMatch[0].length, "Optional Parameter needs to be the last parameter of the path");
-        const pathFull = path8.replace(OPTIONAL_PARAM_REGEXP, "$1$2");
-        const pathOptional = path8.replace(OPTIONAL_PARAM_REGEXP, "$2") || "/";
+        assert(path9.length === optionalParamMatch.index + optionalParamMatch[0].length, "Optional Parameter needs to be the last parameter of the path");
+        const pathFull = path9.replace(OPTIONAL_PARAM_REGEXP, "$1$2");
+        const pathOptional = path9.replace(OPTIONAL_PARAM_REGEXP, "$2") || "/";
         this.on(method, pathFull, opts, handler, store2);
         this.on(method, pathOptional, opts, handler, store2);
         return;
       }
-      const route = path8;
+      const route = path9;
       if (this.ignoreDuplicateSlashes) {
-        path8 = removeDuplicateSlashes(path8);
+        path9 = removeDuplicateSlashes(path9);
       }
       if (this.ignoreTrailingSlash) {
-        path8 = trimLastSlash(path8);
+        path9 = trimLastSlash(path9);
       }
       const methods = Array.isArray(method) ? method : [method];
       for (const method2 of methods) {
         assert(typeof method2 === "string", "Method should be a string");
         assert(httpMethods.includes(method2), `Method '${method2}' is not an http method.`);
-        this._on(method2, path8, opts, handler, store2, route);
+        this._on(method2, path9, opts, handler, store2, route);
       }
     };
-    Router.prototype._on = function _on(method, path8, opts, handler, store2) {
+    Router.prototype._on = function _on(method, path9, opts, handler, store2) {
       let constraints = {};
       if (opts.constraints !== void 0) {
         assert(typeof opts.constraints === "object" && opts.constraints !== null, "Constraints should be an object");
@@ -29202,7 +29202,7 @@ var require_find_my_way = __commonJS({
       if (this.trees[method] === void 0) {
         this.trees[method] = new StaticNode("/");
       }
-      let pattern = path8;
+      let pattern = path9;
       if (pattern === "*" && this.trees[method].prefix.length !== 0) {
         const currentRoot = this.trees[method];
         this.trees[method] = new StaticNode("");
@@ -29305,19 +29305,19 @@ var require_find_my_way = __commonJS({
           throw new Error(`Method '${method}' already declared for route '${pattern}' with constraints '${JSON.stringify(constraints)}'`);
         }
       }
-      const route = { method, path: path8, pattern, params, opts, handler, store: store2 };
+      const route = { method, path: path9, pattern, params, opts, handler, store: store2 };
       this.routes.push(route);
       currentNode.addRoute(route, this.constrainer);
     };
-    Router.prototype.hasRoute = function hasRoute(method, path8, constraints) {
-      const route = this.findRoute(method, path8, constraints);
+    Router.prototype.hasRoute = function hasRoute(method, path9, constraints) {
+      const route = this.findRoute(method, path9, constraints);
       return route !== null;
     };
-    Router.prototype.findRoute = function findNode(method, path8, constraints = {}) {
+    Router.prototype.findRoute = function findNode(method, path9, constraints = {}) {
       if (this.trees[method] === void 0) {
         return null;
       }
-      let pattern = path8;
+      let pattern = path9;
       let currentNode = this.trees[method];
       let parentNodePathIndex = currentNode.prefix.length;
       const params = [];
@@ -29435,39 +29435,39 @@ var require_find_my_way = __commonJS({
       this.trees = {};
       this.routes = [];
     };
-    Router.prototype.off = function off(method, path8, constraints) {
-      assert(typeof path8 === "string", "Path should be a string");
-      assert(path8.length > 0, "The path could not be empty");
-      assert(path8[0] === "/" || path8[0] === "*", "The first character of a path should be `/` or `*`");
+    Router.prototype.off = function off(method, path9, constraints) {
+      assert(typeof path9 === "string", "Path should be a string");
+      assert(path9.length > 0, "The path could not be empty");
+      assert(path9[0] === "/" || path9[0] === "*", "The first character of a path should be `/` or `*`");
       assert(
         typeof constraints === "undefined" || typeof constraints === "object" && !Array.isArray(constraints) && constraints !== null,
         "Constraints should be an object or undefined."
       );
-      const optionalParamMatch = path8.match(OPTIONAL_PARAM_REGEXP);
+      const optionalParamMatch = path9.match(OPTIONAL_PARAM_REGEXP);
       if (optionalParamMatch) {
-        assert(path8.length === optionalParamMatch.index + optionalParamMatch[0].length, "Optional Parameter needs to be the last parameter of the path");
-        const pathFull = path8.replace(OPTIONAL_PARAM_REGEXP, "$1$2");
-        const pathOptional = path8.replace(OPTIONAL_PARAM_REGEXP, "$2");
+        assert(path9.length === optionalParamMatch.index + optionalParamMatch[0].length, "Optional Parameter needs to be the last parameter of the path");
+        const pathFull = path9.replace(OPTIONAL_PARAM_REGEXP, "$1$2");
+        const pathOptional = path9.replace(OPTIONAL_PARAM_REGEXP, "$2");
         this.off(method, pathFull, constraints);
         this.off(method, pathOptional, constraints);
         return;
       }
       if (this.ignoreDuplicateSlashes) {
-        path8 = removeDuplicateSlashes(path8);
+        path9 = removeDuplicateSlashes(path9);
       }
       if (this.ignoreTrailingSlash) {
-        path8 = trimLastSlash(path8);
+        path9 = trimLastSlash(path9);
       }
       const methods = Array.isArray(method) ? method : [method];
       for (const method2 of methods) {
-        this._off(method2, path8, constraints);
+        this._off(method2, path9, constraints);
       }
     };
-    Router.prototype._off = function _off(method, path8, constraints) {
+    Router.prototype._off = function _off(method, path9, constraints) {
       assert(typeof method === "string", "Method should be a string");
       assert(httpMethods.includes(method), `Method '${method}' is not an http method.`);
       function matcherWithoutConstraints(route) {
-        return method !== route.method || path8 !== route.path;
+        return method !== route.method || path9 !== route.path;
       }
       function matcherWithConstraints(route) {
         return matcherWithoutConstraints(route) || !deepEqual(constraints, route.opts.constraints || {});
@@ -29504,37 +29504,37 @@ var require_find_my_way = __commonJS({
       if (handle === null) return this._defaultRoute(req, res, ctx);
       return ctx === void 0 ? handle.handler(req, res, handle.params, handle.store, handle.searchParams) : handle.handler.call(ctx, req, res, handle.params, handle.store, handle.searchParams);
     };
-    Router.prototype.find = function find(method, path8, derivedConstraints) {
+    Router.prototype.find = function find(method, path9, derivedConstraints) {
       let currentNode = this.trees[method];
       if (currentNode === void 0) return null;
-      if (path8.charCodeAt(0) !== 47) {
-        path8 = path8.replace(FULL_PATH_REGEXP, "/");
+      if (path9.charCodeAt(0) !== 47) {
+        path9 = path9.replace(FULL_PATH_REGEXP, "/");
       }
       if (this.ignoreDuplicateSlashes) {
-        path8 = removeDuplicateSlashes(path8);
+        path9 = removeDuplicateSlashes(path9);
       }
       let sanitizedUrl;
       let querystring2;
       let shouldDecodeParam;
       try {
-        sanitizedUrl = safeDecodeURI(path8, this.useSemicolonDelimiter);
-        path8 = sanitizedUrl.path;
+        sanitizedUrl = safeDecodeURI(path9, this.useSemicolonDelimiter);
+        path9 = sanitizedUrl.path;
         querystring2 = sanitizedUrl.querystring;
         shouldDecodeParam = sanitizedUrl.shouldDecodeParam;
       } catch (error) {
-        return this._onBadUrl(path8);
+        return this._onBadUrl(path9);
       }
       if (this.ignoreTrailingSlash) {
-        path8 = trimLastSlash(path8);
+        path9 = trimLastSlash(path9);
       }
-      const originPath = path8;
+      const originPath = path9;
       if (this.caseSensitive === false) {
-        path8 = path8.toLowerCase();
+        path9 = path9.toLowerCase();
       }
       const maxParamLength = this.maxParamLength;
       let pathIndex = currentNode.prefix.length;
       const params = [];
-      const pathLen = path8.length;
+      const pathLen = path9.length;
       const brothersNodesStack = [];
       let maxParamLengthExceeded = false;
       while (true) {
@@ -29549,7 +29549,7 @@ var require_find_my_way = __commonJS({
             };
           }
         }
-        let node = currentNode.getNextNode(path8, pathIndex, brothersNodesStack, params.length);
+        let node = currentNode.getNextNode(path9, pathIndex, brothersNodesStack, params.length);
         if (node === null) {
           if (brothersNodesStack.length === 0) {
             if (maxParamLengthExceeded && this.onMaxParamLength) {
@@ -29620,8 +29620,8 @@ var require_find_my_way = __commonJS({
     Router.prototype._rebuild = function(routes) {
       this.reset();
       for (const route of routes) {
-        const { method, path: path8, opts, handler, store: store2 } = route;
-        this._on(method, path8, opts, handler, store2);
+        const { method, path: path9, opts, handler, store: store2 } = route;
+        this._on(method, path9, opts, handler, store2);
       }
     };
     Router.prototype._defaultRoute = function(req, res, ctx) {
@@ -29632,24 +29632,24 @@ var require_find_my_way = __commonJS({
         res.end();
       }
     };
-    Router.prototype._onBadUrl = function(path8) {
+    Router.prototype._onBadUrl = function(path9) {
       if (this.onBadUrl === null) {
         return null;
       }
       const onBadUrl = this.onBadUrl;
       return {
-        handler: (req, res, ctx) => onBadUrl(path8, req, res),
+        handler: (req, res, ctx) => onBadUrl(path9, req, res),
         params: {},
         store: null
       };
     };
-    Router.prototype._onMaxParamLength = function(path8) {
+    Router.prototype._onMaxParamLength = function(path9) {
       if (this.onMaxParamLength === null) {
         return null;
       }
       const onMaxParamLength = this.onMaxParamLength;
       return {
-        handler: (req, res, ctx) => onMaxParamLength(path8, req, res),
+        handler: (req, res, ctx) => onMaxParamLength(path9, req, res),
         params: {},
         store: null
       };
@@ -29681,12 +29681,12 @@ var require_find_my_way = __commonJS({
       if (!httpMethods.hasOwnProperty(i)) continue;
       const m = httpMethods[i];
       const methodName = m.toLowerCase();
-      Router.prototype[methodName] = function(path8, handler, store2) {
-        return this.on(m, path8, handler, store2);
+      Router.prototype[methodName] = function(path9, handler, store2) {
+        return this.on(m, path9, handler, store2);
       };
     }
-    Router.prototype.all = function(path8, handler, store2) {
-      this.on(httpMethods, path8, handler, store2);
+    Router.prototype.all = function(path9, handler, store2) {
+      this.on(httpMethods, path9, handler, store2);
     };
     Router.sanitizeUrlPath = function sanitizeUrlPath(url, useSemicolonDelimiter) {
       const decoded = safeDecodeURI(url, useSemicolonDelimiter);
@@ -29701,14 +29701,14 @@ var require_find_my_way = __commonJS({
     function escapeRegExp(string) {
       return string.replace(ESCAPE_REGEXP, "\\$&");
     }
-    function removeDuplicateSlashes(path8) {
-      return path8.indexOf("//") !== -1 ? path8.replace(REMOVE_DUPLICATE_SLASHES_REGEXP, "/") : path8;
+    function removeDuplicateSlashes(path9) {
+      return path9.indexOf("//") !== -1 ? path9.replace(REMOVE_DUPLICATE_SLASHES_REGEXP, "/") : path9;
     }
-    function trimLastSlash(path8) {
-      if (path8.length > 1 && path8.charCodeAt(path8.length - 1) === 47) {
-        return path8.slice(0, -1);
+    function trimLastSlash(path9) {
+      if (path9.length > 1 && path9.charCodeAt(path9.length - 1) === 47) {
+        return path9.slice(0, -1);
       }
-      return path8;
+      return path9;
     }
     function trimRegExpStartAndEnd(regexString) {
       if (regexString.charCodeAt(1) === 94) {
@@ -29719,22 +29719,22 @@ var require_find_my_way = __commonJS({
       }
       return regexString;
     }
-    function getClosingParenthensePosition(path8, idx) {
+    function getClosingParenthensePosition(path9, idx) {
       let parentheses = 1;
-      while (idx < path8.length) {
+      while (idx < path9.length) {
         idx++;
-        if (path8.charCodeAt(idx) === 92) {
+        if (path9.charCodeAt(idx) === 92) {
           idx++;
           continue;
         }
-        if (path8.charCodeAt(idx) === 41) {
+        if (path9.charCodeAt(idx) === 41) {
           parentheses--;
-        } else if (path8.charCodeAt(idx) === 40) {
+        } else if (path9.charCodeAt(idx) === 40) {
           parentheses++;
         }
         if (!parentheses) return idx;
       }
-      throw new TypeError('Invalid regexp expression in "' + path8 + '"');
+      throw new TypeError('Invalid regexp expression in "' + path9 + '"');
     }
     function defaultBuildPrettyMeta(route) {
       if (!route) return {};
@@ -29971,12 +29971,12 @@ var require_route = __commonJS({
       function route({ options: options2, isFastify }) {
         throwIfAlreadyStarted("Cannot add route!");
         const opts = { ...options2 };
-        const path8 = opts.url || opts.path || "";
+        const path9 = opts.url || opts.path || "";
         if (!opts.handler) {
-          throw new FST_ERR_ROUTE_MISSING_HANDLER(opts.method, path8);
+          throw new FST_ERR_ROUTE_MISSING_HANDLER(opts.method, path9);
         }
         if (opts.errorHandler !== void 0 && typeof opts.errorHandler !== "function") {
-          throw new FST_ERR_ROUTE_HANDLER_NOT_FN(opts.method, path8);
+          throw new FST_ERR_ROUTE_HANDLER_NOT_FN(opts.method, path9);
         }
         validateBodyLimitOption(opts.bodyLimit);
         validateHandlerTimeoutOption(opts.handlerTimeout);
@@ -29986,22 +29986,22 @@ var require_route = __commonJS({
         if (Array.isArray(opts.method)) {
           for (let i = 0; i < opts.method.length; ++i) {
             opts.method[i] = normalizeAndValidateMethod.call(this, opts.method[i]);
-            validateSchemaBodyOption.call(this, opts.method[i], path8, opts.schema);
+            validateSchemaBodyOption.call(this, opts.method[i], path9, opts.schema);
             isGetRoute = opts.method.includes("GET");
             isHeadRoute = opts.method.includes("HEAD");
           }
         } else {
           opts.method = normalizeAndValidateMethod.call(this, opts.method);
-          validateSchemaBodyOption.call(this, opts.method, path8, opts.schema);
+          validateSchemaBodyOption.call(this, opts.method, path9, opts.schema);
           isGetRoute = opts.method === "GET";
           isHeadRoute = opts.method === "HEAD";
         }
         const headOpts = shouldExposeHead && isGetRoute ? { ...options2 } : null;
         const prefix = this[kRoutePrefix];
-        if (path8 === "/" && prefix.length > 0 && opts.method !== "HEAD") {
+        if (path9 === "/" && prefix.length > 0 && opts.method !== "HEAD") {
           switch (opts.prefixTrailingSlash) {
             case "slash":
-              addNewRoute.call(this, { path: path8, isFastify });
+              addNewRoute.call(this, { path: path9, isFastify });
               break;
             case "no-slash":
               addNewRoute.call(this, { path: "", isFastify });
@@ -30010,20 +30010,20 @@ var require_route = __commonJS({
             default:
               addNewRoute.call(this, { path: "", isFastify });
               if (ignoreTrailingSlash !== true && (ignoreDuplicateSlashes !== true || !prefix.endsWith("/"))) {
-                addNewRoute.call(this, { path: path8, prefixing: true, isFastify });
+                addNewRoute.call(this, { path: path9, prefixing: true, isFastify });
               }
           }
-        } else if (path8[0] === "/" && prefix.endsWith("/")) {
-          addNewRoute.call(this, { path: path8.slice(1), isFastify });
+        } else if (path9[0] === "/" && prefix.endsWith("/")) {
+          addNewRoute.call(this, { path: path9.slice(1), isFastify });
         } else {
-          addNewRoute.call(this, { path: path8, isFastify });
+          addNewRoute.call(this, { path: path9, isFastify });
         }
         return this;
-        function addNewRoute({ path: path9, prefixing = false, isFastify: isFastify2 = false }) {
-          const url = prefix + path9;
+        function addNewRoute({ path: path10, prefixing = false, isFastify: isFastify2 = false }) {
+          const url = prefix + path10;
           opts.url = url;
           opts.path = url;
-          opts.routePath = path9;
+          opts.routePath = path10;
           opts.prefix = prefix;
           opts.logLevel = opts.logLevel || this[kLogLevel];
           if (this[kLogSerializers] || opts.logSerializers) {
@@ -30153,7 +30153,7 @@ var require_route = __commonJS({
           });
           if (shouldExposeHead && isGetRoute && !isHeadRoute && !hasHEADHandler) {
             const onSendHandlers = parseHeadOnSendHandlers(headOpts.onSend);
-            prepareRoute.call(this, { method: "HEAD", url: path9, options: { ...headOpts, onSend: onSendHandlers }, isFastify: true });
+            prepareRoute.call(this, { method: "HEAD", url: path10, options: { ...headOpts, onSend: onSendHandlers }, isFastify: true });
           }
         }
       }
@@ -30277,9 +30277,9 @@ var require_route = __commonJS({
       }
       return method;
     }
-    function validateSchemaBodyOption(method, path8, schema) {
+    function validateSchemaBodyOption(method, path9, schema) {
       if (this[kSupportedHTTPMethods].bodyless.has(method) && schema?.body) {
-        throw new FST_ERR_ROUTE_BODY_VALIDATION_SCHEMA_NOT_SUPPORTED(method, path8);
+        throw new FST_ERR_ROUTE_BODY_VALIDATION_SCHEMA_NOT_SUPPORTED(method, path9);
       }
     }
     function validateBodyLimitOption(bodyLimit) {
@@ -30378,7 +30378,7 @@ var require_four_oh_four = __commonJS({
         });
       }
       function createOnBadUrl() {
-        return function onBadUrl(path8, req, res) {
+        return function onBadUrl(path9, req, res) {
           const fourOhFourContext = this[kFourOhFourLevelInstance][kFourOhFourContext];
           const id = getGenReqId(fourOhFourContext.server, req);
           const childLogger = createChildLogger(fourOhFourContext, logger, req, id);
@@ -34237,7 +34237,7 @@ var require_fastify = __commonJS({
         }
         fourOhFour.router.lookup(req, res);
       }
-      function onBadUrl(path8, req, res) {
+      function onBadUrl(path9, req, res) {
         if (options.frameworkErrors) {
           const id = getGenReqId(onBadUrlContext.server, req);
           const childLogger = createChildLogger(onBadUrlContext, options.logger, req, id);
@@ -34247,12 +34247,12 @@ var require_fastify = __commonJS({
           if (resolvedDisableRequestLogging === false) {
             childLogger.info({ req: request }, "incoming request");
           }
-          return options.frameworkErrors(new FST_ERR_BAD_URL(path8), request, reply);
+          return options.frameworkErrors(new FST_ERR_BAD_URL(path9), request, reply);
         }
         const body = JSON.stringify({
           error: "Bad Request",
           code: "FST_ERR_BAD_URL",
-          message: `'${path8}' is not a valid url component`,
+          message: `'${path9}' is not a valid url component`,
           statusCode: 400
         });
         res.writeHead(400, {
@@ -35678,11 +35678,11 @@ var require_commonjs3 = __commonJS({
       return (f) => f.length === len && f !== "." && f !== "..";
     };
     var defaultPlatform = typeof process === "object" && process ? typeof process.env === "object" && process.env && process.env.__MINIMATCH_TESTING_PLATFORM__ || process.platform : "posix";
-    var path8 = {
+    var path9 = {
       win32: { sep: "\\" },
       posix: { sep: "/" }
     };
-    exports.sep = defaultPlatform === "win32" ? path8.win32.sep : path8.posix.sep;
+    exports.sep = defaultPlatform === "win32" ? path9.win32.sep : path9.posix.sep;
     exports.minimatch.sep = exports.sep;
     exports.GLOBSTAR = /* @__PURE__ */ Symbol("globstar **");
     exports.minimatch.GLOBSTAR = exports.GLOBSTAR;
@@ -38258,12 +38258,12 @@ var require_commonjs5 = __commonJS({
       /**
        * Get the Path object referenced by the string path, resolved from this Path
        */
-      resolve(path8) {
-        if (!path8) {
+      resolve(path9) {
+        if (!path9) {
           return this;
         }
-        const rootPath = this.getRootString(path8);
-        const dir = path8.substring(rootPath.length);
+        const rootPath = this.getRootString(path9);
+        const dir = path9.substring(rootPath.length);
         const dirParts = dir.split(this.splitSep);
         const result = rootPath ? this.getRoot(rootPath).#resolveParts(dirParts) : this.#resolveParts(dirParts);
         return result;
@@ -39016,8 +39016,8 @@ var require_commonjs5 = __commonJS({
       /**
        * @internal
        */
-      getRootString(path8) {
-        return node_path_1.win32.parse(path8).root;
+      getRootString(path9) {
+        return node_path_1.win32.parse(path9).root;
       }
       /**
        * @internal
@@ -39064,8 +39064,8 @@ var require_commonjs5 = __commonJS({
       /**
        * @internal
        */
-      getRootString(path8) {
-        return path8.startsWith("/") ? "/" : "";
+      getRootString(path9) {
+        return path9.startsWith("/") ? "/" : "";
       }
       /**
        * @internal
@@ -39115,8 +39115,8 @@ var require_commonjs5 = __commonJS({
        *
        * @internal
        */
-      constructor(cwd = process.cwd(), pathImpl, sep, { nocase, childrenCacheSize = 16 * 1024, fs: fs3 = defaultFS } = {}) {
-        this.#fs = fsFromOption(fs3);
+      constructor(cwd = process.cwd(), pathImpl, sep, { nocase, childrenCacheSize = 16 * 1024, fs: fs4 = defaultFS } = {}) {
+        this.#fs = fsFromOption(fs4);
         if (cwd instanceof URL || cwd.startsWith("file://")) {
           cwd = (0, node_url_1.fileURLToPath)(cwd);
         }
@@ -39155,11 +39155,11 @@ var require_commonjs5 = __commonJS({
       /**
        * Get the depth of a provided path, string, or the cwd
        */
-      depth(path8 = this.cwd) {
-        if (typeof path8 === "string") {
-          path8 = this.cwd.resolve(path8);
+      depth(path9 = this.cwd) {
+        if (typeof path9 === "string") {
+          path9 = this.cwd.resolve(path9);
         }
-        return path8.depth();
+        return path9.depth();
       }
       /**
        * Return the cache of child entries.  Exposed so subclasses can create
@@ -39646,9 +39646,9 @@ var require_commonjs5 = __commonJS({
         process2();
         return results;
       }
-      chdir(path8 = this.cwd) {
+      chdir(path9 = this.cwd) {
         const oldCwd = this.cwd;
-        this.cwd = typeof path8 === "string" ? this.cwd.resolve(path8) : path8;
+        this.cwd = typeof path9 === "string" ? this.cwd.resolve(path9) : path9;
         this.cwd[setAsCwd](oldCwd);
       }
     };
@@ -39675,8 +39675,8 @@ var require_commonjs5 = __commonJS({
       /**
        * @internal
        */
-      newRoot(fs3) {
-        return new PathWin32(this.rootPath, IFDIR, void 0, this.roots, this.nocase, this.childrenCache(), { fs: fs3 });
+      newRoot(fs4) {
+        return new PathWin32(this.rootPath, IFDIR, void 0, this.roots, this.nocase, this.childrenCache(), { fs: fs4 });
       }
       /**
        * Return true if the provided path string is an absolute path
@@ -39705,8 +39705,8 @@ var require_commonjs5 = __commonJS({
       /**
        * @internal
        */
-      newRoot(fs3) {
-        return new PathPosix(this.rootPath, IFDIR, void 0, this.roots, this.nocase, this.childrenCache(), { fs: fs3 });
+      newRoot(fs4) {
+        return new PathPosix(this.rootPath, IFDIR, void 0, this.roots, this.nocase, this.childrenCache(), { fs: fs4 });
       }
       /**
        * Return true if the provided path string is an absolute path
@@ -40036,8 +40036,8 @@ var require_processor = __commonJS({
       }
       // match, absolute, ifdir
       entries() {
-        return [...this.store.entries()].map(([path8, n]) => [
-          path8,
+        return [...this.store.entries()].map(([path9, n]) => [
+          path9,
           !!(n & 2),
           !!(n & 1)
         ]);
@@ -40255,9 +40255,9 @@ var require_walker = __commonJS({
       signal;
       maxDepth;
       includeChildMatches;
-      constructor(patterns, path8, opts) {
+      constructor(patterns, path9, opts) {
         this.patterns = patterns;
-        this.path = path8;
+        this.path = path9;
         this.opts = opts;
         this.#sep = !opts.posix && opts.platform === "win32" ? "\\" : "/";
         this.includeChildMatches = opts.includeChildMatches !== false;
@@ -40276,11 +40276,11 @@ var require_walker = __commonJS({
           });
         }
       }
-      #ignored(path8) {
-        return this.seen.has(path8) || !!this.#ignore?.ignored?.(path8);
+      #ignored(path9) {
+        return this.seen.has(path9) || !!this.#ignore?.ignored?.(path9);
       }
-      #childrenIgnored(path8) {
-        return !!this.#ignore?.childrenIgnored?.(path8);
+      #childrenIgnored(path9) {
+        return !!this.#ignore?.childrenIgnored?.(path9);
       }
       // backpressure mechanism
       pause() {
@@ -40496,8 +40496,8 @@ var require_walker = __commonJS({
     exports.GlobUtil = GlobUtil;
     var GlobWalker = class extends GlobUtil {
       matches = /* @__PURE__ */ new Set();
-      constructor(patterns, path8, opts) {
-        super(patterns, path8, opts);
+      constructor(patterns, path9, opts) {
+        super(patterns, path9, opts);
       }
       matchEmit(e) {
         this.matches.add(e);
@@ -40535,8 +40535,8 @@ var require_walker = __commonJS({
     exports.GlobWalker = GlobWalker;
     var GlobStream = class extends GlobUtil {
       results;
-      constructor(patterns, path8, opts) {
-        super(patterns, path8, opts);
+      constructor(patterns, path9, opts) {
+        super(patterns, path9, opts);
         this.results = new minipass_1.Minipass({
           signal: this.signal,
           objectMode: true
@@ -41028,11 +41028,11 @@ var require_Mime = __commonJS({
         }
       }
     };
-    Mime.prototype.getType = function(path8) {
-      path8 = String(path8);
-      let last = path8.replace(/^.*[/\\]/, "").toLowerCase();
+    Mime.prototype.getType = function(path9) {
+      path9 = String(path9);
+      let last = path9.replace(/^.*[/\\]/, "").toLowerCase();
       let ext = last.replace(/^.*\./, "").toLowerCase();
-      let hasPath = last.length < path8.length;
+      let hasPath = last.length < path9.length;
       let hasDot = ext.length < last.length - 1;
       return (hasDot || !hasPath) && this._types[ext] || null;
     };
@@ -42061,8 +42061,8 @@ var require_createHttpError = __commonJS({
 var require_send = __commonJS({
   "node_modules/.pnpm/@fastify+send@4.1.1/node_modules/@fastify/send/lib/send.js"(exports, module) {
     "use strict";
-    var fs3 = __require("node:fs");
-    var path8 = __require("node:path");
+    var fs4 = __require("node:fs");
+    var path9 = __require("node:path");
     var stream = __require("node:stream");
     var debug = __require("node:util").debuglog("send");
     var decode = require_fast_decode_uri_component();
@@ -42078,11 +42078,11 @@ var require_send = __commonJS({
     var { parseBytesRange } = require_parseBytesRange();
     var { parseTokenList } = require_parseTokenList();
     var { createHttpError } = require_createHttpError();
-    var extname = path8.extname;
-    var join = path8.join;
-    var normalize = path8.normalize;
-    var resolve = path8.resolve;
-    var sep = path8.sep;
+    var extname = path9.extname;
+    var join = path9.join;
+    var normalize = path9.normalize;
+    var resolve = path9.resolve;
+    var sep = path9.sep;
     var Readable = stream.Readable;
     var BYTES_RANGE_REGEXP = /^ *bytes=/;
     var MAX_MAXAGE = 60 * 60 * 24 * 365 * 1e3;
@@ -42149,36 +42149,36 @@ var require_send = __commonJS({
       };
     }
     function normalizePath(_path, root) {
-      let path9 = decode(_path);
-      if (path9 == null) {
+      let path10 = decode(_path);
+      if (path10 == null) {
         return { statusCode: 400 };
       }
-      if (~path9.indexOf("\0")) {
+      if (~path10.indexOf("\0")) {
         return { statusCode: 400 };
       }
       let parts;
       if (root !== null) {
-        if (path9) {
-          path9 = normalize("." + sep + path9);
+        if (path10) {
+          path10 = normalize("." + sep + path10);
         }
-        if (UP_PATH_REGEXP.test(path9)) {
-          debug('malicious path "%s"', path9);
+        if (UP_PATH_REGEXP.test(path10)) {
+          debug('malicious path "%s"', path10);
           return { statusCode: 403 };
         }
-        parts = path9.split(sep);
-        path9 = normalize(join(root, path9));
+        parts = path10.split(sep);
+        path10 = normalize(join(root, path10));
       } else {
-        if (UP_PATH_REGEXP.test(path9)) {
-          debug('malicious path "%s"', path9);
+        if (UP_PATH_REGEXP.test(path10)) {
+          debug('malicious path "%s"', path10);
           return { statusCode: 403 };
         }
-        parts = normalize(path9).split(sep);
-        path9 = resolve(path9);
+        parts = normalize(path10).split(sep);
+        path10 = resolve(path10);
       }
-      return { path: path9, parts };
+      return { path: path10, parts };
     }
-    function hasTrailingSlash(path9) {
-      return path9[path9.length - 1] === "/";
+    function hasTrailingSlash(path10) {
+      return path10[path10.length - 1] === "/";
     }
     function isConditionalGET(request) {
       return request.headers["if-match"] || request.headers["if-unmodified-since"] || request.headers["if-none-match"] || request.headers["if-modified-since"];
@@ -42268,9 +42268,9 @@ var require_send = __commonJS({
         lastModified <= ifRangeTimestamp
       );
     }
-    function tryStat(path9) {
+    function tryStat(path10) {
       return new Promise((resolve2) => {
-        fs3.stat(path9, function onstat(error, stat) {
+        fs4.stat(path10, function onstat(error, stat) {
           resolve2({ error, stat });
         });
       });
@@ -42306,7 +42306,7 @@ var require_send = __commonJS({
           return sendError(500, err);
       }
     }
-    function sendNotModified(headers, path9, stat) {
+    function sendNotModified(headers, path10, stat) {
       debug("not modified");
       delete headers["Content-Encoding"];
       delete headers["Content-Language"];
@@ -42319,15 +42319,15 @@ var require_send = __commonJS({
         stream: Readable.from(""),
         // metadata
         type: "file",
-        metadata: { path: path9, stat }
+        metadata: { path: path10, stat }
       };
     }
-    function sendFileDirectly(request, path9, stat, options) {
+    function sendFileDirectly(request, path10, stat, options) {
       let len = stat.size;
       let offset = options.start ?? 0;
       let statusCode = 200;
       const headers = {};
-      debug('send "%s"', path9);
+      debug('send "%s"', path10);
       if (options.acceptRanges) {
         debug("accept ranges");
         headers["Accept-Ranges"] = "bytes";
@@ -42351,7 +42351,7 @@ var require_send = __commonJS({
         headers.ETag = etag;
       }
       if (options.contentType) {
-        let type = mime.getType(path9) || mime.default_type;
+        let type = mime.getType(path10) || mime.default_type;
         debug("content-type %s", type);
         if (type && isUtf8MimeType(type)) {
           type += "; charset=utf-8";
@@ -42365,7 +42365,7 @@ var require_send = __commonJS({
           return sendError(412);
         }
         if (isNotModifiedFailure(request, headers)) {
-          return sendNotModified(headers, path9, stat);
+          return sendNotModified(headers, path10, stat);
         }
       }
       len = Math.max(0, len - offset);
@@ -42407,10 +42407,10 @@ var require_send = __commonJS({
           stream: Readable.from(""),
           // metadata
           type: "file",
-          metadata: { path: path9, stat }
+          metadata: { path: path10, stat }
         };
       }
-      const stream2 = fs3.createReadStream(path9, {
+      const stream2 = fs4.createReadStream(path10, {
         highWaterMark: options.highWaterMark,
         start: offset,
         end: Math.max(offset, offset + len - 1)
@@ -42421,10 +42421,10 @@ var require_send = __commonJS({
         stream: stream2,
         // metadata
         type: "file",
-        metadata: { path: path9, stat }
+        metadata: { path: path10, stat }
       };
     }
-    function sendRedirect(path9, options) {
+    function sendRedirect(path10, options) {
       if (hasTrailingSlash(options.path)) {
         return sendError(403);
       }
@@ -42442,14 +42442,14 @@ var require_send = __commonJS({
         stream: Readable.from(doc[0]),
         // metadata
         type: "directory",
-        metadata: { requestPath: options.path, path: path9 }
+        metadata: { requestPath: options.path, path: path10 }
       };
     }
-    async function sendIndex(request, path9, options) {
+    async function sendIndex(request, path10, options) {
       let err;
       for (let i = 0; i < options.index.length; i++) {
         const index = options.index[i];
-        const p = join(path9, index);
+        const p = join(path10, index);
         const { error, stat } = await tryStat(p);
         if (error) {
           err = error;
@@ -42463,13 +42463,13 @@ var require_send = __commonJS({
       }
       return sendError(404);
     }
-    async function sendFile(request, path9, options) {
-      const { error, stat } = await tryStat(path9);
-      if (error && error.code === "ENOENT" && !extname(path9) && path9[path9.length - 1] !== sep) {
+    async function sendFile(request, path10, options) {
+      const { error, stat } = await tryStat(path10);
+      if (error && error.code === "ENOENT" && !extname(path10) && path10[path10.length - 1] !== sep) {
         let err = error;
         for (let i = 0; i < options.extensions.length; i++) {
           const extension = options.extensions[i];
-          const p = path9 + "." + extension;
+          const p = path10 + "." + extension;
           const { error: error2, stat: stat2 } = await tryStat(p);
           if (error2) {
             err = error2;
@@ -42487,14 +42487,14 @@ var require_send = __commonJS({
         return sendError(404);
       }
       if (error) return sendStatError(error);
-      if (stat.isDirectory()) return sendRedirect(path9, options);
-      return sendFileDirectly(request, path9, stat, options);
+      if (stat.isDirectory()) return sendRedirect(path10, options);
+      return sendFileDirectly(request, path10, stat, options);
     }
     async function send(request, _path, options) {
       const opts = normalizeOptions(options);
       opts.path = _path;
       const parsed = normalizePath(_path, opts.root);
-      const { path: path9, parts } = parsed;
+      const { path: path10, parts } = parsed;
       if (parsed.statusCode !== void 0) {
         return sendError(parsed.statusCode);
       }
@@ -42504,23 +42504,23 @@ var require_send = __commonJS({
           /* c8 ignore start */
           /* unreachable, because NODE_DEBUG can not be set after process is running */
           case 0:
-            debug('allow dotfile "%s"', path9);
+            debug('allow dotfile "%s"', path10);
             break;
           /* c8 ignore stop */
           case 2:
-            debug('deny dotfile "%s"', path9);
+            debug('deny dotfile "%s"', path10);
             return sendError(403);
           case 1:
           // 'ignore'
           default:
-            debug('ignore dotfile "%s"', path9);
+            debug('ignore dotfile "%s"', path10);
             return sendError(404);
         }
       }
       if (opts.index.length && hasTrailingSlash(_path)) {
-        return sendIndex(request, path9, opts);
+        return sendIndex(request, path10, opts);
       }
-      return sendFile(request, path9, opts);
+      return sendFile(request, path10, opts);
     }
     module.exports.send = send;
   }
@@ -42907,30 +42907,30 @@ var require_dirList = __commonJS({
   "node_modules/.pnpm/@fastify+static@8.3.0/node_modules/@fastify/static/lib/dirList.js"(exports, module) {
     "use strict";
     var os2 = __require("node:os");
-    var path8 = __require("node:path");
-    var fs3 = __require("node:fs/promises");
+    var path9 = __require("node:path");
+    var fs4 = __require("node:fs/promises");
     var fastq = require_queue();
     var fastqConcurrency = Math.max(1, os2.cpus().length - 1);
     var dirList = {
       _getExtendedInfo: async function(dir, info) {
-        const depth = dir.split(path8.sep).length;
-        const files = await fs3.readdir(dir);
+        const depth = dir.split(path9.sep).length;
+        const files = await fs4.readdir(dir);
         const worker = async (filename) => {
-          const filePath = path8.join(dir, filename);
+          const filePath = path9.join(dir, filename);
           let stats;
           try {
-            stats = await fs3.stat(filePath);
+            stats = await fs4.stat(filePath);
           } catch {
             return;
           }
           if (stats.isDirectory()) {
             info.totalFolderCount++;
-            filePath.split(path8.sep).length === depth + 1 && info.folderCount++;
+            filePath.split(path9.sep).length === depth + 1 && info.folderCount++;
             await dirList._getExtendedInfo(filePath, info);
           } else {
             info.totalSize += stats.size;
             info.totalFileCount++;
-            filePath.split(path8.sep).length === depth + 1 && info.fileCount++;
+            filePath.split(path9.sep).length === depth + 1 && info.fileCount++;
             info.lastModified = Math.max(info.lastModified, stats.mtimeMs);
           }
         };
@@ -42963,7 +42963,7 @@ var require_dirList = __commonJS({
        */
       list: async function(dir, options, dotfiles) {
         const entries = { dirs: [], files: [] };
-        let files = await fs3.readdir(dir);
+        let files = await fs4.readdir(dir);
         if (dotfiles === "deny" || dotfiles === "ignore") {
           files = files.filter((file) => file.charAt(0) !== ".");
         }
@@ -42973,14 +42973,14 @@ var require_dirList = __commonJS({
         const worker = async (filename) => {
           let stats;
           try {
-            stats = await fs3.stat(path8.join(dir, filename));
+            stats = await fs4.stat(path9.join(dir, filename));
           } catch {
             return;
           }
           const entry = { name: filename, stats };
           if (stats.isDirectory()) {
             if (options.extendedFolderInfo) {
-              entry.extendedInfo = await dirList.getExtendedInfo(path8.join(dir, filename));
+              entry.extendedInfo = await dirList.getExtendedInfo(path9.join(dir, filename));
             }
             entries.dirs.push(entry);
           } else {
@@ -43036,11 +43036,11 @@ var require_dirList = __commonJS({
        * @return {ListFile}
        */
       htmlInfo: function(entry, route, prefix, options) {
-        if (options.names?.includes(path8.basename(route))) {
-          route = path8.normalize(path8.join(route, ".."));
+        if (options.names?.includes(path9.basename(route))) {
+          route = path9.normalize(path9.join(route, ".."));
         }
         return {
-          href: encodeURI(path8.join(prefix, route, entry.name).replace(/\\/gu, "/")),
+          href: encodeURI(path9.join(prefix, route, entry.name).replace(/\\/gu, "/")),
           name: entry.name,
           stats: entry.stats,
           extendedInfo: entry.extendedInfo
@@ -43053,7 +43053,7 @@ var require_dirList = __commonJS({
        * @return {boolean}
        */
       handle: function(route, options) {
-        return options.names?.includes(path8.basename(route)) || // match trailing slash
+        return options.names?.includes(path9.basename(route)) || // match trailing slash
         ((options.names?.includes("/") && route[route.length - 1] === "/") ?? false);
       },
       /**
@@ -43063,7 +43063,7 @@ var require_dirList = __commonJS({
        */
       path: function(root, route) {
         const _route = route[route.length - 1] === "/" ? route + "none" : route;
-        return path8.dirname(path8.join(root, _route));
+        return path9.dirname(path9.join(root, _route));
       },
       /**
        * validate options
@@ -43098,7 +43098,7 @@ var require_dirList = __commonJS({
 var require_static = __commonJS({
   "node_modules/.pnpm/@fastify+static@8.3.0/node_modules/@fastify/static/index.js"(exports, module) {
     "use strict";
-    var path8 = __require("node:path");
+    var path9 = __require("node:path");
     var { fileURLToPath: fileURLToPath3 } = __require("node:url");
     var { statSync } = __require("node:fs");
     var { glob } = require_commonjs6();
@@ -43209,7 +43209,7 @@ var require_static = __commonJS({
           const routes = /* @__PURE__ */ new Set();
           const roots = Array.isArray(sendOptions.root) ? sendOptions.root : [sendOptions.root];
           for (let rootPath of roots) {
-            rootPath = rootPath.split(path8.win32.sep).join(path8.posix.sep);
+            rootPath = rootPath.split(path9.win32.sep).join(path9.posix.sep);
             !rootPath.endsWith("/") && (rootPath += "/");
             const files = await glob("**/**", {
               cwd: rootPath,
@@ -43220,16 +43220,16 @@ var require_static = __commonJS({
               ignore: opts.globIgnore
             });
             for (let file of files) {
-              file = file.split(path8.win32.sep).join(path8.posix.sep);
+              file = file.split(path9.win32.sep).join(path9.posix.sep);
               const route = prefix + file;
               if (routes.has(route)) {
                 continue;
               }
               routes.add(route);
               setUpHeadAndGet(routeOpts, route, `/${file}`, rootPath);
-              const key = path8.posix.basename(route);
+              const key = path9.posix.basename(route);
               if (indexes.has(key) && !indexDirs.has(key)) {
-                indexDirs.set(path8.posix.dirname(route), rootPath);
+                indexDirs.set(path9.posix.dirname(route), rootPath);
               }
             }
           }
@@ -43253,7 +43253,7 @@ var require_static = __commonJS({
           } else {
             options.root = rootPath;
           }
-        } else if (path8.isAbsolute(pathname) === false) {
+        } else if (path9.isAbsolute(pathname) === false) {
           return reply.callNotFound();
         }
         if (allowedPath && !allowedPath(pathname, options.root, request)) {
@@ -43285,11 +43285,11 @@ var require_static = __commonJS({
         } = await send(request.raw, encodeURI(pathnameForSend), options);
         switch (type) {
           case "directory": {
-            const path9 = metadata.path;
+            const path10 = metadata.path;
             if (opts.list) {
               await dirList.send({
                 reply,
-                dir: path9,
+                dir: path10,
                 options: opts.list,
                 route: pathname,
                 prefix,
@@ -43446,7 +43446,7 @@ var require_static = __commonJS({
             '"root" option array contains one or more duplicate paths'
           );
         }
-        rootPath.map((path9) => checkPath(fastify, path9));
+        rootPath.map((path10) => checkPath(fastify, path10));
         return;
       }
       if (typeof rootPath === "string") {
@@ -43458,7 +43458,7 @@ var require_static = __commonJS({
       if (typeof rootPath !== "string") {
         throw new TypeError('"root" option must be a string');
       }
-      if (path8.isAbsolute(rootPath) === false) {
+      if (path9.isAbsolute(rootPath) === false) {
         throw new Error('"root" option must be an absolute path');
       }
       let pathStat;
@@ -43475,8 +43475,8 @@ var require_static = __commonJS({
         throw new Error('"root" option must point to a directory');
       }
     }
-    function getContentType(path9) {
-      const type = send.mime.getType(path9) || send.mime.default_type;
+    function getContentType(path10) {
+      const type = send.mime.getType(path10) || send.mime.default_type;
       if (!send.isUtf8MimeType(type)) {
         return type;
       }
@@ -43485,7 +43485,7 @@ var require_static = __commonJS({
     function findIndexFile(pathname, root, indexFiles = ["index.html"]) {
       if (Array.isArray(indexFiles)) {
         return indexFiles.find((filename) => {
-          const p = path8.join(root, pathname, filename);
+          const p = path9.join(root, pathname, filename);
           try {
             const stats = statSync(p);
             return !stats.isDirectory();
@@ -43531,13 +43531,13 @@ var require_static = __commonJS({
 
 // src/index.ts
 import { mkdir as mkdir2, rm, writeFile as writeFile2 } from "node:fs/promises";
-import path7 from "node:path";
+import path8 from "node:path";
 
 // src/app.ts
 var import_fastify = __toESM(require_fastify(), 1);
 import { readFile as readFile3 } from "node:fs/promises";
-import { createHash as createHash3, randomUUID } from "node:crypto";
-import path4 from "node:path";
+import { createHash as createHash4, randomUUID as randomUUID2 } from "node:crypto";
+import path6 from "node:path";
 
 // node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/external.js
 var external_exports = {};
@@ -44017,8 +44017,8 @@ function getErrorMap() {
 
 // node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
-  const { data, path: path8, errorMaps, issueData } = params;
-  const fullPath = [...path8, ...issueData.path || []];
+  const { data, path: path9, errorMaps, issueData } = params;
+  const fullPath = [...path9, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -44134,11 +44134,11 @@ var errorUtil;
 
 // node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path8, key) {
+  constructor(parent, value, path9, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path8;
+    this._path = path9;
     this._key = key;
   }
   get path() {
@@ -48008,15 +48008,27 @@ function normalizeComposioTool(tool, toolkit) {
   const actionSuffix = actionSuffixFromToolName(rawToolName, toolkit);
   const action = `${toolkit}.${actionSuffix}`;
   const capability = inferConnectorCapabilityFromAction(action);
+  const inputArguments = composioToolInputArguments(record2);
   return [
     {
       action,
       toolName: rawToolName,
       displayName: stringValue(record2.displayName) ?? stringValue(record2.display_name) ?? titleCase(actionSuffix),
       description: stringValue(record2.description) ?? "",
-      capability
+      capability,
+      ...inputArguments ? { inputArguments } : {}
     }
   ];
+}
+function composioToolInputArguments(record2) {
+  const schema = recordValue(
+    record2.input_parameters ?? record2.inputParameters ?? record2.input_schema ?? record2.inputSchema
+  );
+  const properties = recordValue(schema?.properties);
+  if (!properties) {
+    return void 0;
+  }
+  return Object.keys(properties).filter((name) => /^[A-Za-z0-9_.-]{1,128}$/u.test(name)).sort();
 }
 function actionSuffixFromToolName(toolName, toolkit) {
   const normalized2 = toolName.trim().replace(/([a-z0-9])([A-Z])/gu, "$1_$2").toLowerCase().replace(/[^a-z0-9]+/gu, ".").replace(/^\.+|\.+$/gu, "");
@@ -48641,7893 +48653,15 @@ function authConfigIdFromPayload(payload, toolkit) {
   return null;
 }
 
-// src/provider-settings.ts
-import { createHash } from "node:crypto";
-import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import path from "node:path";
-var DEFAULTS = {
-  composioBaseUrl: "https://backend.composio.dev/api/v3.1",
-  composioDefaultUserId: "doppelganger",
-  composioDefaultConnectedAccountId: ""
-};
-async function readDocument(file) {
-  try {
-    const parsed = JSON.parse(await readFile(file, "utf8"));
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-async function atomicPrivateJson(file, value) {
-  const directory = path.dirname(file);
-  await mkdir(directory, { recursive: true, mode: 448 });
-  await chmod(directory, 448);
-  const temporary = path.join(directory, `.${path.basename(file)}.${process.pid}.${Date.now()}.tmp`);
-  await writeFile(temporary, `${JSON.stringify(value, null, 2)}
-`, { encoding: "utf8", mode: 384 });
-  await chmod(temporary, 384);
-  await rename(temporary, file);
-  await chmod(file, 384);
-}
-var ProviderSettingsError = class extends Error {
-  constructor(code, statusCode, message) {
-    super(message);
-    this.code = code;
-    this.statusCode = statusCode;
-  }
-  code;
-  statusCode;
-};
-function composioKeyFingerprint(secret) {
-  return createHash("sha256").update(secret).digest("hex").slice(0, 12);
-}
-function assertComposioApiKeyFormat(value) {
-  if (!value || value.length > 512 || !/^[\x21-\x7E]+$/u.test(value)) {
-    throw new ProviderSettingsError(
-      "composio_api_key_invalid",
-      400,
-      "Composio API key must be printable ASCII without spaces or line breaks."
-    );
-  }
-}
-function cleanString(value, fallback = "") {
-  return typeof value === "string" ? value.trim() : fallback;
-}
-var MarketplaceProviderSettingsStore = class {
-  settings = { ...DEFAULTS };
-  secrets = {};
-  settingsPath;
-  secretsPath;
-  bootstrapEnv;
-  constructor(settingsPath, secretsPath, bootstrapEnv = process.env) {
-    this.settingsPath = settingsPath;
-    this.secretsPath = secretsPath;
-    this.bootstrapEnv = bootstrapEnv;
-  }
-  async load() {
-    const [settings, secrets] = await Promise.all([
-      readDocument(this.settingsPath),
-      readDocument(this.secretsPath)
-    ]);
-    this.settings = {
-      composioBaseUrl: cleanString(settings.composioBaseUrl) || cleanString(this.bootstrapEnv.COMPOSIO_BASE_URL) || DEFAULTS.composioBaseUrl,
-      composioDefaultUserId: cleanString(settings.composioDefaultUserId) || cleanString(this.bootstrapEnv.COMPOSIO_DEFAULT_USER_ID) || DEFAULTS.composioDefaultUserId,
-      composioDefaultConnectedAccountId: cleanString(settings.composioDefaultConnectedAccountId) || cleanString(this.bootstrapEnv.COMPOSIO_DEFAULT_CONNECTED_ACCOUNT_ID)
-    };
-    this.secrets = {
-      ...cleanString(secrets.composioApiKey) ? { composioApiKey: cleanString(secrets.composioApiKey) } : {}
-    };
-    return this.safeView();
-  }
-  environment() {
-    const apiKey = this.secrets.composioApiKey || cleanString(this.bootstrapEnv.COMPOSIO_API_KEY);
-    return {
-      ...this.bootstrapEnv,
-      COMPOSIO_BASE_URL: this.settings.composioBaseUrl,
-      COMPOSIO_DEFAULT_USER_ID: this.settings.composioDefaultUserId,
-      COMPOSIO_DEFAULT_CONNECTED_ACCOUNT_ID: this.settings.composioDefaultConnectedAccountId || void 0,
-      COMPOSIO_API_KEY: apiKey || void 0
-    };
-  }
-  safeView() {
-    const persisted = this.secrets.composioApiKey;
-    const bootstrap = cleanString(this.bootstrapEnv.COMPOSIO_API_KEY);
-    const secret = persisted || bootstrap;
-    return {
-      ok: true,
-      values: { ...this.settings },
-      status: {
-        composioApiKey: {
-          configured: Boolean(secret),
-          source: persisted ? "program" : bootstrap ? "bootstrap-environment" : null,
-          keyTail: secret ? secret.slice(-4) : null,
-          fingerprint: secret ? composioKeyFingerprint(secret) : null
-        }
-      }
-    };
-  }
-  async update(input) {
-    const nextSettings = {
-      composioBaseUrl: cleanString(input.composioBaseUrl, this.settings.composioBaseUrl),
-      composioDefaultUserId: cleanString(
-        input.composioDefaultUserId,
-        this.settings.composioDefaultUserId
-      ),
-      composioDefaultConnectedAccountId: cleanString(
-        input.composioDefaultConnectedAccountId,
-        this.settings.composioDefaultConnectedAccountId
-      )
-    };
-    const nextSecret = cleanString(input.composioApiKey);
-    if (nextSecret) assertComposioApiKeyFormat(nextSecret);
-    this.settings = nextSettings;
-    if (nextSecret) {
-      this.secrets = { composioApiKey: nextSecret };
-    }
-    await atomicPrivateJson(this.settingsPath, this.settings);
-    if (nextSecret) {
-      await atomicPrivateJson(this.secretsPath, this.secrets);
-    }
-    return this.safeView();
-  }
-  /** The key the Program would use right now (persisted first, then bootstrap). */
-  activeApiKey() {
-    return this.secrets.composioApiKey || cleanString(this.bootstrapEnv.COMPOSIO_API_KEY) || null;
-  }
-  /**
-   * Remove the Program-stored key. A key supplied by the deployment
-   * environment cannot be removed from the browser.
-   */
-  async removeApiKey() {
-    if (!this.secrets.composioApiKey) {
-      if (cleanString(this.bootstrapEnv.COMPOSIO_API_KEY)) {
-        throw new ProviderSettingsError(
-          "composio_key_managed_by_environment",
-          409,
-          "The Composio API key is supplied by the deployment environment."
-        );
-      }
-      return { removed: false, view: this.safeView() };
-    }
-    this.secrets = {};
-    await atomicPrivateJson(this.secretsPath, this.secrets);
-    return { removed: true, view: this.safeView() };
-  }
-};
-
-// src/types.ts
-var MARKETPLACE_PLUGIN_RECORD_VERSION = "doppelganger.marketplace.plugin-record.v1";
-var MARKETPLACE_SETTINGS_SURFACE_VERSION = "doppelganger.capability-settings.v1";
-
-// src/hub.ts
-var MARKETPLACE_HUB_UNIT = {
-  unitId: "marketplace",
-  version: "0.2.0",
-  enabled: true,
-  required: true
-};
-var HDDA_MARKETPLACE_PROXY_BASE = "/api/plugins/doppelganger-registry/proxy/marketplace";
-var MARKETPLACE_CAPABILITY_PROJECTION = {
-  gatewayPluginId: "doppelganger-registry",
-  recordsPath: `${HDDA_MARKETPLACE_PROXY_BASE}/api/plugins/marketplace-hub/records`
-};
-function recordValue2(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value) ? value : void 0;
-}
-function stringValue3(value) {
-  return typeof value === "string" && value.trim() ? value.trim() : void 0;
-}
-function stringArray(value) {
-  return Array.isArray(value) ? value.filter(
-    (item) => typeof item === "string" && item.trim().length > 0
-  ) : [];
-}
-function skillsHubMetadata(listing) {
-  return recordValue2(listing.manifest.skillsHub) ?? {};
-}
-function listingIsRequired(listing) {
-  const hub = skillsHubMetadata(listing);
-  const directSystem = recordValue2(listing.manifest.system);
-  const doppelganger = recordValue2(listing.manifest.doppelganger);
-  const doppelgangerSystem = recordValue2(doppelganger?.system);
-  return hub.required === true || directSystem?.required === true || doppelgangerSystem?.required === true;
-}
-function listingIsCustomMcp(listing) {
-  return listing.source === "mcp" && skillsHubMetadata(listing).custom === true;
-}
-function extensionContributions(listing) {
-  const hub = skillsHubMetadata(listing);
-  const contributions = Array.isArray(hub.contributions) ? hub.contributions : [];
-  return contributions.flatMap((value) => {
-    const contribution = recordValue2(value);
-    const id = stringValue3(contribution?.id);
-    const label = stringValue3(contribution?.label);
-    const routeSegment = stringValue3(contribution?.routeSegment);
-    const mount = stringValue3(contribution?.mount);
-    const settings = recordValue2(contribution?.settings);
-    if (!id || !label || !routeSegment || !["workspace", "right-rail", "settings-panel", "overlay"].includes(
-      mount ?? ""
-    )) {
-      return [];
-    }
-    return [
-      {
-        id,
-        type: "extension-surface",
-        label,
-        mount,
-        routeSegment,
-        ...stringValue3(contribution?.region) ? { region: stringValue3(contribution?.region) } : {},
-        ...stringValue3(contribution?.minHostSdk) ? { minHostSdk: stringValue3(contribution?.minHostSdk) } : {},
-        ...settings ? {
-          settings: {
-            ...stringValue3(settings.settingsSurfaceId) ? {
-              settingsSurfaceId: stringValue3(
-                settings.settingsSurfaceId
-              )
-            } : {},
-            ...stringValue3(settings.title) ? { title: stringValue3(settings.title) } : {},
-            ...stringValue3(settings.description) ? { description: stringValue3(settings.description) } : {},
-            ...recordValue2(settings.schema) ? { schema: recordValue2(settings.schema) } : {},
-            ...recordValue2(settings.uiSchema) ? { uiSchema: recordValue2(settings.uiSchema) } : {}
-          }
-        } : {},
-        enabled: contribution?.enabled !== false
-      }
-    ];
-  });
-}
-function marketplaceMcpAdapterConfig(listing, includeSensitive = false) {
-  const hub = skillsHubMetadata(listing);
-  const adapter = recordValue2(hub.adapter);
-  const mcp = recordValue2(adapter?.mcp);
-  const transport = stringValue3(mcp?.transport);
-  return {
-    transport: transport === "sse" || transport === "streamable-http" ? transport : "stdio",
-    ...stringValue3(mcp?.command) ? { command: stringValue3(mcp?.command) } : {},
-    ...stringArray(mcp?.args).length > 0 ? { args: stringArray(mcp?.args) } : {},
-    ...stringValue3(mcp?.url) ? { url: stringValue3(mcp?.url) } : {},
-    ...stringValue3(mcp?.cwd) ? { cwd: stringValue3(mcp?.cwd) } : {},
-    ...includeSensitive && recordValue2(mcp?.env) ? {
-      env: Object.fromEntries(
-        Object.entries(recordValue2(mcp?.env)).map(([key, value]) => [
-          key,
-          String(value)
-        ])
-      )
-    } : {},
-    ...includeSensitive && recordValue2(mcp?.headers) ? {
-      headers: Object.fromEntries(
-        Object.entries(recordValue2(mcp?.headers)).map(([key, value]) => [
-          key,
-          String(value)
-        ])
-      )
-    } : {},
-    config: recordValue2(mcp?.config) ?? {}
-  };
-}
-function connectionState(listing, state) {
-  if (state === "connected") return "connected";
-  if (state === "pending") return "connecting";
-  if (state === "blocked") return "error";
-  if (state === "disconnected") return "disconnected";
-  if (listing.authOwner === "nango" || listing.authOwner === "composio") {
-    return "auth-required";
-  }
-  return "disconnected";
-}
-function allowedActions(input) {
-  if (!input.installed) {
-    if (input.connectFirst && input.connectionState !== "connected") {
-      return ["authenticate"];
-    }
-    return [
-      "install",
-      ...input.custom ? ["configure", "update", "delete"] : []
-    ];
-  }
-  return [
-    ...input.composioAuth && (input.connectionState === "auth-required" || input.connectionState === "connecting" || input.connectionState === "error") ? ["authenticate"] : [],
-    ...input.enabled ? input.required ? [] : ["disable"] : ["enable"],
-    ...input.custom ? ["configure", "update"] : [],
-    "reload",
-    ...input.required ? [] : ["uninstall"]
-  ];
-}
-function pluginRecordId(pluginId) {
-  return `plugin:${pluginId}`;
-}
-function listingIconUrl(listing) {
-  const manifest = recordValue2(listing.manifest);
-  const composio = recordValue2(manifest?.composio);
-  const catalog = recordValue2(composio?.catalog);
-  const candidate = stringValue3(catalog?.logoUrl);
-  if (!candidate) {
-    return void 0;
-  }
-  try {
-    const url = new URL(candidate);
-    return url.protocol === "https:" ? url.toString() : void 0;
-  } catch {
-    return void 0;
-  }
-}
-function pluginSettingsSurfaceId(pluginId) {
-  return `marketplace.plugin.${pluginId}.settings`;
-}
-function extensionRecordId(pluginId, contributionId) {
-  return `extension:${pluginId}:${contributionId}`;
-}
-function extensionSettingsSurfaceId(pluginId, contribution) {
-  return contribution.settings?.settingsSurfaceId ?? `marketplace.extension.${pluginId}.${contribution.id}.settings`;
-}
-var EMPTY_SETTINGS_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  properties: {}
-};
-function pluginSettingsSurface(record2) {
-  const isMcp = record2.adapter.type === "mcp";
-  return {
-    schemaVersion: MARKETPLACE_SETTINGS_SURFACE_VERSION,
-    settingsSurfaceId: pluginSettingsSurfaceId(record2.pluginId),
-    ownerRecordId: record2.recordId,
-    presentation: "modal",
-    title: `${record2.displayName} settings`,
-    description: isMcp ? "MCP adapter configuration contributed by Marketplace." : "Plugin settings contributed by Marketplace.",
-    jsonSchema: isMcp ? {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        displayName: { type: "string" },
-        description: { type: "string" },
-        transport: { enum: ["stdio", "sse", "streamable-http"] },
-        command: { type: "string" },
-        args: { type: "array", items: { type: "string" } },
-        url: { type: "string", format: "uri" },
-        cwd: { type: "string" },
-        config: { type: "object" }
-      }
-    } : EMPTY_SETTINGS_SCHEMA,
-    allowedActions: record2.allowedActions.filter(
-      (action) => action === "configure" || action === "update"
-    ),
-    ...record2.allowedActions.includes("configure") ? { submitActionId: `${record2.recordId}:configure` } : {}
-  };
-}
-function extensionSettingsSurface(input) {
-  const settings = input.contribution.settings;
-  return {
-    schemaVersion: MARKETPLACE_SETTINGS_SURFACE_VERSION,
-    settingsSurfaceId: input.extension.settingsSurfaceId,
-    ownerRecordId: input.extension.recordId,
-    presentation: "modal",
-    title: settings?.title ?? `${input.extension.displayName} settings`,
-    description: settings?.description ?? "Extension settings contributed by its owning Plugin.",
-    jsonSchema: settings?.schema ?? EMPTY_SETTINGS_SCHEMA,
-    ...settings?.uiSchema ? { uiSchema: settings.uiSchema } : {},
-    allowedActions: []
-  };
-}
-function extensionRecord(plugin, contribution) {
-  return {
-    recordId: extensionRecordId(plugin.pluginId, contribution.id),
-    providerId: "marketplace",
-    ownerPluginId: plugin.pluginId,
-    displayName: contribution.label,
-    description: `Contributed by ${plugin.displayName}.`,
-    visible: contribution.enabled,
-    enabled: plugin.enabled && contribution.enabled,
-    required: plugin.required,
-    status: plugin.connection,
-    ...contribution.settings ? {
-      settingsSurfaceId: extensionSettingsSurfaceId(
-        plugin.pluginId,
-        contribution
-      )
-    } : {},
-    capabilities: plugin.capabilities
-  };
-}
-function actionLabel(action) {
-  if (action === "authenticate") return "Connect";
-  return action.charAt(0).toUpperCase() + action.slice(1);
-}
-function pluginActions(record2, workspaceSlug) {
-  return record2.allowedActions.map((operation) => {
-    if (operation === "authenticate") {
-      const provider = record2.adapter.type === "native" ? record2.adapter.native.provider : record2.providerId;
-      return {
-        actionId: `${record2.recordId}:${operation}`,
-        ownerRecordId: record2.recordId,
-        operation,
-        label: actionLabel(operation),
-        endpoint: `${HDDA_MARKETPLACE_PROXY_BASE}/api/marketplace/plugins/${encodeURIComponent(record2.pluginId)}/connection`,
-        method: "POST",
-        payload: {
-          workspaceSlug,
-          actorId: "operator",
-          provider,
-          backend: "composio",
-          toolkit: provider
-        }
-      };
-    }
-    const settingsAction = operation === "configure" || operation === "update";
-    const destructive = operation === "uninstall" || operation === "delete";
-    const pluginPath = `${HDDA_MARKETPLACE_PROXY_BASE}/api/marketplace/hub/plugins/${encodeURIComponent(record2.pluginId)}`;
-    return {
-      actionId: `${record2.recordId}:${operation}`,
-      ownerRecordId: record2.recordId,
-      operation,
-      label: operation === "install" && record2.connection.state === "connected" ? "Enable" : actionLabel(operation),
-      endpoint: settingsAction || operation === "delete" ? `${pluginPath}?workspaceSlug=${encodeURIComponent(workspaceSlug)}` : `${pluginPath}/lifecycle`,
-      method: operation === "delete" ? "DELETE" : settingsAction ? "PATCH" : "POST",
-      ...!settingsAction && operation !== "delete" ? {
-        payload: {
-          workspaceSlug,
-          actorId: "operator",
-          action: operation
-        }
-      } : {},
-      ...destructive ? { destructive: true } : {}
-    };
-  });
-}
-function extensionActions(_record) {
-  return [];
-}
-function assertUniqueOwnership(input) {
-  const seen = /* @__PURE__ */ new Set();
-  for (const value of input.values) {
-    if (seen.has(value)) {
-      throw new Error(`Duplicate ${input.label} ownership: ${value}`);
-    }
-    seen.add(value);
-  }
-}
-function marketplacePluginRecord(input) {
-  const install = input.store.getInstall(
-    input.workspaceSlug,
-    input.listing.pluginId
-  );
-  const installed = install?.lifecycle === "installed";
-  const enabled = installed && install?.enabled === true;
-  const required = listingIsRequired(input.listing);
-  const custom2 = listingIsCustomMcp(input.listing);
-  const connection = input.store.getConnection(
-    input.workspaceSlug,
-    input.listing.pluginId
-  );
-  const state = connectionState(input.listing, connection?.state);
-  const contributions = extensionContributions(input.listing);
-  const hub = skillsHubMetadata(input.listing);
-  const connectFirst = stringValue3(recordValue2(input.listing.manifest)?.role) === "composio-catalog-connector";
-  const unitId = stringValue3(hub.unitId) ?? input.listing.pluginId;
-  const version = stringValue3(input.listing.manifest.version) ?? "0.1.0";
-  return {
-    schemaVersion: MARKETPLACE_PLUGIN_RECORD_VERSION,
-    recordId: pluginRecordId(input.listing.pluginId),
-    providerId: "marketplace",
-    pluginId: input.listing.pluginId,
-    displayName: input.listing.displayName,
-    description: input.listing.description,
-    ...listingIconUrl(input.listing) ? { iconUrl: listingIconUrl(input.listing) } : {},
-    version,
-    kind: input.listing.source === "mcp" ? "mcp" : "native",
-    lifecycle: installed ? "installed" : "available",
-    enabled,
-    required,
-    connection: {
-      state,
-      detail: connection?.detail ?? (state === "auth-required" ? "External authentication requires the permissioned HDDA auth flow." : state === "connected" ? "Connected." : "No active connection.")
-    },
-    contributions,
-    adapter: input.listing.source === "mcp" ? { type: "mcp", mcp: marketplaceMcpAdapterConfig(input.listing) } : {
-      type: "native",
-      native: {
-        provider: input.listing.provider,
-        runtimeSources: input.listing.runtimeSources ?? []
-      }
-    },
-    capabilities: input.listing.capabilities,
-    actions: input.listing.actions,
-    allowedActions: allowedActions({
-      installed,
-      enabled,
-      required,
-      custom: custom2,
-      connectFirst,
-      composioAuth: input.listing.authOwner === "composio",
-      connectionState: state
-    }),
-    settingsSurfaceIds: input.listing.source === "mcp" ? [pluginSettingsSurfaceId(input.listing.pluginId)] : [],
-    registry: {
-      authority: "doppelganger-registry",
-      unitId,
-      contributionIds: contributions.map((contribution) => contribution.id)
-    },
-    custom: custom2,
-    createdAt: input.listing.createdAt,
-    updatedAt: input.listing.updatedAt
-  };
-}
-function marketplacePluginRecords(input) {
-  return input.store.listListings().map((listing) => marketplacePluginRecord({ ...input, listing }));
-}
-function marketplaceCapabilitiesHostProjection(input) {
-  const pluginRecords = marketplacePluginRecords(input);
-  const extensionRecords = pluginRecords.flatMap(
-    (plugin) => plugin.contributions.map(
-      (contribution) => extensionRecord(plugin, contribution)
-    )
-  );
-  const extensionContributionIds = pluginRecords.flatMap(
-    (plugin) => plugin.contributions.map((contribution) => contribution.id)
-  );
-  const settingsSurfaces = [
-    ...pluginRecords.filter((record2) => record2.adapter.type === "mcp").map(pluginSettingsSurface),
-    ...extensionRecords.flatMap((extension) => {
-      const owner = pluginRecords.find(
-        (plugin) => plugin.pluginId === extension.ownerPluginId
-      );
-      if (!owner) {
-        throw new Error(
-          `Missing Plugin owner for Extension record ${extension.recordId}`
-        );
-      }
-      const contribution = owner.contributions.find(
-        (candidate) => extensionRecordId(owner.pluginId, candidate.id) === extension.recordId
-      );
-      if (!contribution) {
-        throw new Error(
-          `Missing Extension contribution for record ${extension.recordId}`
-        );
-      }
-      return contribution.settings ? [extensionSettingsSurface({ extension, contribution })] : [];
-    })
-  ];
-  const actions = [
-    ...pluginRecords.flatMap((record2) => pluginActions(record2, input.workspaceSlug)),
-    ...extensionRecords.flatMap(extensionActions)
-  ];
-  assertUniqueOwnership({
-    label: "Plugin record",
-    values: pluginRecords.map((record2) => record2.recordId)
-  });
-  assertUniqueOwnership({
-    label: "Extension record",
-    values: extensionRecords.map((record2) => record2.recordId)
-  });
-  assertUniqueOwnership({
-    label: "Extension contribution",
-    values: extensionContributionIds
-  });
-  assertUniqueOwnership({
-    label: "action",
-    values: actions.map((action) => action.actionId)
-  });
-  assertUniqueOwnership({
-    label: "settings surface",
-    values: settingsSurfaces.map((surface) => surface.settingsSurfaceId)
-  });
-  return {
-    host: {
-      entry: "capabilities",
-      tabs: ["skills", "plugins", "extensions"],
-      lifecycleAuthority: "marketplace",
-      directHermesRole: "underlying-adapters-only"
-    },
-    pluginRecords,
-    extensionRecords,
-    actions,
-    settingsSurfaces
-  };
-}
-function mcpListingFromInput(input, existing) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const capabilities2 = input.capabilities ?? [
-    "connector.observe",
-    "connector.dispatch"
-  ];
-  const actions = input.actions ?? ["mcp.tools.list", "mcp.tools.call"];
-  const adapter = {
-    transport: input.transport,
-    ...input.command ? { command: input.command } : {},
-    ...input.args && input.args.length > 0 ? { args: input.args } : {},
-    ...input.url ? { url: input.url } : {},
-    ...input.cwd ? { cwd: input.cwd } : {},
-    ...input.env ? { env: input.env } : {},
-    ...input.headers ? { headers: input.headers } : {},
-    config: input.config ?? {}
-  };
-  return {
-    pluginId: input.pluginId,
-    displayName: input.displayName,
-    kind: "toolset",
-    provider: input.pluginId,
-    description: input.description ?? "Custom Plugin using an MCP transport adapter.",
-    capabilities: capabilities2,
-    actions,
-    source: "mcp",
-    authOwner: "program",
-    executionOwner: "mcp",
-    runtimeSources: [
-      {
-        runtimeSourceId: `${input.pluginId}-mcp`,
-        kind: "mcp",
-        label: `${input.displayName} MCP adapter`,
-        primary: true,
-        mcpServerId: input.pluginId
-      }
-    ],
-    enabledByDefault: false,
-    manifest: {
-      version: input.version ?? stringValue3(existing?.manifest.version) ?? "0.1.0",
-      kind: "plugin",
-      actionRequirements: Object.fromEntries(
-        actions.map((action) => [
-          action,
-          {
-            kind: "mcp",
-            capability: action.endsWith(".call") ? "connector.dispatch" : "connector.observe"
-          }
-        ])
-      ),
-      skillsHub: {
-        custom: true,
-        required: false,
-        unitId: input.pluginId,
-        contributions: input.contributions ?? [],
-        adapter: { type: "mcp", mcp: adapter }
-      }
-    },
-    createdAt: existing?.createdAt ?? now,
-    updatedAt: now
-  };
-}
-function reconcileGatewayRegistry(snapshot) {
-  const issues = [];
-  const unit = snapshot.units.find(
-    (candidate) => candidate.unitId === MARKETPLACE_HUB_UNIT.unitId
-  );
-  if (!unit) {
-    issues.push({
-      code: "marketplace-unit-missing",
-      detail: "The Marketplace unit is absent."
-    });
-  } else {
-    if (!unit.enabled) {
-      issues.push({
-        code: "required-unit-disabled",
-        detail: "The required Marketplace unit must remain enabled."
-      });
-    }
-    if (unit.required !== true) {
-      issues.push({
-        code: "required-policy-missing",
-        detail: "The gateway registry must mark Marketplace as required."
-      });
-    }
-    if (!unit.capabilityProjection) {
-      issues.push({
-        code: "capabilities-projection-missing",
-        detail: "The required Marketplace unit must declare its gateway projection."
-      });
-    } else if (unit.capabilityProjection.gatewayPluginId !== MARKETPLACE_CAPABILITY_PROJECTION.gatewayPluginId || unit.capabilityProjection.recordsPath !== MARKETPLACE_CAPABILITY_PROJECTION.recordsPath) {
-      issues.push({
-        code: "capabilities-projection-mismatch",
-        detail: "The Marketplace projection must use the mounted marketplace-hub gateway adapter and its records route."
-      });
-    }
-  }
-  for (const contribution of snapshot.contributions) {
-    if (contribution.mount === "hub-tab" || contribution.type === "hub-family-filler") {
-      issues.push({
-        code: "duplicate-top-level-tab",
-        detail: `${contribution.id} attempts to replace or append a Capabilities tab.`
-      });
-    }
-    if (["mcp", "toolsets", "hub"].includes(
-      (contribution.family ?? contribution.routeSegment ?? "").toLowerCase()
-    )) {
-      issues.push({
-        code: "unexpected-top-level-category",
-        detail: `${contribution.label} must be represented as a Plugin, not a top-level Hub category.`
-      });
-    }
-  }
-  return {
-    ok: issues.length === 0,
-    authority: "doppelganger-registry",
-    writesRegistry: false,
-    expected: {
-      unit: MARKETPLACE_HUB_UNIT,
-      capabilityProjection: MARKETPLACE_CAPABILITY_PROJECTION,
-      entry: "capabilities",
-      tabs: ["skills", "plugins", "extensions"],
-      projectionEndpoint: MARKETPLACE_CAPABILITY_PROJECTION.recordsPath,
-      contributionMode: "gateway-projected-records",
-      lifecycleAuthority: "marketplace"
-    },
-    observedRevision: snapshot.revision,
-    issues
-  };
-}
-
-// src/extension-settings-projection.ts
-import { readdir, readFile as readFile2 } from "node:fs/promises";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import path2 from "node:path";
-import { fileURLToPath } from "node:url";
-
-// ../.sdk/extension-settings.mjs
-var VERSION = "doppelganger.capability-settings.v1";
-var SECRET_NAME = /(token|secret|password|api.?key)$/iu;
-function invalid(message) {
-  const error = new Error(message);
-  error.statusCode = 400;
-  throw error;
-}
-function record(value) {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
-}
-function validateSettingsDeclaration(value) {
-  const declaration = record(value);
-  if (!declaration || declaration.schemaVersion !== VERSION) {
-    invalid(`settings declaration must use ${VERSION}`);
-  }
-  if (declaration.state === "none" || declaration.state === "unavailable") {
-    if (!["dynamic-provider", "developer-only", "none"].includes(declaration.posture)) {
-      invalid(`${declaration.state} settings declaration requires an explicit posture`);
-    }
-    if (typeof declaration.reason !== "string" || !declaration.reason.trim()) {
-      invalid(`${declaration.state} settings declaration requires a reason`);
-    }
-    return declaration;
-  }
-  if (declaration.state !== "available") {
-    invalid("settings declaration state must be available, unavailable, or none");
-  }
-  if (declaration.posture !== "operational") {
-    invalid("available settings declarations must use the operational posture");
-  }
-  if (declaration.transport !== void 0 && !["gateway", "desktop-runtime-bridge"].includes(declaration.transport)) {
-    invalid("settings declaration transport must be gateway or desktop-runtime-bridge");
-  }
-  for (const key of ["settingsSurfaceId", "title", "audience", "applyMode"]) {
-    if (typeof declaration[key] !== "string" || !declaration[key]) {
-      invalid(`available settings declaration requires ${key}`);
-    }
-  }
-  if (!record(declaration.jsonSchema) || declaration.jsonSchema.type !== "object") {
-    invalid("settings jsonSchema must describe an object");
-  }
-  const read = record(declaration.endpoints)?.read;
-  const apply = record(declaration.endpoints)?.apply;
-  if (read?.method !== "GET" || apply?.method !== "PATCH") {
-    invalid("settings endpoints must provide authenticated GET and PATCH descriptors");
-  }
-  if (read.authentication !== "bearer" || apply.authentication !== "bearer") {
-    invalid("settings endpoints must require bearer authentication");
-  }
-  const credentialFields = /* @__PURE__ */ new Set();
-  for (const entry of declaration.credentialReferences ?? []) {
-    if (!entry.field?.endsWith("CredentialRef") || !entry.statusField?.endsWith("CredentialStatus")) {
-      invalid("secret settings may expose credential references and status fields only");
-    }
-    credentialFields.add(entry.field);
-    credentialFields.add(entry.statusField);
-  }
-  for (const property of Object.keys(declaration.jsonSchema.properties ?? {})) {
-    if (SECRET_NAME.test(property) && !credentialFields.has(property)) {
-      invalid(`secret-shaped field ${property} must be represented as a credential reference/status`);
-    }
-  }
-  return declaration;
-}
-
-// src/extension-settings-projection.ts
-function emptyProjection() {
-  return {
-    host: {
-      entry: "capabilities",
-      tabs: ["skills", "plugins", "extensions"],
-      lifecycleAuthority: "marketplace",
-      directHermesRole: "underlying-adapters-only"
-    },
-    pluginRecords: [],
-    extensionRecords: [],
-    actions: [],
-    settingsSurfaces: []
-  };
-}
-function assertUnique(label, values) {
-  const seen = /* @__PURE__ */ new Set();
-  for (const value of values) {
-    if (seen.has(value)) throw new Error(`duplicate ${label}: ${value}`);
-    seen.add(value);
-  }
-}
-function asRecord(value) {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
-}
-var UNIT_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/u;
-function gatewayProgramProxyEndpoint(unitId, declaredPath) {
-  if (!UNIT_ID_PATTERN.test(unitId)) {
-    throw new Error(`invalid Extension unit id for gateway proxy: ${unitId}`);
-  }
-  if (typeof declaredPath !== "string" || !declaredPath.trim()) {
-    throw new Error(`invalid Program settings path for ${unitId}`);
-  }
-  const trimmed = declaredPath.trim();
-  if (trimmed.includes("\\") || trimmed.includes("?") || trimmed.includes("#") || /^[a-z][a-z0-9+.-]*:/iu.test(trimmed)) {
-    throw new Error(`invalid Program settings path for ${unitId}: ${trimmed}`);
-  }
-  const normalized2 = `/${trimmed.replace(/^\/+/, "")}`;
-  const segments = normalized2.split("/").filter(Boolean);
-  for (const segment of segments) {
-    let decoded;
-    try {
-      decoded = decodeURIComponent(segment);
-    } catch {
-      throw new Error(`invalid Program settings path encoding for ${unitId}: ${trimmed}`);
-    }
-    if (decoded === "." || decoded === ".." || decoded.includes("/") || decoded.includes("\\")) {
-      throw new Error(`Program settings path traversal is not allowed for ${unitId}: ${trimmed}`);
-    }
-  }
-  return `/api/plugins/doppelganger-registry/proxy/${unitId}${normalized2}`;
-}
-function manifestPathForUnit(root, unitId) {
-  const standaloneManifest = path2.join(root, "extension", "manifest.json");
-  const standaloneProduct = path2.join(root, "manifest.json");
-  if (existsSync(standaloneManifest) && existsSync(standaloneProduct)) {
-    try {
-      const product = JSON.parse(readFileSync(standaloneProduct, "utf8"));
-      if (product.id === unitId) return standaloneManifest;
-    } catch {
-    }
-  }
-  const direct = path2.join(root, unitId, "extension", "manifest.json");
-  if (existsSync(direct)) return direct;
-  const installed = path2.join(root, unitId, "current", "extension", "manifest.json");
-  return existsSync(installed) ? installed : null;
-}
-function standaloneUnitId(root) {
-  const extensionManifest = path2.join(root, "extension", "manifest.json");
-  const productManifest = path2.join(root, "manifest.json");
-  if (!existsSync(extensionManifest) || !existsSync(productManifest)) return null;
-  try {
-    const product = JSON.parse(readFileSync(productManifest, "utf8"));
-    return typeof product.id === "string" && product.id ? product.id : null;
-  } catch {
-    return null;
-  }
-}
-function isManifestRoot(root) {
-  if (standaloneUnitId(root)) return true;
-  try {
-    return readdirSync(root, { withFileTypes: true }).some(
-      (entry) => !entry.name.startsWith(".") && (entry.isDirectory() || entry.isSymbolicLink()) && manifestPathForUnit(root, entry.name)
-    );
-  } catch {
-    return false;
-  }
-}
-function defaultMicroappsRoot(env = process.env, moduleDir = path2.dirname(fileURLToPath(import.meta.url))) {
-  const explicit = env.DOPPELGANGER_MICROAPPS_ROOT?.trim();
-  if (explicit) {
-    const resolved2 = path2.resolve(explicit);
-    if (!isManifestRoot(resolved2)) {
-      throw new Error(`DOPPELGANGER_MICROAPPS_ROOT does not contain Extension manifests: ${resolved2}`);
-    }
-    return resolved2;
-  }
-  const candidates = [
-    path2.resolve(moduleDir, "../.."),
-    path2.resolve(moduleDir, "../../.."),
-    path2.resolve(moduleDir, "../../../../..")
-  ];
-  const resolved = candidates.find(isManifestRoot);
-  if (!resolved) {
-    throw new Error(
-      `No Micro-app Extension manifest root found. Set DOPPELGANGER_MICROAPPS_ROOT; checked: ${candidates.join(", ")}`
-    );
-  }
-  return resolved;
-}
-async function loadExtensionManifests(microappsRoot) {
-  const resolvedRoot = microappsRoot ? path2.resolve(microappsRoot) : defaultMicroappsRoot();
-  if (!isManifestRoot(resolvedRoot)) {
-    throw new Error(`Micro-app root contains no Extension manifests: ${resolvedRoot}`);
-  }
-  const standaloneId = standaloneUnitId(resolvedRoot);
-  if (standaloneId) {
-    const standalonePath = manifestPathForUnit(resolvedRoot, standaloneId);
-    if (!standalonePath) throw new Error(`Micro-app root contains no readable Extension manifests: ${resolvedRoot}`);
-    const manifest = JSON.parse(await readFile2(standalonePath, "utf8"));
-    if (manifest.capabilitySettings !== void 0) {
-      validateSettingsDeclaration(manifest.capabilitySettings);
-    }
-    return [manifest];
-  }
-  const entries = await readdir(resolvedRoot, { withFileTypes: true });
-  const manifests = [];
-  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
-    if (!entry.isDirectory() && !entry.isSymbolicLink() || entry.name.startsWith(".")) continue;
-    const manifestPath = manifestPathForUnit(resolvedRoot, entry.name);
-    if (!manifestPath) continue;
-    try {
-      const manifest = JSON.parse(await readFile2(manifestPath, "utf8"));
-      if (manifest.capabilitySettings !== void 0) {
-        validateSettingsDeclaration(manifest.capabilitySettings);
-      }
-      manifests.push(manifest);
-    } catch (error) {
-      throw new Error(`${entry.name} Extension settings declaration is invalid: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-  if (manifests.length === 0) {
-    throw new Error(`Micro-app root contains no readable Extension manifests: ${resolvedRoot}`);
-  }
-  return manifests;
-}
-async function loadDynamicProviderPanels(microappsRoot, manifest) {
-  const id = String(manifest.id);
-  if (typeof manifest.registryManifest !== "string" || !manifest.registryManifest.trim()) {
-    return [];
-  }
-  const pluginManifest = await loadSourcePluginManifest(microappsRoot, manifest, true);
-  if (!pluginManifest) return [];
-  const panels = asRecord(pluginManifest.doppelganger)?.settingsPanels;
-  if (!Array.isArray(panels)) return [];
-  return panels.flatMap((value) => {
-    const panel = asRecord(value);
-    const settings = asRecord(panel?.settings);
-    if (!panel || !settings) return [];
-    const jsonSchema = asRecord(settings.jsonSchema);
-    const uiSchema = asRecord(settings.uiSchema);
-    const loadAction = asRecord(settings.loadAction);
-    const submitAction = asRecord(settings.submitAction);
-    if (typeof panel.panelId !== "string" || !panel.panelId.trim()) {
-      throw new Error(`${id} dynamic-provider settings panel requires panelId`);
-    }
-    if (typeof panel.label !== "string" || !panel.label.trim()) {
-      throw new Error(`${id} dynamic-provider settings panel requires label`);
-    }
-    if (!jsonSchema || jsonSchema.type !== "object") {
-      throw new Error(`${id} dynamic-provider settings panel requires object jsonSchema`);
-    }
-    if (!uiSchema) {
-      throw new Error(`${id} dynamic-provider settings panel requires uiSchema`);
-    }
-    if (loadAction?.method !== "GET" || typeof loadAction.path !== "string" || !loadAction.path) {
-      throw new Error(`${id} dynamic-provider settings panel requires a GET loadAction`);
-    }
-    if (!["PATCH", "PUT"].includes(String(submitAction?.method)) || typeof submitAction?.path !== "string" || !submitAction.path) {
-      throw new Error(`${id} dynamic-provider settings panel requires a PATCH or PUT submitAction`);
-    }
-    return [{ panel, settings, jsonSchema, uiSchema, loadAction, submitAction }];
-  });
-}
-async function loadSourcePluginManifest(microappsRoot, manifest, requireDeclaredPath = false) {
-  const id = String(manifest.id);
-  const extensionManifestPath = manifestPathForUnit(microappsRoot, id);
-  if (!extensionManifestPath) {
-    throw new Error(`${id} Extension manifest path is unavailable`);
-  }
-  const declaredPath = typeof manifest.registryManifest === "string" ? manifest.registryManifest.trim() : "";
-  if (requireDeclaredPath && !declaredPath) return null;
-  const registryManifest = declaredPath || "../.codex-plugin/plugin.json";
-  const unitRoot = path2.dirname(path2.dirname(extensionManifestPath));
-  const pluginManifestPath = path2.resolve(
-    path2.dirname(extensionManifestPath),
-    registryManifest
-  );
-  if (pluginManifestPath !== unitRoot && !pluginManifestPath.startsWith(`${unitRoot}${path2.sep}`)) {
-    throw new Error(`${id} registryManifest must stay inside its Micro-app root`);
-  }
-  try {
-    const plugin = JSON.parse(await readFile2(pluginManifestPath, "utf8"));
-    const productPath = path2.join(unitRoot, "manifest.json");
-    if (existsSync(productPath)) {
-      const product = JSON.parse(await readFile2(productPath, "utf8"));
-      plugin.doppelganger = product.doppelganger ?? plugin.doppelganger;
-    }
-    return plugin;
-  } catch (error) {
-    if (!declaredPath && error?.code === "ENOENT") {
-      return null;
-    }
-    throw new Error(
-      `${id} registry manifest is unreadable: ${error instanceof Error ? error.message : String(error)}`
-    );
-  }
-}
-function dynamicSettingsSurfaceId(unitId, panelId) {
-  return panelId === unitId ? `${unitId}.settings` : `${unitId}.${panelId}.settings`;
-}
-async function projectExtensionSettings(options = {}) {
-  const base = options.baseProjection ?? emptyProjection();
-  const microappsRoot = options.microappsRoot ? path2.resolve(options.microappsRoot) : defaultMicroappsRoot();
-  const manifests = await loadExtensionManifests(microappsRoot);
-  const extensionRecords = [...base.extensionRecords];
-  const actions = [...base.actions];
-  const settingsSurfaces = [...base.settingsSurfaces];
-  for (const manifest of manifests) {
-    const id = String(manifest.id);
-    const pluginManifest = await loadSourcePluginManifest(microappsRoot, manifest);
-    const pluginDisplayName = asRecord(pluginManifest?.interface)?.displayName;
-    const name = typeof manifest.name === "string" && manifest.name.trim() ? manifest.name.trim() : typeof pluginDisplayName === "string" && pluginDisplayName.trim() ? pluginDisplayName.trim() : id;
-    const declaration = manifest.capabilitySettings === void 0 ? {
-      schemaVersion: "doppelganger.capability-settings.v1",
-      state: "none",
-      posture: "none",
-      reason: "This Extension does not declare a settings surface."
-    } : validateSettingsDeclaration(manifest.capabilitySettings);
-    const available = declaration.state === "available";
-    const dynamicPanels = declaration.posture === "dynamic-provider" ? await loadDynamicProviderPanels(microappsRoot, manifest) : [];
-    const settingsAvailable = available || dynamicPanels.length > 0;
-    const recordId = `extension:${id}`;
-    extensionRecords.push({
-      recordId,
-      providerId: "marketplace",
-      ownerPluginId: id,
-      displayName: name,
-      description: typeof manifest.description === "string" ? manifest.description : `${name} first-party Extension.`,
-      visible: true,
-      enabled: true,
-      required: manifest.system?.required === true,
-      status: {
-        state: "connected",
-        detail: settingsAvailable ? "Settings available." : "No configurable settings."
-      },
-      ...available ? { settingsSurfaceId: declaration.settingsSurfaceId } : dynamicPanels[0] ? { settingsSurfaceId: dynamicSettingsSurfaceId(id, String(dynamicPanels[0].panel.panelId)) } : {},
-      capabilities: Array.isArray(manifest.interface?.capabilities) ? manifest.interface.capabilities : [],
-      settingsPosture: declaration.posture
-    });
-    if (!available) {
-      for (const dynamic of dynamicPanels) {
-        const panelId = String(dynamic.panel.panelId);
-        const settingsSurfaceId = dynamicSettingsSurfaceId(id, panelId);
-        const actionPrefix = panelId === id ? recordId : `${recordId}:${panelId}`;
-        const loadActionId2 = `${actionPrefix}:load-settings`;
-        const submitActionId2 = `${actionPrefix}:configure`;
-        actions.push(
-          {
-            actionId: loadActionId2,
-            ownerRecordId: recordId,
-            operation: "open-settings",
-            label: dynamic.loadAction.label ?? "Load settings",
-            endpoint: gatewayProgramProxyEndpoint(id, dynamic.loadAction.path),
-            method: dynamic.loadAction.method
-          },
-          {
-            actionId: submitActionId2,
-            ownerRecordId: recordId,
-            operation: "configure",
-            label: dynamic.submitAction.label ?? "Save settings",
-            endpoint: gatewayProgramProxyEndpoint(id, dynamic.submitAction.path),
-            method: dynamic.submitAction.method
-          }
-        );
-        settingsSurfaces.push({
-          settingsSurfaceId,
-          ownerRecordId: recordId,
-          schemaVersion: "doppelganger.capability-settings.v1",
-          presentation: "modal",
-          title: dynamic.panel.label,
-          jsonSchema: dynamic.jsonSchema,
-          uiSchema: dynamic.uiSchema,
-          loadActionId: loadActionId2,
-          submitActionId: submitActionId2,
-          allowedActions: ["configure"],
-          audience: "normal",
-          applyMode: "live"
-        });
-      }
-      continue;
-    }
-    const endpoints = declaration.endpoints;
-    const read = endpoints.read;
-    const apply = endpoints.apply;
-    const transport = declaration.transport === "desktop-runtime-bridge" ? "desktop-runtime-bridge" : void 0;
-    const loadActionId = `${recordId}:load-settings`;
-    const submitActionId = `${recordId}:configure`;
-    actions.push(
-      {
-        actionId: loadActionId,
-        ownerRecordId: recordId,
-        operation: "open-settings",
-        label: "Load settings",
-        endpoint: gatewayProgramProxyEndpoint(id, read.path),
-        method: read.method,
-        ...transport ? { transport } : {}
-      },
-      {
-        actionId: submitActionId,
-        ownerRecordId: recordId,
-        operation: "configure",
-        label: "Save settings",
-        endpoint: gatewayProgramProxyEndpoint(id, apply.path),
-        method: apply.method,
-        ...transport ? { transport } : {}
-      }
-    );
-    settingsSurfaces.push({
-      settingsSurfaceId: declaration.settingsSurfaceId,
-      ownerRecordId: recordId,
-      schemaVersion: declaration.schemaVersion,
-      presentation: "modal",
-      title: declaration.title,
-      ...declaration.description ? { description: declaration.description } : {},
-      jsonSchema: declaration.jsonSchema,
-      ...declaration.uiSchema ? { uiSchema: declaration.uiSchema } : {},
-      loadActionId,
-      submitActionId,
-      allowedActions: ["configure"],
-      audience: declaration.audience,
-      applyMode: transport ? "live" : declaration.applyMode
-    });
-  }
-  assertUnique("Extension record ownership", extensionRecords.map((record2) => String(record2.recordId)));
-  assertUnique("Plugin record ownership", base.pluginRecords.map((record2) => String(record2.recordId)));
-  assertUnique("capability action ownership", actions.map((action) => String(action.actionId)));
-  assertUnique("settings surface ownership", settingsSurfaces.map((surface) => String(surface.settingsSurfaceId)));
-  return { ...base, extensionRecords, actions, settingsSurfaces };
-}
-
-// src/frontend.ts
-var import_static = __toESM(require_static(), 1);
-import fs from "node:fs";
-import path3 from "node:path";
-import { fileURLToPath as fileURLToPath2 } from "node:url";
-
-// package.json
-var package_default = {
-  name: "@doppelganger/marketplace-program",
-  version: "0.1.7",
-  private: true,
-  type: "module",
-  packageManager: "pnpm@9.15.4",
-  engines: {
-    node: ">=22.22.0",
-    pnpm: ">=9.15.4"
-  },
-  scripts: {
-    dev: "tsx watch src/index.ts",
-    "dev:web": "vite --config web/vite.config.ts",
-    build: "pnpm run build:web",
-    "build:web": "vite build --config web/vite.config.ts",
-    "build:miniapp": "pnpm run build:web && node scripts/build-miniapp.mjs",
-    "dev:miniapp": "node scripts/run-miniapp.mjs",
-    "start:miniapp": "node dist/marketplace-program.mjs",
-    "smoke:live-app-home": "tsx ../smoke/live-app-home-smoke.ts",
-    "smoke:operator-pov": "node ../smoke/operator-pov-workflow.mjs",
-    typecheck: "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
-    test: "vitest run && vitest run --config web/vitest.config.ts",
-    "test:e2e": "pnpm run build:web && playwright test --config web/playwright.config.ts",
-    lint: "tsc -p tsconfig.json --noEmit"
-  },
-  dependencies: {
-    "@doppelganger/ui": "file:../.sdk/doppelganger-ui",
-    "@fastify/static": "^8.3.0",
-    "@radix-ui/react-dialog": "^1.1.15",
-    "@radix-ui/react-tabs": "^1.1.13",
-    "@tanstack/react-query": "^5.90.20",
-    fastify: "^5.6.1",
-    "lucide-react": "^0.468.0",
-    react: "^19.2.3",
-    "react-dom": "^19.2.3",
-    zod: "^3.25.76"
-  },
-  devDependencies: {
-    "@playwright/test": "^1.58.2",
-    "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/react": "^16.3.2",
-    "@types/node": "^24.12.0",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^5.1.4",
-    esbuild: "^0.28.1",
-    jsdom: "^28.0.0",
-    tsx: "^4.20.6",
-    typescript: "^5.9.3",
-    vite: "^7.3.1",
-    vitest: "^3.2.4"
-  }
-};
-
-// src/version.ts
-var MARKETPLACE_VERSION = package_default.version;
-
-// src/openapi.ts
-var jsonObject = { type: "object", additionalProperties: true };
-var bearerSecurity = [{ bearerAuth: [] }];
-var operatorSecurity = [{ operatorSession: [] }];
-function buildMarketplaceOpenApi(baseUrl = "/") {
-  return {
-    openapi: "3.1.0",
-    info: {
-      title: "Teal Brick Marketplace API",
-      version: MARKETPLACE_VERSION,
-      description: "Program-owned catalog, Rules-governed plugin lifecycle, provider connections, capability bindings, Composio execution, and audit. The launch profile treats every non-Composio source as catalog-only. Hub and cross-app service routes require an internal bearer credential that is never exposed to the browser."
-    },
-    servers: [{ url: baseUrl }],
-    security: operatorSecurity,
-    components: {
-      securitySchemes: {
-        bearerAuth: {
-          type: "http",
-          scheme: "bearer",
-          description: "Internal HDDA Host SDK or cross-app service credential."
-        },
-        operatorSession: {
-          type: "apiKey",
-          in: "cookie",
-          name: "dg_marketplace_operator_session",
-          description: "Short-lived HttpOnly operator session. Browser mutations also require the per-session x-csrf-token header."
-        }
-      }
-    },
-    tags: [
-      { name: "Runtime" },
-      { name: "Catalog" },
-      { name: "Lifecycle" },
-      { name: "Connections" },
-      { name: "Bindings" },
-      { name: "Execution" },
-      { name: "Audit" },
-      { name: "Provider settings" },
-      { name: "Hub service" },
-      { name: "Agent" }
-    ],
-    paths: {
-      "/healthz": { get: { security: [], tags: ["Runtime"], summary: "Program liveness", responses: { "200": { description: "Healthy" } } } },
-      "/status": { get: { security: [], tags: ["Runtime"], summary: "Redacted frontend-safe status", responses: { "200": { description: "Status" } } } },
-      "/bootstrap.json": { get: { security: [], tags: ["Runtime"], summary: "Redacted frontend bootstrap and authorization posture", responses: { "200": { description: "Bootstrap" } } } },
-      "/auth/launch": { post: { security: [], tags: ["Runtime"], summary: "Redeem a Portal one-use browser launch ticket", description: "Accepts the Portal form POST, redeems the ticket server-to-server with the configured deployment identity, stores the attested Portal handoff session without echoing the ticket, issues the existing HttpOnly Marketplace operator session, and redirects to the UI.", requestBody: { required: true, content: { "application/x-www-form-urlencoded": { schema: { type: "object", additionalProperties: false, required: ["ticket"], properties: { ticket: { type: "string", writeOnly: true, pattern: "^[A-Za-z0-9_-]{43}$" } } } } } }, responses: { "303": { description: "Marketplace operator session created; redirect to the UI" }, "401": { description: "Invalid, duplicate, or replayed ticket" }, "403": { description: "Portal Origin or deployment identity denied" }, "503": { description: "Portal handoff is not configured or unavailable" } } } },
-      "/api/marketplace/auth/session": {
-        get: { security: [], tags: ["Runtime"], summary: "Read the redacted operator-session state", responses: { "200": { description: "Session status" } } },
-        post: { security: [], tags: ["Runtime"], summary: "Exchange the provisioned operator access token for an HttpOnly session", requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["accessToken"], properties: { accessToken: { type: "string", writeOnly: true } } } } } }, responses: { "200": { description: "Session created" }, "401": { description: "Invalid token" }, "429": { description: "Rate limited" }, "503": { description: "Operator access is not configured" } } },
-        delete: { security: operatorSecurity, tags: ["Runtime"], summary: "Revoke the current operator session", responses: { "200": { description: "Session revoked" }, "401": { description: "Unauthorized" } } }
-      },
-      "/api/status": { get: { security: bearerSecurity, tags: ["Runtime"], summary: "Detailed Program status (internal service bearer only)", responses: { "200": { description: "Runtime status" } } } },
-      "/api/marketplace/health": { get: { security: [...operatorSecurity, ...bearerSecurity], tags: ["Runtime"], summary: "Authenticated runtime health: Program and Rules connection state", description: "Returns { program: 'ok', rules: 'connected' | 'not-connected' | 'unavailable' }. The Rules probe is cached briefly and never returns configuration or credentials.", responses: { "200": { description: "Runtime health" }, "401": { description: "Session or bearer required" } } } },
-      "/api/marketplace/cards": { get: { tags: ["Catalog"], summary: "List operator-facing plugin cards", parameters: [{ name: "workspaceSlug", in: "query", schema: { type: "string", default: "default" } }], responses: { "200": { description: "Cards and provider state" } } } },
-      "/api/marketplace/cards/summary": { get: { tags: ["Catalog"], summary: "List a bounded, searchable browser-safe catalog projection", description: "Returns exact catalog totals, redacted provider and connection status, and at most 100 lightweight records from the canonical Marketplace catalog. Arbitrary manifests and provider metadata are omitted.", parameters: [{ name: "workspaceSlug", in: "query", schema: { type: "string", default: "default" } }, { name: "search", in: "query", schema: { type: "string", maxLength: 200 } }, { name: "source", in: "query", schema: { type: "string", enum: ["all", "native", "activepieces", "composio", "nango", "mcp"], default: "all" } }, { name: "installed", in: "query", schema: { type: "boolean", default: false } }, { name: "offset", in: "query", schema: { type: "integer", minimum: 0, default: 0 } }, { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 60 } }], responses: { "200": { description: "Bounded browser-safe catalog projection" } } } },
-      "/api/marketplace/cards/{pluginId}": { get: { tags: ["Catalog"], summary: "Read one browser-safe operator card", description: "Returns the selected card's UI contract without arbitrary manifest, connection metadata, credentials, environment, or runtime endpoint fields.", parameters: [{ name: "pluginId", in: "path", required: true, schema: { type: "string" } }, { name: "workspaceSlug", in: "query", schema: { type: "string", default: "default" } }], responses: { "200": { description: "Redacted operator card and provider status" }, "404": { description: "Not found" } } } },
-      "/api/marketplace/plugins": { get: { tags: ["Catalog"], summary: "List catalog records with workspace state", parameters: [{ name: "workspaceSlug", in: "query", schema: { type: "string", default: "default" } }], responses: { "200": { description: "Plugins" } } } },
-      "/api/marketplace/plugins/{pluginId}": { get: { tags: ["Catalog"], summary: "Read one plugin", parameters: [{ name: "pluginId", in: "path", required: true, schema: { type: "string" } }, { name: "workspaceSlug", in: "query", schema: { type: "string" } }], responses: { "200": { description: "Plugin" }, "404": { description: "Not found" } } } },
-      "/api/marketplace/plugins/{pluginId}/install": { post: { tags: ["Lifecycle"], summary: "Rules-governed install", parameters: [{ name: "pluginId", in: "path", required: true, schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: jsonObject } } }, responses: { "201": { description: "Installed" }, "403": { description: "Rules denied" }, "503": { description: "Rules unavailable" } } } },
-      "/api/marketplace/plugins/{pluginId}/uninstall": { post: { tags: ["Lifecycle"], summary: "Rules-governed uninstall", parameters: [{ name: "pluginId", in: "path", required: true, schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: jsonObject } } }, responses: { "200": { description: "Uninstalled" }, "409": { description: "Required or not installed" } } } },
-      "/api/marketplace/plugins/{pluginId}/register": { post: { tags: ["Lifecycle"], summary: "Register with the plugin runtime", parameters: [{ name: "pluginId", in: "path", required: true, schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: jsonObject } } }, responses: { "201": { description: "Registered" } } } },
-      "/api/marketplace/plugins/{pluginId}/unregister": { post: { tags: ["Lifecycle"], summary: "Unregister from the plugin runtime", parameters: [{ name: "pluginId", in: "path", required: true, schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: jsonObject } } }, responses: { "200": { description: "Unregistered" }, "409": { description: "Required plugin" } } } },
-      "/api/marketplace/plugins/{pluginId}/connection": { post: { tags: ["Connections"], summary: "Start or register a provider connection", parameters: [{ name: "pluginId", in: "path", required: true, schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: jsonObject } } }, responses: { "200": { description: "Connection or OAuth redirect" }, "409": { description: "Provider unavailable" } } } },
-      "/api/marketplace/plugins/{pluginId}/capability-binding": { post: { tags: ["Bindings"], summary: "Set a Rules-governed capability binding", parameters: [{ name: "pluginId", in: "path", required: true, schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: jsonObject } } }, responses: { "201": { description: "Bound" } } } },
-      "/api/marketplace/plugins/{pluginId}/action-binding": { post: { tags: ["Bindings"], summary: "Include or exclude an Agent action", parameters: [{ name: "pluginId", in: "path", required: true, schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: jsonObject } } }, responses: { "201": { description: "Bound" } } } },
-      "/api/marketplace/plugins/{pluginId}/execute": { post: { tags: ["Execution"], summary: "Execute one enabled and connected Composio action through Rules", description: "The launch profile executes only Composio-backed actions. Other catalog sources return 501 and are never recorded as successful usage. Operator frontends must confirm the impact before sending.", parameters: [{ name: "pluginId", in: "path", required: true, schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: jsonObject } } }, responses: { "200": { description: "Executed through Composio" }, "403": { description: "Rules or binding denied" }, "409": { description: "Not installed or connected" }, "501": { description: "Catalog source is not executable in this launch profile" }, "502": { description: "Provider failed" } } } },
-      "/api/marketplace/provider-health": { get: { tags: ["Connections"], summary: "Probe configured provider reachability", responses: { "200": { description: "Provider state" } } } },
-      "/api/marketplace/audit": { get: { tags: ["Audit"], summary: "List lifecycle audit and usage evidence", parameters: [{ name: "workspaceSlug", in: "query", schema: { type: "string" } }, { name: "limit", in: "query", schema: { type: "integer", default: 100 } }], responses: { "200": { description: "Audit" } } } },
-      "/api/settings/providers/composio": {
-        get: { security: operatorSecurity, tags: ["Provider settings"], summary: "Read redacted Composio settings", responses: { "200": { description: "Redacted settings" } } },
-        put: { security: operatorSecurity, tags: ["Provider settings"], summary: "Persist allowlisted Composio settings and an optional API key", requestBody: { required: true, content: { "application/json": { schema: { type: "object", properties: { settings: { type: "object", properties: { composioApiKey: { type: "string", writeOnly: true }, composioBaseUrl: { type: "string", format: "uri" }, composioDefaultUserId: { type: "string" }, composioDefaultConnectedAccountId: { type: "string" } } } } } } } }, responses: { "200": { description: "Saved redacted settings" }, "400": { description: "Provider origin is not allowlisted" } } }
-      },
-      "/api/settings/providers/composio/test": { post: { security: operatorSecurity, tags: ["Provider settings"], summary: "Check a Composio API key against the allowlisted Composio host", description: "Tests the saved key, or an unsaved key in the body, with one read-only request to an https://*.composio.dev base URL. The key is never returned. Records an audit event.", requestBody: { required: false, content: { "application/json": { schema: { type: "object", properties: { composioApiKey: { type: "string", writeOnly: true } } } } } }, responses: { "200": { description: "Key accepted" }, "400": { description: "No key, malformed key, or base URL not allowed" }, "422": { description: "Composio rejected the key" }, "502": { description: "Composio unreachable" } } } },
-      "/api/settings/providers/composio/key": { delete: { security: operatorSecurity, tags: ["Provider settings"], summary: "Remove the Program-stored Composio API key", description: "Records an audit event. A key supplied by the deployment environment cannot be removed here (409).", responses: { "200": { description: "Removed (or already absent)" }, "409": { description: "Key managed by the deployment environment" } } } },
-      "/api/agent/capabilities": { get: { tags: ["Agent"], summary: "List enabled Composio tools currently projected to Agents", description: "Native, Activepieces, Nango, and MCP records are catalog-only and are not projected as executable Agent tools in this launch profile.", parameters: [{ name: "workspaceSlug", in: "query", schema: { type: "string", default: "default" } }], responses: { "200": { description: "Capabilities" } } } },
-      "/api/marketplace/broker/grants": { post: { security: bearerSecurity, tags: ["Execution"], summary: "Issue a single-use scoped Composio broker grant", description: "Internal services only. Grants are stored as token hashes, expire within at most 900 seconds, and are consumed atomically before provider dispatch.", requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["requesterMiniappId", "pluginId", "actionKeys"], properties: { requesterMiniappId: { type: "string" }, pluginId: { type: "string" }, actionKeys: { type: "array", minItems: 1, items: { type: "string" } }, ttlSeconds: { type: "integer", minimum: 1, maximum: 900, default: 300 } } } } } }, responses: { "201": { description: "Single-use grant issued" }, "400": { description: "Invalid scope or TTL" }, "401": { description: "Unauthorized" }, "403": { description: "Rules denied" } } } },
-      "/api/marketplace/hub/records": { get: { security: bearerSecurity, tags: ["Hub service"], summary: "Project normalized records to the HDDA Host SDK", responses: { "200": { description: "Projection" }, "401": { description: "Unauthorized" }, "503": { description: "Service auth unconfigured" } } } },
-      "/api/marketplace/hub/plugins/{pluginId}/lifecycle": { post: { security: bearerSecurity, tags: ["Hub service"], summary: "Internal Host SDK lifecycle including enable, disable, and reload", parameters: [{ name: "pluginId", in: "path", required: true, schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: jsonObject } } }, responses: { "200": { description: "Lifecycle changed" }, "401": { description: "Unauthorized" } } } },
-      "/api/marketplace/v1/broker/composio/execute": { post: { security: bearerSecurity, tags: ["Execution"], summary: "Authenticated cross-app Composio broker execution", description: "Issues and consumes one internal single-use grant for this call; raw provider credentials are never returned.", requestBody: { required: true, content: { "application/json": { schema: jsonObject } } }, responses: { "200": { description: "Executed" }, "401": { description: "Unauthorized" }, "403": { description: "Rules denied" } } } }
-    },
-    "x-doppelganger-commands": [
-      { id: "list-cards", method: "GET", path: "/api/marketplace/cards/summary?workspaceSlug={workspaceSlug}&limit=60" },
-      { id: "read-card", method: "GET", path: "/api/marketplace/cards/{pluginId}?workspaceSlug={workspaceSlug}" },
-      { id: "install", method: "POST", path: "/api/marketplace/plugins/{pluginId}/install" },
-      { id: "connect", method: "POST", path: "/api/marketplace/plugins/{pluginId}/connection" },
-      { id: "bind-action", method: "POST", path: "/api/marketplace/plugins/{pluginId}/action-binding" },
-      { id: "inspect-audit", method: "GET", path: "/api/marketplace/audit?workspaceSlug={workspaceSlug}" }
-    ],
-    "x-doppelganger-templates": {
-      install: { workspaceSlug: "default", actorId: "operator" },
-      connectComposio: { workspaceSlug: "default", actorId: "operator", provider: "github", backend: "composio" },
-      bindAction: { workspaceSlug: "default", actorId: "operator", actionKey: "github.tool.execute", enabled: true },
-      execute: { workspaceSlug: "default", actorId: "operator", capability: "connector.dispatch", action: { type: "github.tool.execute" } }
-    }
-  };
-}
-
-// src/frontend.ts
-var PROGRAM = { id: "marketplace", name: "Marketplace", version: MARKETPLACE_VERSION };
-async function registerMarketplaceFrontend(app2) {
-  const webRoot = path3.resolve(path3.dirname(fileURLToPath2(import.meta.url)), "../web-dist");
-  const webIndexPath = path3.join(webRoot, "index.html");
-  if (fs.existsSync(webIndexPath)) {
-    await app2.register(import_static.default, {
-      root: path3.join(webRoot, "assets"),
-      prefix: "/assets/",
-      immutable: true,
-      maxAge: "1y"
-    });
-  }
-  const sendIndex = async (_request, reply) => {
-    if (!fs.existsSync(webIndexPath)) {
-      return null;
-    }
-    return reply.type("text/html; charset=utf-8").send(fs.readFileSync(webIndexPath, "utf8"));
-  };
-  app2.get("/embed", sendIndex);
-  app2.get("/status", async () => ({
-    ok: true,
-    program: PROGRAM,
-    authorization: {
-      browserOperatorRoutes: "operator-session-and-rules-governed",
-      operatorSessionRequired: true,
-      hubRoutesRequireBearer: true,
-      crossAppRoutesRequireBearer: true,
-      credentialExposedToBrowser: false
-    }
-  }));
-  app2.get("/bootstrap.json", async () => ({
-    program: PROGRAM,
-    authorization: {
-      browserOperatorRoutes: "operator-session-and-rules-governed",
-      operatorSessionRequired: true,
-      hubRoutesRequireBearer: true,
-      crossAppRoutesRequireBearer: true,
-      credentialExposedToBrowser: false
-    },
-    surfaces: { standalone: "/", embed: "/embed", openapi: "/openapi.json" },
-    contractGaps: {
-      browserEnableDisable: "hub-auth-required",
-      browserMcpCrud: "hub-auth-required",
-      runtimeAdapterExecution: "not-wired"
-    }
-  }));
-  app2.get("/openapi.json", async (request) => buildMarketplaceOpenApi(`${request.protocol}://${request.host}`));
-  app2.get("/swagger.json", async (request) => buildMarketplaceOpenApi(`${request.protocol}://${request.host}`));
-  return { sendIndex };
-}
-
-// src/operator-auth.ts
-import { createHash as createHash2, randomBytes, timingSafeEqual } from "node:crypto";
-var MARKETPLACE_OPERATOR_SESSION_COOKIE = "dg_marketplace_operator_session";
-var MarketplaceAuthenticationError = class extends Error {
-  constructor(code, statusCode, message) {
-    super(message);
-    this.code = code;
-    this.statusCode = statusCode;
-  }
-  code;
-  statusCode;
-};
-function digest(value) {
-  return createHash2("sha256").update(value).digest();
-}
-function matchesDigest(actual, expectedDigest) {
-  if (!actual || !expectedDigest) return false;
-  const actualDigest = digest(actual);
-  return actualDigest.length === expectedDigest.length && timingSafeEqual(actualDigest, expectedDigest);
-}
-function marketplaceSecretMatches(actual, expected) {
-  const normalized2 = expected?.trim() ?? "";
-  return Boolean(normalized2 && matchesDigest(actual.trim(), digest(normalized2)));
-}
-function cookieValue(cookieHeader, name) {
-  const header = Array.isArray(cookieHeader) ? cookieHeader.join(";") : cookieHeader;
-  if (!header) return null;
-  for (const entry of header.split(";")) {
-    const separator = entry.indexOf("=");
-    if (separator < 0 || entry.slice(0, separator).trim() !== name) continue;
-    return decodeURIComponent(entry.slice(separator + 1).trim());
-  }
-  return null;
-}
-function boundedTtl(value) {
-  const fallback = 20 * 60 * 1e3;
-  if (!Number.isFinite(value)) return fallback;
-  return Math.min(Math.max(Math.trunc(value ?? fallback), 6e4), 8 * 60 * 60 * 1e3);
-}
-var MarketplaceOperatorSessionManager = class _MarketplaceOperatorSessionManager {
-  accessTokenDigest;
-  principal;
-  ttlMs;
-  allowUnauthenticated;
-  now;
-  sessions = /* @__PURE__ */ new Map();
-  failedLogins = /* @__PURE__ */ new Map();
-  constructor(options = {}) {
-    const accessToken = options.accessToken?.trim() ?? "";
-    this.accessTokenDigest = accessToken.length >= 16 ? digest(accessToken) : null;
-    this.principal = {
-      kind: "operator",
-      id: options.operatorId?.trim() || "operator",
-      organizationId: options.organizationId?.trim() || "default"
-    };
-    this.ttlMs = boundedTtl(options.sessionTtlMs);
-    this.allowUnauthenticated = options.allowUnauthenticated === true;
-    this.now = options.now ?? Date.now;
-  }
-  static fromEnvironment(options = {}) {
-    const ttlSeconds = Number.parseInt(process.env.MARKETPLACE_OPERATOR_SESSION_TTL_SECONDS ?? "", 10);
-    return new _MarketplaceOperatorSessionManager({
-      accessToken: process.env.MARKETPLACE_OPERATOR_ACCESS_TOKEN,
-      operatorId: process.env.MARKETPLACE_OPERATOR_ID,
-      organizationId: process.env.MARKETPLACE_ORGANIZATION_ID,
-      sessionTtlMs: Number.isFinite(ttlSeconds) ? ttlSeconds * 1e3 : void 0,
-      allowUnauthenticated: options.allowUnauthenticated
-    });
-  }
-  status(cookieHeader) {
-    const session = this.sessionForCookie(cookieHeader);
-    if (session) return this.statusForSession(session);
-    if (this.allowUnauthenticated) {
-      return {
-        configured: true,
-        authenticated: true,
-        mode: "test_bypass",
-        principal: this.principal,
-        csrfToken: null,
-        expiresAt: null
-      };
-    }
-    if (!this.accessTokenDigest) {
-      return {
-        configured: false,
-        authenticated: false,
-        mode: "unconfigured",
-        principal: null,
-        csrfToken: null,
-        expiresAt: null
-      };
-    }
-    return {
-      configured: true,
-      authenticated: false,
-      mode: "session",
-      principal: null,
-      csrfToken: null,
-      expiresAt: null
-    };
-  }
-  exchange(accessToken, clientKey) {
-    if (!this.accessTokenDigest) {
-      throw new MarketplaceAuthenticationError(
-        "operator_auth_unconfigured",
-        503,
-        "Marketplace operator access is not configured."
-      );
-    }
-    const now = this.now();
-    const failed = this.failedLogins.get(clientKey);
-    if (failed && failed.resetAtMs > now && failed.count >= 5) {
-      throw new MarketplaceAuthenticationError(
-        "operator_rate_limited",
-        429,
-        "Too many failed unlock attempts. Try again shortly."
-      );
-    }
-    if (!matchesDigest(accessToken.trim(), this.accessTokenDigest)) {
-      const window = failed && failed.resetAtMs > now ? failed : { count: 0, resetAtMs: now + 6e4 };
-      window.count += 1;
-      this.failedLogins.set(clientKey, window);
-      throw new MarketplaceAuthenticationError("operator_unauthorized", 401, "The operator access token is invalid.");
-    }
-    this.failedLogins.delete(clientKey);
-    return this.createSession(this.principal);
-  }
-  issuePortalSession(input) {
-    const id = input.id.trim();
-    const organizationId = input.organizationId.trim();
-    if (!id || !organizationId) {
-      throw new Error("Portal launch identity must include an operator and organization.");
-    }
-    return this.createSession({ kind: "operator", id, organizationId });
-  }
-  authenticate(cookieHeader) {
-    if (this.allowUnauthenticated) return this.principal;
-    return this.sessionForCookie(cookieHeader)?.principal ?? null;
-  }
-  csrfMatches(cookieHeader, csrfToken) {
-    if (this.allowUnauthenticated) return true;
-    const session = this.sessionForCookie(cookieHeader);
-    const actual = Array.isArray(csrfToken) ? csrfToken[0] : csrfToken;
-    return Boolean(session && actual && matchesDigest(actual, digest(session.csrfToken)));
-  }
-  revoke(cookieHeader) {
-    const token = cookieValue(cookieHeader, MARKETPLACE_OPERATOR_SESSION_COOKIE);
-    if (!token) return false;
-    return this.sessions.delete(token.slice(0, 16));
-  }
-  sessionCookie(token, secure, sameSite = "Strict") {
-    return `${MARKETPLACE_OPERATOR_SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=${sameSite}; Max-Age=${Math.floor(this.ttlMs / 1e3)}${secure ? "; Secure" : ""}`;
-  }
-  clearCookie(secure) {
-    return `${MARKETPLACE_OPERATOR_SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT${secure ? "; Secure" : ""}`;
-  }
-  statusForSession(session) {
-    return {
-      configured: true,
-      authenticated: true,
-      mode: "session",
-      principal: session.principal,
-      csrfToken: session.csrfToken,
-      expiresAt: new Date(session.expiresAtMs).toISOString()
-    };
-  }
-  createSession(principal) {
-    this.pruneExpired();
-    const now = this.now();
-    const token = randomBytes(32).toString("base64url");
-    const session = {
-      tokenDigest: digest(token),
-      csrfToken: randomBytes(24).toString("base64url"),
-      principal,
-      expiresAtMs: now + this.ttlMs
-    };
-    this.sessions.set(token.slice(0, 16), session);
-    return { token, status: this.statusForSession(session) };
-  }
-  sessionForCookie(cookieHeader) {
-    const token = cookieValue(cookieHeader, MARKETPLACE_OPERATOR_SESSION_COOKIE);
-    if (!token) return null;
-    const key = token.slice(0, 16);
-    const session = this.sessions.get(key);
-    if (!session || !matchesDigest(token, session.tokenDigest)) return null;
-    if (session.expiresAtMs <= this.now()) {
-      this.sessions.delete(key);
-      return null;
-    }
-    return session;
-  }
-  pruneExpired() {
-    const now = this.now();
-    for (const [key, session] of this.sessions) {
-      if (session.expiresAtMs <= now) this.sessions.delete(key);
-    }
-  }
-};
-
-// src/agent-grant-contract.ts
-var MARKETPLACE_AGENT_GRANT_CONTRACT_VERSION = "doppelganger.marketplace.agent-connector-grant.v1";
-var SUPPORTED_RESOURCE_MAPPING = {
-  pluginId: "github-composio",
-  actionKey: "github.list.repositories",
-  toolName: "GITHUB_LIST_REPOSITORIES",
-  capability: "connector.observe",
-  resourceKind: "github.connected-account",
-  providerArgument: null,
-  mode: "connected-account",
-  allowedArguments: [
-    "page",
-    "sort",
-    "type",
-    "since",
-    "before",
-    "per_page",
-    "direction",
-    "visibility",
-    "affiliation"
-  ]
-};
-function scopedResourceMapping(input) {
-  if (input.pluginId !== SUPPORTED_RESOURCE_MAPPING.pluginId || input.actionKey !== SUPPORTED_RESOURCE_MAPPING.actionKey) {
-    return null;
-  }
-  return {
-    resourceKind: SUPPORTED_RESOURCE_MAPPING.resourceKind,
-    providerArgument: SUPPORTED_RESOURCE_MAPPING.providerArgument,
-    mode: SUPPORTED_RESOURCE_MAPPING.mode,
-    allowedArguments: SUPPORTED_RESOURCE_MAPPING.allowedArguments,
-    capability: SUPPORTED_RESOURCE_MAPPING.capability,
-    toolName: SUPPORTED_RESOURCE_MAPPING.toolName
-  };
-}
-function applyScopedResource(input) {
-  const mapping = scopedResourceMapping({
-    pluginId: input.grant.pluginId,
-    actionKey: input.grant.actionKey
-  });
-  if (!mapping || input.grant.resourceKind !== mapping.resourceKind || input.grant.resourceRef !== `account:${input.grant.accountId}` || !input.grant.resourceRef.trim()) {
-    return { ok: false, error: "resource_mapping_unsupported" };
-  }
-  const unsupportedArguments = Object.keys(input.action).filter(
-    (key) => key !== "type" && !mapping.allowedArguments.includes(key)
-  );
-  if (unsupportedArguments.length > 0) {
-    return { ok: false, error: "provider_argument_invalid" };
-  }
-  return {
-    ok: true,
-    action: input.action
-  };
-}
-
-// src/portal-scope.ts
-import { createPublicKey, verify as verifySignature } from "node:crypto";
-var PortalScopeError = class extends Error {
-  constructor(code, statusCode, message) {
-    super(message);
-    this.code = code;
-    this.statusCode = statusCode;
-    this.name = "PortalScopeError";
-  }
-  code;
-  statusCode;
-};
-function asObject(value) {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
-}
-function requiredString(value, label) {
-  if (typeof value !== "string" || !value.trim()) {
-    throw new PortalScopeError(
-      "portal_token_invalid",
-      401,
-      `Portal token is missing ${label}.`
-    );
-  }
-  return value.trim();
-}
-function base64UrlJson(value, label) {
-  try {
-    const decoded = Buffer.from(value, "base64url").toString("utf8");
-    return asObject(JSON.parse(decoded));
-  } catch {
-    throw new PortalScopeError(
-      "portal_token_invalid",
-      401,
-      `Portal token has invalid ${label}.`
-    );
-  }
-}
-function parseJwt(token) {
-  const parts = token.split(".");
-  if (parts.length !== 3 || parts.some((part) => !part)) {
-    throw new PortalScopeError(
-      "portal_token_invalid",
-      401,
-      "Portal token is not a compact JWT."
-    );
-  }
-  const [encodedHeader, encodedClaims, encodedSignature] = parts;
-  return {
-    header: base64UrlJson(encodedHeader, "header"),
-    claims: base64UrlJson(encodedClaims, "claims"),
-    signedBytes: Buffer.from(`${encodedHeader}.${encodedClaims}`),
-    signature: Buffer.from(encodedSignature, "base64url")
-  };
-}
-function numericClaim(claims, name) {
-  const value = claims[name];
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new PortalScopeError(
-      "portal_token_invalid",
-      401,
-      `Portal token is missing numeric ${name}.`
-    );
-  }
-  return value;
-}
-function audienceMatches(value, expected) {
-  return value === expected || Array.isArray(value) && value.includes(expected);
-}
-function verifyJwt(token, issuer, jwks, options) {
-  const jwt = parseJwt(token);
-  if (jwt.header.alg !== "ES256") {
-    throw new PortalScopeError(
-      "portal_token_invalid",
-      401,
-      "Marketplace accepts only Portal ES256 tokens."
-    );
-  }
-  const keyId = requiredString(jwt.header.kid, "key id");
-  const jwk = jwks.find((candidate) => candidate.kid === keyId);
-  if (!jwk) {
-    throw new PortalScopeError(
-      "portal_token_invalid",
-      401,
-      "Portal token key is not published by the configured issuer."
-    );
-  }
-  try {
-    const publicKey = createPublicKey({ key: jwk, format: "jwk" });
-    if (!verifySignature(
-      "sha256",
-      jwt.signedBytes,
-      { key: publicKey, dsaEncoding: "ieee-p1363" },
-      jwt.signature
-    )) {
-      throw new Error("signature mismatch");
-    }
-  } catch {
-    throw new PortalScopeError(
-      "portal_token_invalid",
-      401,
-      "Portal token signature is invalid."
-    );
-  }
-  const tokenIssuer = requiredString(jwt.claims.iss, "issuer");
-  if (tokenIssuer !== issuer) {
-    throw new PortalScopeError(
-      "portal_token_invalid",
-      401,
-      "Portal token issuer does not match Marketplace configuration."
-    );
-  }
-  const issuedAt = numericClaim(jwt.claims, "iat");
-  const expiresAt = numericClaim(jwt.claims, "exp");
-  if (issuedAt > options.nowSeconds + 30 || expiresAt <= options.nowSeconds) {
-    throw new PortalScopeError(
-      "portal_token_invalid",
-      401,
-      "Portal token is not currently valid."
-    );
-  }
-  if (options.audience && !audienceMatches(jwt.claims.aud, options.audience)) {
-    throw new PortalScopeError(
-      "portal_token_invalid",
-      401,
-      "Portal attachment audience does not match Marketplace."
-    );
-  }
-  return { claims: jwt.claims, issuedAt, expiresAt };
-}
-function createPortalAgentScopeVerifier(input) {
-  const issuer = input.issuer?.trim().replace(/\/$/u, "") || null;
-  const fetchImpl = input.fetchImpl ?? fetch;
-  const now = input.now ?? (() => Date.now());
-  const cacheTtlMs = input.cacheTtlMs ?? 5 * 6e4;
-  let cachedJwks = null;
-  const loadJwks = async () => {
-    if (!issuer) {
-      throw new PortalScopeError(
-        "portal_identity_unconfigured",
-        503,
-        "MARKETPLACE_PORTAL_ISSUER_URL is required for agent-scoped Marketplace access."
-      );
-    }
-    if (cachedJwks && cachedJwks.expiresAt > now()) {
-      return cachedJwks.keys;
-    }
-    let response;
-    try {
-      response = await fetchImpl(`${issuer}/api/jwks`);
-    } catch {
-      throw new PortalScopeError(
-        "portal_identity_unavailable",
-        503,
-        "Portal JWKS could not be reached."
-      );
-    }
-    if (!response.ok) {
-      throw new PortalScopeError(
-        "portal_identity_unavailable",
-        503,
-        "Portal JWKS could not be loaded."
-      );
-    }
-    const payload = asObject(await response.json());
-    const keys = Array.isArray(payload.keys) ? payload.keys.map(asObject).filter((key) => key.kid) : [];
-    if (!keys.length) {
-      throw new PortalScopeError(
-        "portal_identity_unavailable",
-        503,
-        "Portal JWKS did not publish a usable key."
-      );
-    }
-    cachedJwks = { keys, expiresAt: now() + cacheTtlMs };
-    return keys;
-  };
-  return async ({ agentToken, attachmentToken, audience, requiredCapability }) => {
-    if (!issuer) {
-      throw new PortalScopeError(
-        "portal_identity_unconfigured",
-        503,
-        "MARKETPLACE_PORTAL_ISSUER_URL is required for agent-scoped Marketplace access."
-      );
-    }
-    if (!agentToken.trim() || !attachmentToken.trim()) {
-      throw new PortalScopeError(
-        "portal_token_invalid",
-        401,
-        "Portal agent and attachment tokens are required."
-      );
-    }
-    const jwks = await loadJwks();
-    const nowSeconds = Math.floor(now() / 1e3);
-    const agent = verifyJwt(agentToken, issuer, jwks, { nowSeconds });
-    const attachment = verifyJwt(attachmentToken, issuer, jwks, {
-      audience,
-      nowSeconds
-    });
-    if (agent.claims.kind !== "agent") {
-      throw new PortalScopeError(
-        "portal_token_invalid",
-        401,
-        "The Portal credential is not an agent credential."
-      );
-    }
-    if (attachment.claims.typ !== "attachment" || attachment.claims.status !== "active") {
-      throw new PortalScopeError(
-        "portal_token_invalid",
-        401,
-        "The Portal credential is not an active attachment."
-      );
-    }
-    const agentId = requiredString(agent.claims.sub, "agent subject");
-    const attachmentAgentId = requiredString(attachment.claims.sub, "attachment subject");
-    if (agentId !== attachmentAgentId) {
-      throw new PortalScopeError(
-        "portal_token_invalid",
-        401,
-        "Portal agent and attachment subjects do not match."
-      );
-    }
-    if (attachment.expiresAt - attachment.issuedAt > 300) {
-      throw new PortalScopeError(
-        "portal_token_invalid",
-        401,
-        "Portal attachment lifetime exceeds the supported 300-second contract."
-      );
-    }
-    const organizationId = requiredString(
-      agent.claims.org ?? attachment.claims.orgId ?? attachment.claims.org,
-      "organization"
-    );
-    const attachmentOrganizationId = requiredString(
-      attachment.claims.orgId ?? attachment.claims.org,
-      "attachment organization"
-    );
-    if (organizationId !== attachmentOrganizationId) {
-      throw new PortalScopeError(
-        "portal_token_invalid",
-        401,
-        "Portal agent and attachment organizations do not match."
-      );
-    }
-    const capabilities2 = Array.isArray(attachment.claims.capabilities) ? attachment.claims.capabilities.filter(
-      (capability) => typeof capability === "string" && Boolean(capability.trim())
-    ) : [];
-    if (!capabilities2.includes(requiredCapability)) {
-      throw new PortalScopeError(
-        "portal_capability_denied",
-        403,
-        "Portal attachment does not grant the requested Marketplace capability."
-      );
-    }
-    return {
-      organizationId,
-      agentId,
-      attachmentId: requiredString(attachment.claims.jti, "attachment id"),
-      capabilities: capabilities2,
-      expiresAt: Math.min(agent.expiresAt, attachment.expiresAt)
-    };
-  };
-}
-
-// src/portal-handoff.ts
-var MARKETPLACE_PORTAL_HANDOFF_CONTRACT_VERSION = "tealbrick.marketplace.operator-handoff.v1.1";
-var PortalHandoffError = class extends Error {
-  constructor(code, statusCode, message) {
-    super(message);
-    this.code = code;
-    this.statusCode = statusCode;
-    this.name = "PortalHandoffError";
-  }
-  code;
-  statusCode;
-};
-function object(value) {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
-}
-function requiredString2(value, label) {
-  if (typeof value !== "string" || !value.trim()) {
-    throw new PortalHandoffError(
-      "portal_handoff_invalid",
-      503,
-      `Portal handoff response is missing ${label}.`
-    );
-  }
-  return value.trim();
-}
-function opaque(value) {
-  return typeof value === "string" && /^[A-Za-z0-9_-]{43}$/u.test(value);
-}
-function numberValue(value, label) {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new PortalHandoffError(
-      "portal_handoff_invalid",
-      503,
-      `Portal handoff response is missing numeric ${label}.`
-    );
-  }
-  return value;
-}
-function capabilities(value) {
-  if (!Array.isArray(value)) {
-    throw new PortalHandoffError(
-      "portal_handoff_invalid",
-      503,
-      "Portal handoff response has invalid capabilities."
-    );
-  }
-  return value.filter(
-    (entry) => entry === "connector.observe" || entry === "connector.dispatch" || entry === "connector.admin"
-  );
-}
-function selection(value) {
-  const input = object(value);
-  const result = {
-    pluginId: requiredString2(input.pluginId, "selection.pluginId"),
-    actionKey: requiredString2(input.actionKey, "selection.actionKey"),
-    accountId: requiredString2(input.accountId, "selection.accountId"),
-    resourceKind: requiredString2(input.resourceKind, "selection.resourceKind"),
-    resourceRef: requiredString2(input.resourceRef, "selection.resourceRef")
-  };
-  if (result.resourceRef !== `account:${result.accountId}`) {
-    throw new PortalHandoffError(
-      "portal_handoff_invalid",
-      503,
-      "Portal handoff response has an invalid resource binding."
-    );
-  }
-  return result;
-}
-function consentEnvelope(value) {
-  const input = object(value);
-  if (input.schema !== 1 || input.authorized !== true || input.product !== "marketplace") {
-    throw new PortalHandoffError(
-      "portal_handoff_invalid",
-      503,
-      "Portal handoff response is not an authorized Marketplace envelope."
-    );
-  }
-  const state = input.state;
-  if (state !== "pending" && state !== "active" && state !== "revoked" && state !== "approved" && state !== "denied") {
-    throw new PortalHandoffError(
-      "portal_handoff_invalid",
-      503,
-      "Portal handoff response has an invalid consent state."
-    );
-  }
-  return {
-    schema: 1,
-    authorized: true,
-    product: "marketplace",
-    portalOrgId: requiredString2(input.portalOrgId, "portalOrgId"),
-    productTenantId: requiredString2(input.productTenantId, "productTenantId"),
-    workspaceId: requiredString2(input.workspaceId, "workspaceId"),
-    deploymentId: requiredString2(input.deploymentId, "deploymentId"),
-    userId: requiredString2(input.userId, "userId"),
-    agentId: requiredString2(input.agentId, "agentId"),
-    consentId: input.consentId === null ? null : requiredString2(input.consentId, "consentId"),
-    consentRevision: Math.max(1, Math.floor(numberValue(input.consentRevision, "consentRevision"))),
-    state,
-    capabilities: capabilities(input.capabilities),
-    requiredActions: Array.isArray(input.requiredActions) ? input.requiredActions.filter(
-      (entry) => typeof entry === "string" && Boolean(entry.trim())
-    ) : [],
-    selection: selection(input.selection)
-  };
-}
-function createPortalHandoffClient(input) {
-  const issuer = input.issuer?.trim().replace(/\/$/u, "") || null;
-  const instanceProof = input.instanceProof?.trim() || null;
-  const fetchImpl = input.fetchImpl ?? fetch;
-  async function post(path8, body) {
-    if (!issuer || !instanceProof) {
-      throw new PortalHandoffError(
-        "portal_handoff_unconfigured",
-        503,
-        "Marketplace Portal issuer and instance proof are required."
-      );
-    }
-    let response;
-    try {
-      response = await fetchImpl(`${issuer}${path8}`, {
-        method: "POST",
-        headers: {
-          accept: "application/json",
-          "content-type": "application/json",
-          "x-tealbrick-instance-proof": instanceProof
-        },
-        body: JSON.stringify(body)
-      });
-    } catch {
-      throw new PortalHandoffError(
-        "portal_handoff_unavailable",
-        503,
-        "Portal handoff is unavailable."
-      );
-    }
-    let payload = null;
-    try {
-      payload = await response.json();
-    } catch {
-      payload = null;
-    }
-    if (!response.ok) {
-      const code = object(payload).error;
-      const status = [400, 401, 403, 409].includes(response.status) ? response.status : 503;
-      throw new PortalHandoffError(
-        status === 503 ? "portal_handoff_unavailable" : "portal_handoff_denied",
-        status,
-        typeof code === "string" && code ? code : "Portal handoff was denied."
-      );
-    }
-    return object(payload);
-  }
-  return {
-    async redeemLaunchTicket(request) {
-      const payload = await post("/api/deployment-browser/redeem", {
-        schema: 1,
-        product: "marketplace",
-        deploymentId: request.deploymentId,
-        ticket: request.ticket
-      });
-      if (payload.schema !== 1 || payload.authorized !== true || payload.product !== "marketplace" || !opaque(payload.session)) {
-        throw new PortalHandoffError(
-          "portal_handoff_invalid",
-          503,
-          "Portal launch did not return a valid Marketplace session."
-        );
-      }
-      return {
-        schema: 1,
-        authorized: true,
-        product: "marketplace",
-        deploymentId: requiredString2(payload.deploymentId, "deploymentId"),
-        workspaceId: requiredString2(payload.workspaceId, "workspaceId"),
-        portalOrgId: requiredString2(payload.orgId, "orgId"),
-        productTenantId: requiredString2(payload.productTenantId, "productTenantId"),
-        userId: requiredString2(payload.userId, "userId"),
-        endpoint: requiredString2(payload.endpoint, "endpoint"),
-        session: payload.session,
-        expiresAt: numberValue(payload.expiresAt, "expiresAt")
-      };
-    },
-    async requestGrant(request) {
-      const payload = await post("/api/deployment-browser/grant-request", {
-        schema: 1,
-        product: "marketplace",
-        deploymentId: request.deploymentId,
-        session: request.session,
-        agentId: request.agentId,
-        selection: request.selection,
-        idempotencyKey: request.idempotencyKey
-      });
-      if (!opaque(payload.requestId)) {
-        throw new PortalHandoffError(
-          "portal_handoff_invalid",
-          503,
-          "Portal grant request did not return an opaque request id."
-        );
-      }
-      return {
-        requestId: payload.requestId,
-        approvalUrl: requiredString2(payload.approvalUrl, "approvalUrl"),
-        expiresAt: numberValue(payload.expiresAt, "expiresAt")
-      };
-    },
-    async redeemGrant(request) {
-      const payload = await post("/api/deployment-browser/grant-redeem", {
-        schema: 1,
-        product: "marketplace",
-        deploymentId: request.deploymentId,
-        session: request.session,
-        requestId: request.requestId
-      });
-      return consentEnvelope(payload);
-    },
-    async receipt(request) {
-      const payload = await post("/api/deployment-browser/grant-receipt", {
-        schema: 1,
-        product: "marketplace",
-        deploymentId: request.deploymentId,
-        session: request.session,
-        requestId: request.requestId
-      });
-      return consentEnvelope(payload);
-    },
-    async introspect(request) {
-      const payload = await post("/api/deployment-browser/grant-introspect", {
-        schema: 1,
-        product: "marketplace",
-        deploymentId: request.deploymentId,
-        attachment: request.attachment,
-        selection: request.selection
-      });
-      if (payload.schema !== 1 || payload.authorized !== true) {
-        throw new PortalHandoffError(
-          "portal_handoff_invalid",
-          503,
-          "Portal introspection did not return an authorized response."
-        );
-      }
-      return {
-        schema: 1,
-        authorized: true,
-        portalOrgId: requiredString2(payload.portalOrgId, "portalOrgId"),
-        productTenantId: requiredString2(payload.productTenantId, "productTenantId"),
-        workspaceId: requiredString2(payload.workspaceId, "workspaceId"),
-        deploymentId: requiredString2(payload.deploymentId, "deploymentId"),
-        agentId: requiredString2(payload.agentId, "agentId"),
-        consentId: requiredString2(payload.consentId, "consentId"),
-        consentRevision: Math.max(1, Math.floor(numberValue(payload.consentRevision, "consentRevision"))),
-        leaseId: requiredString2(payload.leaseId, "leaseId"),
-        capabilities: capabilities(payload.capabilities),
-        expiresAt: numberValue(payload.expiresAt, "expiresAt")
-      };
-    }
-  };
-}
-
-// src/portal-runtime-scope.ts
-import { createPublicKey as createPublicKey2, verify as verifySignature2 } from "node:crypto";
-var PortalRuntimeScopeError = class extends Error {
-  constructor(code, statusCode, message) {
-    super(message);
-    this.code = code;
-    this.statusCode = statusCode;
-    this.name = "PortalRuntimeScopeError";
-  }
-  code;
-  statusCode;
-};
-function object2(value) {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
-}
-function requiredString3(value, label) {
-  if (typeof value !== "string" || !value.trim()) {
-    throw new PortalRuntimeScopeError(
-      "portal_runtime_invalid",
-      401,
-      `Runtime lease is missing ${label}.`
-    );
-  }
-  return value.trim();
-}
-function numericClaim2(claims, label) {
-  const value = claims[label];
-  if (typeof value !== "number" || !Number.isInteger(value)) {
-    throw new PortalRuntimeScopeError(
-      "portal_runtime_invalid",
-      401,
-      `Runtime lease is missing numeric ${label}.`
-    );
-  }
-  return value;
-}
-function audienceMatches2(value, expected) {
-  return value === expected || Array.isArray(value) && value.includes(expected);
-}
-function parseJwt2(token) {
-  const parts = token.split(".");
-  if (parts.length !== 3 || parts.some((part) => !part)) {
-    throw new PortalRuntimeScopeError(
-      "portal_runtime_invalid",
-      401,
-      "Runtime lease is not a compact JWT."
-    );
-  }
-  const [encodedHeader, encodedClaims, encodedSignature] = parts;
-  try {
-    return {
-      header: object2(JSON.parse(Buffer.from(encodedHeader, "base64url").toString("utf8"))),
-      claims: object2(JSON.parse(Buffer.from(encodedClaims, "base64url").toString("utf8"))),
-      signedBytes: Buffer.from(`${encodedHeader}.${encodedClaims}`),
-      signature: Buffer.from(encodedSignature, "base64url")
-    };
-  } catch {
-    throw new PortalRuntimeScopeError(
-      "portal_runtime_invalid",
-      401,
-      "Runtime lease has invalid JWT JSON."
-    );
-  }
-}
-function createPortalRuntimeScopeVerifier(input) {
-  const issuer = input.issuer?.trim().replace(/\/$/u, "") || null;
-  const fetchImpl = input.fetchImpl ?? fetch;
-  const now = input.now ?? (() => Date.now());
-  const cacheTtlMs = input.cacheTtlMs ?? 5 * 6e4;
-  let cachedJwks = null;
-  const client = createPortalHandoffClient({
-    issuer,
-    instanceProof: input.instanceProof,
-    fetchImpl
-  });
-  const loadJwks = async () => {
-    if (!issuer || !input.instanceProof?.trim()) {
-      throw new PortalRuntimeScopeError(
-        "portal_runtime_unconfigured",
-        503,
-        "Marketplace Portal issuer and instance proof are required for runtime leases."
-      );
-    }
-    if (cachedJwks && cachedJwks.expiresAt > now()) return cachedJwks.keys;
-    let response;
-    try {
-      response = await fetchImpl(`${issuer}/api/jwks`);
-    } catch {
-      throw new PortalRuntimeScopeError(
-        "portal_runtime_unavailable",
-        503,
-        "Portal JWKS could not be reached."
-      );
-    }
-    if (!response.ok) {
-      throw new PortalRuntimeScopeError(
-        "portal_runtime_unavailable",
-        503,
-        "Portal JWKS could not be loaded."
-      );
-    }
-    const payload = object2(await response.json());
-    const keys = Array.isArray(payload.keys) ? payload.keys.map(object2).filter((key) => typeof key.kid === "string") : [];
-    if (!keys.length) {
-      throw new PortalRuntimeScopeError(
-        "portal_runtime_unavailable",
-        503,
-        "Portal JWKS did not publish a usable key."
-      );
-    }
-    cachedJwks = { keys, expiresAt: now() + cacheTtlMs };
-    return keys;
-  };
-  return async ({ attachmentToken, selection: selection2, requiredCapability }) => {
-    if (!issuer || !input.instanceProof?.trim()) {
-      throw new PortalRuntimeScopeError(
-        "portal_runtime_unconfigured",
-        503,
-        "Marketplace Portal issuer and instance proof are required for runtime leases."
-      );
-    }
-    if (!attachmentToken.trim()) {
-      throw new PortalRuntimeScopeError(
-        "portal_runtime_invalid",
-        401,
-        "A Portal runtime lease is required."
-      );
-    }
-    const jwt = parseJwt2(attachmentToken);
-    if (jwt.header.alg !== "ES256") {
-      throw new PortalRuntimeScopeError(
-        "portal_runtime_invalid",
-        401,
-        "Marketplace accepts only Portal ES256 runtime leases."
-      );
-    }
-    const keyId = requiredString3(jwt.header.kid, "key id");
-    const jwk = (await loadJwks()).find((candidate) => candidate.kid === keyId);
-    if (!jwk) {
-      throw new PortalRuntimeScopeError(
-        "portal_runtime_invalid",
-        401,
-        "Runtime lease key is not published by Portal."
-      );
-    }
-    try {
-      const publicKey = createPublicKey2({ key: jwk, format: "jwk" });
-      if (!verifySignature2(
-        "sha256",
-        jwt.signedBytes,
-        { key: publicKey, dsaEncoding: "ieee-p1363" },
-        jwt.signature
-      )) {
-        throw new Error("signature mismatch");
-      }
-    } catch {
-      throw new PortalRuntimeScopeError(
-        "portal_runtime_invalid",
-        401,
-        "Runtime lease signature is invalid."
-      );
-    }
-    const claims = jwt.claims;
-    if (requiredString3(claims.iss, "issuer") !== issuer || !audienceMatches2(claims.aud, "marketplace") || claims.typ !== "attachment" || claims.purpose !== "marketplace-runtime" || claims.kind !== void 0 || claims.status !== "active") {
-      throw new PortalRuntimeScopeError(
-        "portal_runtime_invalid",
-        401,
-        "Runtime lease claims are not valid for Marketplace."
-      );
-    }
-    const nowSeconds = Math.floor(now() / 1e3);
-    const issuedAt = numericClaim2(claims, "iat");
-    const expiresAt = numericClaim2(claims, "exp");
-    if (issuedAt > nowSeconds || expiresAt <= nowSeconds || expiresAt - issuedAt > 300) {
-      throw new PortalRuntimeScopeError(
-        "portal_runtime_invalid",
-        401,
-        "Runtime lease is expired or exceeds the supported lifetime."
-      );
-    }
-    const deploymentId = requiredString3(claims.deploymentId, "deployment id");
-    const agentId = requiredString3(claims.sub, "agent subject");
-    const consentId = requiredString3(claims.consentId, "consent id");
-    const leaseId = requiredString3(claims.jti, "lease id");
-    const capabilities2 = Array.isArray(claims.capabilities) ? claims.capabilities.filter(
-      (entry) => typeof entry === "string" && Boolean(entry.trim())
-    ) : [];
-    if (!capabilities2.includes(requiredCapability)) {
-      throw new PortalRuntimeScopeError(
-        "portal_runtime_denied",
-        403,
-        "Runtime lease does not grant the requested Marketplace capability."
-      );
-    }
-    let introspected;
-    try {
-      introspected = await client.introspect({
-        deploymentId,
-        attachment: attachmentToken,
-        selection: selection2
-      });
-    } catch (error) {
-      if (error instanceof PortalHandoffError) {
-        const mapped = error.code === "portal_handoff_unavailable" ? "portal_runtime_unavailable" : error.statusCode === 401 ? "portal_runtime_invalid" : "portal_runtime_denied";
-        throw new PortalRuntimeScopeError(mapped, mapped === "portal_runtime_unavailable" ? 503 : error.statusCode === 401 ? 401 : 403, "Portal runtime authorization was denied.");
-      }
-      throw error;
-    }
-    if (introspected.deploymentId !== deploymentId || introspected.agentId !== agentId || introspected.consentId !== consentId || introspected.leaseId !== leaseId || introspected.portalOrgId !== requiredString3(claims.orgId ?? claims.org, "organization") || introspected.productTenantId !== requiredString3(claims.productTenantId, "product tenant") || introspected.workspaceId !== requiredString3(claims.workspaceId, "workspace") || introspected.expiresAt > expiresAt * 1e3 || !introspected.capabilities.includes(requiredCapability)) {
-      throw new PortalRuntimeScopeError(
-        "portal_runtime_denied",
-        403,
-        "Portal runtime authorization does not match the attested lease."
-      );
-    }
-    return {
-      portalOrgId: introspected.portalOrgId,
-      productTenantId: introspected.productTenantId,
-      workspaceId: introspected.workspaceId,
-      deploymentId: introspected.deploymentId,
-      agentId: introspected.agentId,
-      consentId: introspected.consentId,
-      leaseId: introspected.leaseId,
-      capabilities: introspected.capabilities,
-      expiresAt: introspected.expiresAt
-    };
-  };
-}
-
-// src/portal-config.ts
-function normalized(value, normalize) {
-  const trimmed = value?.trim();
-  return trimmed ? normalize(trimmed) : null;
-}
-function resolveCompatibleValue(label, candidates, normalize = (value) => value) {
-  const present = candidates.map((candidate) => ({
-    ...candidate,
-    value: normalized(candidate.value, normalize)
-  })).filter((candidate) => Boolean(candidate.value));
-  const distinct = new Set(present.map((candidate) => candidate.value));
-  if (distinct.size > 1) {
-    throw new Error(
-      `${label} configuration conflicts between ${present.map((candidate) => candidate.name).join(", ")}.`
-    );
-  }
-  return present[0]?.value ?? null;
-}
-var normalizeOrigin = (value) => value.replace(/\/+$/u, "");
-function resolvePortalRuntimeConfiguration(input = {}) {
-  const env = input.env ?? process.env;
-  return {
-    issuerUrl: resolveCompatibleValue(
-      "Portal issuer URL",
-      [
-        { name: "options.portalIssuerUrl", value: input.portalIssuerUrl },
-        { name: "MARKETPLACE_PORTAL_ISSUER_URL", value: env.MARKETPLACE_PORTAL_ISSUER_URL },
-        { name: "MARKETPLACE_PORTAL_URL", value: env.MARKETPLACE_PORTAL_URL },
-        { name: "MARKETPLACE_PORTAL_ORIGIN", value: env.MARKETPLACE_PORTAL_ORIGIN }
-      ],
-      normalizeOrigin
-    ),
-    instanceProof: resolveCompatibleValue("Portal instance proof", [
-      { name: "options.portalInstanceProof", value: input.portalInstanceProof },
-      { name: "MARKETPLACE_PORTAL_INSTANCE_PROOF", value: env.MARKETPLACE_PORTAL_INSTANCE_PROOF },
-      { name: "MARKETPLACE_PORTAL_INSTANCE_TOKEN", value: env.MARKETPLACE_PORTAL_INSTANCE_TOKEN }
-    ]),
-    deploymentId: resolveCompatibleValue("Portal deployment identity", [
-      { name: "MARKETPLACE_PORTAL_DEPLOYMENT_ID", value: env.MARKETPLACE_PORTAL_DEPLOYMENT_ID }
-    ]),
-    portalOrgId: resolveCompatibleValue("Portal organization identity", [
-      { name: "MARKETPLACE_PORTAL_ORG_ID", value: env.MARKETPLACE_PORTAL_ORG_ID }
-    ]),
-    workspaceId: resolveCompatibleValue("Portal workspace identity", [
-      { name: "MARKETPLACE_PORTAL_WORKSPACE_ID", value: env.MARKETPLACE_PORTAL_WORKSPACE_ID }
-    ])
-  };
-}
-
-// src/rules-readiness.ts
-var RULES_INTROSPECTION_PATH = "/api/rules/gateway/introspect";
-function objectValue2(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value) ? value : null;
-}
-function nonEmptyString(value) {
-  return typeof value === "string" && value.trim().length > 0;
-}
-function parseRulesReadinessPrincipal(input) {
-  const response = objectValue2(input.response);
-  const principal = objectValue2(response?.principal);
-  const expectedCompanyId = input.expectedCompanyId ?? input.organizationId;
-  const allowedMethods = principal?.allowedMethods;
-  const allowedRuleKeys = principal?.allowedRuleKeys;
-  const expiresAt = principal?.expiresAt;
-  if (response?.ok !== true || principal?.active !== true || principal?.kind !== "scoped-evaluation" || principal?.clientId !== "marketplace" || principal?.targetKind !== "plugin" || principal?.companyId !== expectedCompanyId || principal?.workspaceSlug !== input.organizationId || !nonEmptyString(principal.credentialId) || !Array.isArray(allowedMethods) || allowedMethods.length !== 1 || allowedMethods[0] !== "doppelganger.rules.evaluate" || !Array.isArray(allowedRuleKeys) || allowedRuleKeys.length !== 1 || allowedRuleKeys[0] !== "marketplace.plugin" || !nonEmptyString(expiresAt) || !Number.isFinite(Date.parse(expiresAt)) || Date.parse(expiresAt) <= Date.now()) {
-    throw new Error("rules_readiness_principal_invalid");
-  }
-  return {
-    active: true,
-    kind: "scoped-evaluation",
-    credentialId: principal.credentialId,
-    companyId: principal.companyId,
-    workspaceSlug: principal.workspaceSlug,
-    clientId: "marketplace",
-    targetKind: "plugin",
-    allowedMethods: ["doppelganger.rules.evaluate"],
-    allowedRuleKeys: ["marketplace.plugin"],
-    expiresAt
-  };
-}
-
-// src/app.ts
-var WorkspaceQuerySchema = external_exports.object({
-  workspaceSlug: external_exports.string().trim().min(1).default("default")
-});
-var CardsSummaryQuerySchema = WorkspaceQuerySchema.extend({
-  search: external_exports.string().trim().max(200).default(""),
-  source: external_exports.enum(["all", "native", "activepieces", "composio", "nango", "mcp"]).default("all"),
-  installed: external_exports.enum(["true", "false"]).optional().transform((value) => value === "true"),
-  offset: external_exports.coerce.number().int().min(0).default(0),
-  limit: external_exports.coerce.number().int().min(1).max(100).default(60)
-});
-function allowedComposioOrigin(value, env = process.env) {
-  let parsed;
-  try {
-    parsed = new URL(value);
-  } catch {
-    return false;
-  }
-  if (parsed.username || parsed.password) return false;
-  const hostname = parsed.hostname.toLowerCase();
-  if (parsed.protocol === "https:" && (hostname === "composio.dev" || hostname.endsWith(".composio.dev"))) {
-    return true;
-  }
-  const configured = new Set(
-    (env.MARKETPLACE_COMPOSIO_ALLOWED_ORIGINS ?? "").split(",").map((entry) => entry.trim()).filter(Boolean)
-  );
-  return configured.has(parsed.origin);
-}
-var ComposioProviderSettingsSchema = external_exports.object({
-  composioApiKey: external_exports.string().trim().max(512).refine(
-    (value) => value === "" || /^[\x21-\x7E]+$/u.test(value),
-    "Composio API key must contain printable ASCII without spaces or line breaks."
-  ).optional(),
-  composioBaseUrl: external_exports.string().trim().refine(
-    (value) => allowedComposioOrigin(value),
-    "Composio base URL must be an https://*.composio.dev address or an explicitly allowlisted origin."
-  ),
-  composioDefaultUserId: external_exports.string().trim().min(1),
-  composioDefaultConnectedAccountId: external_exports.string().trim().optional().default("")
-});
-var ComposioProviderSettingsRequestSchema = external_exports.object({
-  settings: ComposioProviderSettingsSchema
-});
-var InstallInputSchema = external_exports.object({
-  workspaceSlug: external_exports.string().trim().min(1),
-  actorId: external_exports.string().trim().min(1).default("operator")
-});
-var HubAuthQuerySchema = external_exports.object({
-  workspaceSlug: external_exports.string().trim().min(1).default("default")
-});
-var SettingsSurfaceDeclarationSchema = external_exports.object({
-  settingsSurfaceId: external_exports.string().trim().min(1).optional(),
-  title: external_exports.string().trim().min(1).optional(),
-  description: external_exports.string().trim().min(1).optional(),
-  schema: external_exports.record(external_exports.unknown()).optional(),
-  uiSchema: external_exports.record(external_exports.unknown()).optional()
-});
-var ExtensionContributionSchema = external_exports.object({
-  id: external_exports.string().trim().min(1),
-  type: external_exports.literal("extension-surface").default("extension-surface"),
-  label: external_exports.string().trim().min(1),
-  mount: external_exports.enum(["workspace", "right-rail", "settings-panel", "overlay"]),
-  routeSegment: external_exports.string().trim().min(1),
-  region: external_exports.string().trim().min(1).optional(),
-  minHostSdk: external_exports.string().trim().min(1).optional(),
-  settings: SettingsSurfaceDeclarationSchema.optional(),
-  enabled: external_exports.boolean().default(true)
-});
-var McpPluginFieldsSchema = external_exports.object({
-  workspaceSlug: external_exports.string().trim().min(1).default("default"),
-  actorId: external_exports.string().trim().min(1).default("operator"),
-  pluginId: external_exports.string().trim().min(1).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u),
-  displayName: external_exports.string().trim().min(1),
-  description: external_exports.string().trim().min(1).optional(),
-  version: external_exports.string().trim().min(1).optional(),
-  transport: external_exports.enum(["stdio", "sse", "streamable-http"]),
-  command: external_exports.string().trim().min(1).optional(),
-  args: external_exports.array(external_exports.string()).optional(),
-  url: external_exports.string().url().optional(),
-  cwd: external_exports.string().trim().min(1).optional(),
-  env: external_exports.record(external_exports.string()).optional(),
-  headers: external_exports.record(external_exports.string()).optional(),
-  config: external_exports.record(external_exports.unknown()).optional(),
-  contributions: external_exports.array(ExtensionContributionSchema).optional(),
-  capabilities: external_exports.array(
-    external_exports.enum(["connector.observe", "connector.dispatch", "connector.admin"])
-  ).optional(),
-  actions: external_exports.array(external_exports.string().trim().min(1)).optional()
-});
-var McpPluginSchema = McpPluginFieldsSchema.superRefine((value, context) => {
-  if (value.transport === "stdio" && !value.command) {
-    context.addIssue({
-      code: external_exports.ZodIssueCode.custom,
-      path: ["command"],
-      message: "stdio MCP Plugins require a command."
-    });
-  }
-  if (value.transport !== "stdio" && !value.url) {
-    context.addIssue({
-      code: external_exports.ZodIssueCode.custom,
-      path: ["url"],
-      message: "Network MCP Plugins require a URL."
-    });
-  }
-  const contributionIds = value.contributions?.map((contribution) => contribution.id) ?? [];
-  if (new Set(contributionIds).size !== contributionIds.length) {
-    context.addIssue({
-      code: external_exports.ZodIssueCode.custom,
-      path: ["contributions"],
-      message: "Each contributed Extension surface requires a unique id."
-    });
-  }
-});
-var McpPluginUpdateSchema = McpPluginFieldsSchema.omit({
-  workspaceSlug: true,
-  actorId: true,
-  pluginId: true
-}).partial();
-var HubLifecycleSchema = external_exports.object({
-  workspaceSlug: external_exports.string().trim().min(1).default("default"),
-  actorId: external_exports.string().trim().min(1).default("operator"),
-  action: external_exports.enum(["install", "enable", "disable", "reload", "uninstall"])
-});
-var GatewayRegistrySnapshotSchema = external_exports.object({
-  contractVersion: external_exports.string().trim().min(1),
-  revision: external_exports.coerce.number().int().nonnegative(),
-  units: external_exports.array(
-    external_exports.object({
-      unitId: external_exports.string().trim().min(1),
-      version: external_exports.string().trim().min(1),
-      enabled: external_exports.boolean(),
-      required: external_exports.boolean().optional()
-    })
-  ),
-  contributions: external_exports.array(
-    external_exports.object({
-      id: external_exports.string().trim().min(1),
-      unitId: external_exports.string().trim().min(1),
-      type: external_exports.string().trim().min(1),
-      label: external_exports.string().trim().min(1),
-      family: external_exports.string().optional(),
-      region: external_exports.string().optional(),
-      mount: external_exports.string().optional(),
-      routeSegment: external_exports.string().optional()
-    })
-  ),
-  flags: external_exports.object({ developerMode: external_exports.boolean().optional() }).optional()
-});
-var BindingInputSchema = external_exports.object({
-  workspaceSlug: external_exports.string().trim().min(1),
-  actorId: external_exports.string().trim().min(1).default("operator"),
-  capability: external_exports.enum([
-    "connector.observe",
-    "connector.dispatch",
-    "connector.admin"
-  ]),
-  enabled: external_exports.boolean().default(true)
-});
-var ActionBindingInputSchema = external_exports.object({
-  workspaceSlug: external_exports.string().trim().min(1),
-  actorId: external_exports.string().trim().min(1).default("operator"),
-  actionKey: external_exports.string().trim().min(1),
-  enabled: external_exports.boolean().default(true)
-});
-var ConnectionInputSchema = external_exports.object({
-  workspaceSlug: external_exports.string().trim().min(1),
-  actorId: external_exports.string().trim().min(1).default("operator"),
-  provider: external_exports.string().trim().min(1),
-  backend: external_exports.enum(["nango", "activepieces", "composio", "native"]).default("composio"),
-  credentialRef: external_exports.string().trim().min(1).optional(),
-  toolkit: external_exports.string().trim().min(1).optional(),
-  authConfigId: external_exports.string().trim().min(1).optional(),
-  callbackUrl: external_exports.string().trim().min(1).optional(),
-  callbackBaseUrl: external_exports.string().trim().min(1).optional(),
-  userId: external_exports.string().trim().min(1).optional(),
-  alias: external_exports.string().trim().min(1).optional(),
-  connectionData: external_exports.record(external_exports.unknown()).optional()
-});
-var ExecuteInputSchema = external_exports.object({
-  workspaceSlug: external_exports.string().trim().min(1),
-  actorId: external_exports.string().trim().min(1).default("operator"),
-  capability: external_exports.enum([
-    "connector.observe",
-    "connector.dispatch",
-    "connector.admin"
-  ]),
-  action: external_exports.object({ type: external_exports.string().trim().min(1) }).passthrough(),
-  runId: external_exports.string().trim().min(1).optional().nullable(),
-  sessionId: external_exports.string().trim().min(1).optional().nullable(),
-  agentGrantId: external_exports.string().trim().min(1).optional(),
-  resourceRef: external_exports.string().trim().min(1).optional()
-});
-var AgentGrantInputSchema = external_exports.object({
-  workspaceSlug: external_exports.string().trim().min(1),
-  pluginId: external_exports.string().trim().min(1),
-  actionKey: external_exports.string().trim().min(1),
-  accountId: external_exports.string().trim().min(1),
-  resourceKind: external_exports.string().trim().min(1),
-  resourceRef: external_exports.string().trim().min(1)
-});
-var PortalIdentifierSchema = external_exports.string().regex(/^[A-Za-z0-9_:-]{1,128}$/u);
-var PortalSelectionSchema = external_exports.strictObject({
-  pluginId: external_exports.literal("github-composio"),
-  actionKey: external_exports.literal("github.list.repositories"),
-  accountId: PortalIdentifierSchema,
-  resourceKind: external_exports.literal("github.connected-account"),
-  resourceRef: external_exports.string().regex(/^account:[A-Za-z0-9_:-]{1,128}$/u)
-}).superRefine((value, context) => {
-  if (value.resourceRef !== `account:${value.accountId}`) {
-    context.addIssue({
-      code: external_exports.ZodIssueCode.custom,
-      path: ["resourceRef"],
-      message: "resourceRef must bind exactly to accountId."
-    });
-  }
-});
-var PortalHandoffRequestSchema = external_exports.strictObject({
-  deploymentId: PortalIdentifierSchema,
-  agentId: PortalIdentifierSchema,
-  selection: PortalSelectionSchema,
-  idempotencyKey: external_exports.string().regex(/^[A-Za-z0-9_-]{8,100}$/u)
-});
-var PortalHandoffRedeemSchema = external_exports.strictObject({
-  deploymentId: PortalIdentifierSchema,
-  requestId: external_exports.string().regex(/^[A-Za-z0-9_-]{43}$/u)
-});
-var RuntimeComposioExecuteSchema = external_exports.strictObject({
-  schema: external_exports.literal(1),
-  consentId: PortalIdentifierSchema,
-  selection: PortalSelectionSchema,
-  input: external_exports.record(external_exports.unknown()),
-  idempotencyKey: external_exports.string().regex(/^[A-Za-z0-9_-]{8,100}$/u)
-});
-var AgentCapabilitiesQuerySchema = WorkspaceQuerySchema.extend({
-  grantId: external_exports.string().trim().min(1).optional()
-});
-var AgentGrantListQuerySchema = WorkspaceQuerySchema.extend({
-  agentId: external_exports.string().trim().min(1).optional(),
-  pluginId: external_exports.string().trim().min(1).optional(),
-  state: external_exports.enum(["active", "revoked"]).optional(),
-  limit: external_exports.coerce.number().int().min(1).max(100).default(100)
-});
-var BrokerGrantInputSchema = external_exports.object({
-  workspaceSlug: external_exports.string().trim().min(1),
-  actorId: external_exports.string().trim().min(1).default("operator"),
-  requesterMiniappId: external_exports.string().trim().min(1),
-  pluginId: external_exports.string().trim().min(1),
-  actionKeys: external_exports.array(external_exports.string().trim().min(1)).min(1),
-  ttlSeconds: external_exports.coerce.number().int().positive().max(900).default(300),
-  metadata: external_exports.record(external_exports.unknown()).default({})
-});
-var BrokerExecuteInputSchema = external_exports.object({
-  workspaceSlug: external_exports.string().trim().min(1),
-  requesterMiniappId: external_exports.string().trim().min(1),
-  pluginId: external_exports.string().trim().min(1),
-  brokerToken: external_exports.string().trim().min(1),
-  action: external_exports.object({ type: external_exports.string().trim().min(1) }).passthrough(),
-  runId: external_exports.string().trim().min(1).optional().nullable(),
-  sessionId: external_exports.string().trim().min(1).optional().nullable()
-});
-var CROSS_APP_MARKETPLACE_BROKER_EXECUTE_CONTRACT_VERSION = "doppelganger.cross-app.marketplace.broker-execute.v1";
-var CrossAppBrokerExecuteInputSchema = external_exports.object({
-  contractVersion: external_exports.literal(
-    CROSS_APP_MARKETPLACE_BROKER_EXECUTE_CONTRACT_VERSION
-  ),
-  sourceMiniappId: external_exports.string().trim().min(1),
-  requesterMiniappId: external_exports.string().trim().min(1).optional(),
-  sourceId: external_exports.string().trim().min(1),
-  eventType: external_exports.string().trim().min(1),
-  idempotencyKey: external_exports.string().trim().min(1),
-  traceId: external_exports.string().trim().min(1),
-  workspaceSlug: external_exports.string().trim().min(1),
-  pluginId: external_exports.string().trim().min(1),
-  action: external_exports.object({ type: external_exports.string().trim().min(1) }).passthrough(),
-  runId: external_exports.string().trim().min(1).optional().nullable(),
-  sessionId: external_exports.string().trim().min(1).optional().nullable(),
-  ttlSeconds: external_exports.coerce.number().int().positive().max(900).default(300),
-  metadata: external_exports.record(external_exports.unknown()).default({})
-});
-var AuditQuerySchema = external_exports.object({
-  workspaceSlug: external_exports.string().trim().min(1).optional(),
-  pluginId: external_exports.string().trim().min(1).optional(),
-  provider: external_exports.string().trim().min(1).optional(),
-  limit: external_exports.coerce.number().int().positive().max(500).default(100)
-});
-var SessionCorrelationInputSchema = external_exports.object({
-  workspaceSlug: external_exports.string().trim().min(1).default("default"),
-  appThreadId: external_exports.string().trim().min(1),
-  provider: external_exports.string().trim().min(1).default("hermes"),
-  providerInstanceId: external_exports.string().trim().min(1),
-  remoteSessionId: external_exports.string().trim().min(1).optional(),
-  hermesLiveSessionId: external_exports.string().trim().min(1).optional().nullable(),
-  hermesStoredSessionId: external_exports.string().trim().min(1).optional().nullable(),
-  profile: external_exports.string().trim().min(1).optional().nullable(),
-  runtimeMode: external_exports.string().trim().min(1).optional().nullable(),
-  cwd: external_exports.string().trim().min(1).optional().nullable(),
-  source: external_exports.string().trim().min(1).default("doppelganger-app"),
-  eventType: external_exports.string().trim().min(1).default("session.observed"),
-  metadata: external_exports.record(external_exports.unknown()).default({})
-});
-var SessionCorrelationQuerySchema = external_exports.object({
-  workspaceSlug: external_exports.string().trim().min(1).default("default"),
-  appThreadId: external_exports.string().trim().min(1).optional(),
-  remoteSessionId: external_exports.string().trim().min(1).optional(),
-  limit: external_exports.coerce.number().int().positive().max(500).default(100)
-});
-var SkillDeclarationSchema = external_exports.object({
-  skillId: external_exports.string().trim().min(1),
-  skillName: external_exports.string().trim().min(1).optional(),
-  displayName: external_exports.string().trim().min(1),
-  description: external_exports.string().trim().min(1).optional(),
-  sourcePath: external_exports.string().trim().min(1).optional(),
-  skillRoot: external_exports.string().trim().min(1).optional(),
-  requiresConnectors: external_exports.array(external_exports.string().trim().min(1)).default([])
-});
-var ComposioImportInputSchema = external_exports.object({
-  workspaceSlug: external_exports.string().trim().min(1),
-  actorId: external_exports.string().trim().min(1).default("operator"),
-  toolkit: external_exports.string().trim().min(1),
-  pluginId: external_exports.string().trim().min(1).optional(),
-  displayName: external_exports.string().trim().min(1).optional(),
-  description: external_exports.string().trim().min(1).optional(),
-  tools: external_exports.array(external_exports.record(external_exports.unknown())).optional(),
-  actionKeys: external_exports.array(external_exports.string().trim().min(1)).optional(),
-  skills: external_exports.array(SkillDeclarationSchema).optional(),
-  autoEnable: external_exports.boolean().default(true),
-  bindCapabilities: external_exports.array(
-    external_exports.enum(["connector.observe", "connector.dispatch", "connector.admin"])
-  ).optional()
-});
-var ComposioToolsQuerySchema = external_exports.object({
-  toolkit: external_exports.string().trim().min(1),
-  limit: external_exports.coerce.number().int().positive().max(250).default(50)
-});
-var ComposioCallbackQuerySchema = external_exports.object({
-  state: external_exports.string().trim().min(1),
-  status: external_exports.string().trim().min(1).optional(),
-  connected_account_id: external_exports.string().trim().min(1).optional(),
-  connectedAccountId: external_exports.string().trim().min(1).optional(),
-  connection_id: external_exports.string().trim().min(1).optional(),
-  account_id: external_exports.string().trim().min(1).optional(),
-  error: external_exports.string().trim().min(1).optional()
-});
-var PortalLaunchFormSchema = external_exports.strictObject({
-  ticket: external_exports.string().regex(/^[A-Za-z0-9_-]{43}$/u)
-});
-function configuredAllowedOrigins(env = process.env) {
-  return new Set(
-    (env.MARKETPLACE_ALLOWED_ORIGINS ?? "").split(",").map((origin) => origin.trim()).filter(Boolean)
-  );
-}
-function allowedCorsOrigin(origin, env = process.env) {
-  if (typeof origin !== "string" || !origin.trim()) {
-    return null;
-  }
-  const configured = configuredAllowedOrigins(env);
-  if (configured.has(origin)) {
-    return origin;
-  }
-  try {
-    const url = new URL(origin);
-    if (env.NODE_ENV === "test" && (url.protocol === "http:" || url.protocol === "https:") && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) {
-      return origin;
-    }
-  } catch {
-    return null;
-  }
-  return null;
-}
-function corsHeadersForOrigin(origin, env = process.env) {
-  const allowedOrigin = allowedCorsOrigin(origin, env);
-  if (!allowedOrigin) {
-    return {};
-  }
-  return {
-    "access-control-allow-origin": allowedOrigin,
-    "access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
-    "access-control-allow-headers": "content-type,x-trace-id,authorization,x-csrf-token,x-tealbrick-agent-token,x-tealbrick-attachment",
-    "access-control-allow-credentials": "true",
-    "access-control-expose-headers": "content-type",
-    "access-control-max-age": "600",
-    vary: "Origin"
-  };
-}
-async function enforceRules(input) {
-  if (!input.rulesClient) {
-    input.reply.code(503);
-    return {
-      ok: false,
-      error: "rules_unavailable",
-      governedCapability: input.capability,
-      detail: "Rules Approvals is required for connector admin, dispatch, generation, and execution."
-    };
-  }
-  const decision = await input.rulesClient({
-    workspaceSlug: input.workspaceSlug,
-    operation: input.operation,
-    capability: input.capability,
-    pluginId: input.pluginId,
-    actorId: input.actorId,
-    payload: input.payload
-  });
-  if (decision.effect === "allow") {
-    return decision;
-  }
-  input.reply.code(decision.effect === "deny" ? 403 : 409);
-  return {
-    ok: false,
-    error: decision.effect === "deny" ? "rules_denied" : "rules_review_required",
-    governedCapability: input.capability,
-    rules: decision
-  };
-}
-function traceIdFrom(request) {
-  const header = request.headers["x-trace-id"];
-  if (typeof header === "string" && header.trim()) {
-    return header.trim();
-  }
-  if (Array.isArray(header) && typeof header[0] === "string" && header[0].trim()) {
-    return header[0].trim();
-  }
-  const body = request.body;
-  if (body && typeof body === "object" && !Array.isArray(body)) {
-    const value = body.traceId;
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
-    }
-  }
-  return `trace-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
-function bearerTokenFrom(request) {
-  const value = request.headers.authorization;
-  if (typeof value !== "string") {
-    return null;
-  }
-  const match = /^Bearer\s+(.+)$/iu.exec(value.trim());
-  return match?.[1]?.trim() || null;
-}
-function secureRequest(request) {
-  const forwarded = request.headers["x-forwarded-proto"];
-  const forwardedProtocol = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  return request.protocol === "https" || forwardedProtocol?.split(",", 1)[0]?.trim() === "https";
-}
-function isMutation(method) {
-  return !["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());
-}
-function marketplacePublicPath(pathname) {
-  return pathname === "/" || pathname === "/embed" || pathname === "/healthz" || pathname === "/api/portal/readiness" || pathname === "/status" || pathname === "/bootstrap.json" || pathname === "/openapi.json" || pathname === "/swagger.json" || pathname === "/auth/launch" || pathname === "/api/marketplace/auth/session" || pathname.startsWith("/assets/") || /^\/api\/marketplace\/plugins\/[^/]+\/oauth\/composio\/callback$/u.test(pathname);
-}
-function bindMarketplacePrincipalScope(request, principal) {
-  const pathname = request.url.split("?", 1)[0] ?? request.url;
-  const strictBodyPaths = /* @__PURE__ */ new Set([
-    "/api/marketplace/v1/agent/grants/request",
-    "/api/marketplace/v1/agent/grants/redeem",
-    "/api/marketplace/v1/runtime/composio/execute"
-  ]);
-  for (const value of [request.query, request.body]) {
-    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
-    if (value === request.body && strictBodyPaths.has(pathname)) continue;
-    const record2 = value;
-    record2.workspaceSlug = principal.organizationId;
-    record2.actorId = principal.id;
-  }
-}
-function requireCrossAppBearerAuth(input) {
-  if (!input.expectedToken) {
-    input.reply.code(503);
-    return {
-      ok: false,
-      error: "marketplace_cross_app_auth_unconfigured",
-      detail: "MARKETPLACE_INTERNAL_AUTH_TOKEN is required for Marketplace cross-app service routes."
-    };
-  }
-  if (bearerTokenFrom(input.request) !== input.expectedToken) {
-    input.reply.code(401);
-    return {
-      ok: false,
-      error: "marketplace_cross_app_unauthorized"
-    };
-  }
-  return null;
-}
-function requireHubBearerAuth(input) {
-  if (!input.expectedToken) {
-    input.reply.code(503);
-    return {
-      ok: false,
-      error: "marketplace_hub_auth_unconfigured",
-      detail: "MARKETPLACE_INTERNAL_AUTH_TOKEN is required for the HDDA Skills Hub adapter."
-    };
-  }
-  if (bearerTokenFrom(input.request) !== input.expectedToken) {
-    input.reply.code(401);
-    return { ok: false, error: "marketplace_hub_unauthorized" };
-  }
-  return null;
-}
-function toolNameForAction(provider, action) {
-  const providerPrefix = `${provider}.`;
-  const suffix = action.startsWith(providerPrefix) ? action.slice(providerPrefix.length) : action;
-  return `marketplace.${provider}.${suffix}`;
-}
-function actionForTool(toolName) {
-  const parts = toolName.split(".");
-  if (parts.length < 3 || parts[0] !== "marketplace") {
-    return null;
-  }
-  const provider = parts[1];
-  const suffix = parts.slice(2).join(".");
-  return `${provider}.${suffix}`;
-}
-function createBrokerToken() {
-  return `broker_${randomUUID().replaceAll("-", "")}${randomUUID().replaceAll("-", "")}`;
-}
-function brokerTokenHash(token) {
-  return createHash3("sha256").update(token).digest("hex");
-}
-function stableJson(value) {
-  if (Array.isArray(value)) {
-    return `[${value.map((entry) => stableJson(entry)).join(",")}]`;
-  }
-  if (value && typeof value === "object") {
-    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
-function sanitizeBrokerGrant(grant) {
-  return {
-    id: grant.id,
-    workspaceSlug: grant.workspaceSlug,
-    requesterMiniappId: grant.requesterMiniappId,
-    pluginId: grant.pluginId,
-    actionKeys: grant.actionKeys,
-    capabilities: grant.capabilities,
-    state: grant.state,
-    expiresAt: grant.expiresAt,
-    metadata: grant.metadata,
-    createdAt: grant.createdAt,
-    updatedAt: grant.updatedAt
-  };
-}
-function capabilityWeight(capability) {
-  return capability === "connector.admin" ? 3 : capability === "connector.dispatch" ? 2 : 1;
-}
-function highestCapability(capabilities2) {
-  return capabilities2.reduce(
-    (highest, capability) => capabilityWeight(capability) > capabilityWeight(highest) ? capability : highest,
-    "connector.observe"
-  );
-}
-function brokerGrantIsExpired(grant) {
-  return Date.parse(grant.expiresAt) <= Date.now();
-}
-function connectedAccountIdFromConnection(connection) {
-  const value = connection?.metadata.connectedAccountId ?? connection?.metadata.connected_account_id ?? connection?.metadata.connectionId;
-  return typeof value === "string" && value.trim() ? value.trim() : void 0;
-}
-function headerValue(request, name) {
-  const value = request.headers[name];
-  if (typeof value === "string") return value.trim() || null;
-  if (Array.isArray(value) && typeof value[0] === "string") {
-    return value[0].trim() || null;
-  }
-  return null;
-}
-function agentConnectorGrantIsExpired(grant) {
-  return grant.state !== "active" || Date.parse(grant.expiresAt) <= Date.now();
-}
-function sanitizeAgentConnectorGrant(grant) {
-  return {
-    id: grant.id,
-    workspaceSlug: grant.workspaceSlug,
-    agentId: grant.agentId,
-    pluginId: grant.pluginId,
-    actionKey: grant.actionKey,
-    capability: grant.capability,
-    connectionId: grant.connectionId,
-    accountId: grant.accountId,
-    resourceKind: grant.resourceKind,
-    resourceRef: grant.resourceRef,
-    attachmentId: grant.attachmentId,
-    state: grant.state,
-    expiresAt: grant.expiresAt,
-    metadata: grant.metadata,
-    createdAt: grant.createdAt,
-    updatedAt: grant.updatedAt
-  };
-}
-function browserAgentConnectorGrant(grant) {
-  return {
-    id: grant.id,
-    workspaceSlug: grant.workspaceSlug,
-    agentId: grant.agentId,
-    pluginId: grant.pluginId,
-    actionKey: grant.actionKey,
-    capability: grant.capability,
-    connectionId: grant.connectionId,
-    accountId: grant.accountId,
-    resourceKind: grant.resourceKind,
-    resourceRef: grant.resourceRef,
-    state: grant.state,
-    expiresAt: grant.expiresAt,
-    createdAt: grant.createdAt,
-    updatedAt: grant.updatedAt
-  };
-}
-function browserMarketplaceAgentConsent(consent) {
-  if (!consent) return null;
-  return {
-    id: consent.id,
-    portalOrgId: consent.portalOrgId,
-    productTenantId: consent.productTenantId,
-    workspaceId: consent.workspaceId,
-    deploymentId: consent.deploymentId,
-    userId: consent.userId,
-    agentId: consent.agentId,
-    consentId: consent.consentId,
-    consentRevision: consent.consentRevision,
-    pluginId: consent.pluginId,
-    actionKey: consent.actionKey,
-    capability: consent.capability,
-    connectionId: consent.connectionId,
-    accountId: consent.accountId,
-    resourceKind: consent.resourceKind,
-    resourceRef: consent.resourceRef,
-    state: consent.state,
-    capabilities: consent.capabilities,
-    requiredActions: consent.requiredActions,
-    createdAt: consent.createdAt,
-    updatedAt: consent.updatedAt
-  };
-}
-function browserMarketplacePortalGrantRequest(request) {
-  const state = request.state === "pending" && Date.parse(request.expiresAt) <= Date.now() ? "expired" : request.state;
-  return {
-    id: request.id,
-    portalOrgId: request.portalOrgId,
-    productTenantId: request.productTenantId,
-    workspaceId: request.workspaceId,
-    deploymentId: request.deploymentId,
-    agentId: request.agentId,
-    requestId: request.requestId,
-    approvalUrl: request.approvalUrl,
-    expiresAt: request.expiresAt,
-    idempotencyKey: request.idempotencyKey,
-    selection: request.selection,
-    state,
-    consentId: request.consentId,
-    createdAt: request.createdAt,
-    updatedAt: request.updatedAt
-  };
-}
-function runtimeResponse(input) {
-  return {
-    ok: input.ok,
-    schema: 1,
-    traceId: input.traceId,
-    ...input.error ? { error: input.error } : {},
-    ...input.detail ? { detail: input.detail } : {},
-    ...input.result ? { result: input.result } : {},
-    ...input.usageId ? { usageId: input.usageId } : {}
-  };
-}
-function runtimeSafeProviderResult(value) {
-  if (Array.isArray(value)) {
-    return value.map(runtimeSafeProviderResult);
-  }
-  if (!value || typeof value !== "object") {
-    return value;
-  }
-  return Object.fromEntries(
-    Object.entries(value).map(([key, entry]) => [
-      key,
-      /key|token|secret|authorization|credential/iu.test(key) ? "[redacted]" : runtimeSafeProviderResult(entry)
-    ])
-  );
-}
-function listingRequiresConnectedAccount(listing) {
-  return listing.source === "composio" && listing.authOwner === "composio" && listing.pluginId !== "composio-bootstrap";
-}
-function recordValue3(value) {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
-}
-function arrayValue(value) {
-  return Array.isArray(value) ? value : [];
-}
-function stringValue4(value) {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-function listingSkills(listing) {
-  const manifest = recordValue3(listing.manifest);
-  return arrayValue(manifest?.skills).flatMap((entry) => {
-    const record2 = recordValue3(entry);
-    if (!record2) {
-      return [];
-    }
-    const skillId = stringValue4(record2.skillId) ?? stringValue4(record2.skillName);
-    const displayName = stringValue4(record2.displayName) ?? skillId;
-    if (!skillId || !displayName) {
-      return [];
-    }
-    return [
-      {
-        skillId,
-        ...stringValue4(record2.skillName) ? { skillName: stringValue4(record2.skillName) } : {},
-        displayName,
-        ...stringValue4(record2.description) ? { description: stringValue4(record2.description) } : {},
-        ...stringValue4(record2.sourcePath) ? { sourcePath: stringValue4(record2.sourcePath) } : {},
-        ...stringValue4(record2.skillRoot) ? { skillRoot: stringValue4(record2.skillRoot) } : {},
-        requiresConnectors: arrayValue(record2.requiresConnectors).map((value) => stringValue4(value)).filter((value) => value !== null)
-      }
-    ];
-  });
-}
-function composioToolsForListing(listing) {
-  const manifest = recordValue3(listing.manifest);
-  const composio = recordValue3(manifest?.composio);
-  return arrayValue(composio?.tools).flatMap((tool) => {
-    const record2 = recordValue3(tool);
-    const action = stringValue4(record2?.action);
-    const toolName = stringValue4(record2?.toolName);
-    const displayName = stringValue4(record2?.displayName) ?? action;
-    const capability = stringValue4(record2?.capability);
-    if (!action || !toolName || !displayName) {
-      return [];
-    }
-    return [
-      {
-        action,
-        toolName,
-        displayName,
-        description: stringValue4(record2?.description) ?? "",
-        capability: capability === "connector.admin" || capability === "connector.dispatch" || capability === "connector.observe" ? capability : "connector.observe"
-      }
-    ];
-  });
-}
-function toolSelectionForListing(store2, workspaceSlug, listing) {
-  const knownTools = new Map(
-    composioToolsForListing(listing).map((tool) => [tool.action, tool])
-  );
-  const actions = listing.actions.map((action) => {
-    const requirement = resolveActionRequirement(listing, action);
-    const tool = knownTools.get(action);
-    const enabled = store2.isActionEnabled({
-      workspaceSlug,
-      pluginId: listing.pluginId,
-      actionKey: action
-    });
-    return {
-      actionKey: action,
-      displayName: tool?.displayName ?? action,
-      description: tool?.description ?? "",
-      toolName: tool?.toolName ?? composioToolNameForAction(listing, action),
-      capability: requirement?.capability ?? tool?.capability ?? "connector.observe",
-      enabled
-    };
-  });
-  return {
-    total: actions.length,
-    enabled: actions.filter((action) => action.enabled).length,
-    disabled: actions.filter((action) => !action.enabled).length,
-    actions
-  };
-}
-function pluginCardForListing(input) {
-  const { store: store2, workspaceSlug, listing } = input;
-  const install = store2.getInstall(workspaceSlug, listing.pluginId);
-  const connection = store2.getConnection(workspaceSlug, listing.pluginId);
-  const registered = store2.isRegistered(listing.pluginId);
-  const installed = install?.enabled === true && install.lifecycle === "installed";
-  const authRequired = listingRequiresConnectedAccount(listing);
-  const connected = !authRequired || connection?.state === "connected";
-  const launchSupported = listing.executionOwner === "composio";
-  const ready = launchSupported && registered && installed && connected;
-  const status = !launchSupported ? "catalogOnly" : ready ? "ready" : installed && authRequired && !connected ? "authRequired" : installed ? "installed" : install?.lifecycle === "uninstalled" ? "disabled" : "available";
-  const skills = listingSkills(listing);
-  const toolSelection = toolSelectionForListing(store2, workspaceSlug, listing);
-  const primaryRuntime = listing.runtimeSources?.find((source) => source.primary) ?? listing.runtimeSources?.[0];
-  const provider = listing.source === "composio" ? input.providers?.composio : void 0;
-  const connectStepStatus = !authRequired ? "complete" : connection?.state === "connected" ? "complete" : provider && !provider.configured ? "blocked" : "pending";
-  return {
-    addon: {
-      addonId: listing.pluginId,
-      pluginId: listing.pluginId,
-      displayName: listing.displayName,
-      version: String(recordValue3(listing.manifest)?.version ?? "0.1.0"),
-      kind: listing.kind,
-      enabled: installed,
-      skills,
-      apps: listing.source === "composio" ? [
-        {
-          appKey: listing.provider,
-          appId: listing.provider,
-          label: listing.displayName,
-          backend: "composio"
-        }
-      ] : [],
-      capabilities: listing.capabilities,
-      runtimeSources: listing.runtimeSources ?? [],
-      defaultPrompts: arrayValue(recordValue3(listing.manifest)?.defaultPrompts)
-    },
-    state: {
-      status,
-      ready,
-      registered,
-      installed,
-      enabled: installed,
-      authRequired,
-      apps: [
-        {
-          appId: listing.provider,
-          backend: listing.authOwner,
-          state: connection?.state ?? (authRequired ? "disconnected" : "connected"),
-          detail: connection?.detail ?? (authRequired ? "Connect this plugin before Agent tools are exposed." : "No external account connection is required.")
-        }
-      ],
-      diagnostics: [
-        ...provider && !provider.configured ? [`${listing.source} provider is not configured.`] : [],
-        ...toolSelection.enabled === 0 && toolSelection.total > 0 ? ["No plugin tools are currently selected for Agent exposure."] : []
-      ],
-      refreshedAt: (/* @__PURE__ */ new Date()).toISOString()
-    },
-    description: listing.description,
-    developerName: "Teal Brick",
-    marketplaceName: listing.source === "composio" ? "Composio" : "Teal Brick",
-    capabilityLabels: listing.capabilities,
-    primaryAction: ready ? "configure" : installed ? "connect" : "install",
-    capabilityShape: listing.kind,
-    runtimeSource: primaryRuntime?.kind ?? listing.executionOwner,
-    toolCoverageCount: listing.actions.length,
-    provenance: listing.source === "composio" ? "composio-imported" : "first-party",
-    extensionClass: listing.source === "mcp" ? "mcp" : listing.source === "composio" ? "connector" : "native",
-    sourceLabel: primaryRuntime?.label ?? listing.source,
-    dependencyFlags: listing.runtimeSources?.flatMap((source) => source.requiredEnv ?? []) ?? [],
-    hostAffordances: [
-      ...authRequired ? ["oauth-window"] : [],
-      "settings-panel",
-      "tool-selection"
-    ],
-    parityGaps: [],
-    installStateByTarget: [
-      {
-        targetId: workspaceSlug,
-        status,
-        installed,
-        registered
-      }
-    ],
-    installPlan: {
-      addonId: listing.pluginId,
-      steps: [
-        {
-          kind: "plugin-install",
-          label: "Register and install plugin",
-          status: registered && installed ? "complete" : "pending",
-          detail: registered && installed ? "Plugin is registered and installed for this workspace." : "Register and install before Agent projection."
-        },
-        {
-          kind: "app-connect",
-          label: authRequired ? `Connect ${listing.displayName}` : "Connection",
-          status: connectStepStatus,
-          detail: authRequired ? connection?.detail ?? "Open the Composio authorization popup." : "No external connection required."
-        },
-        {
-          kind: "skill-config",
-          label: "Agent skill guidance",
-          status: skills.length > 0 ? "complete" : "pending",
-          detail: skills.length > 0 ? `${skills.length} skill guidance item${skills.length === 1 ? "" : "s"} available.` : "No skill guidance declared yet."
-        },
-        {
-          kind: "ui-promotion",
-          label: "Tool selection",
-          status: toolSelection.enabled > 0 ? "complete" : "pending",
-          detail: `${toolSelection.enabled}/${toolSelection.total} tools selected for Agent exposure.`
-        }
-      ]
-    },
-    skills,
-    toolSelection,
-    listing,
-    install,
-    connection,
-    imports: store2.listComposioImports({
-      workspaceSlug,
-      pluginId: listing.pluginId
-    })
-  };
-}
-function pluginSummaryForListing(input) {
-  const { store: store2, workspaceSlug, listing } = input;
-  const install = store2.getInstall(workspaceSlug, listing.pluginId);
-  const connection = store2.getConnection(workspaceSlug, listing.pluginId);
-  const registered = store2.isRegistered(listing.pluginId);
-  const installed = install?.enabled === true && install.lifecycle === "installed";
-  const authRequired = listingRequiresConnectedAccount(listing);
-  const connected = !authRequired || connection?.state === "connected";
-  const launchSupported = listing.executionOwner === "composio";
-  const ready = launchSupported && registered && installed && connected;
-  const status = !launchSupported ? "catalogOnly" : ready ? "ready" : installed && authRequired && !connected ? "authRequired" : installed ? "installed" : install?.lifecycle === "uninstalled" ? "disabled" : "available";
-  const primaryRuntime = listing.runtimeSources?.find((source) => source.primary) ?? listing.runtimeSources?.[0];
-  return {
-    pluginId: listing.pluginId,
-    displayName: listing.displayName,
-    description: listing.description,
-    kind: listing.kind,
-    provider: listing.provider,
-    source: listing.source,
-    sourceLabel: primaryRuntime?.label ?? listing.source,
-    runtimeSource: primaryRuntime?.kind ?? listing.executionOwner,
-    status,
-    ready,
-    registered,
-    installed,
-    authRequired,
-    toolCount: listing.actions.length,
-    install: install ? {
-      enabled: install.enabled,
-      lifecycle: install.lifecycle,
-      updatedAt: install.updatedAt
-    } : null,
-    connection: connection ? {
-      provider: connection.provider,
-      backend: connection.backend,
-      state: connection.state,
-      detail: connection.detail,
-      updatedAt: connection.updatedAt
-    } : null
-  };
-}
-function browserListingForListing(listing) {
-  const manifest = recordValue3(listing.manifest);
-  return {
-    pluginId: listing.pluginId,
-    displayName: listing.displayName,
-    kind: listing.kind,
-    provider: listing.provider,
-    description: listing.description,
-    capabilities: listing.capabilities,
-    actions: listing.actions,
-    source: listing.source,
-    authOwner: listing.authOwner,
-    executionOwner: listing.executionOwner,
-    enabledByDefault: listing.enabledByDefault,
-    manifest: {
-      ...typeof manifest?.version === "string" ? { version: manifest.version } : {},
-      ...typeof manifest?.required === "boolean" ? { required: manifest.required } : {}
-    },
-    createdAt: listing.createdAt,
-    updatedAt: listing.updatedAt
-  };
-}
-function browserPluginCardForListing(input) {
-  const card = pluginCardForListing(input);
-  const launchSupported = input.listing.executionOwner === "composio";
-  return {
-    addon: {
-      addonId: card.addon.addonId,
-      pluginId: card.addon.pluginId,
-      displayName: card.addon.displayName,
-      version: card.addon.version,
-      kind: card.addon.kind,
-      enabled: card.addon.enabled
-    },
-    state: {
-      ...card.state,
-      status: launchSupported ? card.state.status : "catalogOnly",
-      ready: launchSupported && card.state.ready,
-      diagnostics: [
-        ...card.state.diagnostics,
-        ...!launchSupported ? ["Catalog evidence only; this execution backend is not supported in the launch profile."] : []
-      ]
-    },
-    description: card.description,
-    developerName: card.developerName,
-    marketplaceName: card.marketplaceName,
-    capabilityLabels: card.capabilityLabels,
-    primaryAction: launchSupported ? card.primaryAction : "inspect",
-    capabilityShape: card.capabilityShape,
-    runtimeSource: card.runtimeSource,
-    toolCoverageCount: card.toolCoverageCount,
-    provenance: card.provenance,
-    extensionClass: card.extensionClass,
-    sourceLabel: card.sourceLabel,
-    dependencyFlags: [],
-    hostAffordances: card.hostAffordances,
-    parityGaps: launchSupported ? card.parityGaps : [...card.parityGaps, "execution-backend-not-supported"],
-    installStateByTarget: card.installStateByTarget,
-    installPlan: card.installPlan,
-    toolSelection: card.toolSelection,
-    listing: browserListingForListing(input.listing),
-    install: card.install ? {
-      enabled: card.install.enabled,
-      lifecycle: card.install.lifecycle,
-      updatedAt: card.install.updatedAt
-    } : null,
-    connection: card.connection ? {
-      provider: card.connection.provider,
-      backend: card.connection.backend,
-      state: card.connection.state,
-      detail: card.connection.detail,
-      updatedAt: card.connection.updatedAt
-    } : null
-  };
-}
-function browserProviderHealth(providers) {
-  return Object.fromEntries(
-    Object.entries(providers).map(([name, provider]) => [
-      name,
-      {
-        state: provider.state,
-        configured: provider.configured,
-        reachable: provider.reachable,
-        mode: provider.mode,
-        detail: provider.detail,
-        statusCode: provider.statusCode,
-        checkedAt: provider.checkedAt
-      }
-    ])
-  );
-}
-async function pluginCardsForWorkspace(input) {
-  const providers = input.providers ?? await readProviderHealthWithReachability();
-  return input.store.listListings().map(
-    (listing) => pluginCardForListing({
-      store: input.store,
-      workspaceSlug: input.workspaceSlug,
-      listing,
-      providers
-    })
-  );
-}
-function composioListingRole(listing) {
-  return stringValue4(recordValue3(listing.manifest)?.role);
-}
-function composioListingHasCatalog(listing) {
-  const composio = recordValue3(recordValue3(listing.manifest)?.composio);
-  return Boolean(recordValue3(composio?.catalog));
-}
-function composioToolkitForListing(listing) {
-  const composio = recordValue3(recordValue3(listing.manifest)?.composio);
-  const catalog = recordValue3(composio?.catalog);
-  return stringValue4(composio?.toolkit) ?? stringValue4(catalog?.slug) ?? listing.provider;
-}
-function composioAuthMetadataForListing(listing) {
-  const composio = recordValue3(recordValue3(listing.manifest)?.composio);
-  const catalog = recordValue3(composio?.catalog);
-  return {
-    authSchemes: arrayValue(catalog?.authSchemes).map((value) => stringValue4(value)).filter((value) => value !== null),
-    managedAuthSchemes: arrayValue(catalog?.managedAuthSchemes).map((value) => stringValue4(value)).filter((value) => value !== null),
-    noAuth: catalog?.noAuth === true
-  };
-}
-async function synchronizeComposioCatalog(input) {
-  const fetchImpl = input.fetchImpl ?? fetch;
-  const catalog = await fetchComposioCatalog(input.env, fetchImpl);
-  const connectedAccounts = await fetchComposioConnectedAccounts(
-    input.env,
-    fetchImpl
-  ).catch(() => ({ baseUrl: catalog.baseUrl, items: [] }));
-  const existingByToolkit = /* @__PURE__ */ new Map();
-  for (const listing of input.store.listListings()) {
-    if (listing.source !== "composio" || listing.pluginId === "composio-bootstrap") {
-      continue;
-    }
-    existingByToolkit.set(listing.provider, listing);
-    existingByToolkit.set(composioToolkitForListing(listing), listing);
-  }
-  let added = 0;
-  let refreshed = 0;
-  for (const rawToolkit of catalog.items) {
-    const catalogListing = buildComposioCatalogListing({
-      toolkit: rawToolkit
-    });
-    if (!catalogListing) {
-      continue;
-    }
-    const existing = existingByToolkit.get(catalogListing.provider);
-    if (existing && composioListingRole(existing) !== "composio-catalog-connector" && !composioListingHasCatalog(existing)) {
-      continue;
-    }
-    input.store.upsertListing(catalogListing);
-    existingByToolkit.set(catalogListing.provider, catalogListing);
-    if (existing) {
-      refreshed += 1;
-    } else {
-      added += 1;
-    }
-  }
-  const newestActiveByToolkit = /* @__PURE__ */ new Map();
-  for (const account of connectedAccounts.items) {
-    if (account.disabled || account.status.toUpperCase() !== "ACTIVE") {
-      continue;
-    }
-    const existing = newestActiveByToolkit.get(account.toolkit);
-    if (!existing || (account.updatedAt ?? "") > (existing.updatedAt ?? "")) {
-      newestActiveByToolkit.set(account.toolkit, account);
-    }
-  }
-  let connected = 0;
-  for (const [toolkit, account] of newestActiveByToolkit) {
-    const listing = existingByToolkit.get(toolkit);
-    if (!listing || composioListingRole(listing) !== "composio-catalog-connector") {
-      continue;
-    }
-    input.store.upsertConnection({
-      workspaceSlug: input.workspaceSlug,
-      pluginId: listing.pluginId,
-      provider: toolkit,
-      backend: "composio",
-      state: "connected",
-      detail: "An active Composio connected account is available.",
-      metadata: {
-        source: "composio-catalog-sync",
-        connectedAccountId: account.id,
-        toolkit,
-        userId: account.userId,
-        status: account.status
-      }
-    });
-    connected += 1;
-  }
-  return {
-    total: catalog.total,
-    projected: added + refreshed,
-    added,
-    refreshed,
-    connected
-  };
-}
-async function hydrateComposioCatalogConnector(input) {
-  if (composioListingRole(input.listing) !== "composio-catalog-connector") {
-    return input.listing;
-  }
-  const fetched = await fetchComposioToolkitTools({
-    toolkit: input.toolkit,
-    env: input.env,
-    fetchImpl: input.fetchImpl
-  });
-  const existingComposio = recordValue3(input.listing.manifest.composio) ?? {};
-  const hydrated = buildComposioListingFromTools({
-    toolkit: input.listing.provider,
-    upstreamToolkit: input.toolkit,
-    pluginId: input.listing.pluginId,
-    displayName: input.listing.displayName,
-    description: input.listing.description,
-    tools: fetched.items
-  });
-  const hydratedComposio = recordValue3(hydrated.manifest.composio) ?? {};
-  const listing = {
-    ...hydrated,
-    manifest: {
-      ...hydrated.manifest,
-      role: "composio-catalog-connector",
-      ...input.listing.manifest.version ? { version: input.listing.manifest.version } : {},
-      composio: {
-        ...hydratedComposio,
-        ...existingComposio.catalog ? { catalog: existingComposio.catalog } : {}
-      }
-    }
-  };
-  input.store.upsertListing(listing);
-  return listing;
-}
-function enableComposioConnector(input) {
-  input.store.registerPlugin(input.listing.pluginId);
-  input.store.install(input.workspaceSlug, input.listing.pluginId);
-  for (const capability of input.listing.capabilities) {
-    input.store.bindCapability({
-      workspaceSlug: input.workspaceSlug,
-      pluginId: input.listing.pluginId,
-      capability,
-      enabled: true
-    });
-  }
-  for (const actionKey of input.listing.actions) {
-    input.store.bindAction({
-      workspaceSlug: input.workspaceSlug,
-      pluginId: input.listing.pluginId,
-      actionKey,
-      enabled: true
-    });
-  }
-  input.store.upsertComposioImport({
-    workspaceSlug: input.workspaceSlug,
-    pluginId: input.listing.pluginId,
-    toolkit: input.toolkit,
-    importedActionKeys: input.listing.actions,
-    lifecycle: "enabled",
-    metadata: {
-      traceId: input.traceId,
-      source: "composio-catalog-connect",
-      toolCount: input.listing.actions.length
-    }
-  });
-}
-function agentCapabilitiesForWorkspace(store2, workspaceSlug) {
-  const enabledBindings = store2.listEnabledBindings(workspaceSlug);
-  return store2.listListings().flatMap((listing) => {
-    if (listing.executionOwner !== "composio") {
-      return [];
-    }
-    if (!store2.isRegistered(listing.pluginId)) {
-      return [];
-    }
-    const install = store2.getInstall(workspaceSlug, listing.pluginId);
-    if (!install?.enabled || install.lifecycle !== "installed") {
-      return [];
-    }
-    const connection = store2.getConnection(workspaceSlug, listing.pluginId);
-    if (listingRequiresConnectedAccount(listing) && connection?.state !== "connected") {
-      return [];
-    }
-    return listing.actions.flatMap((action) => {
-      if (!store2.isActionEnabled({
-        workspaceSlug,
-        pluginId: listing.pluginId,
-        actionKey: action
-      })) {
-        return [];
-      }
-      const requirement = resolveActionRequirement(listing, action);
-      if (!requirement) {
-        return [];
-      }
-      const matchingBinding = enabledBindings.find(
-        (binding) => binding.pluginId === listing.pluginId && binding.capability === requirement.capability
-      );
-      if (!matchingBinding) {
-        return [];
-      }
-      return [
-        {
-          pluginId: listing.pluginId,
-          workspaceSlug,
-          provider: listing.provider,
-          actionType: action,
-          toolName: toolNameForAction(listing.provider, action),
-          description: `${listing.displayName}: ${action}`,
-          requiredCapabilities: [requirement.capability],
-          runtimeSource: listing.executionOwner,
-          connectionState: connection?.state ?? null,
-          endpoint: `/api/agent/tools/${toolNameForAction(listing.provider, action)}`
-        }
-      ];
-    });
-  });
-}
-function callbackUrlForRequest(input) {
-  const path8 = `/api/marketplace/plugins/${encodeURIComponent(input.pluginId)}/oauth/composio/callback`;
-  if (!input.publicOrigin?.trim()) {
-    throw new Error("MARKETPLACE_PUBLIC_ORIGIN is required for Composio OAuth callbacks.");
-  }
-  const origin = new URL(input.publicOrigin);
-  if (!["http:", "https:"].includes(origin.protocol) || origin.pathname !== "/" || origin.search || origin.hash) {
-    throw new Error("MARKETPLACE_PUBLIC_ORIGIN must be an exact HTTP(S) origin.");
-  }
-  return `${origin.origin}${path8}`;
-}
-function htmlCloseout(input) {
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${input.title}</title>
-    <style>
-      body { margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f8faf8; color: #1d2524; }
-      main { width: min(520px, calc(100vw - 32px)); border: 1px solid #d7dfda; background: #fff; padding: 24px; }
-      h1 { margin: 0 0 8px; font-size: 22px; letter-spacing: 0; }
-      p { margin: 0; color: #53635f; line-height: 1.5; }
-      .state { display: inline-block; margin-bottom: 14px; font-size: 12px; font-weight: 700; color: ${input.ok ? "#0f6b45" : "#9f2e2e"}; }
-    </style>
-  </head>
-  <body>
-    <main>
-      <span class="state">${input.ok ? "CONNECTED" : "BLOCKED"}</span>
-      <h1>${input.title}</h1>
-      <p>${input.detail}</p>
-    </main>
-  </body>
-</html>`;
-}
-function htmlShell() {
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Teal Brick Marketplace</title>
-    <style>
-      body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f8faf8; color: #1d2524; }
-      main { max-width: 1120px; margin: 0 auto; padding: 28px; }
-      header { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; border-bottom: 1px solid #d7dfda; padding-bottom: 18px; }
-      h1 { font-size: 28px; line-height: 1.1; margin: 0 0 8px; letter-spacing: 0; }
-      p { color: #4d5d58; max-width: 760px; }
-      section { margin-top: 24px; }
-      table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #d7dfda; }
-      th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #e5ebe8; font-size: 14px; }
-      th { color: #52615d; background: #f1f5f3; font-weight: 650; }
-      code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-      .chips { display: flex; gap: 8px; flex-wrap: wrap; }
-      .chip { border: 1px solid #c8d4cf; border-radius: 999px; padding: 4px 9px; background: #fff; color: #33423e; font-size: 12px; }
-      .controls { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) auto; gap: 10px; align-items: end; }
-      label { display: grid; gap: 6px; color: #52615d; font-size: 12px; font-weight: 700; }
-      input { border: 1px solid #c8d4cf; padding: 9px 10px; font: inherit; color: #1d2524; background: #fff; }
-      button { border: 1px solid #2f6f59; background: #2f6f59; color: #fff; padding: 10px 12px; font: inherit; font-weight: 700; cursor: pointer; }
-      button:disabled { opacity: .55; cursor: default; }
-      .status { min-height: 22px; color: #52615d; font-size: 13px; }
-      .error { color: #9f2e2e; }
-    </style>
-  </head>
-  <body>
-    <main>
-      <header>
-        <div>
-          <h1>Teal Brick Marketplace</h1>
-          <p>Plugin catalog, credentials, provider health, capability bindings, execution ledger, Composio/MCP runtime sources, and promotion candidates.</p>
-        </div>
-        <div class="chips">
-          <span class="chip">SQLite-owned</span>
-          <span class="chip">Rules-gated</span>
-          <span class="chip">Dynamic port</span>
-        </div>
-      </header>
-      <section>
-        <h2>Composio Connect</h2>
-        <div class="controls">
-          <label>Workspace <input id="workspace" value="default" autocomplete="off" /></label>
-          <label>Toolkit <input id="toolkit" value="linear" autocomplete="off" /></label>
-          <button id="connect">Import and connect</button>
-        </div>
-        <p id="status" class="status"></p>
-      </section>
-      <section>
-        <h2>Installed Runtime State</h2>
-        <table>
-          <thead><tr><th>Plugin</th><th>Source</th><th>Install</th><th>Connection</th><th>Actions</th></tr></thead>
-          <tbody id="plugins"><tr><td colspan="5">Loading...</td></tr></tbody>
-        </table>
-      </section>
-      <section>
-        <h2>Program API</h2>
-        <table>
-          <tbody>
-            <tr><th>Health</th><td><code>GET /healthz</code></td></tr>
-            <tr><th>Status</th><td><code>GET /api/status</code></td></tr>
-            <tr><th>Catalog</th><td><code>GET /api/marketplace/catalog</code></td></tr>
-            <tr><th>Plugins</th><td><code>GET /api/marketplace/plugins?workspaceSlug=default</code></td></tr>
-            <tr><th>Provider Health</th><td><code>GET /api/marketplace/provider-health</code></td></tr>
-            <tr><th>Audit</th><td><code>GET /api/marketplace/audit?workspaceSlug=default</code></td></tr>
-          </tbody>
-        </table>
-      </section>
-    </main>
-    <script>
-      const statusEl = document.getElementById("status");
-      const pluginsEl = document.getElementById("plugins");
-      const button = document.getElementById("connect");
-      const workspaceEl = document.getElementById("workspace");
-      const toolkitEl = document.getElementById("toolkit");
-
-      function setStatus(message, error = false) {
-        statusEl.textContent = message;
-        statusEl.className = error ? "status error" : "status";
-      }
-
-      function escapeHtml(value) {
-        return String(value).replace(/[&<>"']/g, (character) => ({
-          "&": "&amp;",
-          "<": "&lt;",
-          ">": "&gt;",
-          """: "&quot;",
-          "'": "&#39;",
-        }[character]));
-      }
-
-      async function jsonFetch(url, options = {}) {
-        const response = await fetch(url, {
-          ...options,
-          headers: { "content-type": "application/json", ...(options.headers || {}) },
-        });
-        const json = await response.json();
-        if (!response.ok) {
-          throw new Error(json.detail || json.error || "Request failed");
-        }
-        return json;
-      }
-
-      async function refresh() {
-        const workspace = encodeURIComponent(workspaceEl.value.trim() || "default");
-        const data = await jsonFetch("/api/marketplace/plugins?workspaceSlug=" + workspace);
-        pluginsEl.innerHTML = data.items.map((item) => (
-          "<tr>" +
-          "<td>" + escapeHtml(item.displayName) + "<br><code>" + escapeHtml(item.pluginId) + "</code></td>" +
-          "<td>" + escapeHtml(item.source) + "</td>" +
-          "<td>" + escapeHtml(item.install?.lifecycle || "not installed") + "</td>" +
-          "<td>" + escapeHtml(item.connection?.state || "not connected") + "</td>" +
-          "<td>" + item.actions.length + "</td>" +
-          "</tr>"
-        )).join("");
-      }
-
-      async function importAndConnect() {
-        button.disabled = true;
-        const workspaceSlug = workspaceEl.value.trim() || "default";
-        const toolkit = toolkitEl.value.trim();
-        try {
-          setStatus("Importing toolkit...");
-          const imported = await jsonFetch("/api/marketplace/catalog/composio/import", {
-            method: "POST",
-            body: JSON.stringify({ workspaceSlug, toolkit, actorId: "operator", autoEnable: true }),
-          });
-          setStatus("Starting Composio authorization...");
-          const connection = await jsonFetch("/api/marketplace/plugins/" + encodeURIComponent(imported.listing.pluginId) + "/connection", {
-            method: "POST",
-            body: JSON.stringify({ workspaceSlug, actorId: "operator", provider: toolkit, toolkit, backend: "composio" }),
-          });
-          if (connection.auth?.redirectUrl) {
-            window.open(connection.auth.redirectUrl, "_blank", "noopener,noreferrer");
-            setStatus("Authorization popup opened. Return here after the connection completes.");
-          } else {
-            setStatus("Connected account recorded.");
-          }
-          await refresh();
-        } catch (error) {
-          setStatus(error instanceof Error ? error.message : String(error), true);
-        } finally {
-          button.disabled = false;
-        }
-      }
-
-      button.addEventListener("click", () => { void importAndConnect(); });
-      void refresh().catch((error) => setStatus(error instanceof Error ? error.message : String(error), true));
-    </script>
-  </body>
-</html>`;
-}
-async function buildMarketplaceApp(options) {
-  const app2 = (0, import_fastify.default)({ logger: false });
-  app2.addContentTypeParser(
-    "application/x-www-form-urlencoded",
-    { parseAs: "string" },
-    (_request, body, done) => {
-      const entries = [
-        ...new URLSearchParams(
-          typeof body === "string" ? body : body.toString("utf8")
-        ).entries()
-      ];
-      done(
-        null,
-        entries.length === 1 && entries[0]?.[0] === "ticket" ? { ticket: entries[0][1] } : null
-      );
-    }
-  );
-  const runtimePath = options.store.describeRuntime().databasePath;
-  const providerSettings2 = options.providerSettings ?? new MarketplaceProviderSettingsStore(
-    path4.join(path4.dirname(runtimePath), "provider-settings.json"),
-    path4.join(path4.dirname(runtimePath), "provider-secrets.json"),
-    options.env
-  );
-  await providerSettings2.load();
-  const providerEnvironment = () => providerSettings2.environment();
-  const frontend = await registerMarketplaceFrontend(app2);
-  const environment = options.environment ?? process.env;
-  const rulesConfiguration = options.rules;
-  const portalConfiguration = resolvePortalRuntimeConfiguration({
-    env: environment,
-    portalIssuerUrl: options.portalIssuerUrl,
-    portalInstanceProof: options.portalInstanceProof
-  });
-  const operatorSessions = options.operatorSessionManager ?? MarketplaceOperatorSessionManager.fromEnvironment({
-    allowUnauthenticated: options.allowUnauthenticatedOperator === true || options.allowUnauthenticatedOperator === void 0 && process.env.NODE_ENV === "test"
-  });
-  const configuredOrganizationId = options.organizationId?.trim() || environment.MARKETPLACE_ORGANIZATION_ID?.trim() || null;
-  const organizationId = configuredOrganizationId ?? portalConfiguration.workspaceId ?? "default";
-  if (portalConfiguration.workspaceId && portalConfiguration.workspaceId !== organizationId) {
-    throw new Error(
-      "MARKETPLACE_ORGANIZATION_ID conflicts with MARKETPLACE_PORTAL_WORKSPACE_ID."
-    );
-  }
-  const requestPrincipals = /* @__PURE__ */ new WeakMap();
-  const servicePrincipal = {
-    kind: "service",
-    id: "marketplace-service",
-    organizationId
-  };
-  const portalAttachmentAudience = options.portalAttachmentAudience?.trim() || process.env.MARKETPLACE_PORTAL_ATTACHMENT_AUDIENCE?.trim() || "marketplace";
-  const portalIssuerUrl = portalConfiguration.issuerUrl;
-  const portalInstanceProof = portalConfiguration.instanceProof;
-  const portalIdentityMatches = (input) => (!portalConfiguration.deploymentId || input.deploymentId === portalConfiguration.deploymentId) && (!portalConfiguration.portalOrgId || input.portalOrgId === portalConfiguration.portalOrgId) && (!portalConfiguration.workspaceId || input.workspaceId === portalConfiguration.workspaceId);
-  const agentScopeVerifier = options.agentScopeVerifier ?? createPortalAgentScopeVerifier({
-    issuer: portalIssuerUrl,
-    fetchImpl: options.portalFetch ?? options.providerFetch
-  });
-  const portalHandoffClient = createPortalHandoffClient({
-    issuer: portalIssuerUrl,
-    instanceProof: portalInstanceProof,
-    fetchImpl: options.portalFetch ?? options.providerFetch
-  });
-  const portalRuntimeScopeVerifier = options.portalRuntimeScopeVerifier ?? createPortalRuntimeScopeVerifier({
-    issuer: portalIssuerUrl,
-    instanceProof: portalInstanceProof,
-    fetchImpl: options.portalFetch ?? options.providerFetch
-  });
-  const requireOperator = (request, reply) => {
-    const principal = requestPrincipals.get(request);
-    if (principal?.kind === "operator") return principal;
-    reply.code(403);
-    return null;
-  };
-  const requireService = (request, reply) => {
-    const principal = requestPrincipals.get(request);
-    if (principal?.kind === "service") return principal;
-    reply.code(403);
-    return null;
-  };
-  const requireHandoffPrincipal = (request, reply) => {
-    const principal = requestPrincipals.get(request);
-    if (principal && ["service", "operator"].includes(principal.kind)) {
-      return principal;
-    }
-    reply.code(403);
-    return null;
-  };
-  const verifyPortalScope = async (input) => {
-    const agentToken = headerValue(input.request, "x-tealbrick-agent-token");
-    const attachmentToken = headerValue(input.request, "x-tealbrick-attachment");
-    if (!agentToken || !attachmentToken) {
-      input.reply.code(401);
-      return { ok: false, error: "agent_scope_required" };
-    }
-    try {
-      const scope = await agentScopeVerifier({
-        agentToken,
-        attachmentToken,
-        audience: portalAttachmentAudience,
-        requiredCapability: input.requiredCapability
-      });
-      return { ok: true, scope };
-    } catch (error) {
-      if (error instanceof PortalScopeError) {
-        input.reply.code(error.statusCode);
-        return { ok: false, error: error.code };
-      }
-      input.reply.code(503);
-      return { ok: false, error: "portal_identity_unavailable" };
-    }
-  };
-  const verifyAgentGrantScope = async (input) => {
-    if (input.grant.state !== "active") {
-      input.reply.code(403);
-      return { ok: false, error: "agent_grant_revoked" };
-    }
-    if (agentConnectorGrantIsExpired(input.grant)) {
-      input.reply.code(403);
-      return { ok: false, error: "agent_grant_expired" };
-    }
-    const verified = await verifyPortalScope(input);
-    if (!verified.ok) {
-      return verified;
-    }
-    const { scope } = verified;
-    if (scope.organizationId !== input.grant.workspaceSlug) {
-      input.reply.code(403);
-      return { ok: false, error: "agent_grant_tenant_mismatch" };
-    }
-    if (scope.agentId !== input.grant.agentId) {
-      input.reply.code(403);
-      return { ok: false, error: "agent_grant_agent_mismatch" };
-    }
-    if (scope.attachmentId !== input.grant.attachmentId) {
-      input.reply.code(403);
-      return { ok: false, error: "agent_grant_attachment_mismatch" };
-    }
-    if (scope.expiresAt * 1e3 <= Date.now()) {
-      input.reply.code(403);
-      return { ok: false, error: "agent_grant_expired" };
-    }
-    return { ok: true, scope };
-  };
-  const composioCatalogSyncByWorkspace = /* @__PURE__ */ new Map();
-  const ensureComposioCatalog = async (workspaceSlug = "default") => {
-    if (!readProviderHealth(providerEnvironment()).composio.configured) {
-      return null;
-    }
-    const cached = composioCatalogSyncByWorkspace.get(workspaceSlug);
-    if (cached && Date.now() < cached.expiresAt) {
-      return null;
-    }
-    if (cached?.pending) {
-      return cached.pending;
-    }
-    const pending = synchronizeComposioCatalog({
-      store: options.store,
-      workspaceSlug,
-      env: providerEnvironment(),
-      fetchImpl: options.providerFetch
-    }).then((result) => {
-      composioCatalogSyncByWorkspace.set(workspaceSlug, {
-        expiresAt: Date.now() + 5 * 6e4,
-        pending: null
-      });
-      return result;
-    }).catch(() => null).finally(() => {
-      const latest = composioCatalogSyncByWorkspace.get(workspaceSlug);
-      if (latest?.pending) {
-        composioCatalogSyncByWorkspace.set(workspaceSlug, {
-          expiresAt: latest.expiresAt,
-          pending: null
-        });
-      }
-    });
-    composioCatalogSyncByWorkspace.set(workspaceSlug, {
-      expiresAt: 0,
-      pending
-    });
-    return pending;
-  };
-  app2.addHook("onRequest", async (request, reply) => {
-    const headers = corsHeadersForOrigin(request.headers.origin, environment);
-    for (const [key, value] of Object.entries(headers)) {
-      reply.header(key, value);
-    }
-    if (request.method === "OPTIONS") {
-      reply.code(204).send();
-    }
-  });
-  app2.addHook("preHandler", async (request, reply) => {
-    const pathname = request.url.split("?", 1)[0] ?? request.url;
-    if (request.method === "OPTIONS" || marketplacePublicPath(pathname)) return;
-    const serviceToken = bearerTokenFrom(request);
-    if (pathname === "/api/marketplace/v1/runtime/composio/execute") {
-      if (serviceToken && marketplaceSecretMatches(serviceToken, options.internalAuthToken)) {
-        reply.code(401).send({
-          ok: false,
-          schema: 1,
-          error: "runtime_service_bearer_forbidden"
-        });
-      }
-      return;
-    }
-    if (serviceToken && marketplaceSecretMatches(serviceToken, options.internalAuthToken)) {
-      requestPrincipals.set(request, servicePrincipal);
-      bindMarketplacePrincipalScope(request, servicePrincipal);
-      return;
-    }
-    const sessionStatus = operatorSessions.status(request.headers.cookie);
-    const operator = operatorSessions.authenticate(request.headers.cookie);
-    if (!operator) {
-      const configured = operatorSessions.status(request.headers.cookie).configured;
-      reply.code(configured ? 401 : 503).send({
-        ok: false,
-        error: configured ? "marketplace_unauthorized" : "marketplace_operator_auth_unconfigured",
-        detail: configured ? "Unlock Marketplace with an operator session or use the internal service bearer." : "MARKETPLACE_OPERATOR_ACCESS_TOKEN is required before Marketplace domain data is available."
-      });
-      return;
-    }
-    if (sessionStatus.mode === "test_bypass") {
-      requestPrincipals.set(request, operator);
-      return;
-    }
-    if (isMutation(request.method)) {
-      if (!allowedCorsOrigin(request.headers.origin, environment)) {
-        reply.code(403).send({ ok: false, error: "marketplace_origin_denied" });
-        return;
-      }
-      if (!operatorSessions.csrfMatches(request.headers.cookie, request.headers["x-csrf-token"])) {
-        reply.code(403).send({ ok: false, error: "marketplace_csrf_denied" });
-        return;
-      }
-    }
-    requestPrincipals.set(request, operator);
-    bindMarketplacePrincipalScope(request, operator);
-  });
-  app2.setErrorHandler((error, request, reply) => {
-    const isRuntimeReceiver = request.url.split("?", 1)[0] === "/api/marketplace/v1/runtime/composio/execute";
-    if (isRuntimeReceiver) {
-      const traceId = traceIdFrom(request);
-      if (error instanceof ZodError) {
-        reply.code(400).send(
-          runtimeResponse({
-            ok: false,
-            traceId,
-            error: "runtime_validation_failed"
-          })
-        );
-        return;
-      }
-      if (error.code === "FST_ERR_CTP_BODY_TOO_LARGE") {
-        reply.code(413).send(
-          runtimeResponse({
-            ok: false,
-            traceId,
-            error: "runtime_request_too_large"
-          })
-        );
-        return;
-      }
-    }
-    if (error instanceof ZodError) {
-      reply.code(400).send({
-        ok: false,
-        error: "validation_failed",
-        issues: error.issues
-      });
-      return;
-    }
-    const statusCode = typeof error.statusCode === "number" && error.statusCode >= 400 && error.statusCode < 500 ? error.statusCode : 500;
-    if (statusCode < 500) {
-      reply.code(statusCode).send({
-        ok: false,
-        error: "marketplace_request_invalid",
-        code: error.code ?? null
-      });
-      return;
-    }
-    const errorId = `err_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
-    console.error(
-      JSON.stringify({
-        event: "marketplace.request.error",
-        errorId,
-        method: request.method,
-        route: request.routeOptions?.url ?? null,
-        name: error instanceof Error ? error.name : typeof error,
-        message: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : void 0
-      })
-    );
-    reply.code(500).send({
-      ok: false,
-      error: "marketplace_program_error",
-      errorId
-    });
-  });
-  app2.get("/", async (_request, reply) => {
-    const rendered = await frontend.sendIndex(_request, reply);
-    if (rendered !== null) return rendered;
-    reply.type("text/html; charset=utf-8");
-    return htmlShell();
-  });
-  const completePortalLaunch = async (ticket, deploymentId, reply, input = {}) => {
-    try {
-      const session = await portalHandoffClient.redeemLaunchTicket({
-        deploymentId,
-        ticket
-      });
-      if (session.productTenantId !== organizationId || !portalIdentityMatches(session)) {
-        reply.code(403);
-        reply.type("text/html; charset=utf-8");
-        return htmlCloseout({
-          ok: false,
-          title: "Marketplace launch blocked",
-          detail: "The Portal deployment identity does not match this Marketplace instance."
-        });
-      }
-      options.store.upsertPortalHandoffSession({
-        portalIssuer: portalIssuerUrl ?? "",
-        deploymentId: session.deploymentId,
-        portalOrgId: session.portalOrgId,
-        productTenantId: session.productTenantId,
-        workspaceId: session.workspaceId,
-        userId: session.userId,
-        sessionToken: session.session,
-        expiresAt: new Date(session.expiresAt).toISOString()
-      });
-      if (input.issueOperatorSession) {
-        const operatorSession = operatorSessions.issuePortalSession({
-          id: session.userId,
-          organizationId: session.productTenantId
-        });
-        reply.header(
-          "set-cookie",
-          operatorSessions.sessionCookie(operatorSession.token, input.secure === true, "Lax")
-        );
-        reply.header("location", "/");
-        reply.code(303);
-        return "";
-      }
-      reply.type("text/html; charset=utf-8");
-      return htmlCloseout({
-        ok: true,
-        title: "Marketplace connected",
-        detail: "Portal ownership was verified. Return to Marketplace to continue the connector approval flow."
-      });
-    } catch (error) {
-      reply.code(error instanceof PortalHandoffError ? error.statusCode : 503);
-      reply.type("text/html; charset=utf-8");
-      return htmlCloseout({
-        ok: false,
-        title: "Marketplace launch blocked",
-        detail: error instanceof PortalHandoffError ? "Portal could not authorize this Marketplace launch." : "Portal launch verification failed."
-      });
-    }
-  };
-  app2.get("/auth/launch", async (request, reply) => {
-    const query = external_exports.strictObject({
-      ticket: external_exports.string().regex(/^[A-Za-z0-9_-]{43}$/u),
-      deploymentId: PortalIdentifierSchema
-    }).parse(request.query);
-    return completePortalLaunch(query.ticket, query.deploymentId, reply);
-  });
-  app2.post("/auth/launch", { bodyLimit: 2048 }, async (request, reply) => {
-    reply.header("cache-control", "no-store");
-    reply.header("referrer-policy", "no-referrer");
-    if (!portalIssuerUrl || headerValue(request, "origin") !== portalIssuerUrl || headerValue(request, "authorization")) {
-      reply.code(403);
-      reply.type("text/html; charset=utf-8");
-      return htmlCloseout({
-        ok: false,
-        title: "Marketplace launch blocked",
-        detail: "Portal launch origin verification failed."
-      });
-    }
-    const contentType = headerValue(request, "content-type");
-    const parsed = contentType?.split(";", 1)[0]?.trim().toLowerCase() === "application/x-www-form-urlencoded" ? PortalLaunchFormSchema.safeParse(request.body) : null;
-    const deploymentId = portalConfiguration.deploymentId;
-    if (!parsed?.success || !deploymentId) {
-      reply.code(parsed?.success ? 503 : 401);
-      reply.type("text/html; charset=utf-8");
-      return htmlCloseout({
-        ok: false,
-        title: "Marketplace launch blocked",
-        detail: parsed?.success ? "Marketplace Portal deployment identity is not configured." : "Portal launch ticket is invalid."
-      });
-    }
-    return completePortalLaunch(parsed.data.ticket, deploymentId, reply, {
-      issueOperatorSession: true,
-      secure: secureRequest(request)
-    });
-  });
-  app2.get("/healthz", async () => ({
-    ok: true,
-    service: "marketplace",
-    status: "healthy",
-    time: (/* @__PURE__ */ new Date()).toISOString()
-  }));
-  app2.get("/api/portal/readiness", async (request, reply) => {
-    const suppliedProof = headerValue(request, "x-tealbrick-instance-proof");
-    if (request.headers.cookie || request.headers.origin || request.headers.authorization) {
-      reply.code(403);
-      return { ok: false, error: "portal_readiness_service_request_required" };
-    }
-    if (!suppliedProof || !portalInstanceProof || !marketplaceSecretMatches(suppliedProof, portalInstanceProof)) {
-      reply.code(401);
-      return { ok: false, error: "portal_readiness_instance_auth_required" };
-    }
-    const publicOrigin = environment.MARKETPLACE_PUBLIC_ORIGIN?.trim();
-    if (!portalIssuerUrl || !portalConfiguration.deploymentId || !portalConfiguration.portalOrgId || !portalConfiguration.workspaceId || !publicOrigin) {
-      reply.code(503);
-      return { ok: false, error: "portal_readiness_identity_unconfigured" };
-    }
-    const base = {
-      ok: true,
-      schema: 2,
-      product: "marketplace",
-      deploymentId: portalConfiguration.deploymentId,
-      orgId: portalConfiguration.portalOrgId,
-      workspaceId: portalConfiguration.workspaceId,
-      productTenantId: organizationId,
-      publicOrigin,
-      portal: {
-        configured: true,
-        baseUrl: portalIssuerUrl,
-        instanceProofHeader: "x-tealbrick-instance-proof"
-      },
-      tenant: {
-        configured: true,
-        productTenantId: organizationId
-      },
-      auth: {
-        configured: true,
-        instanceProofHeader: "x-tealbrick-instance-proof"
-      }
-    };
-    if (!rulesConfiguration) {
-      return {
-        ...base,
-        rules: {
-          configured: false,
-          reachable: false,
-          effect: null,
-          detail: "scoped_rules_credential_not_configured"
-        }
-      };
-    }
-    if (!rulesConfiguration.internalAuthToken?.trim()) {
-      reply.code(503);
-      return { ok: false, error: "portal_readiness_rules_auth_unconfigured" };
-    }
-    let response;
-    try {
-      response = await (options.providerFetch ?? fetch)(
-        new URL(RULES_INTROSPECTION_PATH, rulesConfiguration.baseUrl),
-        {
-          method: "GET",
-          headers: {
-            accept: "application/json",
-            authorization: `Bearer ${rulesConfiguration.internalAuthToken}`
-          }
-        }
-      );
-    } catch {
-      reply.code(503);
-      return { ok: false, error: "portal_readiness_rules_unavailable" };
-    }
-    if (!response.ok) {
-      reply.code(503);
-      return { ok: false, error: "portal_readiness_rules_unavailable" };
-    }
-    let payload;
-    try {
-      payload = await response.json();
-    } catch {
-      reply.code(503);
-      return { ok: false, error: "portal_readiness_rules_response_invalid" };
-    }
-    let principal;
-    try {
-      principal = parseRulesReadinessPrincipal({
-        response: payload,
-        organizationId,
-        expectedCompanyId: rulesConfiguration.companyId
-      });
-    } catch {
-      reply.code(503);
-      return { ok: false, error: "portal_readiness_rules_principal_invalid" };
-    }
-    return {
-      ...base,
-      rules: {
-        configured: true,
-        reachable: true,
-        probe: "principal",
-        effect: null,
-        principal: { ready: true, principal }
-      }
-    };
-  });
-  let rulesStatusCache = null;
-  const probeRulesConnection = async () => {
-    if (!options.rulesClient && !rulesConfiguration) return "not-connected";
-    if (!rulesConfiguration) {
-      return options.rulesClient ? "connected" : "not-connected";
-    }
-    if (!options.rulesClient || !rulesConfiguration.internalAuthToken?.trim()) {
-      return "unavailable";
-    }
-    if (rulesStatusCache && Date.now() < rulesStatusCache.expiresAt) {
-      return rulesStatusCache.status;
-    }
-    let status = "unavailable";
-    try {
-      const response = await (options.providerFetch ?? fetch)(
-        new URL(RULES_INTROSPECTION_PATH, rulesConfiguration.baseUrl),
-        {
-          method: "GET",
-          headers: {
-            accept: "application/json",
-            authorization: `Bearer ${rulesConfiguration.internalAuthToken}`
-          },
-          signal: AbortSignal.timeout(5e3)
-        }
-      );
-      if (response.ok) {
-        parseRulesReadinessPrincipal({
-          response: await response.json(),
-          organizationId,
-          expectedCompanyId: rulesConfiguration.companyId
-        });
-        status = "connected";
-      }
-    } catch {
-      status = "unavailable";
-    }
-    rulesStatusCache = { status, expiresAt: Date.now() + 15e3 };
-    return status;
-  };
-  app2.get("/api/marketplace/health", async () => ({
-    ok: true,
-    program: "ok",
-    version: MARKETPLACE_VERSION,
-    rules: await probeRulesConnection(),
-    checkedAt: (/* @__PURE__ */ new Date()).toISOString()
-  }));
-  app2.get("/api/marketplace/auth/session", async (request) => ({
-    session: operatorSessions.status(request.headers.cookie)
-  }));
-  app2.post("/api/marketplace/auth/session", async (request, reply) => {
-    if (!allowedCorsOrigin(request.headers.origin, environment)) {
-      reply.code(403);
-      return { ok: false, error: "marketplace_origin_denied" };
-    }
-    try {
-      const body = external_exports.object({ accessToken: external_exports.string().trim().min(1).max(2048) }).parse(request.body ?? {});
-      const exchanged = operatorSessions.exchange(body.accessToken, request.ip);
-      reply.header("set-cookie", operatorSessions.sessionCookie(exchanged.token, secureRequest(request)));
-      return { ok: true, session: exchanged.status };
-    } catch (error) {
-      if (error instanceof MarketplaceAuthenticationError) {
-        reply.code(error.statusCode);
-        return { ok: false, error: error.code, detail: error.message };
-      }
-      throw error;
-    }
-  });
-  app2.delete("/api/marketplace/auth/session", async (request, reply) => {
-    const operator = operatorSessions.authenticate(request.headers.cookie);
-    if (!operator) {
-      reply.code(401);
-      return { ok: false, error: "marketplace_unauthorized" };
-    }
-    if (!allowedCorsOrigin(request.headers.origin, environment)) {
-      reply.code(403);
-      return { ok: false, error: "marketplace_origin_denied" };
-    }
-    if (!operatorSessions.csrfMatches(request.headers.cookie, request.headers["x-csrf-token"])) {
-      reply.code(403);
-      return { ok: false, error: "marketplace_csrf_denied" };
-    }
-    operatorSessions.revoke(request.headers.cookie);
-    reply.header("set-cookie", operatorSessions.clearCookie(secureRequest(request)));
-    return { ok: true };
-  });
-  app2.get("/api/status", async (request, reply) => {
-    if (!requireService(request, reply)) {
-      return { ok: false, error: "marketplace_service_bearer_required" };
-    }
-    return {
-      version: MARKETPLACE_VERSION,
-      ok: true,
-      service: "marketplace",
-      database: {
-        kind: "sqlite",
-        tables: options.store.listTables(),
-        path: options.store.describeRuntime().databasePath
-      },
-      debug: {
-        enabled: options.debug ?? process.env.DOPPELGANGER_DEBUG === "1",
-        logPath: options.logPath ?? options.store.describeRuntime().logPath
-      },
-      providers: await readProviderHealthWithReachability(
-        providerEnvironment(),
-        options.providerFetch
-      )
-    };
-  });
-  app2.get("/api/settings/providers/composio", async (request, reply) => {
-    if (!requireOperator(request, reply)) return { ok: false, error: "marketplace_operator_required" };
-    return {
-      ...providerSettings2.safeView(),
-      provider: readProviderHealth(providerEnvironment()).composio
-    };
-  });
-  app2.put("/api/settings/providers/composio", async (request, reply) => {
-    const principal = requireOperator(request, reply);
-    if (!principal) return { ok: false, error: "marketplace_operator_required" };
-    const input = ComposioProviderSettingsRequestSchema.parse(request.body);
-    const before = providerSettings2.safeView();
-    let saved;
-    try {
-      saved = await providerSettings2.update(input.settings);
-    } catch (error) {
-      if (error instanceof ProviderSettingsError) {
-        reply.code(error.statusCode);
-        return { ok: false, error: error.code };
-      }
-      throw error;
-    }
-    options.store.recordAudit({
-      workspaceSlug: principal.organizationId,
-      pluginId: "composio",
-      eventType: "marketplace.provider.settings.updated",
-      actorId: principal.id,
-      metadata: {
-        provider: "composio",
-        keyReplaced: Boolean(input.settings.composioApiKey),
-        keyFingerprint: saved.status.composioApiKey.fingerprint,
-        baseUrlChanged: before.values.composioBaseUrl !== saved.values.composioBaseUrl,
-        defaultUserChanged: before.values.composioDefaultUserId !== saved.values.composioDefaultUserId,
-        connectedAccountChanged: before.values.composioDefaultConnectedAccountId !== saved.values.composioDefaultConnectedAccountId
-      }
-    });
-    return {
-      ...saved,
-      provider: readProviderHealth(providerEnvironment()).composio
-    };
-  });
-  app2.delete("/api/settings/providers/composio/key", async (request, reply) => {
-    const principal = requireOperator(request, reply);
-    if (!principal) return { ok: false, error: "marketplace_operator_required" };
-    const previousFingerprint = providerSettings2.safeView().status.composioApiKey.fingerprint;
-    let result;
-    try {
-      result = await providerSettings2.removeApiKey();
-    } catch (error) {
-      if (error instanceof ProviderSettingsError) {
-        reply.code(error.statusCode);
-        return { ok: false, error: error.code };
-      }
-      throw error;
-    }
-    if (result.removed) {
-      composioCatalogSyncByWorkspace.clear();
-      options.store.recordAudit({
-        workspaceSlug: principal.organizationId,
-        pluginId: "composio",
-        eventType: "marketplace.provider.key.removed",
-        actorId: principal.id,
-        metadata: { provider: "composio", keyFingerprint: previousFingerprint }
-      });
-    }
-    return {
-      ...result.view,
-      removed: result.removed,
-      provider: readProviderHealth(providerEnvironment()).composio
-    };
-  });
-  app2.post("/api/settings/providers/composio/test", { bodyLimit: 4096 }, async (request, reply) => {
-    const principal = requireOperator(request, reply);
-    if (!principal) return { ok: false, error: "marketplace_operator_required" };
-    const body = external_exports.object({ composioApiKey: external_exports.string().trim().max(512).optional() }).parse(request.body ?? {});
-    const candidate = body.composioApiKey || providerSettings2.activeApiKey();
-    if (!candidate) {
-      reply.code(400);
-      return { ok: false, error: "composio_key_missing" };
-    }
-    try {
-      assertComposioApiKeyFormat(candidate);
-    } catch (error) {
-      if (error instanceof ProviderSettingsError) {
-        reply.code(error.statusCode);
-        return { ok: false, error: error.code };
-      }
-      throw error;
-    }
-    const baseUrl = providerSettings2.safeView().values.composioBaseUrl;
-    if (!allowedComposioOrigin(baseUrl, environment)) {
-      reply.code(400);
-      return { ok: false, error: "composio_base_url_not_allowed" };
-    }
-    const probeUrl = new URL(`${baseUrl.replace(/\/+$/u, "")}/connected_accounts`);
-    probeUrl.searchParams.set("limit", "1");
-    let outcome;
-    let providerStatus = null;
-    try {
-      const response = await (options.providerFetch ?? fetch)(probeUrl, {
-        method: "GET",
-        headers: { accept: "application/json", "x-api-key": candidate },
-        redirect: "error",
-        signal: AbortSignal.timeout(8e3)
-      });
-      providerStatus = response.status;
-      outcome = response.ok ? "valid" : response.status === 401 || response.status === 403 ? "rejected" : "unreachable";
-    } catch {
-      outcome = "unreachable";
-    }
-    options.store.recordAudit({
-      workspaceSlug: principal.organizationId,
-      pluginId: "composio",
-      eventType: "marketplace.provider.key.tested",
-      actorId: principal.id,
-      metadata: {
-        provider: "composio",
-        outcome,
-        providerStatus,
-        draftKey: Boolean(body.composioApiKey),
-        keyFingerprint: composioKeyFingerprint(candidate)
-      }
-    });
-    if (outcome === "rejected") {
-      reply.code(422);
-      return { ok: false, error: "composio_key_rejected" };
-    }
-    if (outcome === "unreachable") {
-      reply.code(502);
-      return { ok: false, error: "composio_unreachable" };
-    }
-    return { ok: true, status: "valid", checkedAt: (/* @__PURE__ */ new Date()).toISOString() };
-  });
-  const capabilityProjectionHandler = async (request, reply) => {
-    const authError = requireHubBearerAuth({
-      request,
-      reply,
-      expectedToken: options.internalAuthToken
-    });
-    if (authError) return authError;
-    const query = HubAuthQuerySchema.parse(request.query);
-    try {
-      await ensureComposioCatalog(query.workspaceSlug);
-      const baseProjection = marketplaceCapabilitiesHostProjection({
-        store: options.store,
-        workspaceSlug: query.workspaceSlug
-      });
-      const projection = await projectExtensionSettings({
-        microappsRoot: options.microappsRoot,
-        baseProjection
-      });
-      return {
-        ok: true,
-        workspaceSlug: query.workspaceSlug,
-        ...projection,
-        dependencies: {
-          registryAuthority: "doppelganger-registry",
-          recordMode: "gateway-projected-records",
-          lifecycleAuthority: "marketplace",
-          directHermesRole: "underlying-adapters-only",
-          normalModeDirectHermesControls: false,
-          auth: {
-            owner: "hdda-host-sdk",
-            scope: "auth",
-            status: "dependency"
-          }
-        }
-      };
-    } catch (error) {
-      reply.code(409);
-      return {
-        ok: false,
-        error: "capabilities_ownership_conflict",
-        detail: error instanceof Error ? error.message : String(error)
-      };
-    }
-  };
-  app2.get("/api/marketplace/hub/records", capabilityProjectionHandler);
-  app2.get("/api/plugins/marketplace-hub/records", capabilityProjectionHandler);
-  app2.get("/api/marketplace/hub/plugins/:pluginId", async (request, reply) => {
-    const authError = requireHubBearerAuth({
-      request,
-      reply,
-      expectedToken: options.internalAuthToken
-    });
-    if (authError) return authError;
-    const query = HubAuthQuerySchema.parse(request.query);
-    const { pluginId } = request.params;
-    const listing = options.store.getListing(pluginId);
-    if (!listing) {
-      reply.code(404);
-      return { ok: false, error: "plugin_not_found" };
-    }
-    return {
-      ok: true,
-      record: marketplacePluginRecord({
-        store: options.store,
-        workspaceSlug: query.workspaceSlug,
-        listing
-      })
-    };
-  });
-  app2.post("/api/marketplace/hub/plugins/mcp", async (request, reply) => {
-    const authError = requireHubBearerAuth({
-      request,
-      reply,
-      expectedToken: options.internalAuthToken
-    });
-    if (authError) return authError;
-    const input = McpPluginSchema.parse(request.body);
-    if (options.store.getListing(input.pluginId)) {
-      reply.code(409);
-      return { ok: false, error: "plugin_already_exists" };
-    }
-    const rules = await enforceRules({
-      reply,
-      workspaceSlug: input.workspaceSlug,
-      operation: "hub.mcp.create",
-      capability: "connector.admin",
-      pluginId: input.pluginId,
-      actorId: input.actorId,
-      payload: { transport: input.transport },
-      rulesClient: options.rulesClient
-    });
-    if (!("effect" in rules)) return rules;
-    const listing = mcpListingFromInput(input);
-    options.store.upsertListing(listing);
-    options.store.recordAudit({
-      workspaceSlug: input.workspaceSlug,
-      pluginId: input.pluginId,
-      eventType: "marketplace.plugin.created",
-      actorId: input.actorId,
-      rulesDecisionId: rules.decisionId,
-      metadata: { kind: "mcp", transport: input.transport }
-    });
-    reply.code(201);
-    return {
-      ok: true,
-      record: marketplacePluginRecord({
-        store: options.store,
-        workspaceSlug: input.workspaceSlug,
-        listing
-      })
-    };
-  });
-  app2.patch(
-    "/api/marketplace/hub/plugins/:pluginId",
-    async (request, reply) => {
-      const authError = requireHubBearerAuth({
-        request,
-        reply,
-        expectedToken: options.internalAuthToken
-      });
-      if (authError) return authError;
-      const query = HubAuthQuerySchema.parse(request.query);
-      const { pluginId } = request.params;
-      const current = options.store.getListing(pluginId);
-      if (!current) {
-        reply.code(404);
-        return { ok: false, error: "plugin_not_found" };
-      }
-      if (!listingIsCustomMcp(current)) {
-        reply.code(409);
-        return { ok: false, error: "plugin_not_custom_mcp" };
-      }
-      const requestBody = recordValue3(request.body);
-      const patch = McpPluginUpdateSchema.parse(
-        requestBody?.settings ?? request.body
-      );
-      const currentRecord = marketplacePluginRecord({
-        store: options.store,
-        workspaceSlug: query.workspaceSlug,
-        listing: current
-      });
-      if (currentRecord.adapter.type !== "mcp") {
-        reply.code(409);
-        return { ok: false, error: "plugin_not_mcp" };
-      }
-      const merged = McpPluginSchema.parse({
-        workspaceSlug: query.workspaceSlug,
-        actorId: "operator",
-        pluginId,
-        displayName: current.displayName,
-        description: current.description,
-        version: currentRecord.version,
-        capabilities: current.capabilities,
-        actions: current.actions,
-        contributions: currentRecord.contributions,
-        ...marketplaceMcpAdapterConfig(current, true),
-        ...patch
-      });
-      const rules = await enforceRules({
-        reply,
-        workspaceSlug: query.workspaceSlug,
-        operation: "hub.mcp.update",
-        capability: "connector.admin",
-        pluginId,
-        actorId: "operator",
-        payload: { transport: merged.transport },
-        rulesClient: options.rulesClient
-      });
-      if (!("effect" in rules)) return rules;
-      const listing = mcpListingFromInput(merged, current);
-      options.store.upsertListing(listing);
-      const connection = options.store.getConnection(
-        query.workspaceSlug,
-        pluginId
-      );
-      if (connection) {
-        options.store.upsertConnection({
-          workspaceSlug: query.workspaceSlug,
-          pluginId,
-          provider: connection.provider,
-          backend: connection.backend,
-          state: "disconnected",
-          detail: "MCP adapter configuration changed; reload is required.",
-          metadata: connection.metadata
-        });
-      }
-      options.store.recordAudit({
-        workspaceSlug: query.workspaceSlug,
-        pluginId,
-        eventType: "marketplace.plugin.updated",
-        actorId: "operator",
-        rulesDecisionId: rules.decisionId,
-        metadata: { kind: "mcp", transport: merged.transport }
-      });
-      return {
-        ok: true,
-        record: marketplacePluginRecord({
-          store: options.store,
-          workspaceSlug: query.workspaceSlug,
-          listing
-        })
-      };
-    }
-  );
-  app2.delete(
-    "/api/marketplace/hub/plugins/:pluginId",
-    async (request, reply) => {
-      const authError = requireHubBearerAuth({
-        request,
-        reply,
-        expectedToken: options.internalAuthToken
-      });
-      if (authError) return authError;
-      const query = HubAuthQuerySchema.parse(request.query);
-      const { pluginId } = request.params;
-      const listing = options.store.getListing(pluginId);
-      if (!listing) {
-        reply.code(404);
-        return { ok: false, error: "plugin_not_found" };
-      }
-      if (!listingIsCustomMcp(listing)) {
-        reply.code(409);
-        return { ok: false, error: "plugin_not_custom_mcp" };
-      }
-      if (listingIsRequired(listing)) {
-        reply.code(409);
-        return { ok: false, error: "required_plugin_protected" };
-      }
-      if (options.store.getInstall(query.workspaceSlug, pluginId)?.lifecycle === "installed") {
-        reply.code(409);
-        return { ok: false, error: "plugin_must_be_uninstalled_first" };
-      }
-      const rules = await enforceRules({
-        reply,
-        workspaceSlug: query.workspaceSlug,
-        operation: "hub.mcp.delete",
-        capability: "connector.admin",
-        pluginId,
-        actorId: "operator",
-        payload: {},
-        rulesClient: options.rulesClient
-      });
-      if (!("effect" in rules)) return rules;
-      options.store.revokeBrokerGrantsForPlugin({
-        workspaceSlug: query.workspaceSlug,
-        pluginId
-      });
-      options.store.deleteListing(pluginId);
-      return { ok: true, pluginId, deleted: true };
-    }
-  );
-  app2.post(
-    "/api/marketplace/hub/plugins/:pluginId/lifecycle",
-    async (request, reply) => {
-      const authError = requireHubBearerAuth({
-        request,
-        reply,
-        expectedToken: options.internalAuthToken
-      });
-      if (authError) return authError;
-      const input = HubLifecycleSchema.parse(request.body);
-      const { pluginId } = request.params;
-      let listing = options.store.getListing(pluginId);
-      if (!listing) {
-        reply.code(404);
-        return { ok: false, error: "plugin_not_found" };
-      }
-      if (listingIsRequired(listing) && (input.action === "disable" || input.action === "uninstall")) {
-        reply.code(409);
-        return { ok: false, error: "required_plugin_protected" };
-      }
-      const install = options.store.getInstall(input.workspaceSlug, pluginId);
-      if (input.action !== "install" && (!install || install.lifecycle !== "installed")) {
-        reply.code(409);
-        return { ok: false, error: "plugin_not_installed" };
-      }
-      const rules = await enforceRules({
-        reply,
-        workspaceSlug: input.workspaceSlug,
-        operation: `hub.lifecycle.${input.action}`,
-        capability: "connector.admin",
-        pluginId,
-        actorId: input.actorId,
-        payload: { action: input.action },
-        rulesClient: options.rulesClient
-      });
-      if (!("effect" in rules)) return rules;
-      if (input.action === "install") {
-        options.store.registerPlugin(pluginId);
-        options.store.install(input.workspaceSlug, pluginId);
-        for (const capability of listing.capabilities) {
-          options.store.bindCapability({
-            workspaceSlug: input.workspaceSlug,
-            pluginId,
-            capability,
-            enabled: true
-          });
-        }
-        for (const actionKey of listing.actions) {
-          options.store.bindAction({
-            workspaceSlug: input.workspaceSlug,
-            pluginId,
-            actionKey,
-            enabled: true
-          });
-        }
-      } else if (input.action === "enable") {
-        options.store.setInstallEnabled({
-          workspaceSlug: input.workspaceSlug,
-          pluginId,
-          enabled: true
-        });
-      } else if (input.action === "disable") {
-        options.store.setInstallEnabled({
-          workspaceSlug: input.workspaceSlug,
-          pluginId,
-          enabled: false
-        });
-        options.store.revokeBrokerGrantsForPlugin({
-          workspaceSlug: input.workspaceSlug,
-          pluginId
-        });
-      } else if (input.action === "reload") {
-        options.store.requireInstall(input.workspaceSlug, pluginId);
-        listing = options.store.touchListing(pluginId);
-        if (listing.source === "mcp") {
-          options.store.upsertConnection({
-            workspaceSlug: input.workspaceSlug,
-            pluginId,
-            provider: listing.provider,
-            backend: "mcp",
-            state: "pending",
-            detail: "MCP adapter reload requested; transport connection is pending runtime confirmation.",
-            metadata: { reloadedAt: (/* @__PURE__ */ new Date()).toISOString() }
-          });
-        }
-      } else if (input.action === "uninstall") {
-        options.store.revokeBrokerGrantsForPlugin({
-          workspaceSlug: input.workspaceSlug,
-          pluginId
-        });
-        options.store.uninstall(input.workspaceSlug, pluginId);
-        const connection = options.store.getConnection(
-          input.workspaceSlug,
-          pluginId
-        );
-        if (connection) {
-          options.store.upsertConnection({
-            workspaceSlug: input.workspaceSlug,
-            pluginId,
-            provider: connection.provider,
-            backend: connection.backend,
-            state: "disconnected",
-            detail: "Plugin uninstalled through the unified Hub lifecycle.",
-            metadata: connection.metadata
-          });
-        }
-      }
-      options.store.recordAudit({
-        workspaceSlug: input.workspaceSlug,
-        pluginId,
-        eventType: `marketplace.plugin.${input.action}`,
-        actorId: input.actorId,
-        rulesDecisionId: rules.decisionId,
-        metadata: { source: "skills-hub" }
-      });
-      return {
-        ok: true,
-        record: marketplacePluginRecord({
-          store: options.store,
-          workspaceSlug: input.workspaceSlug,
-          listing
-        })
-      };
-    }
-  );
-  app2.post("/api/marketplace/hub/reconcile", async (request, reply) => {
-    const authError = requireHubBearerAuth({
-      request,
-      reply,
-      expectedToken: options.internalAuthToken
-    });
-    if (authError) return authError;
-    const snapshot = GatewayRegistrySnapshotSchema.parse(
-      request.body
-    );
-    return reconcileGatewayRegistry(snapshot);
-  });
-  app2.get("/events", async (request, reply) => {
-    reply.raw.writeHead(200, {
-      ...corsHeadersForOrigin(request.headers.origin, environment),
-      "content-type": "text/event-stream",
-      "cache-control": "no-cache",
-      connection: "keep-alive"
-    });
-    reply.raw.write(
-      `event: marketplace.status
-data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOString() })}
-
-`
-    );
-    reply.raw.end();
-  });
-  app2.get("/api/marketplace/catalog", async (request) => {
-    const query = WorkspaceQuerySchema.parse(request.query);
-    await ensureComposioCatalog(query.workspaceSlug);
-    return {
-      items: options.store.listListings().map(browserListingForListing),
-      providers: await readProviderHealthWithReachability(
-        providerEnvironment(),
-        options.providerFetch
-      )
-    };
-  });
-  app2.get("/api/marketplace/cards", async (request) => {
-    const query = WorkspaceQuerySchema.parse(request.query);
-    await ensureComposioCatalog(query.workspaceSlug);
-    const providers = await readProviderHealthWithReachability(
-      providerEnvironment(),
-      options.providerFetch
-    );
-    return {
-      workspaceSlug: query.workspaceSlug,
-      providers,
-      cards: await pluginCardsForWorkspace({
-        store: options.store,
-        workspaceSlug: query.workspaceSlug,
-        providers
-      })
-    };
-  });
-  app2.get("/api/marketplace/cards/summary", async (request) => {
-    const query = CardsSummaryQuerySchema.parse(request.query);
-    await ensureComposioCatalog(query.workspaceSlug);
-    const providers = await readProviderHealthWithReachability(
-      providerEnvironment(),
-      options.providerFetch
-    );
-    const summaries = options.store.listListings().map(
-      (listing) => pluginSummaryForListing({
-        store: options.store,
-        workspaceSlug: query.workspaceSlug,
-        listing
-      })
-    );
-    const search = query.search.toLocaleLowerCase();
-    const filtered = summaries.filter((summary) => {
-      if (query.source !== "all" && summary.source !== query.source) {
-        return false;
-      }
-      if (query.installed && !summary.installed) {
-        return false;
-      }
-      if (!search) {
-        return true;
-      }
-      return [
-        summary.displayName,
-        summary.description,
-        summary.provider,
-        summary.pluginId
-      ].join(" ").toLocaleLowerCase().includes(search);
-    });
-    const connections = summaries.filter((summary) => summary.connection !== null).map((summary) => ({
-      pluginId: summary.pluginId,
-      displayName: summary.displayName,
-      ...summary.connection
-    }));
-    const sources = [...new Set(summaries.map((summary) => summary.source))];
-    return {
-      workspaceSlug: query.workspaceSlug,
-      providers: browserProviderHealth(providers),
-      total: summaries.length,
-      filteredTotal: filtered.length,
-      installedTotal: summaries.filter((summary) => summary.installed).length,
-      offset: query.offset,
-      limit: query.limit,
-      hasMore: query.offset + query.limit < filtered.length,
-      sources,
-      connections,
-      items: filtered.slice(query.offset, query.offset + query.limit)
-    };
-  });
-  app2.get("/api/marketplace/cards/:pluginId", async (request, reply) => {
-    const { pluginId } = request.params;
-    const query = WorkspaceQuerySchema.parse(request.query);
-    await ensureComposioCatalog(query.workspaceSlug);
-    const listing = options.store.getListing(pluginId);
-    if (!listing) {
-      reply.code(404);
-      return { ok: false, error: "plugin_not_found" };
-    }
-    const providers = await readProviderHealthWithReachability(
-      providerEnvironment(),
-      options.providerFetch
-    );
-    return {
-      workspaceSlug: query.workspaceSlug,
-      providers: browserProviderHealth(providers),
-      card: browserPluginCardForListing({
-        store: options.store,
-        workspaceSlug: query.workspaceSlug,
-        listing,
-        providers
-      })
-    };
-  });
-  app2.get("/api/marketplace/plugins", async (request) => {
-    const query = WorkspaceQuerySchema.parse(request.query);
-    await ensureComposioCatalog(query.workspaceSlug);
-    return {
-      workspaceSlug: query.workspaceSlug,
-      items: options.store.listListings().map((listing) => ({
-        ...browserListingForListing(listing),
-        install: options.store.getInstall(
-          query.workspaceSlug,
-          listing.pluginId
-        ),
-        connection: options.store.getConnection(
-          query.workspaceSlug,
-          listing.pluginId
-        ),
-        imports: options.store.listComposioImports({
-          workspaceSlug: query.workspaceSlug,
-          pluginId: listing.pluginId
-        }),
-        actionBindings: options.store.listActionBindings({
-          workspaceSlug: query.workspaceSlug,
-          pluginId: listing.pluginId
-        })
-      }))
-    };
-  });
-  app2.get("/api/marketplace/plugins/:pluginId", async (request, reply) => {
-    const { pluginId } = request.params;
-    const listing = options.store.getListing(pluginId);
-    if (!listing) {
-      reply.code(404);
-      return { ok: false, error: "plugin_not_found" };
-    }
-    const query = WorkspaceQuerySchema.partial().parse(request.query);
-    return {
-      listing: browserListingForListing(listing),
-      ...query.workspaceSlug ? {
-        install: options.store.getInstall(query.workspaceSlug, pluginId),
-        connection: options.store.getConnection(
-          query.workspaceSlug,
-          pluginId
-        ),
-        imports: options.store.listComposioImports({
-          workspaceSlug: query.workspaceSlug,
-          pluginId
-        }),
-        actionBindings: options.store.listActionBindings({
-          workspaceSlug: query.workspaceSlug,
-          pluginId
-        })
-      } : {}
-    };
-  });
-  app2.post(
-    "/api/marketplace/plugins/:pluginId/install",
-    async (request, reply) => {
-      const { pluginId } = request.params;
-      const input = InstallInputSchema.parse(request.body);
-      const traceId = traceIdFrom(request);
-      const listing = options.store.getListing(pluginId);
-      if (!listing) {
-        reply.code(404);
-        return { ok: false, error: "plugin_not_found" };
-      }
-      const rules = await enforceRules({
-        reply,
-        workspaceSlug: input.workspaceSlug,
-        operation: "install",
-        capability: "connector.admin",
-        pluginId,
-        actorId: input.actorId,
-        payload: { ...request.body, traceId },
-        rulesClient: options.rulesClient
-      });
-      if ("ok" in rules && rules.ok === false) {
-        return rules;
-      }
-      const install = options.store.install(input.workspaceSlug, pluginId);
-      options.store.recordEvent({
-        type: "marketplace.plugin.installed",
-        traceId,
-        workspaceSlug: input.workspaceSlug,
-        pluginId,
-        actorId: input.actorId,
-        rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
-        payload: { lifecycle: install.lifecycle }
-      });
-      reply.code(201);
-      return { ok: true, traceId, listing, install, rules };
-    }
-  );
-  app2.post(
-    "/api/marketplace/plugins/:pluginId/uninstall",
-    async (request, reply) => {
-      const { pluginId } = request.params;
-      const input = InstallInputSchema.parse(request.body);
-      const traceId = traceIdFrom(request);
-      const listing = options.store.getListing(pluginId);
-      if (!listing) {
-        reply.code(404);
-        return { ok: false, error: "plugin_not_found" };
-      }
-      if (listingIsRequired(listing)) {
-        reply.code(409);
-        return { ok: false, error: "required_plugin_protected" };
-      }
-      if (!options.store.getInstall(input.workspaceSlug, pluginId)) {
-        reply.code(409);
-        return { ok: false, error: "plugin_not_installed" };
-      }
-      const rules = await enforceRules({
-        reply,
-        workspaceSlug: input.workspaceSlug,
-        operation: "uninstall",
-        capability: "connector.admin",
-        pluginId,
-        actorId: input.actorId,
-        payload: { ...request.body, traceId },
-        rulesClient: options.rulesClient
-      });
-      if ("ok" in rules && rules.ok === false) {
-        return { ...rules, traceId };
-      }
-      const install = options.store.uninstall(input.workspaceSlug, pluginId);
-      options.store.recordEvent({
-        type: "marketplace.plugin.uninstalled",
-        traceId,
-        workspaceSlug: input.workspaceSlug,
-        pluginId,
-        actorId: input.actorId,
-        rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
-        payload: { lifecycle: install.lifecycle }
-      });
-      return { ok: true, traceId, install, rules };
-    }
-  );
-  app2.post(
-    "/api/marketplace/plugins/:pluginId/register",
-    async (request, reply) => {
-      const { pluginId } = request.params;
-      const input = InstallInputSchema.parse(request.body);
-      const traceId = traceIdFrom(request);
-      const listing = options.store.getListing(pluginId);
-      if (!listing) {
-        reply.code(404);
-        return { ok: false, error: "plugin_not_found" };
-      }
-      const rules = await enforceRules({
-        reply,
-        workspaceSlug: input.workspaceSlug,
-        operation: "register",
-        capability: "connector.admin",
-        pluginId,
-        actorId: input.actorId,
-        payload: { ...request.body, traceId },
-        rulesClient: options.rulesClient
-      });
-      if ("ok" in rules && rules.ok === false) {
-        return { ...rules, traceId };
-      }
-      const registration = options.store.registerPlugin(pluginId);
-      options.store.recordEvent({
-        type: "marketplace.plugin.registered",
-        traceId,
-        workspaceSlug: input.workspaceSlug,
-        pluginId,
-        actorId: input.actorId,
-        rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
-        payload: { registryState: registration.registryState }
-      });
-      reply.code(201);
-      return { ok: true, traceId, registration, rules };
-    }
-  );
-  app2.post(
-    "/api/marketplace/plugins/:pluginId/unregister",
-    async (request, reply) => {
-      const { pluginId } = request.params;
-      const input = InstallInputSchema.parse(request.body);
-      const traceId = traceIdFrom(request);
-      const listing = options.store.getListing(pluginId);
-      if (!listing) {
-        reply.code(404);
-        return { ok: false, error: "plugin_not_found" };
-      }
-      if (listingIsRequired(listing)) {
-        reply.code(409);
-        return { ok: false, error: "required_plugin_protected" };
-      }
-      const rules = await enforceRules({
-        reply,
-        workspaceSlug: input.workspaceSlug,
-        operation: "unregister",
-        capability: "connector.admin",
-        pluginId,
-        actorId: input.actorId,
-        payload: { ...request.body, traceId },
-        rulesClient: options.rulesClient
-      });
-      if ("ok" in rules && rules.ok === false) {
-        return { ...rules, traceId };
-      }
-      const registration = options.store.unregisterPlugin(pluginId);
-      options.store.recordEvent({
-        type: "marketplace.plugin.unregistered",
-        traceId,
-        workspaceSlug: input.workspaceSlug,
-        pluginId,
-        actorId: input.actorId,
-        rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
-        payload: { registryState: registration.registryState }
-      });
-      return { ok: true, traceId, registration, rules };
-    }
-  );
-  app2.post(
-    "/api/marketplace/plugins/:pluginId/connection",
-    async (request, reply) => {
-      const { pluginId } = request.params;
-      const input = ConnectionInputSchema.parse(request.body);
-      const traceId = traceIdFrom(request);
-      let listing = options.store.getListing(pluginId);
-      if (!listing) {
-        reply.code(404);
-        return { ok: false, error: "plugin_not_found" };
-      }
-      const rules = await enforceRules({
-        reply,
-        workspaceSlug: input.workspaceSlug,
-        operation: input.backend === "composio" ? "composio.connect" : "connector.connection.register",
-        capability: "connector.admin",
-        pluginId,
-        actorId: input.actorId,
-        payload: { ...request.body, traceId },
-        rulesClient: options.rulesClient
-      });
-      if ("ok" in rules && rules.ok === false) {
-        return { ...rules, traceId };
-      }
-      const providerHealth = readProviderHealth(providerEnvironment());
-      const provider = providerHealth[input.backend === "native" ? "nango" : input.backend];
-      if (input.backend !== "native" && !provider.configured) {
-        reply.code(409);
-        return {
-          ok: false,
-          error: "provider_unavailable",
-          provider: input.backend,
-          detail: provider.detail
-        };
-      }
-      if (input.backend === "composio") {
-        const state = `cmp_${randomUUID()}`;
-        const toolkit = composioListingRole(listing) === "composio-catalog-connector" ? composioToolkitForListing(listing) : (input.toolkit ?? input.provider ?? listing.provider).trim();
-        try {
-          const hydratedListing = await hydrateComposioCatalogConnector({
-            store: options.store,
-            workspaceSlug: input.workspaceSlug,
-            listing,
-            toolkit,
-            traceId,
-            env: providerEnvironment(),
-            fetchImpl: options.providerFetch
-          });
-          listing = hydratedListing;
-        } catch (error) {
-          reply.code(502);
-          return {
-            ok: false,
-            error: "composio_toolkit_activation_failed",
-            detail: error instanceof Error ? error.message : String(error)
-          };
-        }
-        let callbackUrl;
-        try {
-          callbackUrl = callbackUrlForRequest({
-            pluginId,
-            publicOrigin: environment.MARKETPLACE_PUBLIC_ORIGIN
-          });
-        } catch (error) {
-          reply.code(503);
-          return {
-            ok: false,
-            error: "marketplace_public_origin_unconfigured",
-            detail: error instanceof Error ? error.message : String(error)
-          };
-        }
-        const auth = await createComposioAuthLink({
-          toolkit,
-          state,
-          callbackUrl,
-          env: providerEnvironment(),
-          fetchImpl: options.providerFetch,
-          authConfigId: input.authConfigId,
-          userId: input.userId,
-          alias: input.alias ?? `${input.workspaceSlug}-${toolkit}`,
-          connectionData: input.connectionData,
-          ...composioAuthMetadataForListing(listing)
-        });
-        if (auth.redirectUrl || auth.connectedAccountId) {
-          enableComposioConnector({
-            store: options.store,
-            workspaceSlug: input.workspaceSlug,
-            listing,
-            toolkit,
-            traceId
-          });
-        }
-        const connectionState2 = auth.redirectUrl ? "pending" : auth.connectedAccountId ? "connected" : "blocked";
-        const connection2 = options.store.upsertConnection({
-          workspaceSlug: input.workspaceSlug,
-          pluginId,
-          provider: toolkit,
-          backend: "composio",
-          state: connectionState2,
-          detail: auth.redirectUrl ? "Composio authorization popup is pending." : auth.connectedAccountId ? "Composio connected account is available." : "Composio did not return an authorization URL or connected account id.",
-          metadata: {
-            provider: toolkit,
-            toolkit,
-            state,
-            traceId,
-            authConfigId: auth.authConfigId,
-            connectedAccountId: auth.connectedAccountId,
-            callbackUrl,
-            redirectUrl: auth.redirectUrl,
-            status: auth.status
-          }
-        });
-        options.store.recordEvent({
-          type: "marketplace.composio.connection.started",
-          traceId,
-          workspaceSlug: input.workspaceSlug,
-          pluginId,
-          actorId: input.actorId,
-          rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
-          payload: {
-            provider: toolkit,
-            backend: input.backend,
-            connectionState: connection2.state,
-            rawSecretStored: false,
-            redirectRequired: Boolean(auth.redirectUrl)
-          }
-        });
-        return {
-          ok: true,
-          traceId,
-          connection: connection2,
-          auth: {
-            kind: auth.redirectUrl ? "redirect-required" : "connected-account",
-            redirectUrl: auth.redirectUrl,
-            connectedAccountId: auth.connectedAccountId,
-            authConfigId: auth.authConfigId,
-            status: auth.status
-          },
-          rules
-        };
-      }
-      const connection = options.store.upsertConnection({
-        workspaceSlug: input.workspaceSlug,
-        pluginId,
-        provider: input.provider,
-        backend: input.backend,
-        state: input.backend === "native" ? "connected" : "pending",
-        detail: input.backend === "native" ? "Native connection is available." : "External connection reference is pending.",
-        metadata: {
-          provider: input.provider,
-          backend: input.backend,
-          rawSecretStored: false,
-          credentialRef: input.credentialRef ?? null,
-          traceId
-        }
-      });
-      if (input.credentialRef) {
-        options.store.upsertCredentialRef({
-          workspaceSlug: input.workspaceSlug,
-          pluginId,
-          providerHint: input.provider,
-          secretRefKey: input.credentialRef,
-          externalRef: null,
-          state: input.backend === "native" ? "active" : "pending",
-          detail: "Credential reference registered without storing raw secret material.",
-          metadata: { backend: input.backend, traceId }
-        });
-      }
-      options.store.recordEvent({
-        type: "connector.connection.ref_registered",
-        traceId,
-        workspaceSlug: input.workspaceSlug,
-        pluginId,
-        actorId: input.actorId,
-        rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
-        payload: {
-          provider: input.provider,
-          backend: input.backend,
-          rawSecretStored: false,
-          credentialRef: input.credentialRef ?? null
-        }
-      });
-      return {
-        ok: true,
-        traceId,
-        connection: {
-          ...connection,
-          rawSecretStored: false
-        },
-        rules
-      };
-    }
-  );
-  app2.get(
-    "/api/marketplace/plugins/:pluginId/oauth/composio/callback",
-    async (request, reply) => {
-      const { pluginId } = request.params;
-      const query = ComposioCallbackQuerySchema.parse(request.query);
-      const traceId = traceIdFrom(request);
-      const pending = options.store.findConnectionByState(
-        query.state,
-        pluginId
-      );
-      reply.type("text/html; charset=utf-8");
-      if (!pending) {
-        reply.code(404);
-        return htmlCloseout({
-          ok: false,
-          title: "Session not found",
-          detail: "Teal Brick could not match this Composio callback to a pending plugin connection."
-        });
-      }
-      const connectedAccountId = query.connected_account_id ?? query.connectedAccountId ?? query.connection_id ?? query.account_id ?? connectedAccountIdFromConnection(pending);
-      const status = query.status ?? (query.error ? "ERROR" : "CONNECTED");
-      const connected = !query.error && Boolean(connectedAccountId) && !["error", "failed", "blocked"].includes(status.toLowerCase());
-      const connection = options.store.upsertConnection({
-        workspaceSlug: pending.workspaceSlug,
-        pluginId: pending.pluginId,
-        provider: pending.provider,
-        backend: "composio",
-        state: connected ? "connected" : "blocked",
-        detail: connected ? "Composio connected account completed." : query.error ?? "Composio callback did not include a connected account.",
-        metadata: {
-          ...pending.metadata,
-          traceId,
-          status,
-          connectedAccountId: connectedAccountId ?? null,
-          callbackCompletedAt: (/* @__PURE__ */ new Date()).toISOString(),
-          error: query.error ?? null
-        }
-      });
-      if (connected && connectedAccountId) {
-        options.store.upsertCredentialRef({
-          workspaceSlug: pending.workspaceSlug,
-          pluginId: pending.pluginId,
-          providerHint: pending.provider,
-          secretRefKey: `composio:${pending.provider}:${connectedAccountId}`,
-          externalRef: connectedAccountId,
-          state: "active",
-          detail: "Composio connected account reference is active. Raw OAuth material stays with Composio.",
-          metadata: {
-            backend: "composio",
-            authConfigId: pending.metadata.authConfigId ?? null,
-            traceId
-          }
-        });
-      }
-      options.store.recordEvent({
-        type: connected ? "marketplace.composio.connection.completed" : "marketplace.composio.connection.blocked",
-        traceId,
-        workspaceSlug: pending.workspaceSlug,
-        pluginId: pending.pluginId,
-        payload: {
-          provider: pending.provider,
-          connectionState: connection.state,
-          connectedAccountId: connectedAccountId ?? null,
-          rawSecretStored: false,
-          error: query.error ?? null
-        }
-      });
-      return htmlCloseout({
-        ok: connected,
-        title: connected ? "Teal Brick connection complete" : "Teal Brick connection blocked",
-        detail: connected ? "The connected account is recorded. You can close this window and return to Teal Brick." : "The Composio callback did not complete successfully. Return to Teal Brick and retry the connection."
-      });
-    }
-  );
-  app2.post(
-    "/api/marketplace/plugins/:pluginId/capability-binding",
-    async (request, reply) => {
-      const { pluginId } = request.params;
-      const input = BindingInputSchema.parse(request.body);
-      const traceId = traceIdFrom(request);
-      if (!options.store.getInstall(input.workspaceSlug, pluginId)) {
-        reply.code(409);
-        return { ok: false, error: "plugin_not_installed" };
-      }
-      const rules = await enforceRules({
-        reply,
-        workspaceSlug: input.workspaceSlug,
-        operation: "capability.bind",
-        capability: "connector.admin",
-        pluginId,
-        actorId: input.actorId,
-        payload: { ...request.body, traceId },
-        rulesClient: options.rulesClient
-      });
-      if ("ok" in rules && rules.ok === false) {
-        return { ...rules, traceId };
-      }
-      const binding = options.store.bindCapability({ ...input, pluginId });
-      options.store.recordEvent({
-        type: "marketplace.capability.bound",
-        traceId,
-        workspaceSlug: input.workspaceSlug,
-        pluginId,
-        actorId: input.actorId,
-        rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
-        payload: { capability: input.capability, enabled: input.enabled }
-      });
-      reply.code(201);
-      return { ok: true, traceId, binding, rules };
-    }
-  );
-  app2.post(
-    "/api/marketplace/plugins/:pluginId/action-binding",
-    async (request, reply) => {
-      const { pluginId } = request.params;
-      const input = ActionBindingInputSchema.parse(request.body);
-      const traceId = traceIdFrom(request);
-      const listing = options.store.getListing(pluginId);
-      if (!listing) {
-        reply.code(404);
-        return { ok: false, error: "plugin_not_found" };
-      }
-      if (!listing.actions.includes(input.actionKey)) {
-        reply.code(404);
-        return { ok: false, error: "plugin_action_not_found" };
-      }
-      if (!options.store.getInstall(input.workspaceSlug, pluginId)) {
-        reply.code(409);
-        return { ok: false, error: "plugin_not_installed" };
-      }
-      const rules = await enforceRules({
-        reply,
-        workspaceSlug: input.workspaceSlug,
-        operation: "action.bind",
-        capability: "connector.admin",
-        pluginId,
-        actorId: input.actorId,
-        payload: { ...request.body, traceId },
-        rulesClient: options.rulesClient
-      });
-      if ("ok" in rules && rules.ok === false) {
-        return { ...rules, traceId };
-      }
-      const binding = options.store.bindAction({ ...input, pluginId });
-      options.store.recordEvent({
-        type: "marketplace.action.bound",
-        traceId,
-        workspaceSlug: input.workspaceSlug,
-        pluginId,
-        actorId: input.actorId,
-        rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
-        payload: { actionKey: input.actionKey, enabled: input.enabled }
-      });
-      reply.code(201);
-      return { ok: true, traceId, binding, rules };
-    }
-  );
-  app2.post(
-    "/api/marketplace/v1/agent/grants/request",
-    async (request, reply) => {
-      const principal = requireHandoffPrincipal(request, reply);
-      if (!principal) {
-        return { ok: false, error: "marketplace_service_required" };
-      }
-      const input = PortalHandoffRequestSchema.parse(request.body);
-      const session = options.store.getPortalHandoffSession(input.deploymentId);
-      if (!session || session.portalIssuer !== (portalIssuerUrl ?? "") || session.productTenantId !== organizationId || !portalIdentityMatches(session)) {
-        reply.code(409);
-        return { ok: false, schema: 1, error: "portal_session_required" };
-      }
-      if (Date.parse(session.expiresAt) <= Date.now()) {
-        reply.code(401);
-        return { ok: false, schema: 1, error: "portal_session_expired" };
-      }
-      try {
-        const handoff = await portalHandoffClient.requestGrant({
-          deploymentId: input.deploymentId,
-          session: session.sessionToken,
-          agentId: input.agentId,
-          selection: input.selection,
-          idempotencyKey: input.idempotencyKey
-        });
-        const projection = options.store.upsertMarketplacePortalGrantRequest({
-          portalIssuer: session.portalIssuer,
-          portalOrgId: session.portalOrgId,
-          productTenantId: session.productTenantId,
-          workspaceId: session.workspaceId,
-          deploymentId: input.deploymentId,
-          agentId: input.agentId,
-          requestId: handoff.requestId,
-          approvalUrl: handoff.approvalUrl,
-          expiresAt: new Date(handoff.expiresAt).toISOString(),
-          idempotencyKey: input.idempotencyKey,
-          selection: input.selection
-        });
-        return {
-          ok: true,
-          schema: 1,
-          contractVersion: MARKETPLACE_PORTAL_HANDOFF_CONTRACT_VERSION,
-          authority: principal.kind === "operator" ? "marketplace_operator_session" : "marketplace_service_bearer",
-          request: handoff,
-          projection: browserMarketplacePortalGrantRequest(projection)
-        };
-      } catch (error) {
-        reply.code(error instanceof PortalHandoffError ? error.statusCode : 503);
-        return {
-          ok: false,
-          schema: 1,
-          error: error instanceof PortalHandoffError ? error.code : "portal_handoff_unavailable"
-        };
-      }
-    }
-  );
-  app2.post(
-    "/api/marketplace/v1/agent/grants/redeem",
-    async (request, reply) => {
-      const principal = requireHandoffPrincipal(request, reply);
-      if (!principal) {
-        return { ok: false, error: "marketplace_service_required" };
-      }
-      const input = PortalHandoffRedeemSchema.parse(request.body);
-      const session = options.store.getPortalHandoffSession(input.deploymentId);
-      if (!session || session.portalIssuer !== (portalIssuerUrl ?? "") || session.productTenantId !== organizationId || !portalIdentityMatches(session)) {
-        reply.code(409);
-        return { ok: false, schema: 1, error: "portal_session_required" };
-      }
-      if (Date.parse(session.expiresAt) <= Date.now()) {
-        reply.code(401);
-        return { ok: false, schema: 1, error: "portal_session_expired" };
-      }
-      const persistedRequest = options.store.getMarketplacePortalGrantRequest({
-        portalIssuer: session.portalIssuer,
-        deploymentId: input.deploymentId,
-        requestId: input.requestId
-      });
-      const traceId = traceIdFrom(request);
-      let consent;
-      let reconciled = false;
-      try {
-        consent = await portalHandoffClient.redeemGrant({
-          deploymentId: input.deploymentId,
-          session: session.sessionToken,
-          requestId: input.requestId
-        });
-      } catch (error) {
-        if (!(error instanceof PortalHandoffError) || error.code !== "portal_handoff_unavailable") {
-          reply.code(error instanceof PortalHandoffError ? error.statusCode : 503);
-          return {
-            ok: false,
-            schema: 1,
-            traceId,
-            error: error instanceof PortalHandoffError ? error.code : "portal_handoff_unavailable"
-          };
-        }
-        try {
-          consent = await portalHandoffClient.receipt({
-            deploymentId: input.deploymentId,
-            session: session.sessionToken,
-            requestId: input.requestId
-          });
-          reconciled = true;
-        } catch (receiptError) {
-          reply.code(receiptError instanceof PortalHandoffError ? receiptError.statusCode : 503);
-          return {
-            ok: false,
-            schema: 1,
-            traceId,
-            error: "portal_receipt_reconciliation_required"
-          };
-        }
-      }
-      if (consent.productTenantId !== organizationId || consent.deploymentId !== input.deploymentId || consent.state !== "active" || !consent.consentId) {
-        if (persistedRequest) {
-          options.store.updateMarketplacePortalGrantRequest({
-            portalIssuer: session.portalIssuer,
-            deploymentId: input.deploymentId,
-            requestId: input.requestId,
-            state: "denied"
-          });
-        }
-        reply.code(403);
-        return { ok: false, schema: 1, traceId, error: "portal_consent_invalid" };
-      }
-      const mapping = scopedResourceMapping(consent.selection);
-      const listing = options.store.getListing(consent.selection.pluginId);
-      const connection = options.store.getConnection(
-        organizationId,
-        consent.selection.pluginId
-      );
-      const accountId = connectedAccountIdFromConnection(connection);
-      if (!mapping || !listing || listing.executionOwner !== "composio" || !listing.actions.includes(consent.selection.actionKey) || !options.store.getInstall(organizationId, consent.selection.pluginId)?.enabled || !options.store.isActionEnabled({
-        workspaceSlug: organizationId,
-        pluginId: consent.selection.pluginId,
-        actionKey: consent.selection.actionKey
-      }) || connection?.state !== "connected" || accountId !== consent.selection.accountId || consent.selection.resourceRef !== `account:${accountId}`) {
-        reply.code(409);
-        return { ok: false, schema: 1, traceId, error: "portal_consent_scope_unavailable" };
-      }
-      let binding;
-      try {
-        binding = options.store.requireCapabilityBinding(
-          organizationId,
-          consent.selection.pluginId,
-          mapping.capability
-        );
-      } catch {
-        reply.code(403);
-        return { ok: false, schema: 1, traceId, error: "connector_capability_denied" };
-      }
-      if (!binding.enabled) {
-        reply.code(403);
-        return { ok: false, schema: 1, traceId, error: "connector_capability_denied" };
-      }
-      const rules = await enforceRules({
-        reply,
-        workspaceSlug: organizationId,
-        operation: "execute",
-        capability: mapping.capability,
-        pluginId: consent.selection.pluginId,
-        actorId: `agent:${consent.agentId}`,
-        payload: {
-          contractVersion: MARKETPLACE_PORTAL_HANDOFF_CONTRACT_VERSION,
-          phase: "grant",
-          portalOrgId: consent.portalOrgId,
-          productTenantId: consent.productTenantId,
-          deploymentId: consent.deploymentId,
-          agentId: consent.agentId,
-          consentId: consent.consentId,
-          selection: consent.selection,
-          traceId
-        },
-        rulesClient: options.rulesClient
-      });
-      if ("ok" in rules && rules.ok === false) {
-        return { ...rules, traceId };
-      }
-      const created = options.store.createMarketplaceAgentConsent({
-        portalIssuer: session.portalIssuer,
-        portalOrgId: consent.portalOrgId,
-        productTenantId: consent.productTenantId,
-        workspaceId: consent.workspaceId,
-        deploymentId: consent.deploymentId,
-        userId: consent.userId,
-        agentId: consent.agentId,
-        consentId: consent.consentId,
-        consentRevision: consent.consentRevision,
-        pluginId: consent.selection.pluginId,
-        actionKey: consent.selection.actionKey,
-        capability: mapping.capability,
-        connectionId: connection.id,
-        accountId: consent.selection.accountId,
-        resourceKind: consent.selection.resourceKind,
-        resourceRef: consent.selection.resourceRef,
-        capabilities: consent.capabilities,
-        requiredActions: consent.requiredActions,
-        metadata: {
-          contractVersion: MARKETPLACE_PORTAL_HANDOFF_CONTRACT_VERSION,
-          durableConsent: true,
-          rawTokensStored: false
-        }
-      });
-      if (created.created) {
-        options.store.recordEvent({
-          type: "marketplace.agent.consent.created",
-          traceId,
-          workspaceSlug: organizationId,
-          pluginId: consent.selection.pluginId,
-          actorId: `agent:${consent.agentId}`,
-          rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
-          payload: {
-            grantId: created.consent.id,
-            consentId: created.consent.consentId,
-            portalOrgId: created.consent.portalOrgId,
-            productTenantId: created.consent.productTenantId,
-            deploymentId: created.consent.deploymentId,
-            agentId: created.consent.agentId,
-            rawTokensStored: false
-          }
-        });
-      }
-      const projection = persistedRequest ? options.store.updateMarketplacePortalGrantRequest({
-        portalIssuer: session.portalIssuer,
-        deploymentId: input.deploymentId,
-        requestId: input.requestId,
-        state: "redeemed",
-        consentId: created.consent.consentId
-      }) : null;
-      return {
-        ok: true,
-        schema: 1,
-        contractVersion: MARKETPLACE_PORTAL_HANDOFF_CONTRACT_VERSION,
-        authority: principal.kind === "operator" ? "marketplace_operator_session" : "marketplace_service_bearer",
-        traceId,
-        reconciled,
-        created: created.created,
-        consent: browserMarketplaceAgentConsent(created.consent),
-        ...projection ? { projection: browserMarketplacePortalGrantRequest(projection) } : {},
-        rules
-      };
-    }
-  );
-  app2.post(
-    "/api/marketplace/agent/grants",
-    async (request, reply) => {
-      if (!requireService(request, reply)) {
-        return { ok: false, error: "marketplace_service_required" };
-      }
-      const input = AgentGrantInputSchema.parse(request.body);
-      const traceId = traceIdFrom(request);
-      const mapping = scopedResourceMapping({
-        pluginId: input.pluginId,
-        actionKey: input.actionKey
-      });
-      if (!mapping) {
-        reply.code(409);
-        return {
-          ok: false,
-          error: "agent_grant_action_not_supported",
-          detail: "This stage supports only the published GitHub repository-list operation."
-        };
-      }
-      if (input.resourceKind !== mapping.resourceKind || !input.resourceRef.trim()) {
-        reply.code(400);
-        return { ok: false, error: "agent_grant_resource_invalid" };
-      }
-      const service = requestPrincipals.get(request);
-      const workspaceSlug = service?.organizationId ?? input.workspaceSlug;
-      const listing = options.store.getListing(input.pluginId);
-      if (!listing) {
-        reply.code(404);
-        return { ok: false, error: "plugin_not_found" };
-      }
-      if (listing.executionOwner !== "composio") {
-        reply.code(409);
-        return { ok: false, error: "plugin_not_composio_backed" };
-      }
-      if (!listing.actions.includes(input.actionKey)) {
-        reply.code(400);
-        return { ok: false, error: "agent_grant_action_not_registered" };
-      }
-      const requirement = resolveActionRequirement(listing, input.actionKey);
-      if (!requirement || requirement.capability !== mapping.capability) {
-        reply.code(400);
-        return { ok: false, error: "agent_grant_action_contract_mismatch" };
-      }
-      const install = options.store.getInstall(workspaceSlug, input.pluginId);
-      if (!install || !install.enabled || install.lifecycle !== "installed") {
-        reply.code(409);
-        return { ok: false, error: "plugin_not_installed" };
-      }
-      if (!options.store.isActionEnabled({
-        workspaceSlug,
-        pluginId: input.pluginId,
-        actionKey: input.actionKey
-      })) {
-        reply.code(403);
-        return { ok: false, error: "connector_action_denied" };
-      }
-      const connection = options.store.getConnection(workspaceSlug, input.pluginId);
-      const accountId = connectedAccountIdFromConnection(connection);
-      if (connection?.state !== "connected" || accountId !== input.accountId) {
-        reply.code(409);
-        return { ok: false, error: "agent_grant_account_mismatch" };
-      }
-      if (input.resourceRef !== `account:${accountId}`) {
-        reply.code(403);
-        return { ok: false, error: "resource_mismatch" };
-      }
-      let binding;
-      try {
-        binding = options.store.requireCapabilityBinding(
-          workspaceSlug,
-          input.pluginId,
-          mapping.capability
-        );
-      } catch {
-        reply.code(403);
-        return { ok: false, error: "connector_capability_denied" };
-      }
-      if (!binding.enabled) {
-        reply.code(403);
-        return { ok: false, error: "connector_capability_denied" };
-      }
-      const portal = await verifyPortalScope({
-        request,
-        reply,
-        requiredCapability: mapping.capability
-      });
-      if (!portal.ok) {
-        return { ok: false, error: portal.error };
-      }
-      if (portal.scope.organizationId !== workspaceSlug) {
-        reply.code(403);
-        return { ok: false, error: "agent_grant_tenant_mismatch" };
-      }
-      const rules = await enforceRules({
-        reply,
-        workspaceSlug,
-        operation: "execute",
-        capability: mapping.capability,
-        pluginId: input.pluginId,
-        actorId: `agent:${portal.scope.agentId}`,
-        payload: {
-          contractVersion: MARKETPLACE_AGENT_GRANT_CONTRACT_VERSION,
-          phase: "grant",
-          agentId: portal.scope.agentId,
-          attachmentId: portal.scope.attachmentId,
-          accountId: input.accountId,
-          actionKey: input.actionKey,
-          resourceKind: input.resourceKind,
-          resourceRef: input.resourceRef,
-          traceId
-        },
-        rulesClient: options.rulesClient
-      });
-      if ("ok" in rules && rules.ok === false) {
-        return { ...rules, traceId };
-      }
-      if (options.store.findActiveAgentConnectorGrant({
-        workspaceSlug,
-        agentId: portal.scope.agentId,
-        pluginId: input.pluginId,
-        actionKey: input.actionKey,
-        accountId: input.accountId,
-        resourceKind: input.resourceKind,
-        resourceRef: input.resourceRef
-      })) {
-        reply.code(409);
-        return { ok: false, error: "agent_grant_already_active" };
-      }
-      const expiresAt = new Date(
-        Math.min(portal.scope.expiresAt * 1e3, Date.now() + 5 * 6e4)
-      ).toISOString();
-      const grant = options.store.createAgentConnectorGrant({
-        workspaceSlug,
-        agentId: portal.scope.agentId,
-        pluginId: input.pluginId,
-        actionKey: input.actionKey,
-        capability: mapping.capability,
-        connectionId: connection.id,
-        accountId: input.accountId,
-        resourceKind: input.resourceKind,
-        resourceRef: input.resourceRef,
-        attachmentId: portal.scope.attachmentId,
-        expiresAt,
-        metadata: {
-          contractVersion: MARKETPLACE_AGENT_GRANT_CONTRACT_VERSION,
-          provider: listing.provider,
-          toolName: mapping.toolName,
-          rawTokensStored: false
-        }
-      });
-      options.store.recordEvent({
-        type: "marketplace.agent.grant.created",
-        traceId,
-        workspaceSlug,
-        pluginId: input.pluginId,
-        actorId: `agent:${portal.scope.agentId}`,
-        rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
-        payload: {
-          grantId: grant.id,
-          agentId: grant.agentId,
-          accountId: grant.accountId,
-          actionKey: grant.actionKey,
-          resourceKind: grant.resourceKind,
-          resourceRef: grant.resourceRef,
-          attachmentId: grant.attachmentId,
-          rawTokensStored: false
-        }
-      });
-      reply.code(201);
-      return { ok: true, traceId, grant: sanitizeAgentConnectorGrant(grant), rules };
-    }
-  );
-  app2.post(
-    "/api/marketplace/plugins/:pluginId/execute",
-    async (request, reply) => {
-      const { pluginId } = request.params;
-      const input = ExecuteInputSchema.parse(request.body);
-      const traceId = traceIdFrom(request);
-      let scopedGrant = null;
-      let effectiveActorId = input.actorId;
-      let effectiveAction = input.action;
-      if (input.agentGrantId) {
-        scopedGrant = options.store.getAgentConnectorGrant(input.agentGrantId);
-        if (!scopedGrant) {
-          reply.code(404);
-          return { ok: false, error: "agent_grant_not_found" };
-        }
-        if (scopedGrant.workspaceSlug !== input.workspaceSlug || scopedGrant.pluginId !== pluginId || scopedGrant.actionKey !== input.action.type || scopedGrant.capability !== input.capability) {
-          reply.code(403);
-          return { ok: false, error: "agent_grant_scope_mismatch" };
-        }
-        const verified = await verifyAgentGrantScope({
-          request,
-          reply,
-          grant: scopedGrant,
-          requiredCapability: input.capability
-        });
-        if (!verified.ok) {
-          return { ok: false, error: verified.error };
-        }
-        if (input.resourceRef !== void 0 && input.resourceRef !== scopedGrant.resourceRef) {
-          reply.code(403);
-          return { ok: false, error: "resource_mismatch" };
-        }
-        const scopedAction = applyScopedResource({
-          action: input.action,
-          grant: scopedGrant
-        });
-        if (!scopedAction.ok) {
-          reply.code(403);
-          return { ok: false, error: scopedAction.error };
-        }
-        effectiveAction = { ...scopedAction.action, type: input.action.type };
-        effectiveActorId = `agent:${verified.scope.agentId}`;
-      }
-      options.store.recordEvent({
-        type: "marketplace.execution.requested",
-        traceId,
-        workspaceSlug: input.workspaceSlug,
-        pluginId,
-        actorId: effectiveActorId,
-        payload: {
-          capability: input.capability,
-          action: input.action.type,
-          ...scopedGrant ? {
-            agentGrantId: scopedGrant.id,
-            resourceKind: scopedGrant.resourceKind,
-            resourceRef: scopedGrant.resourceRef
-          } : {}
-        }
-      });
-      const listing = options.store.getListing(pluginId);
-      if (!listing) {
-        reply.code(404);
-        return { ok: false, error: "plugin_not_found" };
-      }
-      const install = options.store.getInstall(input.workspaceSlug, pluginId);
-      if (!install || !install.enabled || install.lifecycle !== "installed") {
-        reply.code(409);
-        return { ok: false, error: "plugin_not_installed" };
-      }
-      const requirement = resolveActionRequirement(listing, input.action.type);
-      if (!requirement) {
-        reply.code(400);
-        return { ok: false, error: "unknown_connector_action" };
-      }
-      if (requirement.capability !== input.capability) {
-        reply.code(400);
-        return {
-          ok: false,
-          error: "connector_capability_mismatch",
-          requiredCapability: requirement.capability
-        };
-      }
-      if (requirement.kind !== listing.provider) {
-        reply.code(409);
-        return {
-          ok: false,
-          error: "connector_kind_mismatch",
-          provider: listing.provider
-        };
-      }
-      if (!options.store.isActionEnabled({
-        workspaceSlug: input.workspaceSlug,
-        pluginId,
-        actionKey: input.action.type
-      })) {
-        reply.code(403);
-        return { ok: false, error: "connector_action_denied" };
-      }
-      const connection = options.store.getConnection(
-        input.workspaceSlug,
-        pluginId
-      );
-      if (listingRequiresConnectedAccount(listing) && connection?.state !== "connected") {
-        reply.code(409);
-        return {
-          ok: false,
-          error: "connector_not_connected",
-          provider: listing.provider
-        };
-      }
-      if (scopedGrant && (connection?.id !== scopedGrant.connectionId || connectedAccountIdFromConnection(connection) !== scopedGrant.accountId)) {
-        reply.code(403);
-        return { ok: false, error: "agent_grant_connection_mismatch" };
-      }
-      const binding = options.store.requireCapabilityBinding(
-        input.workspaceSlug,
-        pluginId,
-        input.capability
-      );
-      if (!binding.enabled) {
-        reply.code(403);
-        return { ok: false, error: "connector_capability_denied" };
-      }
-      if (listing.executionOwner !== "composio") {
-        options.store.recordEvent({
-          type: "marketplace.execution.unsupported",
-          traceId,
-          workspaceSlug: input.workspaceSlug,
-          pluginId,
-          actorId: effectiveActorId,
-          payload: {
-            executionOwner: listing.executionOwner,
-            action: input.action.type,
-            supportedExecutionOwners: ["composio"]
-          }
-        });
-        reply.code(501);
-        return {
-          ok: false,
-          traceId,
-          error: "connector_execution_not_supported",
-          executionOwner: listing.executionOwner,
-          supportedExecutionOwners: ["composio"],
-          detail: "This launch profile executes Composio-backed tools only. Native, Activepieces, Nango, and MCP execution are unavailable rather than simulated."
-        };
-      }
-      const rules = await enforceRules({
-        reply,
-        workspaceSlug: input.workspaceSlug,
-        operation: "execute",
-        capability: input.capability,
-        pluginId,
-        actorId: effectiveActorId,
-        payload: {
-          ...request.body,
-          action: effectiveAction,
-          ...scopedGrant ? {
-            agentId: scopedGrant.agentId,
-            accountId: scopedGrant.accountId,
-            resourceKind: scopedGrant.resourceKind,
-            resourceRef: scopedGrant.resourceRef,
-            agentGrantId: scopedGrant.id
-          } : {},
-          traceId
-        },
-        rulesClient: options.rulesClient
-      });
-      if ("ok" in rules && rules.ok === false) {
-        options.store.recordEvent({
-          type: "marketplace.execution.denied",
-          traceId,
-          workspaceSlug: input.workspaceSlug,
-          pluginId,
-          actorId: effectiveActorId,
-          payload: {
-            capability: input.capability,
-            action: input.action.type,
-            error: rules.error
-          }
-        });
-        return { ...rules, traceId };
-      }
-      const toolName = composioToolNameForAction(listing, input.action.type);
-      let providerResult;
-      try {
-        const providerOutput = await executeComposioTool({
-          toolName,
-          arguments: { ...effectiveAction, type: void 0 },
-          connectedAccountId: connectedAccountIdFromConnection(connection),
-          userId: typeof connection?.metadata.userId === "string" ? connection.metadata.userId : void 0,
-          env: providerEnvironment(),
-          fetchImpl: options.providerFetch
-        });
-        providerResult = {
-          summary: `Executed ${toolName} through Composio.`,
-          details: {
-            toolName,
-            result: providerOutput
-          }
-        };
-      } catch (error) {
-        const usage2 = options.store.recordUsage({
-          workspaceSlug: input.workspaceSlug,
-          pluginId,
-          provider: listing.provider,
-          sourceExecutor: listing.executionOwner,
-          sourceActionKey: input.action.type,
-          productCapabilityKey: `connector.${listing.executionOwner}.${listing.provider}.${input.action.type}`,
-          scopesUsed: [input.capability],
-          status: "failed",
-          runId: input.runId ?? null,
-          sessionId: input.sessionId ?? null,
-          error: error instanceof Error ? error.message : String(error),
-          metadata: {
-            rules,
-            ...scopedGrant ? { agentGrantId: scopedGrant.id } : {}
-          },
-          input: effectiveAction,
-          output: null
-        });
-        options.store.recordEvent({
-          type: "marketplace.execution.failed",
-          traceId,
-          workspaceSlug: input.workspaceSlug,
-          pluginId,
-          actorId: effectiveActorId,
-          rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
-          payload: {
-            capability: input.capability,
-            action: input.action.type,
-            usageId: usage2.id
-          }
-        });
-        reply.code(502);
-        return {
-          ok: false,
-          traceId,
-          error: "composio_execute_failed",
-          detail: error instanceof Error ? error.message : String(error),
-          usage: usage2
-        };
-      }
-      const result = {
-        pluginId,
-        workspaceSlug: input.workspaceSlug,
-        provider: listing.provider,
-        capability: input.capability,
-        actionType: input.action.type,
-        performedAt: (/* @__PURE__ */ new Date()).toISOString(),
-        simulated: false,
-        summary: providerResult.summary,
-        details: providerResult.details
-      };
-      const usage = options.store.recordUsage({
-        workspaceSlug: input.workspaceSlug,
-        pluginId,
-        provider: listing.provider,
-        sourceExecutor: listing.executionOwner,
-        sourceActionKey: input.action.type,
-        productCapabilityKey: `connector.${listing.executionOwner}.${listing.provider}.${input.action.type}`,
-        scopesUsed: [input.capability],
-        status: "succeeded",
-        runId: input.runId ?? null,
-        sessionId: input.sessionId ?? null,
-        error: null,
-        metadata: {
-          rules,
-          ...scopedGrant ? { agentGrantId: scopedGrant.id } : {}
-        },
-        input: effectiveAction,
-        output: result
-      });
-      options.store.recordEvent({
-        type: "marketplace.execution.completed",
-        traceId,
-        workspaceSlug: input.workspaceSlug,
-        pluginId,
-        actorId: effectiveActorId,
-        rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
-        payload: {
-          capability: input.capability,
-          action: input.action.type,
-          usageId: usage.id
-        }
-      });
-      return { ok: true, traceId, result, usage, rules };
-    }
-  );
-  app2.route({
-    method: "POST",
-    url: "/api/marketplace/v1/runtime/composio/execute",
-    bodyLimit: 16384,
-    handler: async (request, reply) => {
-      const traceId = traceIdFrom(request);
-      if (request.headers.cookie || request.headers.origin) {
-        reply.code(403);
-        return runtimeResponse({
-          ok: false,
-          traceId,
-          error: "runtime_service_request_required"
-        });
-      }
-      const attachmentToken = bearerTokenFrom(request);
-      if (!attachmentToken) {
-        reply.code(401);
-        return runtimeResponse({
-          ok: false,
-          traceId,
-          error: "runtime_lease_required"
-        });
-      }
-      const input = RuntimeComposioExecuteSchema.parse(request.body);
-      let scope;
-      try {
-        scope = await portalRuntimeScopeVerifier({
-          attachmentToken,
-          selection: input.selection,
-          requiredCapability: "connector.observe"
-        });
-      } catch (error) {
-        const status = error instanceof PortalRuntimeScopeError ? error.statusCode : 503;
-        reply.code(status);
-        return runtimeResponse({
-          ok: false,
-          traceId,
-          error: error instanceof PortalRuntimeScopeError ? error.code : "portal_runtime_unavailable"
-        });
-      }
-      if (scope.productTenantId !== organizationId) {
-        reply.code(403);
-        return runtimeResponse({
-          ok: false,
-          traceId,
-          error: "runtime_tenant_mismatch"
-        });
-      }
-      if (!portalIdentityMatches(scope)) {
-        reply.code(403);
-        return runtimeResponse({
-          ok: false,
-          traceId,
-          error: "runtime_identity_mismatch"
-        });
-      }
-      if (scope.consentId !== input.consentId) {
-        reply.code(403);
-        return runtimeResponse({
-          ok: false,
-          traceId,
-          error: "runtime_consent_mismatch"
-        });
-      }
-      const consent = options.store.getMarketplaceAgentConsent({
-        portalIssuer: portalIssuerUrl ?? "",
-        deploymentId: scope.deploymentId,
-        consentId: scope.consentId
-      });
-      if (!consent || consent.state !== "active") {
-        reply.code(403);
-        return runtimeResponse({
-          ok: false,
-          traceId,
-          error: consent ? "runtime_consent_revoked" : "runtime_consent_not_found"
-        });
-      }
-      if (consent.productTenantId !== scope.productTenantId || consent.portalOrgId !== scope.portalOrgId || consent.workspaceId !== scope.workspaceId || consent.deploymentId !== scope.deploymentId || consent.agentId !== scope.agentId || consent.pluginId !== input.selection.pluginId || consent.actionKey !== input.selection.actionKey || consent.accountId !== input.selection.accountId || consent.resourceKind !== input.selection.resourceKind || consent.resourceRef !== input.selection.resourceRef) {
-        reply.code(403);
-        return runtimeResponse({
-          ok: false,
-          traceId,
-          error: "runtime_scope_mismatch"
-        });
-      }
-      const listing = options.store.getListing(input.selection.pluginId);
-      const mapping = scopedResourceMapping(input.selection);
-      const connection = options.store.getConnection(
-        organizationId,
-        input.selection.pluginId
-      );
-      if (!listing || !mapping || listing.executionOwner !== "composio" || !listing.actions.includes(input.selection.actionKey) || !options.store.getInstall(organizationId, input.selection.pluginId)?.enabled || !options.store.isActionEnabled({
-        workspaceSlug: organizationId,
-        pluginId: input.selection.pluginId,
-        actionKey: input.selection.actionKey
-      }) || connection?.state !== "connected" || connectedAccountIdFromConnection(connection) !== consent.accountId || connection.id !== consent.connectionId) {
-        reply.code(409);
-        return runtimeResponse({
-          ok: false,
-          traceId,
-          error: "runtime_connection_unavailable"
-        });
-      }
-      let binding;
-      try {
-        binding = options.store.requireCapabilityBinding(
-          organizationId,
-          input.selection.pluginId,
-          mapping.capability
-        );
-      } catch {
-        reply.code(403);
-        return runtimeResponse({
-          ok: false,
-          traceId,
-          error: "connector_capability_denied"
-        });
-      }
-      if (!binding.enabled) {
-        reply.code(403);
-        return runtimeResponse({
-          ok: false,
-          traceId,
-          error: "connector_capability_denied"
-        });
-      }
-      const action = { type: input.selection.actionKey, ...input.input };
-      const scopedAction = applyScopedResource({
-        action,
-        grant: {
-          id: consent.id,
-          workspaceSlug: organizationId,
-          agentId: consent.agentId,
-          pluginId: consent.pluginId,
-          actionKey: consent.actionKey,
-          capability: consent.capability,
-          connectionId: consent.connectionId,
-          accountId: consent.accountId,
-          resourceKind: consent.resourceKind,
-          resourceRef: consent.resourceRef,
-          attachmentId: scope.leaseId,
-          state: "active",
-          expiresAt: new Date(scope.expiresAt).toISOString(),
-          metadata: {},
-          createdAt: consent.createdAt,
-          updatedAt: consent.updatedAt
-        }
-      });
-      if (!scopedAction.ok) {
-        reply.code(403);
-        return runtimeResponse({
-          ok: false,
-          traceId,
-          error: scopedAction.error
-        });
-      }
-      const rules = await enforceRules({
-        reply,
-        workspaceSlug: organizationId,
-        operation: "execute",
-        capability: consent.capability,
-        pluginId: consent.pluginId,
-        actorId: `agent:${consent.agentId}`,
-        payload: {
-          contractVersion: MARKETPLACE_PORTAL_HANDOFF_CONTRACT_VERSION,
-          phase: "execute",
-          portalOrgId: consent.portalOrgId,
-          productTenantId: consent.productTenantId,
-          workspaceId: consent.workspaceId,
-          deploymentId: consent.deploymentId,
-          agentId: consent.agentId,
-          consentId: consent.consentId,
-          leaseId: scope.leaseId,
-          action: scopedAction.action,
-          selection: input.selection,
-          traceId
-        },
-        rulesClient: options.rulesClient
-      });
-      if ("ok" in rules && rules.ok === false) {
-        options.store.recordEvent({
-          type: "marketplace.runtime.execution.denied",
-          traceId,
-          workspaceSlug: organizationId,
-          pluginId: consent.pluginId,
-          actorId: `agent:${consent.agentId}`,
-          payload: {
-            consentId: consent.consentId,
-            leaseId: scope.leaseId,
-            capability: consent.capability,
-            action: input.selection.actionKey,
-            error: rules.error
-          }
-        });
-        return runtimeResponse({
-          ok: false,
-          traceId,
-          error: rules.error
-        });
-      }
-      const fingerprint = createHash3("sha256").update(
-        stableJson({
-          consentId: input.consentId,
-          selection: input.selection,
-          input: input.input
-        })
-      ).digest("hex");
-      let operation;
-      try {
-        operation = options.store.beginMarketplaceRuntimeOperation({
-          consentId: input.consentId,
-          idempotencyKey: input.idempotencyKey,
-          fingerprint
-        });
-      } catch (error) {
-        reply.code(409);
-        return runtimeResponse({
-          ok: false,
-          traceId,
-          error: error instanceof Error && error.message === "runtime_operation_idempotency_conflict" ? "runtime_idempotency_conflict" : "runtime_operation_unavailable"
-        });
-      }
-      if (!operation.created) {
-        if (operation.operation.status === "succeeded" && operation.operation.response) {
-          return { ...operation.operation.response, replayed: true };
-        }
-        reply.code(409);
-        return runtimeResponse({
-          ok: false,
-          traceId,
-          error: operation.operation.status === "pending" ? "runtime_operation_in_progress" : "runtime_operation_reconciliation_required"
-        });
-      }
-      const toolName = composioToolNameForAction(listing, input.selection.actionKey);
-      try {
-        const providerOutput = await executeComposioTool({
-          toolName,
-          arguments: { ...scopedAction.action, type: void 0 },
-          connectedAccountId: connectedAccountIdFromConnection(connection),
-          userId: typeof connection?.metadata.userId === "string" ? connection.metadata.userId : void 0,
-          env: providerEnvironment(),
-          fetchImpl: options.providerFetch
-        });
-        const result = {
-          pluginId: input.selection.pluginId,
-          workspaceSlug: organizationId,
-          provider: listing.provider,
-          capability: consent.capability,
-          actionType: input.selection.actionKey,
-          performedAt: (/* @__PURE__ */ new Date()).toISOString(),
-          simulated: false,
-          summary: `Executed ${toolName} through Composio.`,
-          details: { toolName, result: runtimeSafeProviderResult(providerOutput) }
-        };
-        if (JSON.stringify(result).length > 65536) {
-          throw new Error("runtime_result_too_large");
-        }
-        const usage = options.store.recordUsage({
-          workspaceSlug: organizationId,
-          pluginId: input.selection.pluginId,
-          provider: listing.provider,
-          sourceExecutor: listing.executionOwner,
-          sourceActionKey: input.selection.actionKey,
-          productCapabilityKey: `connector.${listing.executionOwner}.${listing.provider}.${input.selection.actionKey}`,
-          scopesUsed: [consent.capability],
-          status: "succeeded",
-          runId: null,
-          sessionId: null,
-          error: null,
-          metadata: {
-            contractVersion: MARKETPLACE_PORTAL_HANDOFF_CONTRACT_VERSION,
-            consentId: consent.consentId,
-            leaseId: scope.leaseId
-          },
-          input: scopedAction.action,
-          output: result
-        });
-        options.store.recordEvent({
-          type: "marketplace.runtime.execution.completed",
-          traceId,
-          workspaceSlug: organizationId,
-          pluginId: input.selection.pluginId,
-          actorId: `agent:${consent.agentId}`,
-          rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
-          payload: {
-            consentId: consent.consentId,
-            leaseId: scope.leaseId,
-            usageId: usage.id
-          }
-        });
-        const response = runtimeResponse({
-          ok: true,
-          traceId,
-          result,
-          usageId: usage.id
-        });
-        options.store.finishMarketplaceRuntimeOperation({
-          id: operation.operation.id,
-          status: "succeeded",
-          response
-        });
-        return response;
-      } catch (error) {
-        const detail = error instanceof Error && error.message === "runtime_result_too_large" ? "Provider result exceeded the bounded runtime response size." : "Provider dispatch may have completed; reconcile before retrying this idempotency key.";
-        const usage = options.store.recordUsage({
-          workspaceSlug: organizationId,
-          pluginId: input.selection.pluginId,
-          provider: listing.provider,
-          sourceExecutor: listing.executionOwner,
-          sourceActionKey: input.selection.actionKey,
-          productCapabilityKey: `connector.${listing.executionOwner}.${listing.provider}.${input.selection.actionKey}`,
-          scopesUsed: [consent.capability],
-          status: "failed",
-          runId: null,
-          sessionId: null,
-          error: error instanceof Error ? error.message : String(error),
-          metadata: { consentId: consent.consentId, leaseId: scope.leaseId },
-          input: scopedAction.action,
-          output: null
-        });
-        const response = runtimeResponse({
-          ok: false,
-          traceId,
-          error: "runtime_operation_reconciliation_required",
-          detail,
-          usageId: usage.id
-        });
-        options.store.finishMarketplaceRuntimeOperation({
-          id: operation.operation.id,
-          status: "reconciliation-required",
-          response
-        });
-        options.store.recordEvent({
-          type: "marketplace.runtime.execution.failed",
-          traceId,
-          workspaceSlug: organizationId,
-          pluginId: consent.pluginId,
-          actorId: `agent:${consent.agentId}`,
-          payload: {
-            consentId: consent.consentId,
-            leaseId: scope.leaseId,
-            usageId: usage.id,
-            reconciliationRequired: true
-          }
-        });
-        reply.code(502);
-        return response;
-      }
-    }
-  });
-  app2.post(
-    "/api/marketplace/agent/grants/:grantId/revoke",
-    async (request, reply) => {
-      const principal = requestPrincipals.get(request);
-      if (!principal || !["service", "operator"].includes(principal.kind)) {
-        reply.code(403);
-        return { ok: false, error: "marketplace_authority_required" };
-      }
-      const { grantId } = request.params;
-      const durableConsent = options.store.getMarketplaceAgentConsentById(grantId);
-      if (durableConsent) {
-        if (principal.organizationId !== durableConsent.productTenantId) {
-          reply.code(403);
-          return { ok: false, error: "agent_grant_tenant_mismatch" };
-        }
-        const revoked2 = options.store.revokeMarketplaceAgentConsent(grantId);
-        const traceId2 = traceIdFrom(request);
-        options.store.recordEvent({
-          type: "marketplace.agent.consent.revoked",
-          traceId: traceId2,
-          workspaceSlug: durableConsent.productTenantId,
-          pluginId: durableConsent.pluginId,
-          actorId: principal.kind === "operator" ? `operator:${principal.id}` : "marketplace-service",
-          payload: {
-            grantId,
-            consentId: durableConsent.consentId,
-            portalOrgId: durableConsent.portalOrgId,
-            deploymentId: durableConsent.deploymentId
-          }
-        });
-        return {
-          ok: true,
-          schema: 1,
-          traceId: traceId2,
-          grant: browserMarketplaceAgentConsent(revoked2)
-        };
-      }
-      const grant = options.store.getAgentConnectorGrant(grantId);
-      if (!grant) {
-        reply.code(404);
-        return { ok: false, error: "agent_grant_not_found" };
-      }
-      if (principal.organizationId !== grant.workspaceSlug) {
-        reply.code(403);
-        return { ok: false, error: "agent_grant_tenant_mismatch" };
-      }
-      const revoked = options.store.revokeAgentConnectorGrant(grantId);
-      const traceId = traceIdFrom(request);
-      options.store.recordEvent({
-        type: "marketplace.agent.grant.revoked",
-        traceId,
-        workspaceSlug: grant.workspaceSlug,
-        pluginId: grant.pluginId,
-        actorId: principal.kind === "operator" ? `operator:${principal.id}` : "marketplace-service",
-        payload: {
-          grantId,
-          agentId: grant.agentId,
-          accountId: grant.accountId,
-          resourceKind: grant.resourceKind,
-          resourceRef: grant.resourceRef
-        }
-      });
-      return {
-        ok: true,
-        traceId,
-        grant: revoked && principal.kind === "operator" ? browserAgentConnectorGrant(revoked) : revoked ? sanitizeAgentConnectorGrant(revoked) : null
-      };
-    }
-  );
-  app2.get("/api/marketplace/agent/grants", async (request, reply) => {
-    const principal = requireOperator(request, reply);
-    if (!principal) return { ok: false, error: "marketplace_operator_required" };
-    const query = AgentGrantListQuerySchema.parse(request.query);
-    if (query.workspaceSlug !== principal.organizationId) {
-      reply.code(403);
-      return { ok: false, error: "agent_grant_tenant_mismatch" };
-    }
-    const grants = options.store.listAgentConnectorGrants({
-      workspaceSlug: query.workspaceSlug,
-      agentId: query.agentId,
-      pluginId: query.pluginId,
-      state: query.state,
-      limit: query.limit
-    });
-    return {
-      contractVersion: MARKETPLACE_AGENT_GRANT_CONTRACT_VERSION,
-      workspaceSlug: query.workspaceSlug,
-      grants: grants.map(browserAgentConnectorGrant),
-      handoffRequests: options.store.listMarketplacePortalGrantRequests({
-        productTenantId: query.workspaceSlug,
-        agentId: query.agentId
-      }).map(browserMarketplacePortalGrantRequest),
-      consents: options.store.listMarketplaceAgentConsents({
-        productTenantId: query.workspaceSlug,
-        agentId: query.agentId,
-        state: query.state
-      }).map(browserMarketplaceAgentConsent),
-      handoffContractVersion: MARKETPLACE_PORTAL_HANDOFF_CONTRACT_VERSION,
-      grantCreation: {
-        available: false,
-        code: "portal_handoff_required",
-        detail: "Agent grants require a Portal-attested server-side handoff; raw agent or attachment credentials are never accepted from browser code."
-      }
-    };
-  });
-  app2.get("/api/agent/capabilities", async (request, reply) => {
-    const query = AgentCapabilitiesQuerySchema.parse(request.query);
-    const capabilities2 = agentCapabilitiesForWorkspace(
-      options.store,
-      query.workspaceSlug
-    );
-    if (!query.grantId) {
-      return { workspaceSlug: query.workspaceSlug, capabilities: capabilities2 };
-    }
-    const grant = options.store.getAgentConnectorGrant(query.grantId);
-    if (!grant) {
-      reply.code(404);
-      return { ok: false, error: "agent_grant_not_found" };
-    }
-    if (grant.workspaceSlug !== query.workspaceSlug) {
-      reply.code(403);
-      return { ok: false, error: "agent_grant_tenant_mismatch" };
-    }
-    const verified = await verifyAgentGrantScope({
-      request,
-      reply,
-      grant,
-      requiredCapability: grant.capability
-    });
-    if (!verified.ok) {
-      return { ok: false, error: verified.error };
-    }
-    return {
-      workspaceSlug: query.workspaceSlug,
-      grant: sanitizeAgentConnectorGrant(grant),
-      capabilities: capabilities2.filter(
-        (capability) => capability.pluginId === grant.pluginId && capability.actionType === grant.actionKey
-      )
-    };
-  });
-  app2.post("/api/agent/tools/:toolName", async (request, reply) => {
-    const { toolName } = request.params;
-    const body = external_exports.object({
-      workspaceSlug: external_exports.string().trim().min(1),
-      actorId: external_exports.string().trim().min(1).default("agent"),
-      pluginId: external_exports.string().trim().min(1),
-      input: external_exports.record(external_exports.unknown()).default({}),
-      grantId: external_exports.string().trim().min(1).optional(),
-      resourceRef: external_exports.string().trim().min(1).optional()
-    }).parse(request.body);
-    const actionType = actionForTool(toolName);
-    if (!actionType) {
-      reply.code(404);
-      return { ok: false, error: "agent_tool_not_found" };
-    }
-    const listing = options.store.getListing(body.pluginId);
-    const requirement = listing ? resolveActionRequirement(listing, actionType) : null;
-    if (!requirement) {
-      reply.code(404);
-      return { ok: false, error: "agent_tool_not_registered" };
-    }
-    let grant = null;
-    if (body.grantId) {
-      grant = options.store.getAgentConnectorGrant(body.grantId);
-      if (!grant) {
-        reply.code(404);
-        return { ok: false, error: "agent_grant_not_found" };
-      }
-      if (grant.workspaceSlug !== body.workspaceSlug || grant.pluginId !== body.pluginId || grant.actionKey !== actionType || grant.capability !== requirement.capability) {
-        reply.code(403);
-        return { ok: false, error: "agent_grant_scope_mismatch" };
-      }
-      const verified = await verifyAgentGrantScope({
-        request,
-        reply,
-        grant,
-        requiredCapability: requirement.capability
-      });
-      if (!verified.ok) {
-        return { ok: false, error: verified.error };
-      }
-      if (body.resourceRef && body.resourceRef !== grant.resourceRef) {
-        reply.code(403);
-        return { ok: false, error: "resource_mismatch" };
-      }
-    }
-    const available = agentCapabilitiesForWorkspace(
-      options.store,
-      body.workspaceSlug
-    ).some(
-      (capability) => capability.toolName === toolName && capability.pluginId === body.pluginId
-    );
-    if (!available) {
-      reply.code(404);
-      return { ok: false, error: "agent_tool_not_available" };
-    }
-    const injected = await app2.inject({
-      method: "POST",
-      url: `/api/marketplace/plugins/${encodeURIComponent(body.pluginId)}/execute`,
-      headers: {
-        "x-trace-id": traceIdFrom(request),
-        ...options.internalAuthToken ? { authorization: `Bearer ${options.internalAuthToken}` } : {},
-        ...headerValue(request, "x-tealbrick-agent-token") ? { "x-tealbrick-agent-token": headerValue(request, "x-tealbrick-agent-token") } : {},
-        ...headerValue(request, "x-tealbrick-attachment") ? { "x-tealbrick-attachment": headerValue(request, "x-tealbrick-attachment") } : {}
-      },
-      payload: {
-        workspaceSlug: body.workspaceSlug,
-        actorId: body.actorId,
-        capability: requirement.capability,
-        ...grant ? { agentGrantId: grant.id, resourceRef: grant.resourceRef } : {},
-        action: { ...body.input, type: actionType }
-      }
-    });
-    reply.code(injected.statusCode);
-    return injected.json();
-  });
-  app2.post("/api/marketplace/broker/grants", async (request, reply) => {
-    if (!requireService(request, reply)) {
-      return { ok: false, error: "marketplace_service_required" };
-    }
-    const input = BrokerGrantInputSchema.parse(request.body);
-    const traceId = traceIdFrom(request);
-    const listing = options.store.getListing(input.pluginId);
-    if (!listing) {
-      reply.code(404);
-      return { ok: false, error: "plugin_not_found" };
-    }
-    if (listing.executionOwner !== "composio") {
-      reply.code(409);
-      return { ok: false, error: "plugin_not_composio_backed" };
-    }
-    const install = options.store.getInstall(
-      input.workspaceSlug,
-      listing.pluginId
-    );
-    if (!install || !install.enabled || install.lifecycle !== "installed") {
-      reply.code(409);
-      return { ok: false, error: "plugin_not_installed" };
-    }
-    const connection = options.store.getConnection(
-      input.workspaceSlug,
-      listing.pluginId
-    );
-    if (connection?.state !== "connected") {
-      reply.code(409);
-      return {
-        ok: false,
-        error: "connector_not_connected",
-        provider: listing.provider
-      };
-    }
-    const actionRequirements = input.actionKeys.map((actionKey) => {
-      if (!listing.actions.includes(actionKey)) {
-        return { actionKey, requirement: null };
-      }
-      return {
-        actionKey,
-        requirement: resolveActionRequirement(listing, actionKey)
-      };
-    });
-    const unknownAction = actionRequirements.find(
-      (entry) => entry.requirement === null
-    );
-    if (unknownAction) {
-      reply.code(404);
-      return {
-        ok: false,
-        error: "plugin_action_not_found",
-        actionKey: unknownAction.actionKey
-      };
-    }
-    const disabledAction = input.actionKeys.find(
-      (actionKey) => !options.store.isActionEnabled({
-        workspaceSlug: input.workspaceSlug,
-        pluginId: listing.pluginId,
-        actionKey
-      })
-    );
-    if (disabledAction) {
-      reply.code(403);
-      return {
-        ok: false,
-        error: "connector_action_denied",
-        actionKey: disabledAction
-      };
-    }
-    const capabilities2 = [
-      ...new Set(
-        actionRequirements.map((entry) => entry.requirement.capability)
-      )
-    ];
-    const unboundCapability = capabilities2.find((capability) => {
-      try {
-        return !options.store.requireCapabilityBinding(
-          input.workspaceSlug,
-          listing.pluginId,
-          capability
-        ).enabled;
-      } catch {
-        return true;
-      }
-    });
-    if (unboundCapability) {
-      reply.code(403);
-      return {
-        ok: false,
-        error: "connector_capability_denied",
-        capability: unboundCapability
-      };
-    }
-    const rules = await enforceRules({
-      reply,
-      workspaceSlug: input.workspaceSlug,
-      operation: "broker.grant",
-      capability: highestCapability(capabilities2),
-      pluginId: listing.pluginId,
-      actorId: input.actorId,
-      payload: {
-        requesterMiniappId: input.requesterMiniappId,
-        actionKeys: input.actionKeys,
-        metadata: input.metadata,
-        ...recordValue3(input.metadata.crossApp) ? {
-          crossApp: recordValue3(input.metadata.crossApp),
-          contractVersion: stringValue4(
-            recordValue3(input.metadata.crossApp)?.contractVersion
-          ),
-          sourceMiniappId: stringValue4(
-            recordValue3(input.metadata.crossApp)?.sourceMiniappId
-          ),
-          idempotencyKey: stringValue4(
-            recordValue3(input.metadata.crossApp)?.idempotencyKey
-          )
-        } : {},
-        traceId
-      },
-      rulesClient: options.rulesClient
-    });
-    if ("ok" in rules && rules.ok === false) {
-      return { ...rules, traceId };
-    }
-    const providers = await readProviderHealthWithReachability(
-      providerEnvironment(),
-      options.providerFetch
-    );
-    if (!providers.composio.configured) {
-      reply.code(409);
-      return {
-        ok: false,
-        error: "composio_unavailable",
-        detail: providers.composio.detail
-      };
-    }
-    const token = createBrokerToken();
-    const grant = options.store.createBrokerGrant({
-      workspaceSlug: input.workspaceSlug,
-      requesterMiniappId: input.requesterMiniappId,
-      pluginId: listing.pluginId,
-      actionKeys: input.actionKeys,
-      capabilities: capabilities2,
-      tokenHash: brokerTokenHash(token),
-      expiresAt: new Date(Date.now() + input.ttlSeconds * 1e3).toISOString(),
-      metadata: {
-        ...input.metadata,
-        traceId,
-        provider: listing.provider,
-        rawSecretStored: false
-      }
-    });
-    options.store.recordEvent({
-      type: "marketplace.broker.grant.created",
-      traceId,
-      workspaceSlug: input.workspaceSlug,
-      pluginId: listing.pluginId,
-      actorId: input.actorId,
-      rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
-      payload: {
-        grantId: grant.id,
-        requesterMiniappId: input.requesterMiniappId,
-        actionKeys: input.actionKeys,
-        capabilities: capabilities2,
-        rawSecretReturned: false
-      }
-    });
-    reply.code(201);
-    return {
-      ok: true,
-      traceId,
-      token,
-      grant: sanitizeBrokerGrant(grant),
-      rules
-    };
-  });
-  app2.post(
-    "/api/marketplace/broker/composio/execute",
-    async (request, reply) => {
-      const input = BrokerExecuteInputSchema.parse(request.body);
-      const traceId = traceIdFrom(request);
-      const grant = options.store.getBrokerGrantByTokenHash(
-        brokerTokenHash(input.brokerToken)
-      );
-      if (!grant || grant.state !== "active") {
-        reply.code(401);
-        return { ok: false, error: "broker_grant_not_found", traceId };
-      }
-      if (brokerGrantIsExpired(grant)) {
-        reply.code(401);
-        return { ok: false, error: "broker_grant_expired", traceId };
-      }
-      if (grant.workspaceSlug !== input.workspaceSlug || grant.pluginId !== input.pluginId || grant.requesterMiniappId !== input.requesterMiniappId) {
-        reply.code(403);
-        return { ok: false, error: "broker_grant_scope_mismatch", traceId };
-      }
-      if (!grant.actionKeys.includes(input.action.type)) {
-        reply.code(403);
-        return {
-          ok: false,
-          error: "broker_action_not_granted",
-          traceId,
-          actionKey: input.action.type
-        };
-      }
-      const listing = options.store.getListing(input.pluginId);
-      const requirement = listing ? resolveActionRequirement(listing, input.action.type) : null;
-      if (!listing || listing.executionOwner !== "composio" || !requirement) {
-        reply.code(404);
-        return { ok: false, error: "broker_tool_not_registered", traceId };
-      }
-      if (!grant.capabilities.includes(requirement.capability)) {
-        reply.code(403);
-        return {
-          ok: false,
-          error: "broker_capability_not_granted",
-          traceId,
-          capability: requirement.capability
-        };
-      }
-      if (!options.store.consumeBrokerGrant(grant.id)) {
-        reply.code(401);
-        return { ok: false, error: "broker_grant_already_used", traceId };
-      }
-      const injected = await app2.inject({
-        method: "POST",
-        url: `/api/marketplace/plugins/${encodeURIComponent(input.pluginId)}/execute`,
-        headers: {
-          "x-trace-id": traceId,
-          ...options.internalAuthToken ? { authorization: `Bearer ${options.internalAuthToken}` } : {}
-        },
-        payload: {
-          workspaceSlug: input.workspaceSlug,
-          actorId: `miniapp:${input.requesterMiniappId}`,
-          capability: requirement.capability,
-          action: input.action,
-          runId: input.runId ?? null,
-          sessionId: input.sessionId ?? null
-        }
-      });
-      const result = injected.json();
-      options.store.recordEvent({
-        type: injected.statusCode >= 200 && injected.statusCode < 300 ? "marketplace.broker.execution.completed" : "marketplace.broker.execution.failed",
-        traceId,
-        workspaceSlug: input.workspaceSlug,
-        pluginId: input.pluginId,
-        actorId: input.requesterMiniappId,
-        payload: {
-          grantId: grant.id,
-          grantConsumed: true,
-          requesterMiniappId: input.requesterMiniappId,
-          actionKey: input.action.type,
-          statusCode: injected.statusCode,
-          rawSecretReturned: false
-        }
-      });
-      reply.code(injected.statusCode);
-      return {
-        ...result,
-        broker: {
-          grantId: grant.id,
-          requesterMiniappId: input.requesterMiniappId,
-          pluginId: input.pluginId,
-          actionKey: input.action.type,
-          rawSecretReturned: false
-        }
-      };
-    }
-  );
-  app2.post(
-    "/api/marketplace/v1/broker/composio/execute",
-    async (request, reply) => {
-      const authFailure = requireCrossAppBearerAuth({
-        expectedToken: options.internalAuthToken,
-        reply,
-        request
-      });
-      if (authFailure) {
-        return authFailure;
-      }
-      const input = CrossAppBrokerExecuteInputSchema.parse(request.body);
-      if (input.requesterMiniappId && input.requesterMiniappId !== input.sourceMiniappId) {
-        reply.code(400);
-        return {
-          ok: false,
-          error: "cross_app_requester_source_mismatch",
-          traceId: input.traceId
-        };
-      }
-      const crossApp = {
-        contractVersion: input.contractVersion,
-        sourceMiniappId: input.sourceMiniappId,
-        sourceId: input.sourceId,
-        eventType: input.eventType,
-        idempotencyKey: input.idempotencyKey,
-        traceId: input.traceId
-      };
-      const requesterMiniappId = input.sourceMiniappId;
-      const grantResponse = await app2.inject({
-        method: "POST",
-        url: "/api/marketplace/broker/grants",
-        headers: {
-          "x-trace-id": input.traceId,
-          ...options.internalAuthToken ? { authorization: `Bearer ${options.internalAuthToken}` } : {}
-        },
-        payload: {
-          workspaceSlug: input.workspaceSlug,
-          actorId: `miniapp:${requesterMiniappId}`,
-          requesterMiniappId,
-          pluginId: input.pluginId,
-          actionKeys: [input.action.type],
-          ttlSeconds: input.ttlSeconds,
-          metadata: {
-            ...input.metadata,
-            crossApp
-          }
-        }
-      });
-      const grantResult = grantResponse.json();
-      if (grantResponse.statusCode < 200 || grantResponse.statusCode >= 300) {
-        reply.code(grantResponse.statusCode);
-        return {
-          ...grantResult,
-          crossApp
-        };
-      }
-      const brokerToken = typeof grantResult.token === "string" ? grantResult.token : null;
-      if (!brokerToken) {
-        reply.code(502);
-        return {
-          ok: false,
-          error: "cross_app_broker_token_missing",
-          traceId: input.traceId,
-          crossApp
-        };
-      }
-      const executeResponse = await app2.inject({
-        method: "POST",
-        url: "/api/marketplace/broker/composio/execute",
-        headers: {
-          "x-trace-id": input.traceId,
-          ...options.internalAuthToken ? { authorization: `Bearer ${options.internalAuthToken}` } : {}
-        },
-        payload: {
-          workspaceSlug: input.workspaceSlug,
-          requesterMiniappId,
-          pluginId: input.pluginId,
-          brokerToken,
-          action: input.action,
-          runId: input.runId ?? null,
-          sessionId: input.sessionId ?? null
-        }
-      });
-      reply.code(executeResponse.statusCode);
-      return {
-        ...executeResponse.json(),
-        crossApp
-      };
-    }
-  );
-  app2.get("/api/marketplace/provider-health", async (request) => {
-    const traceId = traceIdFrom(request);
-    const query = external_exports.object({
-      workspaceSlug: external_exports.string().trim().min(1).optional()
-    }).parse(request.query);
-    const providers = await readProviderHealthWithReachability(
-      providerEnvironment(),
-      options.providerFetch
-    );
-    options.store.recordEvent({
-      type: "marketplace.provider.health",
-      traceId,
-      workspaceSlug: query.workspaceSlug ?? null,
-      payload: { providers }
-    });
-    return { traceId, providers };
-  });
-  app2.get("/api/marketplace/audit", async (request) => {
-    const query = AuditQuerySchema.parse(request.query);
-    return {
-      usage: query.workspaceSlug ? options.store.listUsage({
-        workspaceSlug: query.workspaceSlug,
-        provider: query.provider,
-        limit: query.limit
-      }) : [],
-      audit: options.store.listAudit(query)
-    };
-  });
-  app2.post("/api/marketplace/session-correlations", async (request, reply) => {
-    const input = SessionCorrelationInputSchema.parse(request.body);
-    const remoteSessionId = input.remoteSessionId ?? input.hermesStoredSessionId ?? input.hermesLiveSessionId;
-    if (!remoteSessionId) {
-      reply.code(400);
-      return {
-        ok: false,
-        error: "remote_session_id_required",
-        detail: "Provide remoteSessionId, hermesStoredSessionId, or hermesLiveSessionId."
-      };
-    }
-    const correlation = options.store.recordSessionCorrelation({
-      workspaceSlug: input.workspaceSlug,
-      appThreadId: input.appThreadId,
-      provider: input.provider,
-      providerInstanceId: input.providerInstanceId,
-      remoteSessionId,
-      hermesLiveSessionId: input.hermesLiveSessionId ?? null,
-      hermesStoredSessionId: input.hermesStoredSessionId ?? null,
-      profile: input.profile ?? null,
-      runtimeMode: input.runtimeMode ?? null,
-      cwd: input.cwd ?? null,
-      source: input.source,
-      eventType: input.eventType,
-      metadata: input.metadata
-    });
-    options.store.recordEvent({
-      type: "marketplace.agent.session-correlated",
-      traceId: traceIdFrom(request),
-      workspaceSlug: input.workspaceSlug,
-      pluginId: "marketplace",
-      payload: {
-        appThreadId: correlation.appThreadId,
-        providerInstanceId: correlation.providerInstanceId,
-        remoteSessionId: correlation.remoteSessionId,
-        hermesStoredSessionId: correlation.hermesStoredSessionId,
-        hermesLiveSessionId: correlation.hermesLiveSessionId
-      }
-    });
-    reply.code(201);
-    return { ok: true, correlation };
-  });
-  app2.get("/api/marketplace/session-correlations", async (request) => {
-    const query = SessionCorrelationQuerySchema.parse(request.query);
-    return {
-      correlations: options.store.listSessionCorrelations(query)
-    };
-  });
-  app2.get("/api/debug/events", async (request) => {
-    const query = AuditQuerySchema.parse(request.query);
-    return {
-      debug: {
-        enabled: options.debug ?? process.env.DOPPELGANGER_DEBUG === "1",
-        logPath: options.logPath ?? options.store.describeRuntime().logPath
-      },
-      storage: options.store.describeRuntime(),
-      events: options.store.listEvents(query)
-    };
-  });
-  app2.get("/api/debug/logs", async (request, reply) => {
-    if (!requireService(request, reply)) {
-      return { ok: false, error: "marketplace_service_bearer_required" };
-    }
-    const query = external_exports.object({
-      tail: external_exports.coerce.number().int().positive().max(500).default(100)
-    }).parse(request.query);
-    const runtime = options.store.describeRuntime();
-    if (!runtime.logPath) {
-      return { debug: { enabled: false, logPath: null }, lines: [] };
-    }
-    try {
-      const text = await readFile3(runtime.logPath, "utf8");
-      return {
-        debug: {
-          enabled: runtime.debug,
-          logPath: runtime.logPath
-        },
-        lines: text.trim().split("\n").filter(Boolean).slice(-query.tail)
-      };
-    } catch (error) {
-      reply.code(404);
-      return {
-        ok: false,
-        error: "debug_log_not_found",
-        logPath: runtime.logPath,
-        detail: error instanceof Error ? error.message : String(error)
-      };
-    }
-  });
-  app2.get("/api/marketplace/catalog/activepieces", async (request, reply) => {
-    const providers = await readProviderHealthWithReachability(
-      providerEnvironment(),
-      options.providerFetch
-    );
-    if (!providers.activepieces.baseUrl || !providers.activepieces.reachable) {
-      reply.code(409);
-      return {
-        ok: false,
-        error: "activepieces_unavailable",
-        detail: providers.activepieces.detail
-      };
-    }
-    try {
-      const catalog = await fetchActivepiecesCatalog(
-        providerEnvironment(),
-        options.providerFetch
-      );
-      return { ok: true, provider: "activepieces", ...catalog };
-    } catch (error) {
-      reply.code(502);
-      return {
-        ok: false,
-        error: "activepieces_catalog_fetch_failed",
-        detail: error instanceof Error ? error.message : String(error)
-      };
-    }
-  });
-  app2.post(
-    "/api/marketplace/catalog/activepieces/scaffold",
-    async (request, reply) => {
-      const payload = request.body ?? {};
-      const workspaceSlug = String(payload.workspaceSlug ?? "");
-      const rules = await enforceRules({
-        reply,
-        workspaceSlug,
-        operation: "activepieces.scaffold",
-        capability: "connector.admin",
-        pluginId: "activepieces-pack-generator",
-        actorId: String(payload.actorId ?? "operator"),
-        payload,
-        rulesClient: options.rulesClient
-      });
-      if ("ok" in rules && rules.ok === false) {
-        return rules;
-      }
-      const providers = await readProviderHealthWithReachability(
-        providerEnvironment(),
-        options.providerFetch
-      );
-      if (!providers.activepieces.configured) {
-        reply.code(409);
-        return {
-          ok: false,
-          error: "activepieces_unavailable",
-          detail: providers.activepieces.detail
-        };
-      }
-      return { ok: true, scaffold: null, rules };
-    }
-  );
-  app2.get("/api/marketplace/catalog/composio", async (request, reply) => {
-    const providers = await readProviderHealthWithReachability(
-      providerEnvironment(),
-      options.providerFetch
-    );
-    if (!providers.composio.configured) {
-      reply.code(409);
-      return {
-        ok: false,
-        error: "composio_unavailable",
-        detail: providers.composio.detail
-      };
-    }
-    try {
-      const catalog = await fetchComposioCatalog(
-        providerEnvironment(),
-        options.providerFetch
-      );
-      return { ok: true, provider: "composio", ...catalog };
-    } catch (error) {
-      reply.code(502);
-      return {
-        ok: false,
-        error: "composio_catalog_fetch_failed",
-        detail: error instanceof Error ? error.message : String(error)
-      };
-    }
-  });
-  app2.get("/api/marketplace/catalog/composio/tools", async (request, reply) => {
-    const query = ComposioToolsQuerySchema.parse(request.query);
-    const providers = await readProviderHealthWithReachability(
-      providerEnvironment(),
-      options.providerFetch
-    );
-    if (!providers.composio.configured) {
-      reply.code(409);
-      return {
-        ok: false,
-        error: "composio_unavailable",
-        detail: providers.composio.detail
-      };
-    }
-    try {
-      const upstreamToolkit = query.toolkit.trim();
-      const toolkit = normalizeConnectorSlug(upstreamToolkit);
-      const catalog = await fetchComposioToolkitTools({
-        toolkit: upstreamToolkit,
-        limit: query.limit,
-        env: providerEnvironment(),
-        fetchImpl: options.providerFetch
-      });
-      const tools = normalizeComposioTools(toolkit, catalog.items);
-      return {
-        ok: true,
-        provider: "composio",
-        toolkit,
-        upstreamToolkit,
-        total: catalog.total,
-        items: catalog.items,
-        tools: tools.map((tool) => ({
-          ...tool,
-          actionKey: tool.action
-        })),
-        skills: defaultSkillsForComposioToolkit(toolkit)
-      };
-    } catch (error) {
-      reply.code(502);
-      return {
-        ok: false,
-        error: "composio_toolkit_tools_fetch_failed",
-        detail: error instanceof Error ? error.message : String(error)
-      };
-    }
-  });
-  app2.post(
-    "/api/marketplace/catalog/composio/import",
-    async (request, reply) => {
-      const input = ComposioImportInputSchema.parse(request.body);
-      const traceId = traceIdFrom(request);
-      const rules = await enforceRules({
-        reply,
-        workspaceSlug: input.workspaceSlug,
-        operation: "composio.import",
-        capability: "connector.admin",
-        pluginId: "composio-bootstrap",
-        actorId: input.actorId,
-        payload: { ...request.body, traceId },
-        rulesClient: options.rulesClient
-      });
-      if ("ok" in rules && rules.ok === false) {
-        return { ...rules, traceId };
-      }
-      const providers = await readProviderHealthWithReachability(
-        providerEnvironment(),
-        options.providerFetch
-      );
-      if (!providers.composio.configured) {
-        reply.code(409);
-        return {
-          ok: false,
-          error: "composio_unavailable",
-          detail: providers.composio.detail
-        };
-      }
-      const upstreamToolkit = input.toolkit.trim();
-      const toolkit = normalizeConnectorSlug(upstreamToolkit);
-      const fetchedTools = input.tools ?? (await fetchComposioToolkitTools({
-        toolkit: upstreamToolkit,
-        env: providerEnvironment(),
-        fetchImpl: options.providerFetch
-      })).items;
-      const selectedActions = input.actionKeys?.map((action) => action.trim()).filter(Boolean) ?? [];
-      if (selectedActions.length > 0) {
-        const normalizedTools = normalizeComposioTools(toolkit, fetchedTools);
-        const knownActions = new Set(
-          normalizedTools.flatMap((tool) => [tool.action, tool.toolName])
-        );
-        const unknownActions = selectedActions.filter(
-          (action) => !knownActions.has(action)
-        );
-        if (unknownActions.length > 0) {
-          reply.code(400);
-          return {
-            ok: false,
-            error: "unknown_composio_action_keys",
-            actionKeys: unknownActions
-          };
-        }
-      }
-      const listing = buildComposioListingFromTools({
-        toolkit,
-        upstreamToolkit,
-        pluginId: input.pluginId,
-        displayName: input.displayName,
-        description: input.description,
-        tools: fetchedTools,
-        selectedActions,
-        skills: input.skills
-      });
-      options.store.upsertListing(listing);
-      let registration = null;
-      let install = null;
-      const bindings = [];
-      if (input.autoEnable) {
-        registration = options.store.registerPlugin(listing.pluginId);
-        install = options.store.install(input.workspaceSlug, listing.pluginId);
-        const capabilities2 = input.bindCapabilities ?? listing.capabilities;
-        for (const capability of capabilities2) {
-          bindings.push(
-            options.store.bindCapability({
-              workspaceSlug: input.workspaceSlug,
-              pluginId: listing.pluginId,
-              capability,
-              enabled: true
-            })
-          );
-        }
-      }
-      const actionBindings = listing.actions.map(
-        (actionKey) => options.store.bindAction({
-          workspaceSlug: input.workspaceSlug,
-          pluginId: listing.pluginId,
-          actionKey,
-          enabled: true
-        })
-      );
-      const importRecord = options.store.upsertComposioImport({
-        workspaceSlug: input.workspaceSlug,
-        pluginId: listing.pluginId,
-        toolkit,
-        importedActionKeys: listing.actions,
-        lifecycle: input.autoEnable ? "enabled" : "imported",
-        metadata: {
-          traceId,
-          source: input.tools ? "request" : "composio",
-          toolCount: fetchedTools.length,
-          providerConfigured: providers.composio.configured
-        }
-      });
-      options.store.recordEvent({
-        type: "marketplace.composio.toolkit.imported",
-        traceId,
-        workspaceSlug: input.workspaceSlug,
-        pluginId: listing.pluginId,
-        actorId: input.actorId,
-        rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
-        payload: {
-          toolkit,
-          actions: listing.actions,
-          lifecycle: importRecord.lifecycle,
-          autoEnable: input.autoEnable
-        }
-      });
-      reply.code(201);
-      return {
-        ok: true,
-        traceId,
-        listing,
-        import: importRecord,
-        registration,
-        install,
-        bindings,
-        actionBindings,
-        rules
-      };
-    }
-  );
-  app2.post("/api/runtime/plugins/:pluginId/execute", async (request, reply) => {
-    reply.code(501);
-    return {
-      ok: false,
-      error: "runtime_execute_adapter_not_wired",
-      detail: "Use /api/marketplace/plugins/:pluginId/execute in the standalone candidate. App runtime adapter wiring is pending."
-    };
-  });
-  return app2;
-}
-
-// src/config.ts
-import os from "node:os";
-import path5 from "node:path";
-function numberFromEnv(value, fallback) {
-  if (!value?.trim()) {
-    return fallback;
-  }
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
-}
-function loadConfig(env = process.env) {
-  const productWorkspaceDir = env.DOPPELGANGER_PRODUCT_WORKSPACE_DIR?.trim() || env.PRODUCT_WORKSPACE_DIR?.trim();
-  const dataDir = env.MARKETPLACE_DATA_DIR?.trim() || (productWorkspaceDir ? path5.join(productWorkspaceDir, "data") : void 0) || path5.join(os.homedir(), ".doppelganger", "programs", "marketplace", "data");
-  const dbPath = env.MARKETPLACE_DATABASE_PATH?.trim() || path5.join(dataDir, "marketplace.sqlite");
-  return {
-    host: env.MARKETPLACE_HOST?.trim() || "127.0.0.1",
-    port: numberFromEnv(env.MARKETPLACE_PORT, 0),
-    dbPath,
-    ...env.MARKETPLACE_HANDOFF_ENCRYPTION_KEY?.trim() ? { handoffEncryptionKey: env.MARKETPLACE_HANDOFF_ENCRYPTION_KEY.trim() } : {},
-    settingsPath: env.MARKETPLACE_SETTINGS_PATH?.trim() || path5.join(path5.dirname(dbPath), "provider-settings.json"),
-    secretsPath: env.MARKETPLACE_SECRETS_PATH?.trim() || path5.join(path5.dirname(dbPath), "provider-secrets.json"),
-    ...env.MARKETPLACE_INTERNAL_AUTH_TOKEN?.trim() ? { internalAuthToken: env.MARKETPLACE_INTERNAL_AUTH_TOKEN.trim() } : env.DOPPELGANGER_MARKETPLACE_INTERNAL_AUTH_TOKEN?.trim() ? {
-      internalAuthToken: env.DOPPELGANGER_MARKETPLACE_INTERNAL_AUTH_TOKEN.trim()
-    } : {},
-    ...env.RULES_BASE_URL?.trim() ? {
-      rules: {
-        baseUrl: env.RULES_BASE_URL.trim(),
-        ...env.RULES_INTERNAL_AUTH_TOKEN?.trim() ? { internalAuthToken: env.RULES_INTERNAL_AUTH_TOKEN.trim() } : {},
-        ...env.RULES_COMPANY_ID?.trim() ? { companyId: env.RULES_COMPANY_ID.trim() } : {}
-      }
-    } : {}
-  };
-}
-
-// src/rules-client.ts
-var OPERATOR_CONFIRMED_CONNECTOR_OPERATIONS = /* @__PURE__ */ new Set([
-  "install",
-  "uninstall",
-  "register",
-  "unregister",
-  "composio.connect",
-  "composio.import",
-  "connector.connection.register",
-  "capability.bind",
-  "action.bind",
-  "hub.mcp.create",
-  "hub.mcp.update",
-  "hub.mcp.delete",
-  "hub.lifecycle.install",
-  "hub.lifecycle.enable",
-  "hub.lifecycle.disable",
-  "hub.lifecycle.reload",
-  "hub.lifecycle.uninstall"
-]);
-var AGENT_ENABLED_CONNECTOR_CAPABILITIES = /* @__PURE__ */ new Set([
-  "connector.observe",
-  "connector.dispatch"
-]);
-function roleForActor(actorId) {
-  const normalized2 = actorId.trim().toLowerCase();
-  return normalized2 === "agent" || normalized2 === "doppelganger-agent" || normalized2.startsWith("agent-") || normalized2.startsWith("agent:") ? "agent" : "operator";
-}
-function isMissingPolicyDenial(reason) {
-  return typeof reason === "string" && reason.includes("no live ruleset matched this request");
-}
-function failedClosedDecision(reason) {
-  return {
-    effect: "deny",
-    reason
-  };
-}
-function isAgentGrantPolicyPath(input) {
-  const contractVersion = input.payload.contractVersion;
-  return input.operation === "execute" && (typeof input.payload.agentGrantId === "string" || contractVersion === "doppelganger.marketplace.agent-connector-grant.v1" || typeof contractVersion === "string" && contractVersion.startsWith("tealbrick.marketplace.operator-handoff.v1."));
-}
-function makeRulesClient(config2) {
-  const rules = config2.rules;
-  if (!rules) {
-    return void 0;
-  }
-  return async (input) => {
-    try {
-      const companyId = rules.companyId ?? input.workspaceSlug;
-      const actorRole = roleForActor(input.actorId);
-      const response = await fetch(
-        new URL("/api/rules/gateway/evaluate", rules.baseUrl),
-        {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            ...rules.internalAuthToken ? { authorization: `Bearer ${rules.internalAuthToken}` } : {}
-          },
-          body: JSON.stringify({
-            method: "doppelganger.rules.evaluate",
-            params: {
-              companyId,
-              ruleKey: "marketplace.plugin",
-              operation: input.operation,
-              actor: {
-                kind: actorRole,
-                id: input.actorId,
-                roles: [actorRole],
-                companyId
-              },
-              target: {
-                kind: "plugin",
-                id: input.pluginId,
-                pluginId: input.pluginId,
-                capability: input.capability,
-                companyId
-              },
-              payload: {
-                ...input.payload,
-                capability: input.capability,
-                pluginId: input.pluginId
-              },
-              runtimeContext: {
-                surface: "capabilities.plugins",
-                lane: actorRole,
-                session: {
-                  sessionKey: `marketplace:${input.workspaceSlug}`
-                }
-              }
-            }
-          })
-        }
-      );
-      const parsed = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        return failedClosedDecision(
-          `Rules request failed closed with HTTP ${response.status}.`
-        );
-      }
-      const effect = parsed.allowed === true ? "allow" : parsed.allowed === false ? "deny" : parsed.effect;
-      if (effect !== "allow" && effect !== "deny" && effect !== "review") {
-        return failedClosedDecision(
-          "Rules response was invalid; failed closed."
-        );
-      }
-      if (effect === "deny" && input.actorId === "operator" && input.capability === "connector.admin" && OPERATOR_CONFIRMED_CONNECTOR_OPERATIONS.has(input.operation) && isMissingPolicyDenial(parsed.reason)) {
-        return {
-          effect: "allow",
-          decisionId: `operator-confirmed:${input.operation}:${input.pluginId}`,
-          reason: "Operator-confirmed connector lifecycle action; no explicit Rules policy matched."
-        };
-      }
-      if (effect === "deny" && actorRole === "agent" && input.operation === "execute" && AGENT_ENABLED_CONNECTOR_CAPABILITIES.has(input.capability) && !isAgentGrantPolicyPath(input) && isMissingPolicyDenial(parsed.reason)) {
-        return {
-          effect: "allow",
-          decisionId: `operator-enabled:execute:${input.pluginId}`,
-          reason: "Operator-enabled connector action and capability binding remain authoritative when no explicit Rules policy matched."
-        };
-      }
-      return {
-        effect,
-        ...typeof parsed.decisionId === "string" ? { decisionId: parsed.decisionId } : typeof parsed.id === "string" ? { decisionId: parsed.id } : typeof parsed.traceId === "string" ? { decisionId: parsed.traceId } : {},
-        ...typeof parsed.reason === "string" ? { reason: parsed.reason } : {}
-      };
-    } catch (error) {
-      return failedClosedDecision(
-        error instanceof Error ? `Rules request failed closed: ${error.message}` : "Rules request failed closed."
-      );
-    }
-  };
-}
-
 // src/store.ts
 import fs2 from "node:fs";
-import path6 from "node:path";
+import path2 from "node:path";
 import {
   createCipheriv,
   createDecipheriv,
-  randomBytes as randomBytes2,
-  randomUUID as randomUUID2
+  createHmac,
+  randomBytes,
+  randomUUID
 } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 
@@ -56544,9 +48678,134 @@ function shapeOf(value) {
   );
 }
 
+// src/legacy-ids.ts
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+var LEGACY_IDS = {
+  /** Rules gateway RPC method (Rules introspection + evaluate request). */
+  "tealbrick.rules.evaluate": "doppelganger.rules.evaluate",
+  /** Agent connector grant contract carried in Rules payloads. */
+  "tealbrick.marketplace.agent-connector-grant.v1": "doppelganger.marketplace.agent-connector-grant.v1",
+  /** Cross-app broker execute request contract. */
+  "tealbrick.cross-app.marketplace.broker-execute.v1": "doppelganger.cross-app.marketplace.broker-execute.v1",
+  /** Reserved agent actor id. */
+  "tealbrick-agent": "doppelganger-agent",
+  /** Plugin/product manifest namespace key. */
+  tealbrick: "doppelganger"
+};
+function acceptedIds(current) {
+  return [current, LEGACY_IDS[current]];
+}
+function isAcceptedId(current, value) {
+  return value === current || value === LEGACY_IDS[current];
+}
+function manifestNamespace(manifest) {
+  for (const key of acceptedIds("tealbrick")) {
+    const value = manifest?.[key];
+    if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+      return value;
+    }
+  }
+  return void 0;
+}
+var ENV_PREFIX = "TEALBRICK_";
+var LEGACY_ENV_PREFIX = "DOPPELGANGER_";
+var warned = /* @__PURE__ */ new Set();
+var defaultWarn = (message) => {
+  console.warn(message);
+};
+function warnOnce(key, message, warn = defaultWarn) {
+  if (warned.has(key)) return;
+  warned.add(key);
+  warn(message);
+}
+function readCompatEnv(env, name, warn) {
+  const current = env[`${ENV_PREFIX}${name}`]?.trim();
+  if (current) return current;
+  const legacy = env[`${LEGACY_ENV_PREFIX}${name}`]?.trim();
+  if (legacy) {
+    warnOnce(
+      `env:${name}`,
+      `[marketplace] ${LEGACY_ENV_PREFIX}${name} is deprecated; set ${ENV_PREFIX}${name} instead. The old name still works for now.`,
+      warn
+    );
+    return legacy;
+  }
+  return void 0;
+}
+function compatDebugEnabled(env = process.env) {
+  return readCompatEnv(env, "DEBUG") === "1";
+}
+var STATE_HOME_DIRNAME = ".tealbrick";
+var LEGACY_STATE_HOME_DIRNAME = ".doppelganger";
+var MARKETPLACE_STATE_SEGMENTS = ["programs", "marketplace"];
+function isDirectory(target) {
+  try {
+    return fs.statSync(target).isDirectory();
+  } catch {
+    return false;
+  }
+}
+function resolveDefaultStateRoot(options = {}) {
+  const homeDir = options.homeDir ?? os.homedir();
+  const warn = options.warn ?? defaultWarn;
+  const root = path.join(homeDir, STATE_HOME_DIRNAME, ...MARKETPLACE_STATE_SEGMENTS);
+  const legacyRoot = path.join(
+    homeDir,
+    LEGACY_STATE_HOME_DIRNAME,
+    ...MARKETPLACE_STATE_SEGMENTS
+  );
+  const legacyIsLink = (() => {
+    try {
+      return fs.lstatSync(legacyRoot).isSymbolicLink();
+    } catch {
+      return false;
+    }
+  })();
+  if (isDirectory(root)) {
+    if (!legacyIsLink && isDirectory(legacyRoot)) {
+      warnOnce(
+        `state:both:${legacyRoot}`,
+        `[marketplace] Using ${root}. A legacy state directory still exists at ${legacyRoot}; it was not modified or removed.`,
+        warn
+      );
+      return { root, status: "both-present" };
+    }
+    return { root, status: "current" };
+  }
+  if (!isDirectory(legacyRoot)) {
+    return { root, status: "fresh" };
+  }
+  if (!options.migrate) {
+    return { root: legacyRoot, status: "legacy-in-place" };
+  }
+  try {
+    fs.mkdirSync(path.dirname(root), { recursive: true });
+    fs.renameSync(legacyRoot, root);
+  } catch (error) {
+    warnOnce(
+      `state:stay:${legacyRoot}`,
+      `[marketplace] Could not move legacy state ${legacyRoot} to ${root} (${error?.code ?? String(error)}); continuing to use the legacy path. Move it manually or set MARKETPLACE_DATA_DIR.`,
+      warn
+    );
+    return { root: legacyRoot, status: "legacy-in-place" };
+  }
+  try {
+    fs.symlinkSync(root, legacyRoot, "dir");
+  } catch {
+  }
+  warnOnce(
+    `state:migrated:${legacyRoot}`,
+    `[marketplace] Moved state from ${legacyRoot} to ${root} (a symlink remains at the old path).`,
+    warn
+  );
+  return { root, status: "migrated" };
+}
+
 // src/store.ts
-var PORTAL_HANDOFF_CIPHERTEXT_PREFIX = "v1:";
-function handoffEncryptionKeyFromSecret(secret) {
+var SECRET_CIPHERTEXT_PREFIX = "v1:";
+function encryptionKeyFromSecret(secret) {
   const value = secret?.trim();
   if (!value) return null;
   if (/^[0-9a-f]{64}$/iu.test(value)) {
@@ -56560,24 +48819,24 @@ function handoffEncryptionKeyFromSecret(secret) {
   }
   return decoded;
 }
-function encryptPortalHandoffToken(token, key) {
-  const iv = randomBytes2(12);
+function encryptSecretValue(plaintext, key) {
+  const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", key, iv);
   const ciphertext = Buffer.concat([
-    cipher.update(token, "utf8"),
+    cipher.update(plaintext, "utf8"),
     cipher.final()
   ]);
   return [
-    PORTAL_HANDOFF_CIPHERTEXT_PREFIX.slice(0, -1),
+    SECRET_CIPHERTEXT_PREFIX.slice(0, -1),
     iv.toString("base64url"),
     cipher.getAuthTag().toString("base64url"),
     ciphertext.toString("base64url")
   ].join(":");
 }
-function decryptPortalHandoffToken(value, key) {
+function decryptSecretValue(value, key, label) {
   const [version, ivValue, authTagValue, ciphertextValue] = value.split(":");
-  if (`${version}:` !== PORTAL_HANDOFF_CIPHERTEXT_PREFIX || !ivValue || !authTagValue || !ciphertextValue) {
-    throw new Error("Stored Portal handoff session token has an invalid format.");
+  if (`${version}:` !== SECRET_CIPHERTEXT_PREFIX || !ivValue || !authTagValue || !ciphertextValue) {
+    throw new Error(`${label} has an invalid format.`);
   }
   const decipher = createDecipheriv(
     "aes-256-gcm",
@@ -56590,14 +48849,42 @@ function decryptPortalHandoffToken(value, key) {
     decipher.final()
   ]).toString("utf8");
 }
+function isEncryptedSecretValue(value) {
+  return value.startsWith(SECRET_CIPHERTEXT_PREFIX);
+}
+function encryptPortalHandoffToken(token, key) {
+  return encryptSecretValue(token, key);
+}
+function decryptPortalHandoffToken(value, key) {
+  return decryptSecretValue(value, key, "Stored Portal handoff session token");
+}
 function isEncryptedPortalHandoffToken(value) {
-  return value.startsWith(PORTAL_HANDOFF_CIPHERTEXT_PREFIX);
+  return isEncryptedSecretValue(value);
+}
+var ConnectorSecretStoreUnavailableError = class extends Error {
+  code = "connector_secret_store_unavailable";
+  constructor() {
+    super(
+      "MARKETPLACE_HANDOFF_ENCRYPTION_KEY is required to store connector secrets."
+    );
+  }
+};
+function connectorSecretMetadataFromRow(row) {
+  return {
+    id: String(row.id),
+    workspaceSlug: String(row.workspace_slug),
+    pluginId: String(row.plugin_id),
+    name: String(row.name),
+    fingerprint: String(row.fingerprint),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at)
+  };
 }
 function nowIso() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
 function createId(prefix) {
-  return `${prefix}_${randomUUID2()}`;
+  return `${prefix}_${randomUUID()}`;
 }
 function jsonParse(value, fallback) {
   if (!value) {
@@ -56626,6 +48913,7 @@ function listingFromRow(row) {
     ),
     enabledByDefault: Number(row.enabled_by_default) === 1,
     manifest: jsonParse(String(row.manifest_json), {}),
+    ...row.workspace_slug === null || row.workspace_slug === void 0 ? {} : { ownerWorkspaceSlug: String(row.workspace_slug) },
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
   };
@@ -56877,17 +49165,17 @@ function brokerGrantFromRow(row) {
 var SqliteMarketplaceStore = class {
   constructor(dbPath, options = {}) {
     this.dbPath = dbPath;
-    fs2.mkdirSync(path6.dirname(dbPath), { recursive: true });
-    this.logPath = options.logPath ?? path6.join(
-      path6.dirname(path6.dirname(dbPath)),
+    fs2.mkdirSync(path2.dirname(dbPath), { recursive: true });
+    this.logPath = options.logPath ?? path2.join(
+      path2.dirname(path2.dirname(dbPath)),
       "logs",
       "marketplace-debug.jsonl"
     );
-    this.debug = options.debug ?? process.env.DOPPELGANGER_DEBUG === "1";
-    this.handoffEncryptionKey = handoffEncryptionKeyFromSecret(
+    this.debug = options.debug ?? compatDebugEnabled();
+    this.handoffEncryptionKey = encryptionKeyFromSecret(
       options.handoffEncryptionKey ?? process.env.MARKETPLACE_HANDOFF_ENCRYPTION_KEY
     );
-    fs2.mkdirSync(path6.dirname(this.logPath), { recursive: true });
+    fs2.mkdirSync(path2.dirname(this.logPath), { recursive: true });
     this.db = new DatabaseSync(dbPath);
     try {
       this.migrate();
@@ -56923,6 +49211,18 @@ var SqliteMarketplaceStore = class {
         manifest_json TEXT NOT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS connector_secret (
+        id TEXT PRIMARY KEY,
+        workspace_slug TEXT NOT NULL,
+        plugin_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        ciphertext TEXT NOT NULL,
+        fingerprint TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(workspace_slug, plugin_id, name)
       );
 
       CREATE TABLE IF NOT EXISTS plugin_registry (
@@ -57219,16 +49519,22 @@ var SqliteMarketplaceStore = class {
         created_at TEXT NOT NULL
       );
     `);
+    this.addColumnIfMissing(
+      "ALTER TABLE marketplace_listing ADD COLUMN runtime_sources_json TEXT NOT NULL DEFAULT '[]'"
+    );
+    this.addColumnIfMissing(
+      "ALTER TABLE marketplace_listing ADD COLUMN workspace_slug TEXT"
+    );
+    this.migratePortalHandoffSessions();
+  }
+  addColumnIfMissing(statement) {
     try {
-      this.db.exec(
-        "ALTER TABLE marketplace_listing ADD COLUMN runtime_sources_json TEXT NOT NULL DEFAULT '[]'"
-      );
+      this.db.exec(statement);
     } catch (error) {
       if (!(error instanceof Error) || !error.message.includes("duplicate column name")) {
         throw error;
       }
     }
-    this.migratePortalHandoffSessions();
   }
   migratePortalHandoffSessions() {
     const rows = this.db.prepare("SELECT id, session_token FROM marketplace_portal_handoff_session").all();
@@ -57295,9 +49601,11 @@ var SqliteMarketplaceStore = class {
     this.db.prepare(
       `INSERT INTO marketplace_listing (
           plugin_id, display_name, kind, provider, description, capabilities, actions, source,
-          auth_owner, execution_owner, runtime_sources_json, enabled_by_default, manifest_json, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          auth_owner, execution_owner, runtime_sources_json, enabled_by_default, manifest_json, created_at, updated_at,
+          workspace_slug
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(plugin_id) DO UPDATE SET
+          workspace_slug = COALESCE(marketplace_listing.workspace_slug, excluded.workspace_slug),
           display_name = excluded.display_name,
           kind = excluded.kind,
           provider = excluded.provider,
@@ -57326,7 +49634,8 @@ var SqliteMarketplaceStore = class {
       listing.enabledByDefault ? 1 : 0,
       JSON.stringify(listing.manifest),
       listing.createdAt,
-      listing.updatedAt
+      listing.updatedAt,
+      listing.ownerWorkspaceSlug ?? null
     );
   }
   listTables() {
@@ -57340,6 +49649,33 @@ var SqliteMarketplaceStore = class {
   }
   getListing(pluginId) {
     const row = this.db.prepare("SELECT * FROM marketplace_listing WHERE plugin_id = ?").get(pluginId);
+    return row ? listingFromRow(row) : null;
+  }
+  /** Global listings plus the listings owned by `workspaceSlug`. */
+  listListingsForWorkspace(workspaceSlug) {
+    return this.db.prepare(
+      `SELECT * FROM marketplace_listing
+           WHERE workspace_slug IS NULL OR workspace_slug = ?
+           ORDER BY display_name ASC`
+    ).all(workspaceSlug).map(listingFromRow);
+  }
+  /** Listings owned by `workspaceSlug` only (operator custom connectors). */
+  listOwnedListings(workspaceSlug) {
+    return this.db.prepare(
+      `SELECT * FROM marketplace_listing
+           WHERE workspace_slug = ?
+           ORDER BY display_name ASC`
+    ).all(workspaceSlug).map(listingFromRow);
+  }
+  /**
+   * Workspace-aware lookup: a listing owned by another workspace is reported
+   * as absent so callers answer 404 rather than leaking its existence.
+   */
+  getListingForWorkspace(pluginId, workspaceSlug) {
+    const row = this.db.prepare(
+      `SELECT * FROM marketplace_listing
+         WHERE plugin_id = ? AND (workspace_slug IS NULL OR workspace_slug = ?)`
+    ).get(pluginId, workspaceSlug);
     return row ? listingFromRow(row) : null;
   }
   registerPlugin(pluginId) {
@@ -57434,6 +49770,7 @@ var SqliteMarketplaceStore = class {
         "plugin_action_binding",
         "connector_connection",
         "credential_ref",
+        "connector_secret",
         "composio_import",
         "workspace_plugin_install",
         "plugin_registry"
@@ -57484,6 +49821,12 @@ var SqliteMarketplaceStore = class {
       input.pluginId,
       input.capability
     );
+  }
+  getCapabilityBinding(workspaceSlug, pluginId, capability) {
+    const row = this.db.prepare(
+      "SELECT * FROM plugin_capability_binding WHERE workspace_slug = ? AND plugin_id = ? AND capability = ?"
+    ).get(workspaceSlug, pluginId, capability);
+    return row ? bindingFromRow(row) : null;
   }
   requireCapabilityBinding(workspaceSlug, pluginId, capability) {
     const row = this.db.prepare(
@@ -58257,6 +50600,181 @@ var SqliteMarketplaceStore = class {
     );
     return this.requireCredentialRefById(id);
   }
+  listCredentialRefs(input) {
+    return this.db.prepare(
+      `SELECT * FROM credential_ref
+           WHERE workspace_slug = ? AND (? IS NULL OR plugin_id = ?)
+           ORDER BY created_at ASC`
+    ).all(
+      input.workspaceSlug,
+      input.pluginId ?? null,
+      input.pluginId ?? null
+    ).map(credentialRefFromRow);
+  }
+  /** True when connector secrets can be encrypted at rest. */
+  connectorSecretStoreAvailable() {
+    return this.handoffEncryptionKey !== null;
+  }
+  requireSecretKey() {
+    if (!this.handoffEncryptionKey) {
+      throw new ConnectorSecretStoreUnavailableError();
+    }
+    return this.handoffEncryptionKey;
+  }
+  /**
+   * Keyed fingerprint (12 hex) for display and audit. HMAC with the at-rest
+   * key so a low-entropy secret cannot be confirmed from the fingerprint.
+   */
+  connectorSecretFingerprint(value) {
+    return createHmac("sha256", this.requireSecretKey()).update(`marketplace-connector-secret:${value}`).digest("hex").slice(0, 12);
+  }
+  /**
+   * Encrypt and upsert one connector secret plus its credential_ref row.
+   * Returns metadata only; the plaintext never leaves this method.
+   */
+  putConnectorSecret(input) {
+    const key = this.requireSecretKey();
+    const ciphertext = encryptSecretValue(input.value, key);
+    const fingerprint = this.connectorSecretFingerprint(input.value);
+    const timestamp = nowIso();
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db.prepare(
+        `INSERT INTO connector_secret (
+            id, workspace_slug, plugin_id, name, ciphertext, fingerprint, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(workspace_slug, plugin_id, name) DO UPDATE SET
+            ciphertext = excluded.ciphertext,
+            fingerprint = excluded.fingerprint,
+            updated_at = excluded.updated_at`
+      ).run(
+        createId("connector_secret"),
+        input.workspaceSlug,
+        input.pluginId,
+        input.name,
+        ciphertext,
+        fingerprint,
+        timestamp,
+        timestamp
+      );
+      const secret = this.requireConnectorSecretMetadata(
+        input.workspaceSlug,
+        input.pluginId,
+        input.name
+      );
+      const secretRefKey = `marketplace-secret:${secret.id}`;
+      const existingRef = this.db.prepare("SELECT id FROM credential_ref WHERE secret_ref_key = ?").get(secretRefKey);
+      const metadata = JSON.stringify({ secretName: input.name, fingerprint });
+      if (existingRef?.id) {
+        this.db.prepare(
+          `UPDATE credential_ref
+             SET state = 'active', detail = ?, metadata = ?, configured_at = ?, updated_at = ?
+             WHERE id = ?`
+        ).run(
+          "Connector secret is encrypted at rest in Marketplace.",
+          metadata,
+          timestamp,
+          timestamp,
+          existingRef.id
+        );
+      } else {
+        this.db.prepare(
+          `INSERT INTO credential_ref (
+              id, workspace_slug, plugin_id, provider_hint, secret_ref_key, external_ref,
+              state, detail, metadata, configured_at, created_at, updated_at
+            ) VALUES (?, ?, ?, 'mcp', ?, NULL, 'active', ?, ?, ?, ?, ?)`
+        ).run(
+          createId("credential"),
+          input.workspaceSlug,
+          input.pluginId,
+          secretRefKey,
+          "Connector secret is encrypted at rest in Marketplace.",
+          metadata,
+          timestamp,
+          timestamp,
+          timestamp
+        );
+      }
+      this.db.exec("COMMIT");
+      return secret;
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+  requireConnectorSecretMetadata(workspaceSlug, pluginId, name) {
+    const row = this.db.prepare(
+      `SELECT id, workspace_slug, plugin_id, name, fingerprint, created_at, updated_at
+         FROM connector_secret WHERE workspace_slug = ? AND plugin_id = ? AND name = ?`
+    ).get(workspaceSlug, pluginId, name);
+    if (!row) {
+      throw new Error(`Connector secret ${name} was not found`);
+    }
+    return connectorSecretMetadataFromRow(row);
+  }
+  listConnectorSecrets(input) {
+    return this.db.prepare(
+      `SELECT id, workspace_slug, plugin_id, name, fingerprint, created_at, updated_at
+           FROM connector_secret WHERE workspace_slug = ? AND plugin_id = ?
+           ORDER BY name ASC`
+    ).all(input.workspaceSlug, input.pluginId).map(connectorSecretMetadataFromRow);
+  }
+  /**
+   * Decrypt every secret for one connector. Server-side use only (attaching
+   * headers to outbound MCP requests); never serialize the result.
+   */
+  readConnectorSecretValues(input) {
+    const rows = this.db.prepare(
+      `SELECT name, ciphertext FROM connector_secret
+         WHERE workspace_slug = ? AND plugin_id = ?`
+    ).all(input.workspaceSlug, input.pluginId);
+    if (rows.length === 0) return {};
+    const key = this.requireSecretKey();
+    return Object.fromEntries(
+      rows.map((row) => [
+        row.name,
+        decryptSecretValue(row.ciphertext, key, "Stored connector secret")
+      ])
+    );
+  }
+  deleteConnectorSecret(input) {
+    const row = this.db.prepare(
+      `SELECT id FROM connector_secret
+         WHERE workspace_slug = ? AND plugin_id = ? AND name = ?`
+    ).get(input.workspaceSlug, input.pluginId, input.name);
+    if (!row?.id) return false;
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db.prepare("DELETE FROM connector_secret WHERE id = ?").run(row.id);
+      this.db.prepare("DELETE FROM credential_ref WHERE secret_ref_key = ?").run(`marketplace-secret:${row.id}`);
+      this.db.exec("COMMIT");
+      return true;
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+  /**
+   * Revoke every active agent connector grant and Portal agent consent that
+   * targets `pluginId` in `workspaceSlug`. Used when a connector is deleted.
+   */
+  revokeAgentAccessForPlugin(input) {
+    const timestamp = nowIso();
+    const grants = this.db.prepare(
+      `UPDATE agent_connector_grant
+         SET state = 'revoked', updated_at = ?
+         WHERE workspace_slug = ? AND plugin_id = ? AND state = 'active'`
+    ).run(timestamp, input.workspaceSlug, input.pluginId);
+    const consents = this.db.prepare(
+      `UPDATE marketplace_agent_consent
+         SET state = 'revoked', updated_at = ?
+         WHERE product_tenant_id = ? AND plugin_id = ? AND state = 'active'`
+    ).run(timestamp, input.workspaceSlug, input.pluginId);
+    return {
+      grants: Number(grants.changes),
+      consents: Number(consents.changes)
+    };
+  }
   upsertComposioImport(input) {
     const timestamp = nowIso();
     const existing = this.db.prepare(
@@ -58493,8 +51011,9933 @@ var SqliteMarketplaceStore = class {
   }
 };
 
+// src/custom-mcp.ts
+import { createHash } from "node:crypto";
+
+// src/types.ts
+var MARKETPLACE_PLUGIN_RECORD_VERSION = "doppelganger.marketplace.plugin-record.v1";
+var MARKETPLACE_SETTINGS_SURFACE_VERSION = "doppelganger.capability-settings.v1";
+
+// src/hub.ts
+var MARKETPLACE_HUB_UNIT = {
+  unitId: "marketplace",
+  version: "0.2.0",
+  enabled: true,
+  required: true
+};
+var HDDA_MARKETPLACE_PROXY_BASE = "/api/plugins/doppelganger-registry/proxy/marketplace";
+var MARKETPLACE_CAPABILITY_PROJECTION = {
+  gatewayPluginId: "doppelganger-registry",
+  recordsPath: `${HDDA_MARKETPLACE_PROXY_BASE}/api/plugins/marketplace-hub/records`
+};
+function recordValue2(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value : void 0;
+}
+function stringValue3(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : void 0;
+}
+function stringArray(value) {
+  return Array.isArray(value) ? value.filter(
+    (item) => typeof item === "string" && item.trim().length > 0
+  ) : [];
+}
+function skillsHubMetadata(listing) {
+  return recordValue2(listing.manifest.skillsHub) ?? {};
+}
+function listingIsRequired(listing) {
+  const hub = skillsHubMetadata(listing);
+  const directSystem = recordValue2(listing.manifest.system);
+  const namespacedSystem = recordValue2(
+    manifestNamespace(recordValue2(listing.manifest))?.system
+  );
+  return hub.required === true || directSystem?.required === true || namespacedSystem?.required === true;
+}
+function listingIsCustomMcp(listing) {
+  return listing.source === "mcp" && skillsHubMetadata(listing).custom === true;
+}
+function listingIsOperatorCustomMcp(listing) {
+  return listingIsCustomMcp(listing) && skillsHubMetadata(listing).operatorManaged === true && typeof listing.ownerWorkspaceSlug === "string";
+}
+function extensionContributions(listing) {
+  const hub = skillsHubMetadata(listing);
+  const contributions = Array.isArray(hub.contributions) ? hub.contributions : [];
+  return contributions.flatMap((value) => {
+    const contribution = recordValue2(value);
+    const id = stringValue3(contribution?.id);
+    const label = stringValue3(contribution?.label);
+    const routeSegment = stringValue3(contribution?.routeSegment);
+    const mount = stringValue3(contribution?.mount);
+    const settings = recordValue2(contribution?.settings);
+    if (!id || !label || !routeSegment || !["workspace", "right-rail", "settings-panel", "overlay"].includes(
+      mount ?? ""
+    )) {
+      return [];
+    }
+    return [
+      {
+        id,
+        type: "extension-surface",
+        label,
+        mount,
+        routeSegment,
+        ...stringValue3(contribution?.region) ? { region: stringValue3(contribution?.region) } : {},
+        ...stringValue3(contribution?.minHostSdk) ? { minHostSdk: stringValue3(contribution?.minHostSdk) } : {},
+        ...settings ? {
+          settings: {
+            ...stringValue3(settings.settingsSurfaceId) ? {
+              settingsSurfaceId: stringValue3(
+                settings.settingsSurfaceId
+              )
+            } : {},
+            ...stringValue3(settings.title) ? { title: stringValue3(settings.title) } : {},
+            ...stringValue3(settings.description) ? { description: stringValue3(settings.description) } : {},
+            ...recordValue2(settings.schema) ? { schema: recordValue2(settings.schema) } : {},
+            ...recordValue2(settings.uiSchema) ? { uiSchema: recordValue2(settings.uiSchema) } : {}
+          }
+        } : {},
+        enabled: contribution?.enabled !== false
+      }
+    ];
+  });
+}
+function marketplaceMcpAdapterConfig(listing, includeSensitive = false) {
+  const hub = skillsHubMetadata(listing);
+  const adapter = recordValue2(hub.adapter);
+  const mcp = recordValue2(adapter?.mcp);
+  const transport = stringValue3(mcp?.transport);
+  return {
+    transport: transport === "sse" || transport === "streamable-http" ? transport : "stdio",
+    ...stringValue3(mcp?.command) ? { command: stringValue3(mcp?.command) } : {},
+    ...stringArray(mcp?.args).length > 0 ? { args: stringArray(mcp?.args) } : {},
+    ...stringValue3(mcp?.url) ? { url: stringValue3(mcp?.url) } : {},
+    ...stringValue3(mcp?.cwd) ? { cwd: stringValue3(mcp?.cwd) } : {},
+    ...includeSensitive && recordValue2(mcp?.env) ? {
+      env: Object.fromEntries(
+        Object.entries(recordValue2(mcp?.env)).map(([key, value]) => [
+          key,
+          String(value)
+        ])
+      )
+    } : {},
+    ...includeSensitive && recordValue2(mcp?.headers) ? {
+      headers: Object.fromEntries(
+        Object.entries(recordValue2(mcp?.headers)).map(([key, value]) => [
+          key,
+          String(value)
+        ])
+      )
+    } : {},
+    config: recordValue2(mcp?.config) ?? {}
+  };
+}
+function connectionState(listing, state) {
+  if (state === "connected") return "connected";
+  if (state === "pending") return "connecting";
+  if (state === "blocked") return "error";
+  if (state === "disconnected") return "disconnected";
+  if (listing.authOwner === "nango" || listing.authOwner === "composio") {
+    return "auth-required";
+  }
+  return "disconnected";
+}
+function allowedActions(input) {
+  if (!input.installed) {
+    if (input.connectFirst && input.connectionState !== "connected") {
+      return ["authenticate"];
+    }
+    return [
+      "install",
+      ...input.custom ? ["configure", "update", "delete"] : []
+    ];
+  }
+  return [
+    ...input.composioAuth && (input.connectionState === "auth-required" || input.connectionState === "connecting" || input.connectionState === "error") ? ["authenticate"] : [],
+    ...input.enabled ? input.required ? [] : ["disable"] : ["enable"],
+    ...input.custom ? ["configure", "update"] : [],
+    "reload",
+    ...input.required ? [] : ["uninstall"]
+  ];
+}
+function pluginRecordId(pluginId) {
+  return `plugin:${pluginId}`;
+}
+function listingIconUrl(listing) {
+  const manifest = recordValue2(listing.manifest);
+  const composio = recordValue2(manifest?.composio);
+  const catalog = recordValue2(composio?.catalog);
+  const candidate = stringValue3(catalog?.logoUrl);
+  if (!candidate) {
+    return void 0;
+  }
+  try {
+    const url = new URL(candidate);
+    return url.protocol === "https:" ? url.toString() : void 0;
+  } catch {
+    return void 0;
+  }
+}
+function pluginSettingsSurfaceId(pluginId) {
+  return `marketplace.plugin.${pluginId}.settings`;
+}
+function extensionRecordId(pluginId, contributionId) {
+  return `extension:${pluginId}:${contributionId}`;
+}
+function extensionSettingsSurfaceId(pluginId, contribution) {
+  return contribution.settings?.settingsSurfaceId ?? `marketplace.extension.${pluginId}.${contribution.id}.settings`;
+}
+var EMPTY_SETTINGS_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {}
+};
+function pluginSettingsSurface(record2) {
+  const isMcp = record2.adapter.type === "mcp";
+  return {
+    schemaVersion: MARKETPLACE_SETTINGS_SURFACE_VERSION,
+    settingsSurfaceId: pluginSettingsSurfaceId(record2.pluginId),
+    ownerRecordId: record2.recordId,
+    presentation: "modal",
+    title: `${record2.displayName} settings`,
+    description: isMcp ? "MCP adapter configuration contributed by Marketplace." : "Plugin settings contributed by Marketplace.",
+    jsonSchema: isMcp ? {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        displayName: { type: "string" },
+        description: { type: "string" },
+        transport: { enum: ["stdio", "sse", "streamable-http"] },
+        command: { type: "string" },
+        args: { type: "array", items: { type: "string" } },
+        url: { type: "string", format: "uri" },
+        cwd: { type: "string" },
+        config: { type: "object" }
+      }
+    } : EMPTY_SETTINGS_SCHEMA,
+    allowedActions: record2.allowedActions.filter(
+      (action) => action === "configure" || action === "update"
+    ),
+    ...record2.allowedActions.includes("configure") ? { submitActionId: `${record2.recordId}:configure` } : {}
+  };
+}
+function extensionSettingsSurface(input) {
+  const settings = input.contribution.settings;
+  return {
+    schemaVersion: MARKETPLACE_SETTINGS_SURFACE_VERSION,
+    settingsSurfaceId: input.extension.settingsSurfaceId,
+    ownerRecordId: input.extension.recordId,
+    presentation: "modal",
+    title: settings?.title ?? `${input.extension.displayName} settings`,
+    description: settings?.description ?? "Extension settings contributed by its owning Plugin.",
+    jsonSchema: settings?.schema ?? EMPTY_SETTINGS_SCHEMA,
+    ...settings?.uiSchema ? { uiSchema: settings.uiSchema } : {},
+    allowedActions: []
+  };
+}
+function extensionRecord(plugin, contribution) {
+  return {
+    recordId: extensionRecordId(plugin.pluginId, contribution.id),
+    providerId: "marketplace",
+    ownerPluginId: plugin.pluginId,
+    displayName: contribution.label,
+    description: `Contributed by ${plugin.displayName}.`,
+    visible: contribution.enabled,
+    enabled: plugin.enabled && contribution.enabled,
+    required: plugin.required,
+    status: plugin.connection,
+    ...contribution.settings ? {
+      settingsSurfaceId: extensionSettingsSurfaceId(
+        plugin.pluginId,
+        contribution
+      )
+    } : {},
+    capabilities: plugin.capabilities
+  };
+}
+function actionLabel(action) {
+  if (action === "authenticate") return "Connect";
+  return action.charAt(0).toUpperCase() + action.slice(1);
+}
+function pluginActions(record2, workspaceSlug) {
+  return record2.allowedActions.map((operation) => {
+    if (operation === "authenticate") {
+      const provider = record2.adapter.type === "native" ? record2.adapter.native.provider : record2.providerId;
+      return {
+        actionId: `${record2.recordId}:${operation}`,
+        ownerRecordId: record2.recordId,
+        operation,
+        label: actionLabel(operation),
+        endpoint: `${HDDA_MARKETPLACE_PROXY_BASE}/api/marketplace/plugins/${encodeURIComponent(record2.pluginId)}/connection`,
+        method: "POST",
+        payload: {
+          workspaceSlug,
+          actorId: "operator",
+          provider,
+          backend: "composio",
+          toolkit: provider
+        }
+      };
+    }
+    const settingsAction = operation === "configure" || operation === "update";
+    const destructive = operation === "uninstall" || operation === "delete";
+    const pluginPath = `${HDDA_MARKETPLACE_PROXY_BASE}/api/marketplace/hub/plugins/${encodeURIComponent(record2.pluginId)}`;
+    return {
+      actionId: `${record2.recordId}:${operation}`,
+      ownerRecordId: record2.recordId,
+      operation,
+      label: operation === "install" && record2.connection.state === "connected" ? "Enable" : actionLabel(operation),
+      endpoint: settingsAction || operation === "delete" ? `${pluginPath}?workspaceSlug=${encodeURIComponent(workspaceSlug)}` : `${pluginPath}/lifecycle`,
+      method: operation === "delete" ? "DELETE" : settingsAction ? "PATCH" : "POST",
+      ...!settingsAction && operation !== "delete" ? {
+        payload: {
+          workspaceSlug,
+          actorId: "operator",
+          action: operation
+        }
+      } : {},
+      ...destructive ? { destructive: true } : {}
+    };
+  });
+}
+function extensionActions(_record) {
+  return [];
+}
+function assertUniqueOwnership(input) {
+  const seen = /* @__PURE__ */ new Set();
+  for (const value of input.values) {
+    if (seen.has(value)) {
+      throw new Error(`Duplicate ${input.label} ownership: ${value}`);
+    }
+    seen.add(value);
+  }
+}
+function marketplacePluginRecord(input) {
+  const install = input.store.getInstall(
+    input.workspaceSlug,
+    input.listing.pluginId
+  );
+  const installed = install?.lifecycle === "installed";
+  const enabled = installed && install?.enabled === true;
+  const required = listingIsRequired(input.listing);
+  const custom2 = listingIsCustomMcp(input.listing) && !listingIsOperatorCustomMcp(input.listing);
+  const connection = input.store.getConnection(
+    input.workspaceSlug,
+    input.listing.pluginId
+  );
+  const state = connectionState(input.listing, connection?.state);
+  const contributions = extensionContributions(input.listing);
+  const hub = skillsHubMetadata(input.listing);
+  const connectFirst = stringValue3(recordValue2(input.listing.manifest)?.role) === "composio-catalog-connector";
+  const unitId = stringValue3(hub.unitId) ?? input.listing.pluginId;
+  const version = stringValue3(input.listing.manifest.version) ?? "0.1.0";
+  return {
+    schemaVersion: MARKETPLACE_PLUGIN_RECORD_VERSION,
+    recordId: pluginRecordId(input.listing.pluginId),
+    providerId: "marketplace",
+    pluginId: input.listing.pluginId,
+    displayName: input.listing.displayName,
+    description: input.listing.description,
+    ...listingIconUrl(input.listing) ? { iconUrl: listingIconUrl(input.listing) } : {},
+    version,
+    kind: input.listing.source === "mcp" ? "mcp" : "native",
+    lifecycle: installed ? "installed" : "available",
+    enabled,
+    required,
+    connection: {
+      state,
+      detail: connection?.detail ?? (state === "auth-required" ? "External authentication requires the permissioned HDDA auth flow." : state === "connected" ? "Connected." : "No active connection.")
+    },
+    contributions,
+    adapter: input.listing.source === "mcp" ? { type: "mcp", mcp: marketplaceMcpAdapterConfig(input.listing) } : {
+      type: "native",
+      native: {
+        provider: input.listing.provider,
+        runtimeSources: input.listing.runtimeSources ?? []
+      }
+    },
+    capabilities: input.listing.capabilities,
+    actions: input.listing.actions,
+    allowedActions: allowedActions({
+      installed,
+      enabled,
+      required,
+      custom: custom2,
+      connectFirst,
+      composioAuth: input.listing.authOwner === "composio",
+      connectionState: state
+    }),
+    settingsSurfaceIds: input.listing.source === "mcp" ? [pluginSettingsSurfaceId(input.listing.pluginId)] : [],
+    registry: {
+      authority: "doppelganger-registry",
+      unitId,
+      contributionIds: contributions.map((contribution) => contribution.id)
+    },
+    custom: custom2,
+    createdAt: input.listing.createdAt,
+    updatedAt: input.listing.updatedAt
+  };
+}
+function marketplacePluginRecords(input) {
+  return input.store.listListingsForWorkspace(input.workspaceSlug).map((listing) => marketplacePluginRecord({ ...input, listing }));
+}
+function marketplaceCapabilitiesHostProjection(input) {
+  const pluginRecords = marketplacePluginRecords(input);
+  const extensionRecords = pluginRecords.flatMap(
+    (plugin) => plugin.contributions.map(
+      (contribution) => extensionRecord(plugin, contribution)
+    )
+  );
+  const extensionContributionIds = pluginRecords.flatMap(
+    (plugin) => plugin.contributions.map((contribution) => contribution.id)
+  );
+  const settingsSurfaces = [
+    ...pluginRecords.filter((record2) => record2.adapter.type === "mcp").map(pluginSettingsSurface),
+    ...extensionRecords.flatMap((extension) => {
+      const owner = pluginRecords.find(
+        (plugin) => plugin.pluginId === extension.ownerPluginId
+      );
+      if (!owner) {
+        throw new Error(
+          `Missing Plugin owner for Extension record ${extension.recordId}`
+        );
+      }
+      const contribution = owner.contributions.find(
+        (candidate) => extensionRecordId(owner.pluginId, candidate.id) === extension.recordId
+      );
+      if (!contribution) {
+        throw new Error(
+          `Missing Extension contribution for record ${extension.recordId}`
+        );
+      }
+      return contribution.settings ? [extensionSettingsSurface({ extension, contribution })] : [];
+    })
+  ];
+  const actions = [
+    ...pluginRecords.flatMap((record2) => pluginActions(record2, input.workspaceSlug)),
+    ...extensionRecords.flatMap(extensionActions)
+  ];
+  assertUniqueOwnership({
+    label: "Plugin record",
+    values: pluginRecords.map((record2) => record2.recordId)
+  });
+  assertUniqueOwnership({
+    label: "Extension record",
+    values: extensionRecords.map((record2) => record2.recordId)
+  });
+  assertUniqueOwnership({
+    label: "Extension contribution",
+    values: extensionContributionIds
+  });
+  assertUniqueOwnership({
+    label: "action",
+    values: actions.map((action) => action.actionId)
+  });
+  assertUniqueOwnership({
+    label: "settings surface",
+    values: settingsSurfaces.map((surface) => surface.settingsSurfaceId)
+  });
+  return {
+    host: {
+      entry: "capabilities",
+      tabs: ["skills", "plugins", "extensions"],
+      lifecycleAuthority: "marketplace",
+      directHermesRole: "underlying-adapters-only"
+    },
+    pluginRecords,
+    extensionRecords,
+    actions,
+    settingsSurfaces
+  };
+}
+function mcpListingFromInput(input, existing) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const capabilities2 = input.capabilities ?? [
+    "connector.observe",
+    "connector.dispatch"
+  ];
+  const actions = input.actions ?? ["mcp.tools.list", "mcp.tools.call"];
+  const adapter = {
+    transport: input.transport,
+    ...input.command ? { command: input.command } : {},
+    ...input.args && input.args.length > 0 ? { args: input.args } : {},
+    ...input.url ? { url: input.url } : {},
+    ...input.cwd ? { cwd: input.cwd } : {},
+    ...input.env ? { env: input.env } : {},
+    ...input.headers ? { headers: input.headers } : {},
+    config: input.config ?? {}
+  };
+  return {
+    pluginId: input.pluginId,
+    displayName: input.displayName,
+    kind: "toolset",
+    provider: input.pluginId,
+    description: input.description ?? "Custom Plugin using an MCP transport adapter.",
+    capabilities: capabilities2,
+    actions,
+    source: "mcp",
+    authOwner: "program",
+    executionOwner: "mcp",
+    runtimeSources: [
+      {
+        runtimeSourceId: `${input.pluginId}-mcp`,
+        kind: "mcp",
+        label: `${input.displayName} MCP adapter`,
+        primary: true,
+        mcpServerId: input.pluginId
+      }
+    ],
+    enabledByDefault: false,
+    manifest: {
+      version: input.version ?? stringValue3(existing?.manifest.version) ?? "0.1.0",
+      kind: "plugin",
+      actionRequirements: Object.fromEntries(
+        actions.map((action) => [
+          action,
+          {
+            kind: "mcp",
+            capability: action.endsWith(".call") ? "connector.dispatch" : "connector.observe"
+          }
+        ])
+      ),
+      skillsHub: {
+        custom: true,
+        required: false,
+        unitId: input.pluginId,
+        contributions: input.contributions ?? [],
+        adapter: { type: "mcp", mcp: adapter }
+      }
+    },
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now
+  };
+}
+function reconcileGatewayRegistry(snapshot) {
+  const issues = [];
+  const unit = snapshot.units.find(
+    (candidate) => candidate.unitId === MARKETPLACE_HUB_UNIT.unitId
+  );
+  if (!unit) {
+    issues.push({
+      code: "marketplace-unit-missing",
+      detail: "The Marketplace unit is absent."
+    });
+  } else {
+    if (!unit.enabled) {
+      issues.push({
+        code: "required-unit-disabled",
+        detail: "The required Marketplace unit must remain enabled."
+      });
+    }
+    if (unit.required !== true) {
+      issues.push({
+        code: "required-policy-missing",
+        detail: "The gateway registry must mark Marketplace as required."
+      });
+    }
+    if (!unit.capabilityProjection) {
+      issues.push({
+        code: "capabilities-projection-missing",
+        detail: "The required Marketplace unit must declare its gateway projection."
+      });
+    } else if (unit.capabilityProjection.gatewayPluginId !== MARKETPLACE_CAPABILITY_PROJECTION.gatewayPluginId || unit.capabilityProjection.recordsPath !== MARKETPLACE_CAPABILITY_PROJECTION.recordsPath) {
+      issues.push({
+        code: "capabilities-projection-mismatch",
+        detail: "The Marketplace projection must use the mounted marketplace-hub gateway adapter and its records route."
+      });
+    }
+  }
+  for (const contribution of snapshot.contributions) {
+    if (contribution.mount === "hub-tab" || contribution.type === "hub-family-filler") {
+      issues.push({
+        code: "duplicate-top-level-tab",
+        detail: `${contribution.id} attempts to replace or append a Capabilities tab.`
+      });
+    }
+    if (["mcp", "toolsets", "hub"].includes(
+      (contribution.family ?? contribution.routeSegment ?? "").toLowerCase()
+    )) {
+      issues.push({
+        code: "unexpected-top-level-category",
+        detail: `${contribution.label} must be represented as a Plugin, not a top-level Hub category.`
+      });
+    }
+  }
+  return {
+    ok: issues.length === 0,
+    authority: "doppelganger-registry",
+    writesRegistry: false,
+    expected: {
+      unit: MARKETPLACE_HUB_UNIT,
+      capabilityProjection: MARKETPLACE_CAPABILITY_PROJECTION,
+      entry: "capabilities",
+      tabs: ["skills", "plugins", "extensions"],
+      projectionEndpoint: MARKETPLACE_CAPABILITY_PROJECTION.recordsPath,
+      contributionMode: "gateway-projected-records",
+      lifecycleAuthority: "marketplace"
+    },
+    observedRevision: snapshot.revision,
+    issues
+  };
+}
+
+// src/custom-mcp.ts
+var CUSTOM_MCP_MAX_HEADERS = 20;
+var CUSTOM_MCP_MAX_SECRET_HEADERS = 10;
+var MAX_HEADER_VALUE_LENGTH = 4096;
+var MAX_INPUT_SCHEMA_BYTES = 16384;
+var MAX_TOOL_DESCRIPTION = 1e3;
+var MAX_TOOL_TITLE = 200;
+var MAX_ACTION_KEY_LENGTH = 128;
+var ACTION_KEY_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*){1,7}$/u;
+var STDIO_ONLY_FIELDS = ["command", "args", "env", "cwd"];
+var HEADER_NAME_PATTERN = /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,64}$/u;
+var RESERVED_HEADER_NAMES = /* @__PURE__ */ new Set([
+  "accept",
+  "connection",
+  "content-length",
+  "content-type",
+  "host",
+  "keep-alive",
+  "last-event-id",
+  "mcp-protocol-version",
+  "mcp-session-id",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade"
+]);
+var CustomMcpInputError = class extends Error {
+  constructor(code, field) {
+    super(code);
+    this.code = code;
+    this.field = field;
+  }
+  code;
+  field;
+};
+var TransportSchema = external_exports.enum(["streamable-http", "sse"]);
+var CustomMcpCreateSchema = external_exports.object({
+  displayName: external_exports.string().trim().min(1).max(80),
+  slug: external_exports.string().trim().min(1).max(40).optional(),
+  description: external_exports.string().trim().max(500).optional(),
+  transport: TransportSchema.default("streamable-http"),
+  url: external_exports.string().trim().min(1).max(2048),
+  headers: external_exports.record(external_exports.string()).optional(),
+  secretHeaders: external_exports.record(external_exports.string()).optional()
+});
+var CustomMcpPatchSchema = external_exports.object({
+  displayName: external_exports.string().trim().min(1).max(80).optional(),
+  description: external_exports.string().trim().max(500).optional(),
+  transport: TransportSchema.optional(),
+  url: external_exports.string().trim().min(1).max(2048).optional(),
+  headers: external_exports.record(external_exports.string()).optional(),
+  /** string = set/replace, null = remove, omitted = keep. */
+  secretHeaders: external_exports.record(external_exports.string().nullable()).optional()
+});
+function requestsStdioTransport(body) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return false;
+  const record2 = body;
+  return record2.transport === "stdio" || STDIO_ONLY_FIELDS.some((field) => field in record2);
+}
+function normalizeHeaderName(name, field) {
+  const trimmed = name.trim();
+  if (!HEADER_NAME_PATTERN.test(trimmed)) {
+    throw new CustomMcpInputError("custom_mcp_header_invalid", field);
+  }
+  const lower = trimmed.toLowerCase();
+  if (RESERVED_HEADER_NAMES.has(lower) || lower.startsWith("proxy-")) {
+    throw new CustomMcpInputError("custom_mcp_header_invalid", field);
+  }
+  return lower;
+}
+function validHeaderValue(value) {
+  return value.length <= MAX_HEADER_VALUE_LENGTH && // Visible ASCII/Latin-1 plus space and tab; no CR, LF, or NUL.
+  /^[\t\x20-\x7e\x80-\xff]*$/u.test(value);
+}
+function normalizePlainHeaders(headers) {
+  const entries = Object.entries(headers ?? {});
+  if (entries.length > CUSTOM_MCP_MAX_HEADERS) {
+    throw new CustomMcpInputError("custom_mcp_header_limit", "headers");
+  }
+  const normalized2 = {};
+  for (const [name, value] of entries) {
+    const key = normalizeHeaderName(name, "headers");
+    const trimmed = value.trim();
+    if (!validHeaderValue(trimmed) || key in normalized2) {
+      throw new CustomMcpInputError("custom_mcp_header_invalid", "headers");
+    }
+    normalized2[key] = trimmed;
+  }
+  return normalized2;
+}
+function normalizeSecretHeaderChanges(headers) {
+  const changes = /* @__PURE__ */ new Map();
+  for (const [name, value] of Object.entries(headers ?? {})) {
+    const key = normalizeHeaderName(name, "secretHeaders");
+    if (changes.has(key)) {
+      throw new CustomMcpInputError("custom_mcp_header_invalid", "secretHeaders");
+    }
+    if (value === null) {
+      changes.set(key, null);
+      continue;
+    }
+    const trimmed = value.trim();
+    if (!trimmed || !validHeaderValue(trimmed)) {
+      throw new CustomMcpInputError("custom_mcp_header_invalid", "secretHeaders");
+    }
+    changes.set(key, trimmed);
+  }
+  return changes;
+}
+function assertHeaderSets(input) {
+  const plain = new Set(input.plainNames);
+  const secret = [...new Set(input.secretNames)];
+  if (secret.length > CUSTOM_MCP_MAX_SECRET_HEADERS) {
+    throw new CustomMcpInputError("custom_mcp_header_limit", "secretHeaders");
+  }
+  if (secret.some((name) => plain.has(name))) {
+    throw new CustomMcpInputError("custom_mcp_header_conflict");
+  }
+}
+function workspaceHash(workspaceSlug) {
+  return createHash("sha256").update(workspaceSlug).digest("hex").slice(0, 8);
+}
+function customMcpPluginId(input) {
+  let slug = normalizeConnectorSlug(input.slug ?? input.displayName);
+  if (!slug) slug = "connector";
+  if (!/^[a-z]/u.test(slug)) slug = `c-${slug}`;
+  slug = slug.slice(0, 40).replace(/-+$/u, "");
+  return `mcp-${slug}-${workspaceHash(input.workspaceSlug)}`;
+}
+function displayUrl(value) {
+  try {
+    const url = new URL(value);
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return "";
+  }
+}
+function recordValue3(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+function isCapability(value) {
+  return value === "connector.observe" || value === "connector.dispatch" || value === "connector.admin";
+}
+function customMcpManifest(listing) {
+  const mcp = recordValue3(listing.manifest.mcp) ?? {};
+  const headers = recordValue3(mcp.headers) ?? {};
+  const lastRefresh = recordValue3(mcp.lastRefresh);
+  return {
+    operatorManaged: true,
+    transport: mcp.transport === "sse" ? "sse" : "streamable-http",
+    url: typeof mcp.url === "string" ? mcp.url : "",
+    headers: Object.fromEntries(
+      Object.entries(headers).filter(
+        (entry) => typeof entry[1] === "string"
+      )
+    ),
+    tools: (Array.isArray(mcp.tools) ? mcp.tools : []).flatMap((entry) => {
+      const tool = recordValue3(entry);
+      if (!tool || typeof tool.name !== "string" || typeof tool.action !== "string" || !isCapability(tool.capability)) {
+        return [];
+      }
+      return [
+        {
+          name: tool.name,
+          action: tool.action,
+          ...typeof tool.title === "string" ? { title: tool.title } : {},
+          ...typeof tool.description === "string" ? { description: tool.description } : {},
+          capability: tool.capability,
+          inputSchema: recordValue3(tool.inputSchema) ?? { type: "object" },
+          annotations: recordValue3(tool.annotations) ?? {}
+        }
+      ];
+    }),
+    lastRefresh: lastRefresh ? {
+      at: String(lastRefresh.at ?? ""),
+      ok: lastRefresh.ok === true,
+      errorCode: typeof lastRefresh.errorCode === "string" ? lastRefresh.errorCode : null
+    } : null
+  };
+}
+function customMcpListing(input) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const { manifest } = input;
+  const capabilities2 = ["connector.observe", "connector.dispatch", "connector.admin"].filter(
+    (capability) => manifest.tools.some((tool) => tool.capability === capability)
+  );
+  return {
+    pluginId: input.pluginId,
+    displayName: input.displayName,
+    kind: "toolset",
+    provider: input.pluginId,
+    description: input.description?.trim() || "Custom connector using a remote MCP server.",
+    capabilities: capabilities2,
+    actions: manifest.tools.map((tool) => tool.action),
+    source: "mcp",
+    authOwner: "program",
+    executionOwner: "mcp",
+    runtimeSources: [
+      {
+        runtimeSourceId: `${input.pluginId}-mcp`,
+        kind: "mcp",
+        label: "Custom MCP server",
+        primary: true,
+        mcpServerId: input.pluginId
+      }
+    ],
+    enabledByDefault: false,
+    ownerWorkspaceSlug: input.workspaceSlug,
+    manifest: {
+      version: input.version ?? "0.1.0",
+      kind: "plugin",
+      actionRequirements: Object.fromEntries(
+        manifest.tools.map((tool) => [
+          tool.action,
+          { kind: input.pluginId, capability: tool.capability }
+        ])
+      ),
+      mcp: manifest,
+      skillsHub: {
+        custom: true,
+        operatorManaged: true,
+        required: false,
+        unitId: input.pluginId,
+        contributions: [],
+        adapter: {
+          type: "mcp",
+          // Origin + path only: a query string may carry credentials.
+          mcp: { transport: manifest.transport, url: displayUrl(manifest.url), config: {} }
+        }
+      }
+    },
+    createdAt: input.createdAt ?? now,
+    updatedAt: now
+  };
+}
+function actionSegment(name) {
+  let segment = name.toLowerCase().replace(/[^a-z0-9]+/gu, "-").replace(/^-+|-+$/gu, "");
+  if (!segment) segment = "tool";
+  if (!/^[a-z]/u.test(segment)) segment = `tool-${segment}`;
+  return segment;
+}
+function deriveActionKeys(provider, toolNames) {
+  const used = /* @__PURE__ */ new Set();
+  const budget = MAX_ACTION_KEY_LENGTH - provider.length - 1 - 4;
+  return toolNames.map((name) => {
+    const base = actionSegment(name).slice(0, Math.max(1, budget)).replace(/-+$/u, "");
+    let candidate = `${provider}.${base}`;
+    for (let suffix = 2; used.has(candidate); suffix += 1) {
+      candidate = `${provider}.${base}-${suffix}`;
+    }
+    if (!ACTION_KEY_PATTERN.test(candidate) || candidate.length > MAX_ACTION_KEY_LENGTH) {
+      throw new Error(`Derived action key ${candidate} is invalid.`);
+    }
+    used.add(candidate);
+    return candidate;
+  });
+}
+function capabilityForTool(tool, actionSegmentValue) {
+  const annotations = tool.annotations ?? {};
+  if (annotations.readOnlyHint === true) return "connector.observe";
+  if (annotations.destructiveHint === true) return "connector.admin";
+  if (typeof annotations.readOnlyHint === "boolean" || typeof annotations.destructiveHint === "boolean") {
+    return "connector.dispatch";
+  }
+  return inferConnectorCapabilityFromAction(actionSegmentValue);
+}
+function boundedText(value, max) {
+  if (typeof value !== "string") return void 0;
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, max) : void 0;
+}
+function toolRecordsFromRemote(provider, tools) {
+  const actions = deriveActionKeys(
+    provider,
+    tools.map((tool) => tool.name)
+  );
+  return tools.map((tool, index) => {
+    const action = actions[index];
+    const schema = recordValue3(tool.inputSchema);
+    const schemaJson = schema ? JSON.stringify(schema) : "";
+    const annotations = recordValue3(tool.annotations) ?? {};
+    const title = boundedText(tool.title, MAX_TOOL_TITLE) ?? boundedText(typeof annotations.title === "string" ? annotations.title : void 0, MAX_TOOL_TITLE);
+    const description = boundedText(tool.description, MAX_TOOL_DESCRIPTION);
+    return {
+      name: tool.name,
+      action,
+      ...title ? { title } : {},
+      ...description ? { description } : {},
+      capability: capabilityForTool(tool, action.slice(provider.length + 1)),
+      inputSchema: schema && Buffer.byteLength(schemaJson) <= MAX_INPUT_SCHEMA_BYTES ? schema : { type: "object" },
+      annotations: Object.fromEntries(
+        Object.entries(annotations).filter(
+          ([key, value]) => ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"].includes(key) && typeof value === "boolean"
+        )
+      )
+    };
+  });
+}
+function customMcpToolForAction(listing, action) {
+  return customMcpManifest(listing).tools.find((tool) => tool.action === action) ?? null;
+}
+function customConnectorView(store2, workspaceSlug, listing) {
+  const manifest = customMcpManifest(listing);
+  const install = store2.getInstall(workspaceSlug, listing.pluginId);
+  const connection = store2.getConnection(workspaceSlug, listing.pluginId);
+  return {
+    pluginId: listing.pluginId,
+    displayName: listing.displayName,
+    description: listing.description,
+    transport: manifest.transport,
+    url: displayUrl(manifest.url),
+    headers: Object.entries(manifest.headers).map(([name, value]) => ({ name, value })),
+    secretHeaders: store2.listConnectorSecrets({ workspaceSlug, pluginId: listing.pluginId }).map((secret) => ({ name: secret.name, configured: true, fingerprint: secret.fingerprint })),
+    tools: manifest.tools.map((tool) => ({
+      name: tool.name,
+      action: tool.action,
+      title: tool.title ?? null,
+      description: tool.description ?? null,
+      capability: tool.capability
+    })),
+    lastRefresh: manifest.lastRefresh,
+    install: {
+      installed: install?.lifecycle === "installed",
+      enabled: install?.lifecycle === "installed" && install.enabled,
+      lifecycle: install?.lifecycle ?? null
+    },
+    connection: connection ? { state: connection.state, detail: connection.detail, updatedAt: connection.updatedAt } : null,
+    createdAt: listing.createdAt,
+    updatedAt: listing.updatedAt
+  };
+}
+function bindCustomMcpForWorkspace(store2, workspaceSlug, listing) {
+  store2.registerPlugin(listing.pluginId);
+  for (const capability of listing.capabilities) {
+    if (!store2.getCapabilityBinding(workspaceSlug, listing.pluginId, capability)) {
+      store2.bindCapability({ workspaceSlug, pluginId: listing.pluginId, capability, enabled: true });
+    }
+  }
+  for (const actionKey of listing.actions) {
+    if (!store2.getActionBinding(workspaceSlug, listing.pluginId, actionKey)) {
+      store2.bindAction({ workspaceSlug, pluginId: listing.pluginId, actionKey, enabled: true });
+    }
+  }
+}
+
+// src/mcp-url-policy.ts
+import { lookup as dnsLookup } from "node:dns/promises";
+import { isIP } from "node:net";
+var McpUrlPolicyError = class extends Error {
+  constructor(reason) {
+    super(`MCP server URL is not allowed (${reason}).`);
+    this.reason = reason;
+  }
+  reason;
+  code = "custom_mcp_url_not_allowed";
+};
+var defaultMcpLookup = async (hostname) => dnsLookup(hostname, { all: true, verbatim: true });
+function configuredMcpAllowedOrigins(env = process.env) {
+  return new Set(
+    (env.MARKETPLACE_MCP_ALLOWED_ORIGINS ?? "").split(",").map((origin) => origin.trim()).filter(Boolean)
+  );
+}
+function ipv4Octets(address2) {
+  const parts = address2.split(".");
+  if (parts.length !== 4) return null;
+  const octets = parts.map((part) => /^\d{1,3}$/u.test(part) ? Number(part) : NaN);
+  return octets.every((octet) => Number.isInteger(octet) && octet >= 0 && octet <= 255) ? octets : null;
+}
+function forbiddenIpv4(octets) {
+  const [a, b] = octets;
+  if (a === 0) return true;
+  if (a === 10) return true;
+  if (a === 127) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 192 && b === 0 && octets[2] === 0) return true;
+  if (a === 198 && (b === 18 || b === 19)) return true;
+  if (a >= 224) return true;
+  return false;
+}
+function expandIpv6(address2) {
+  let value = address2.toLowerCase();
+  const zone = value.indexOf("%");
+  if (zone >= 0) value = value.slice(0, zone);
+  let tail = [];
+  const lastColon = value.lastIndexOf(":");
+  const maybeV4 = value.slice(lastColon + 1);
+  if (maybeV4.includes(".")) {
+    const octets = ipv4Octets(maybeV4);
+    if (!octets) return null;
+    tail = [octets[0] << 8 | octets[1], octets[2] << 8 | octets[3]];
+    value = `${value.slice(0, lastColon + 1)}0:0`;
+  }
+  const halves = value.split("::");
+  if (halves.length > 2) return null;
+  const parse = (part) => part ? part.split(":").map((group) => /^[0-9a-f]{1,4}$/u.test(group) ? parseInt(group, 16) : NaN) : [];
+  const head = parse(halves[0] ?? "");
+  const rest = halves.length === 2 ? parse(halves[1] ?? "") : [];
+  const fill = halves.length === 2 ? 8 - head.length - rest.length : 0;
+  if (fill < 0) return null;
+  const groups = [...head, ...Array(fill).fill(0), ...rest];
+  if (groups.length !== 8 || groups.some((group) => Number.isNaN(group))) return null;
+  if (tail.length) {
+    groups[6] = tail[0];
+    groups[7] = tail[1];
+  }
+  return groups;
+}
+function forbiddenIpv6(groups) {
+  const [g0, , , , , g5, g6, g7] = groups;
+  if (groups.every((group) => group === 0)) return true;
+  if (groups.slice(0, 7).every((group) => group === 0) && g7 === 1) return true;
+  if ((g0 & 65024) === 64512) return true;
+  if ((g0 & 65472) === 65152) return true;
+  if ((g0 & 65472) === 65216) return true;
+  if ((g0 & 65280) === 65280) return true;
+  if (g0 === 8193 && groups[1] === 3512) return true;
+  const embedded = [g6 >> 8, g6 & 255, g7 >> 8, g7 & 255];
+  if (groups.slice(0, 5).every((group) => group === 0) && (g5 === 65535 || g5 === 0)) {
+    return forbiddenIpv4(embedded);
+  }
+  if (g0 === 100 && groups[1] === 65435 && groups.slice(2, 6).every((group) => group === 0)) {
+    return forbiddenIpv4(embedded);
+  }
+  return false;
+}
+function isForbiddenMcpAddress(address2) {
+  const family = isIP(address2.replace(/^\[|\]$/gu, "").split("%")[0] ?? "");
+  const bare = address2.replace(/^\[|\]$/gu, "");
+  if (family === 4) {
+    const octets = ipv4Octets(bare);
+    return !octets || forbiddenIpv4(octets);
+  }
+  if (family === 6) {
+    const groups = expandIpv6(bare);
+    return !groups || forbiddenIpv6(groups);
+  }
+  return true;
+}
+function forbiddenHostname(hostname) {
+  const host = hostname.toLowerCase().replace(/\.$/u, "");
+  return host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal") || host === "" || // Single-label names resolve through local search domains.
+  !host.includes(".") && isIP(host) === 0;
+}
+function checkMcpUrlSyntax(value, env = process.env) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new McpUrlPolicyError("invalid_url");
+  }
+  if (configuredMcpAllowedOrigins(env).has(url.origin)) {
+    if (url.username || url.password) throw new McpUrlPolicyError("userinfo_not_allowed");
+    return { url, allowlisted: true };
+  }
+  if (url.protocol !== "https:") throw new McpUrlPolicyError("scheme_not_https");
+  if (url.username || url.password) throw new McpUrlPolicyError("userinfo_not_allowed");
+  if (url.hash) throw new McpUrlPolicyError("fragment_not_allowed");
+  if (url.search) throw new McpUrlPolicyError("query_not_allowed");
+  const hostname = url.hostname.replace(/^\[|\]$/gu, "");
+  if (isIP(hostname)) {
+    if (isForbiddenMcpAddress(hostname)) throw new McpUrlPolicyError("address_not_allowed");
+    return { url, allowlisted: false };
+  }
+  if (forbiddenHostname(hostname)) throw new McpUrlPolicyError("hostname_not_allowed");
+  return { url, allowlisted: false };
+}
+async function assertMcpUrlAllowed(value, options = {}) {
+  const { url, allowlisted } = checkMcpUrlSyntax(value, options.env);
+  if (allowlisted) return url;
+  const hostname = url.hostname.replace(/^\[|\]$/gu, "");
+  if (isIP(hostname)) return url;
+  let answers;
+  try {
+    answers = await (options.lookup ?? defaultMcpLookup)(hostname);
+  } catch {
+    throw new McpUrlPolicyError("dns_lookup_failed");
+  }
+  if (answers.length === 0) throw new McpUrlPolicyError("dns_lookup_failed");
+  if (answers.some((answer) => isForbiddenMcpAddress(answer.address))) {
+    throw new McpUrlPolicyError("address_not_allowed");
+  }
+  return url;
+}
+
+// package.json
+var package_default = {
+  name: "@tealbrick/marketplace-program",
+  version: "0.1.8",
+  private: true,
+  type: "module",
+  packageManager: "pnpm@9.15.4",
+  engines: {
+    node: ">=22.22.0",
+    pnpm: ">=9.15.4"
+  },
+  scripts: {
+    dev: "tsx watch src/index.ts",
+    "dev:web": "vite --config web/vite.config.ts",
+    build: "pnpm run build:web",
+    "build:web": "vite build --config web/vite.config.ts",
+    "build:miniapp": "pnpm run build:web && node scripts/build-miniapp.mjs",
+    "dev:miniapp": "node scripts/run-miniapp.mjs",
+    "start:miniapp": "node dist/marketplace-program.mjs",
+    "smoke:live-app-home": "tsx ../smoke/live-app-home-smoke.ts",
+    "smoke:operator-pov": "node ../smoke/operator-pov-workflow.mjs",
+    typecheck: "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
+    test: "vitest run && vitest run --config web/vitest.config.ts",
+    "test:e2e": "pnpm run build:web && playwright test --config web/playwright.config.ts",
+    lint: "tsc -p tsconfig.json --noEmit"
+  },
+  dependencies: {
+    "@fastify/static": "^8.3.0",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "@tanstack/react-query": "^5.90.20",
+    "@tealbrick/ui": "file:../.sdk/tealbrick-ui",
+    fastify: "^5.6.1",
+    "lucide-react": "^0.468.0",
+    react: "^19.2.3",
+    "react-dom": "^19.2.3",
+    zod: "^3.25.76"
+  },
+  devDependencies: {
+    "@playwright/test": "^1.58.2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^24.12.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.4",
+    esbuild: "^0.28.1",
+    jsdom: "^28.0.0",
+    tsx: "^4.20.6",
+    typescript: "^5.9.3",
+    vite: "^7.3.1",
+    vitest: "^3.2.4"
+  }
+};
+
+// src/version.ts
+var MARKETPLACE_VERSION = package_default.version;
+
+// src/mcp-remote-client.ts
+var MCP_PROTOCOL_VERSION = "2025-06-18";
+var MCP_CONNECT_TIMEOUT_MS = 1e4;
+var MCP_REQUEST_TIMEOUT_MS = 1e4;
+var MCP_CALL_TIMEOUT_MS = 3e4;
+var MCP_MAX_BODY_BYTES = 2 * 1024 * 1024;
+var MCP_MAX_TOOLS = 200;
+var MCP_MAX_TOOL_PAGES = 50;
+var McpRemoteError = class extends Error {
+  constructor(code, message, detail = {}) {
+    super(message);
+    this.code = code;
+    this.detail = detail;
+  }
+  code;
+  detail;
+};
+function recordValue4(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+function isAbortError(error) {
+  return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
+}
+function transportFailure(error, timedOut) {
+  if (error instanceof McpRemoteError) return error;
+  if (timedOut || isAbortError(error)) {
+    return new McpRemoteError("mcp_timeout", "The MCP server did not respond in time.");
+  }
+  return new McpRemoteError("mcp_unreachable", "The MCP server could not be reached.");
+}
+function statusFailure(status) {
+  if (status === 401 || status === 403) {
+    return new McpRemoteError("mcp_auth_rejected", "The MCP server rejected the credentials.", { status });
+  }
+  return new McpRemoteError("mcp_http_error", `The MCP server answered HTTP ${status}.`, { status });
+}
+var SseParser = class {
+  constructor(onEvent, maxEventBytes) {
+    this.onEvent = onEvent;
+    this.maxEventBytes = maxEventBytes;
+  }
+  onEvent;
+  maxEventBytes;
+  buffer = "";
+  eventName = "";
+  data = [];
+  dataBytes = 0;
+  feed(chunk) {
+    this.buffer += chunk;
+    for (; ; ) {
+      const match = /\r\n|\r|\n/u.exec(this.buffer);
+      if (!match) break;
+      if (match[0] === "\r" && match.index === this.buffer.length - 1) break;
+      const line = this.buffer.slice(0, match.index);
+      this.buffer = this.buffer.slice(match.index + match[0].length);
+      this.line(line);
+    }
+    if (this.buffer.length > this.maxEventBytes) {
+      throw new McpRemoteError("mcp_response_too_large", "The MCP server response was too large.");
+    }
+  }
+  line(line) {
+    if (line === "") {
+      if (this.data.length > 0) {
+        const event = { event: this.eventName || "message", data: this.data.join("\n") };
+        this.eventName = "";
+        this.data = [];
+        this.dataBytes = 0;
+        this.onEvent(event);
+      } else {
+        this.eventName = "";
+      }
+      return;
+    }
+    if (line.startsWith(":")) return;
+    const colon = line.indexOf(":");
+    const field = colon < 0 ? line : line.slice(0, colon);
+    let value = colon < 0 ? "" : line.slice(colon + 1);
+    if (value.startsWith(" ")) value = value.slice(1);
+    if (field === "event") this.eventName = value;
+    if (field === "data") {
+      this.dataBytes += value.length;
+      if (this.dataBytes > this.maxEventBytes) {
+        throw new McpRemoteError("mcp_response_too_large", "The MCP server response was too large.");
+      }
+      this.data.push(value);
+    }
+  }
+};
+async function readCappedText(response, maxBytes) {
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let total = 0;
+  let text = "";
+  for (; ; ) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => void 0);
+      throw new McpRemoteError("mcp_response_too_large", "The MCP server response was too large.");
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+  return text + decoder.decode();
+}
+async function discardBody(response) {
+  await response.body?.cancel().catch(() => void 0);
+}
+function parseJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new McpRemoteError("mcp_protocol_error", "The MCP server sent an invalid JSON-RPC message.");
+  }
+}
+function resultFromMessage(message) {
+  if (message.jsonrpc !== "2.0") {
+    throw new McpRemoteError("mcp_protocol_error", "The MCP server sent an invalid JSON-RPC message.");
+  }
+  if (message.error) {
+    const rpcCode = typeof message.error.code === "number" ? message.error.code : void 0;
+    throw new McpRemoteError("mcp_rpc_error", "The MCP server returned a JSON-RPC error.", { rpcCode });
+  }
+  if (!("result" in message)) {
+    throw new McpRemoteError("mcp_protocol_error", "The MCP server sent an invalid JSON-RPC message.");
+  }
+  return message.result;
+}
+function buildHeaders(base, protocol) {
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(base ?? {})) headers.set(name, value);
+  for (const [name, value] of Object.entries(protocol)) headers.set(name, value);
+  return headers;
+}
+var StreamableHttpSession = class {
+  constructor(url, options, fetchImpl, maxBytes) {
+    this.url = url;
+    this.options = options;
+    this.fetchImpl = fetchImpl;
+    this.maxBytes = maxBytes;
+  }
+  url;
+  options;
+  fetchImpl;
+  maxBytes;
+  sessionId = null;
+  protocolVersion = null;
+  nextId = 1;
+  setProtocolVersion(version) {
+    this.protocolVersion = version;
+  }
+  headers(extra = {}) {
+    return buildHeaders(this.options.headers, {
+      accept: "application/json, text/event-stream",
+      ...this.sessionId ? { "mcp-session-id": this.sessionId } : {},
+      ...this.protocolVersion ? { "mcp-protocol-version": this.protocolVersion } : {},
+      ...extra
+    });
+  }
+  async post(message, timeoutMs, expectId) {
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
+    try {
+      const response = await this.fetchImpl(this.url, {
+        method: "POST",
+        headers: this.headers({ "content-type": "application/json" }),
+        body: JSON.stringify(message),
+        redirect: "error",
+        signal: controller.signal
+      });
+      const sessionId = response.headers.get("mcp-session-id");
+      if (sessionId && /^[\x21-\x7e]{1,256}$/u.test(sessionId)) this.sessionId = sessionId;
+      if (!response.ok) {
+        await discardBody(response);
+        throw statusFailure(response.status);
+      }
+      if (expectId === null) {
+        await discardBody(response);
+        return void 0;
+      }
+      const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+      if (contentType.includes("text/event-stream")) {
+        return await this.readEventStreamReply(response, expectId);
+      }
+      const parsed = parseJson(await readCappedText(response, this.maxBytes));
+      const messages = Array.isArray(parsed) ? parsed : [parsed];
+      const reply = messages.map((entry) => recordValue4(entry)).find((entry) => entry?.id === expectId);
+      if (!reply) {
+        throw new McpRemoteError("mcp_protocol_error", "The MCP server did not answer the request.");
+      }
+      return resultFromMessage(reply);
+    } catch (error) {
+      throw transportFailure(error, timedOut);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  async readEventStreamReply(response, expectId) {
+    if (!response.body) {
+      throw new McpRemoteError("mcp_protocol_error", "The MCP server did not answer the request.");
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let total = 0;
+    let reply = null;
+    const parser = new SseParser((event) => {
+      if (reply || event.event !== "message") return;
+      const message = recordValue4(parseJson(event.data));
+      if (message?.id === expectId && ("result" in message || "error" in message)) {
+        reply = message;
+      }
+    }, this.maxBytes);
+    try {
+      while (!reply) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > this.maxBytes) {
+          throw new McpRemoteError("mcp_response_too_large", "The MCP server response was too large.");
+        }
+        parser.feed(decoder.decode(value, { stream: true }));
+      }
+    } finally {
+      await reader.cancel().catch(() => void 0);
+    }
+    if (!reply) {
+      throw new McpRemoteError("mcp_protocol_error", "The MCP server did not answer the request.");
+    }
+    return resultFromMessage(reply);
+  }
+  async request(method, params, timeoutMs) {
+    const id = this.nextId++;
+    return this.post({ jsonrpc: "2.0", id, method, ...params === void 0 ? {} : { params } }, timeoutMs, id);
+  }
+  async notify(method, params) {
+    await this.post(
+      { jsonrpc: "2.0", method, ...params === void 0 ? {} : { params } },
+      this.options.timeouts?.connectMs ?? MCP_CONNECT_TIMEOUT_MS,
+      null
+    );
+  }
+  async close() {
+    if (!this.sessionId) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2e3);
+    try {
+      const response = await this.fetchImpl(this.url, {
+        method: "DELETE",
+        headers: this.headers(),
+        redirect: "error",
+        signal: controller.signal
+      });
+      await discardBody(response);
+    } catch {
+    } finally {
+      clearTimeout(timer);
+      this.sessionId = null;
+    }
+  }
+};
+var LegacySseSession = class {
+  constructor(url, options, fetchImpl, maxBytes) {
+    this.url = url;
+    this.options = options;
+    this.fetchImpl = fetchImpl;
+    this.maxBytes = maxBytes;
+  }
+  url;
+  options;
+  fetchImpl;
+  maxBytes;
+  controller = new AbortController();
+  pending = /* @__PURE__ */ new Map();
+  endpoint = null;
+  failure = null;
+  nextId = 1;
+  endpointWaiter = null;
+  setProtocolVersion() {
+  }
+  async open(timeoutMs) {
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      this.fail(new McpRemoteError("mcp_timeout", "The MCP server did not respond in time."));
+      this.controller.abort();
+    }, timeoutMs);
+    try {
+      const endpoint = new Promise((resolve, reject) => {
+        this.endpointWaiter = { resolve, reject };
+      });
+      endpoint.catch(() => void 0);
+      const response = await this.fetchImpl(this.url, {
+        method: "GET",
+        headers: buildHeaders(this.options.headers, { accept: "text/event-stream" }),
+        redirect: "error",
+        signal: this.controller.signal
+      });
+      if (!response.ok) {
+        await discardBody(response);
+        throw statusFailure(response.status);
+      }
+      if (!response.body) {
+        throw new McpRemoteError("mcp_protocol_error", "The MCP server did not open an event stream.");
+      }
+      void this.pump(response.body);
+      this.endpoint = await endpoint;
+    } catch (error) {
+      this.controller.abort();
+      throw transportFailure(this.failure ?? error, timedOut);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  fail(error) {
+    if (!this.failure) this.failure = error;
+    this.endpointWaiter?.reject(this.failure);
+    this.endpointWaiter = null;
+    for (const [id, pending] of this.pending) {
+      clearTimeout(pending.timer);
+      pending.reject(this.failure);
+      this.pending.delete(id);
+    }
+  }
+  onEvent(event) {
+    if (event.event === "endpoint") {
+      if (this.endpoint || !this.endpointWaiter) return;
+      let endpoint;
+      try {
+        endpoint = new URL(event.data.trim(), this.url);
+      } catch {
+        throw new McpRemoteError("mcp_protocol_error", "The MCP server sent an invalid endpoint.");
+      }
+      if (endpoint.origin !== this.url.origin) {
+        throw new McpRemoteError("mcp_protocol_error", "The MCP server endpoint must be on the same origin.");
+      }
+      this.endpointWaiter.resolve(endpoint);
+      this.endpointWaiter = null;
+      return;
+    }
+    if (event.event !== "message") return;
+    const message = recordValue4(parseJson(event.data));
+    if (!message || typeof message.id !== "number") return;
+    const pending = this.pending.get(message.id);
+    if (!pending || !("result" in message || "error" in message)) return;
+    this.pending.delete(message.id);
+    clearTimeout(pending.timer);
+    try {
+      pending.resolve(resultFromMessage(message));
+    } catch (error) {
+      pending.reject(error);
+    }
+  }
+  async pump(body) {
+    const reader = body.getReader();
+    const decoder = new TextDecoder();
+    const parser = new SseParser((event) => this.onEvent(event), this.maxBytes);
+    try {
+      for (; ; ) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        parser.feed(decoder.decode(value, { stream: true }));
+      }
+      this.fail(new McpRemoteError("mcp_unreachable", "The MCP server closed the event stream."));
+    } catch (error) {
+      this.fail(transportFailure(error, false));
+      this.controller.abort();
+    } finally {
+      await reader.cancel().catch(() => void 0);
+    }
+  }
+  async send(message, timeoutMs) {
+    if (this.failure) throw this.failure;
+    if (!this.endpoint) {
+      throw new McpRemoteError("mcp_protocol_error", "The MCP server did not announce an endpoint.");
+    }
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
+    const abortOnClose = () => controller.abort();
+    this.controller.signal.addEventListener("abort", abortOnClose, { once: true });
+    try {
+      const response = await this.fetchImpl(this.endpoint, {
+        method: "POST",
+        headers: buildHeaders(this.options.headers, { "content-type": "application/json" }),
+        body: JSON.stringify(message),
+        redirect: "error",
+        signal: controller.signal
+      });
+      await discardBody(response);
+      if (!response.ok) throw statusFailure(response.status);
+    } catch (error) {
+      throw transportFailure(error, timedOut);
+    } finally {
+      clearTimeout(timer);
+      this.controller.signal.removeEventListener("abort", abortOnClose);
+    }
+  }
+  async request(method, params, timeoutMs) {
+    if (this.failure) throw this.failure;
+    const id = this.nextId++;
+    const reply = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new McpRemoteError("mcp_timeout", "The MCP server did not respond in time."));
+      }, timeoutMs);
+      this.pending.set(id, { resolve, reject, timer });
+    });
+    reply.catch(() => void 0);
+    try {
+      await this.send({ jsonrpc: "2.0", id, method, ...params === void 0 ? {} : { params } }, timeoutMs);
+    } catch (error) {
+      const pending = this.pending.get(id);
+      if (pending) {
+        clearTimeout(pending.timer);
+        this.pending.delete(id);
+      }
+      throw error;
+    }
+    return reply;
+  }
+  async notify(method, params) {
+    await this.send(
+      { jsonrpc: "2.0", method, ...params === void 0 ? {} : { params } },
+      this.options.timeouts?.connectMs ?? MCP_CONNECT_TIMEOUT_MS
+    );
+  }
+  async close() {
+    this.controller.abort();
+    for (const [id, pending] of this.pending) {
+      clearTimeout(pending.timer);
+      pending.reject(new McpRemoteError("mcp_unreachable", "The MCP session was closed."));
+      this.pending.delete(id);
+    }
+  }
+};
+var McpRemoteClient = class _McpRemoteClient {
+  constructor(session, options) {
+    this.session = session;
+    this.options = options;
+  }
+  session;
+  options;
+  static async connect(options) {
+    let url;
+    try {
+      url = await assertMcpUrlAllowed(options.url, { env: options.env, lookup: options.lookup });
+    } catch (error) {
+      if (error instanceof McpUrlPolicyError) {
+        throw new McpRemoteError("custom_mcp_url_not_allowed", error.message, { reason: error.reason });
+      }
+      throw error;
+    }
+    const fetchImpl = options.fetchImpl ?? fetch;
+    const maxBytes = options.maxBodyBytes ?? MCP_MAX_BODY_BYTES;
+    const connectMs = options.timeouts?.connectMs ?? MCP_CONNECT_TIMEOUT_MS;
+    let session;
+    if (options.transport === "sse") {
+      const legacy = new LegacySseSession(url, options, fetchImpl, maxBytes);
+      await legacy.open(connectMs);
+      session = legacy;
+    } else {
+      session = new StreamableHttpSession(url, options, fetchImpl, maxBytes);
+    }
+    try {
+      const initialized = recordValue4(
+        await session.request(
+          "initialize",
+          {
+            protocolVersion: MCP_PROTOCOL_VERSION,
+            capabilities: {},
+            clientInfo: { name: "tealbrick-marketplace", version: MARKETPLACE_VERSION }
+          },
+          connectMs
+        )
+      );
+      const protocolVersion = initialized?.protocolVersion;
+      if (typeof protocolVersion !== "string" || !/^[\w.-]{1,32}$/u.test(protocolVersion)) {
+        throw new McpRemoteError("mcp_protocol_error", "The MCP server sent an invalid initialize result.");
+      }
+      session.setProtocolVersion(protocolVersion);
+      await session.notify("notifications/initialized");
+      return new _McpRemoteClient(session, options);
+    } catch (error) {
+      await session.close();
+      throw error;
+    }
+  }
+  async listTools(maxTools = MCP_MAX_TOOLS) {
+    const tools = [];
+    const seenCursors = /* @__PURE__ */ new Set();
+    let cursor;
+    for (let page = 0; page < MCP_MAX_TOOL_PAGES && tools.length < maxTools; page += 1) {
+      const result = recordValue4(
+        await this.session.request(
+          "tools/list",
+          cursor ? { cursor } : {},
+          this.options.timeouts?.requestMs ?? MCP_REQUEST_TIMEOUT_MS
+        )
+      );
+      if (!result || !Array.isArray(result.tools)) {
+        throw new McpRemoteError("mcp_protocol_error", "The MCP server sent an invalid tools/list result.");
+      }
+      for (const entry of result.tools) {
+        const tool = recordValue4(entry);
+        if (!tool || typeof tool.name !== "string" || !tool.name.trim()) continue;
+        tools.push({
+          name: tool.name,
+          ...typeof tool.title === "string" ? { title: tool.title } : {},
+          ...typeof tool.description === "string" ? { description: tool.description } : {},
+          ..."inputSchema" in tool ? { inputSchema: tool.inputSchema } : {},
+          ...recordValue4(tool.annotations) ? { annotations: recordValue4(tool.annotations) } : {}
+        });
+        if (tools.length >= maxTools) break;
+      }
+      const next = typeof result.nextCursor === "string" && result.nextCursor ? result.nextCursor : void 0;
+      if (!next || seenCursors.has(next)) break;
+      seenCursors.add(next);
+      cursor = next;
+    }
+    return tools;
+  }
+  async callTool(name, args) {
+    const result = recordValue4(
+      await this.session.request(
+        "tools/call",
+        { name, arguments: args },
+        this.options.timeouts?.callMs ?? MCP_CALL_TIMEOUT_MS
+      )
+    );
+    if (!result) {
+      throw new McpRemoteError("mcp_protocol_error", "The MCP server sent an invalid tools/call result.");
+    }
+    return {
+      content: Array.isArray(result.content) ? result.content : [],
+      ..."structuredContent" in result ? { structuredContent: result.structuredContent } : {},
+      isError: result.isError === true
+    };
+  }
+  async close() {
+    await this.session.close();
+  }
+};
+async function listMcpTools(options, maxTools = MCP_MAX_TOOLS) {
+  const client = await McpRemoteClient.connect(options);
+  try {
+    return await client.listTools(maxTools);
+  } finally {
+    await client.close();
+  }
+}
+async function callMcpTool(options, name, args) {
+  const client = await McpRemoteClient.connect(options);
+  try {
+    return await client.callTool(name, args);
+  } finally {
+    await client.close();
+  }
+}
+
+// src/provider-settings.ts
+import { createHash as createHash2 } from "node:crypto";
+import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import path3 from "node:path";
+var DEFAULTS = {
+  composioBaseUrl: "https://backend.composio.dev/api/v3.1",
+  composioDefaultUserId: "doppelganger",
+  composioDefaultConnectedAccountId: ""
+};
+async function readDocument(file) {
+  try {
+    const parsed = JSON.parse(await readFile(file, "utf8"));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+async function atomicPrivateJson(file, value) {
+  const directory = path3.dirname(file);
+  await mkdir(directory, { recursive: true, mode: 448 });
+  await chmod(directory, 448);
+  const temporary = path3.join(directory, `.${path3.basename(file)}.${process.pid}.${Date.now()}.tmp`);
+  await writeFile(temporary, `${JSON.stringify(value, null, 2)}
+`, { encoding: "utf8", mode: 384 });
+  await chmod(temporary, 384);
+  await rename(temporary, file);
+  await chmod(file, 384);
+}
+var ProviderSettingsError = class extends Error {
+  constructor(code, statusCode, message) {
+    super(message);
+    this.code = code;
+    this.statusCode = statusCode;
+  }
+  code;
+  statusCode;
+};
+function composioKeyFingerprint(secret) {
+  return createHash2("sha256").update(secret).digest("hex").slice(0, 12);
+}
+function assertComposioApiKeyFormat(value) {
+  if (!value || value.length > 512 || !/^[\x21-\x7E]+$/u.test(value)) {
+    throw new ProviderSettingsError(
+      "composio_api_key_invalid",
+      400,
+      "Composio API key must be printable ASCII without spaces or line breaks."
+    );
+  }
+}
+function cleanString(value, fallback = "") {
+  return typeof value === "string" ? value.trim() : fallback;
+}
+var MarketplaceProviderSettingsStore = class {
+  settings = { ...DEFAULTS };
+  secrets = {};
+  settingsPath;
+  secretsPath;
+  bootstrapEnv;
+  constructor(settingsPath, secretsPath, bootstrapEnv = process.env) {
+    this.settingsPath = settingsPath;
+    this.secretsPath = secretsPath;
+    this.bootstrapEnv = bootstrapEnv;
+  }
+  async load() {
+    const [settings, secrets] = await Promise.all([
+      readDocument(this.settingsPath),
+      readDocument(this.secretsPath)
+    ]);
+    this.settings = {
+      composioBaseUrl: cleanString(settings.composioBaseUrl) || cleanString(this.bootstrapEnv.COMPOSIO_BASE_URL) || DEFAULTS.composioBaseUrl,
+      composioDefaultUserId: cleanString(settings.composioDefaultUserId) || cleanString(this.bootstrapEnv.COMPOSIO_DEFAULT_USER_ID) || DEFAULTS.composioDefaultUserId,
+      composioDefaultConnectedAccountId: cleanString(settings.composioDefaultConnectedAccountId) || cleanString(this.bootstrapEnv.COMPOSIO_DEFAULT_CONNECTED_ACCOUNT_ID)
+    };
+    this.secrets = {
+      ...cleanString(secrets.composioApiKey) ? { composioApiKey: cleanString(secrets.composioApiKey) } : {}
+    };
+    return this.safeView();
+  }
+  environment() {
+    const apiKey = this.secrets.composioApiKey || cleanString(this.bootstrapEnv.COMPOSIO_API_KEY);
+    return {
+      ...this.bootstrapEnv,
+      COMPOSIO_BASE_URL: this.settings.composioBaseUrl,
+      COMPOSIO_DEFAULT_USER_ID: this.settings.composioDefaultUserId,
+      COMPOSIO_DEFAULT_CONNECTED_ACCOUNT_ID: this.settings.composioDefaultConnectedAccountId || void 0,
+      COMPOSIO_API_KEY: apiKey || void 0
+    };
+  }
+  safeView() {
+    const persisted = this.secrets.composioApiKey;
+    const bootstrap = cleanString(this.bootstrapEnv.COMPOSIO_API_KEY);
+    const secret = persisted || bootstrap;
+    return {
+      ok: true,
+      values: { ...this.settings },
+      status: {
+        composioApiKey: {
+          configured: Boolean(secret),
+          source: persisted ? "program" : bootstrap ? "bootstrap-environment" : null,
+          keyTail: secret ? secret.slice(-4) : null,
+          fingerprint: secret ? composioKeyFingerprint(secret) : null
+        }
+      }
+    };
+  }
+  async update(input) {
+    const nextSettings = {
+      composioBaseUrl: cleanString(input.composioBaseUrl, this.settings.composioBaseUrl),
+      composioDefaultUserId: cleanString(
+        input.composioDefaultUserId,
+        this.settings.composioDefaultUserId
+      ),
+      composioDefaultConnectedAccountId: cleanString(
+        input.composioDefaultConnectedAccountId,
+        this.settings.composioDefaultConnectedAccountId
+      )
+    };
+    const nextSecret = cleanString(input.composioApiKey);
+    if (nextSecret) assertComposioApiKeyFormat(nextSecret);
+    this.settings = nextSettings;
+    if (nextSecret) {
+      this.secrets = { composioApiKey: nextSecret };
+    }
+    await atomicPrivateJson(this.settingsPath, this.settings);
+    if (nextSecret) {
+      await atomicPrivateJson(this.secretsPath, this.secrets);
+    }
+    return this.safeView();
+  }
+  /** The key the Program would use right now (persisted first, then bootstrap). */
+  activeApiKey() {
+    return this.secrets.composioApiKey || cleanString(this.bootstrapEnv.COMPOSIO_API_KEY) || null;
+  }
+  /**
+   * Remove the Program-stored key. A key supplied by the deployment
+   * environment cannot be removed from the browser.
+   */
+  async removeApiKey() {
+    if (!this.secrets.composioApiKey) {
+      if (cleanString(this.bootstrapEnv.COMPOSIO_API_KEY)) {
+        throw new ProviderSettingsError(
+          "composio_key_managed_by_environment",
+          409,
+          "The Composio API key is supplied by the deployment environment."
+        );
+      }
+      return { removed: false, view: this.safeView() };
+    }
+    this.secrets = {};
+    await atomicPrivateJson(this.secretsPath, this.secrets);
+    return { removed: true, view: this.safeView() };
+  }
+};
+
+// src/extension-settings-projection.ts
+import { readdir, readFile as readFile2 } from "node:fs/promises";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import path4 from "node:path";
+import { fileURLToPath } from "node:url";
+
+// ../.sdk/extension-settings.mjs
+var VERSION = "doppelganger.capability-settings.v1";
+var SECRET_NAME = /(token|secret|password|api.?key)$/iu;
+function invalid(message) {
+  const error = new Error(message);
+  error.statusCode = 400;
+  throw error;
+}
+function record(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+function validateSettingsDeclaration(value) {
+  const declaration = record(value);
+  if (!declaration || declaration.schemaVersion !== VERSION) {
+    invalid(`settings declaration must use ${VERSION}`);
+  }
+  if (declaration.state === "none" || declaration.state === "unavailable") {
+    if (!["dynamic-provider", "developer-only", "none"].includes(declaration.posture)) {
+      invalid(`${declaration.state} settings declaration requires an explicit posture`);
+    }
+    if (typeof declaration.reason !== "string" || !declaration.reason.trim()) {
+      invalid(`${declaration.state} settings declaration requires a reason`);
+    }
+    return declaration;
+  }
+  if (declaration.state !== "available") {
+    invalid("settings declaration state must be available, unavailable, or none");
+  }
+  if (declaration.posture !== "operational") {
+    invalid("available settings declarations must use the operational posture");
+  }
+  if (declaration.transport !== void 0 && !["gateway", "desktop-runtime-bridge"].includes(declaration.transport)) {
+    invalid("settings declaration transport must be gateway or desktop-runtime-bridge");
+  }
+  for (const key of ["settingsSurfaceId", "title", "audience", "applyMode"]) {
+    if (typeof declaration[key] !== "string" || !declaration[key]) {
+      invalid(`available settings declaration requires ${key}`);
+    }
+  }
+  if (!record(declaration.jsonSchema) || declaration.jsonSchema.type !== "object") {
+    invalid("settings jsonSchema must describe an object");
+  }
+  const read = record(declaration.endpoints)?.read;
+  const apply = record(declaration.endpoints)?.apply;
+  if (read?.method !== "GET" || apply?.method !== "PATCH") {
+    invalid("settings endpoints must provide authenticated GET and PATCH descriptors");
+  }
+  if (read.authentication !== "bearer" || apply.authentication !== "bearer") {
+    invalid("settings endpoints must require bearer authentication");
+  }
+  const credentialFields = /* @__PURE__ */ new Set();
+  for (const entry of declaration.credentialReferences ?? []) {
+    if (!entry.field?.endsWith("CredentialRef") || !entry.statusField?.endsWith("CredentialStatus")) {
+      invalid("secret settings may expose credential references and status fields only");
+    }
+    credentialFields.add(entry.field);
+    credentialFields.add(entry.statusField);
+  }
+  for (const property of Object.keys(declaration.jsonSchema.properties ?? {})) {
+    if (SECRET_NAME.test(property) && !credentialFields.has(property)) {
+      invalid(`secret-shaped field ${property} must be represented as a credential reference/status`);
+    }
+  }
+  return declaration;
+}
+
+// src/extension-settings-projection.ts
+function emptyProjection() {
+  return {
+    host: {
+      entry: "capabilities",
+      tabs: ["skills", "plugins", "extensions"],
+      lifecycleAuthority: "marketplace",
+      directHermesRole: "underlying-adapters-only"
+    },
+    pluginRecords: [],
+    extensionRecords: [],
+    actions: [],
+    settingsSurfaces: []
+  };
+}
+function assertUnique(label, values) {
+  const seen = /* @__PURE__ */ new Set();
+  for (const value of values) {
+    if (seen.has(value)) throw new Error(`duplicate ${label}: ${value}`);
+    seen.add(value);
+  }
+}
+function asRecord(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+var UNIT_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/u;
+function gatewayProgramProxyEndpoint(unitId, declaredPath) {
+  if (!UNIT_ID_PATTERN.test(unitId)) {
+    throw new Error(`invalid Extension unit id for gateway proxy: ${unitId}`);
+  }
+  if (typeof declaredPath !== "string" || !declaredPath.trim()) {
+    throw new Error(`invalid Program settings path for ${unitId}`);
+  }
+  const trimmed = declaredPath.trim();
+  if (trimmed.includes("\\") || trimmed.includes("?") || trimmed.includes("#") || /^[a-z][a-z0-9+.-]*:/iu.test(trimmed)) {
+    throw new Error(`invalid Program settings path for ${unitId}: ${trimmed}`);
+  }
+  const normalized2 = `/${trimmed.replace(/^\/+/, "")}`;
+  const segments = normalized2.split("/").filter(Boolean);
+  for (const segment of segments) {
+    let decoded;
+    try {
+      decoded = decodeURIComponent(segment);
+    } catch {
+      throw new Error(`invalid Program settings path encoding for ${unitId}: ${trimmed}`);
+    }
+    if (decoded === "." || decoded === ".." || decoded.includes("/") || decoded.includes("\\")) {
+      throw new Error(`Program settings path traversal is not allowed for ${unitId}: ${trimmed}`);
+    }
+  }
+  return `/api/plugins/doppelganger-registry/proxy/${unitId}${normalized2}`;
+}
+function manifestPathForUnit(root, unitId) {
+  const standaloneManifest = path4.join(root, "extension", "manifest.json");
+  const standaloneProduct = path4.join(root, "manifest.json");
+  if (existsSync(standaloneManifest) && existsSync(standaloneProduct)) {
+    try {
+      const product = JSON.parse(readFileSync(standaloneProduct, "utf8"));
+      if (product.id === unitId) return standaloneManifest;
+    } catch {
+    }
+  }
+  const direct = path4.join(root, unitId, "extension", "manifest.json");
+  if (existsSync(direct)) return direct;
+  const installed = path4.join(root, unitId, "current", "extension", "manifest.json");
+  return existsSync(installed) ? installed : null;
+}
+function standaloneUnitId(root) {
+  const extensionManifest = path4.join(root, "extension", "manifest.json");
+  const productManifest = path4.join(root, "manifest.json");
+  if (!existsSync(extensionManifest) || !existsSync(productManifest)) return null;
+  try {
+    const product = JSON.parse(readFileSync(productManifest, "utf8"));
+    return typeof product.id === "string" && product.id ? product.id : null;
+  } catch {
+    return null;
+  }
+}
+function isManifestRoot(root) {
+  if (standaloneUnitId(root)) return true;
+  try {
+    return readdirSync(root, { withFileTypes: true }).some(
+      (entry) => !entry.name.startsWith(".") && (entry.isDirectory() || entry.isSymbolicLink()) && manifestPathForUnit(root, entry.name)
+    );
+  } catch {
+    return false;
+  }
+}
+function defaultMicroappsRoot(env = process.env, moduleDir = path4.dirname(fileURLToPath(import.meta.url))) {
+  const explicit = readCompatEnv(env, "MICROAPPS_ROOT");
+  if (explicit) {
+    const resolved2 = path4.resolve(explicit);
+    if (!isManifestRoot(resolved2)) {
+      const source = env.TEALBRICK_MICROAPPS_ROOT?.trim() ? "TEALBRICK_MICROAPPS_ROOT" : "DOPPELGANGER_MICROAPPS_ROOT";
+      throw new Error(`${source} does not contain Extension manifests: ${resolved2}`);
+    }
+    return resolved2;
+  }
+  const candidates = [
+    path4.resolve(moduleDir, "../.."),
+    path4.resolve(moduleDir, "../../.."),
+    path4.resolve(moduleDir, "../../../../..")
+  ];
+  const resolved = candidates.find(isManifestRoot);
+  if (!resolved) {
+    throw new Error(
+      `No Micro-app Extension manifest root found. Set TEALBRICK_MICROAPPS_ROOT; checked: ${candidates.join(", ")}`
+    );
+  }
+  return resolved;
+}
+async function loadExtensionManifests(microappsRoot) {
+  const resolvedRoot = microappsRoot ? path4.resolve(microappsRoot) : defaultMicroappsRoot();
+  if (!isManifestRoot(resolvedRoot)) {
+    throw new Error(`Micro-app root contains no Extension manifests: ${resolvedRoot}`);
+  }
+  const standaloneId = standaloneUnitId(resolvedRoot);
+  if (standaloneId) {
+    const standalonePath = manifestPathForUnit(resolvedRoot, standaloneId);
+    if (!standalonePath) throw new Error(`Micro-app root contains no readable Extension manifests: ${resolvedRoot}`);
+    const manifest = JSON.parse(await readFile2(standalonePath, "utf8"));
+    if (manifest.capabilitySettings !== void 0) {
+      validateSettingsDeclaration(manifest.capabilitySettings);
+    }
+    return [manifest];
+  }
+  const entries = await readdir(resolvedRoot, { withFileTypes: true });
+  const manifests = [];
+  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+    if (!entry.isDirectory() && !entry.isSymbolicLink() || entry.name.startsWith(".")) continue;
+    const manifestPath = manifestPathForUnit(resolvedRoot, entry.name);
+    if (!manifestPath) continue;
+    try {
+      const manifest = JSON.parse(await readFile2(manifestPath, "utf8"));
+      if (manifest.capabilitySettings !== void 0) {
+        validateSettingsDeclaration(manifest.capabilitySettings);
+      }
+      manifests.push(manifest);
+    } catch (error) {
+      throw new Error(`${entry.name} Extension settings declaration is invalid: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  if (manifests.length === 0) {
+    throw new Error(`Micro-app root contains no readable Extension manifests: ${resolvedRoot}`);
+  }
+  return manifests;
+}
+async function loadDynamicProviderPanels(microappsRoot, manifest) {
+  const id = String(manifest.id);
+  if (typeof manifest.registryManifest !== "string" || !manifest.registryManifest.trim()) {
+    return [];
+  }
+  const pluginManifest = await loadSourcePluginManifest(microappsRoot, manifest, true);
+  if (!pluginManifest) return [];
+  const panels = manifestNamespace(pluginManifest)?.settingsPanels;
+  if (!Array.isArray(panels)) return [];
+  return panels.flatMap((value) => {
+    const panel = asRecord(value);
+    const settings = asRecord(panel?.settings);
+    if (!panel || !settings) return [];
+    const jsonSchema = asRecord(settings.jsonSchema);
+    const uiSchema = asRecord(settings.uiSchema);
+    const loadAction = asRecord(settings.loadAction);
+    const submitAction = asRecord(settings.submitAction);
+    if (typeof panel.panelId !== "string" || !panel.panelId.trim()) {
+      throw new Error(`${id} dynamic-provider settings panel requires panelId`);
+    }
+    if (typeof panel.label !== "string" || !panel.label.trim()) {
+      throw new Error(`${id} dynamic-provider settings panel requires label`);
+    }
+    if (!jsonSchema || jsonSchema.type !== "object") {
+      throw new Error(`${id} dynamic-provider settings panel requires object jsonSchema`);
+    }
+    if (!uiSchema) {
+      throw new Error(`${id} dynamic-provider settings panel requires uiSchema`);
+    }
+    if (loadAction?.method !== "GET" || typeof loadAction.path !== "string" || !loadAction.path) {
+      throw new Error(`${id} dynamic-provider settings panel requires a GET loadAction`);
+    }
+    if (!["PATCH", "PUT"].includes(String(submitAction?.method)) || typeof submitAction?.path !== "string" || !submitAction.path) {
+      throw new Error(`${id} dynamic-provider settings panel requires a PATCH or PUT submitAction`);
+    }
+    return [{ panel, settings, jsonSchema, uiSchema, loadAction, submitAction }];
+  });
+}
+async function loadSourcePluginManifest(microappsRoot, manifest, requireDeclaredPath = false) {
+  const id = String(manifest.id);
+  const extensionManifestPath = manifestPathForUnit(microappsRoot, id);
+  if (!extensionManifestPath) {
+    throw new Error(`${id} Extension manifest path is unavailable`);
+  }
+  const declaredPath = typeof manifest.registryManifest === "string" ? manifest.registryManifest.trim() : "";
+  if (requireDeclaredPath && !declaredPath) return null;
+  const registryManifest = declaredPath || "../.codex-plugin/plugin.json";
+  const unitRoot = path4.dirname(path4.dirname(extensionManifestPath));
+  const pluginManifestPath = path4.resolve(
+    path4.dirname(extensionManifestPath),
+    registryManifest
+  );
+  if (pluginManifestPath !== unitRoot && !pluginManifestPath.startsWith(`${unitRoot}${path4.sep}`)) {
+    throw new Error(`${id} registryManifest must stay inside its Micro-app root`);
+  }
+  try {
+    const plugin = JSON.parse(await readFile2(pluginManifestPath, "utf8"));
+    const productPath = path4.join(unitRoot, "manifest.json");
+    if (existsSync(productPath)) {
+      const product = JSON.parse(await readFile2(productPath, "utf8"));
+      const namespace = manifestNamespace(product) ?? manifestNamespace(plugin);
+      if (namespace) plugin.tealbrick = namespace;
+    }
+    return plugin;
+  } catch (error) {
+    if (!declaredPath && error?.code === "ENOENT") {
+      return null;
+    }
+    throw new Error(
+      `${id} registry manifest is unreadable: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+}
+function dynamicSettingsSurfaceId(unitId, panelId) {
+  return panelId === unitId ? `${unitId}.settings` : `${unitId}.${panelId}.settings`;
+}
+async function projectExtensionSettings(options = {}) {
+  const base = options.baseProjection ?? emptyProjection();
+  const microappsRoot = options.microappsRoot ? path4.resolve(options.microappsRoot) : defaultMicroappsRoot();
+  const manifests = await loadExtensionManifests(microappsRoot);
+  const extensionRecords = [...base.extensionRecords];
+  const actions = [...base.actions];
+  const settingsSurfaces = [...base.settingsSurfaces];
+  for (const manifest of manifests) {
+    const id = String(manifest.id);
+    const pluginManifest = await loadSourcePluginManifest(microappsRoot, manifest);
+    const pluginDisplayName = asRecord(pluginManifest?.interface)?.displayName;
+    const name = typeof manifest.name === "string" && manifest.name.trim() ? manifest.name.trim() : typeof pluginDisplayName === "string" && pluginDisplayName.trim() ? pluginDisplayName.trim() : id;
+    const declaration = manifest.capabilitySettings === void 0 ? {
+      schemaVersion: "doppelganger.capability-settings.v1",
+      state: "none",
+      posture: "none",
+      reason: "This Extension does not declare a settings surface."
+    } : validateSettingsDeclaration(manifest.capabilitySettings);
+    const available = declaration.state === "available";
+    const dynamicPanels = declaration.posture === "dynamic-provider" ? await loadDynamicProviderPanels(microappsRoot, manifest) : [];
+    const settingsAvailable = available || dynamicPanels.length > 0;
+    const recordId = `extension:${id}`;
+    extensionRecords.push({
+      recordId,
+      providerId: "marketplace",
+      ownerPluginId: id,
+      displayName: name,
+      description: typeof manifest.description === "string" ? manifest.description : `${name} first-party Extension.`,
+      visible: true,
+      enabled: true,
+      required: manifest.system?.required === true,
+      status: {
+        state: "connected",
+        detail: settingsAvailable ? "Settings available." : "No configurable settings."
+      },
+      ...available ? { settingsSurfaceId: declaration.settingsSurfaceId } : dynamicPanels[0] ? { settingsSurfaceId: dynamicSettingsSurfaceId(id, String(dynamicPanels[0].panel.panelId)) } : {},
+      capabilities: Array.isArray(manifest.interface?.capabilities) ? manifest.interface.capabilities : [],
+      settingsPosture: declaration.posture
+    });
+    if (!available) {
+      for (const dynamic of dynamicPanels) {
+        const panelId = String(dynamic.panel.panelId);
+        const settingsSurfaceId = dynamicSettingsSurfaceId(id, panelId);
+        const actionPrefix = panelId === id ? recordId : `${recordId}:${panelId}`;
+        const loadActionId2 = `${actionPrefix}:load-settings`;
+        const submitActionId2 = `${actionPrefix}:configure`;
+        actions.push(
+          {
+            actionId: loadActionId2,
+            ownerRecordId: recordId,
+            operation: "open-settings",
+            label: dynamic.loadAction.label ?? "Load settings",
+            endpoint: gatewayProgramProxyEndpoint(id, dynamic.loadAction.path),
+            method: dynamic.loadAction.method
+          },
+          {
+            actionId: submitActionId2,
+            ownerRecordId: recordId,
+            operation: "configure",
+            label: dynamic.submitAction.label ?? "Save settings",
+            endpoint: gatewayProgramProxyEndpoint(id, dynamic.submitAction.path),
+            method: dynamic.submitAction.method
+          }
+        );
+        settingsSurfaces.push({
+          settingsSurfaceId,
+          ownerRecordId: recordId,
+          schemaVersion: "doppelganger.capability-settings.v1",
+          presentation: "modal",
+          title: dynamic.panel.label,
+          jsonSchema: dynamic.jsonSchema,
+          uiSchema: dynamic.uiSchema,
+          loadActionId: loadActionId2,
+          submitActionId: submitActionId2,
+          allowedActions: ["configure"],
+          audience: "normal",
+          applyMode: "live"
+        });
+      }
+      continue;
+    }
+    const endpoints = declaration.endpoints;
+    const read = endpoints.read;
+    const apply = endpoints.apply;
+    const transport = declaration.transport === "desktop-runtime-bridge" ? "desktop-runtime-bridge" : void 0;
+    const loadActionId = `${recordId}:load-settings`;
+    const submitActionId = `${recordId}:configure`;
+    actions.push(
+      {
+        actionId: loadActionId,
+        ownerRecordId: recordId,
+        operation: "open-settings",
+        label: "Load settings",
+        endpoint: gatewayProgramProxyEndpoint(id, read.path),
+        method: read.method,
+        ...transport ? { transport } : {}
+      },
+      {
+        actionId: submitActionId,
+        ownerRecordId: recordId,
+        operation: "configure",
+        label: "Save settings",
+        endpoint: gatewayProgramProxyEndpoint(id, apply.path),
+        method: apply.method,
+        ...transport ? { transport } : {}
+      }
+    );
+    settingsSurfaces.push({
+      settingsSurfaceId: declaration.settingsSurfaceId,
+      ownerRecordId: recordId,
+      schemaVersion: declaration.schemaVersion,
+      presentation: "modal",
+      title: declaration.title,
+      ...declaration.description ? { description: declaration.description } : {},
+      jsonSchema: declaration.jsonSchema,
+      ...declaration.uiSchema ? { uiSchema: declaration.uiSchema } : {},
+      loadActionId,
+      submitActionId,
+      allowedActions: ["configure"],
+      audience: declaration.audience,
+      applyMode: transport ? "live" : declaration.applyMode
+    });
+  }
+  assertUnique("Extension record ownership", extensionRecords.map((record2) => String(record2.recordId)));
+  assertUnique("Plugin record ownership", base.pluginRecords.map((record2) => String(record2.recordId)));
+  assertUnique("capability action ownership", actions.map((action) => String(action.actionId)));
+  assertUnique("settings surface ownership", settingsSurfaces.map((surface) => String(surface.settingsSurfaceId)));
+  return { ...base, extensionRecords, actions, settingsSurfaces };
+}
+
+// src/frontend.ts
+var import_static = __toESM(require_static(), 1);
+import fs3 from "node:fs";
+import path5 from "node:path";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
+
+// src/openapi.ts
+var jsonObject = { type: "object", additionalProperties: true };
+var bearerSecurity = [{ bearerAuth: [] }];
+var operatorSecurity = [{ operatorSession: [] }];
+function buildMarketplaceOpenApi(baseUrl = "/") {
+  return {
+    openapi: "3.1.0",
+    info: {
+      title: "Teal Brick Marketplace API",
+      version: MARKETPLACE_VERSION,
+      description: "Program-owned catalog, Rules-governed plugin lifecycle, provider connections, capability bindings, Composio execution, and audit. The launch profile treats every non-Composio source as catalog-only. Hub and cross-app service routes require an internal bearer credential that is never exposed to the browser."
+    },
+    servers: [{ url: baseUrl }],
+    security: operatorSecurity,
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: "http",
+          scheme: "bearer",
+          description: "Internal HDDA Host SDK or cross-app service credential."
+        },
+        operatorSession: {
+          type: "apiKey",
+          in: "cookie",
+          name: "dg_marketplace_operator_session",
+          description: "Short-lived HttpOnly operator session. Browser mutations also require the per-session x-csrf-token header."
+        }
+      }
+    },
+    tags: [
+      { name: "Runtime" },
+      { name: "Catalog" },
+      { name: "Lifecycle" },
+      { name: "Connections" },
+      { name: "Bindings" },
+      { name: "Execution" },
+      { name: "Audit" },
+      { name: "Provider settings" },
+      { name: "Custom connectors" },
+      { name: "Hub service" },
+      { name: "Agent" }
+    ],
+    paths: {
+      "/healthz": { get: { security: [], tags: ["Runtime"], summary: "Program liveness", responses: { "200": { description: "Healthy" } } } },
+      "/status": { get: { security: [], tags: ["Runtime"], summary: "Redacted frontend-safe status", responses: { "200": { description: "Status" } } } },
+      "/bootstrap.json": { get: { security: [], tags: ["Runtime"], summary: "Redacted frontend bootstrap and authorization posture", responses: { "200": { description: "Bootstrap" } } } },
+      "/auth/launch": { post: { security: [], tags: ["Runtime"], summary: "Redeem a Portal one-use browser launch ticket", description: "Accepts the Portal form POST, redeems the ticket server-to-server with the configured deployment identity, stores the attested Portal handoff session without echoing the ticket, issues the existing HttpOnly Marketplace operator session, and redirects to the UI.", requestBody: { required: true, content: { "application/x-www-form-urlencoded": { schema: { type: "object", additionalProperties: false, required: ["ticket"], properties: { ticket: { type: "string", writeOnly: true, pattern: "^[A-Za-z0-9_-]{43}$" } } } } } }, responses: { "303": { description: "Marketplace operator session created; redirect to the UI" }, "401": { description: "Invalid, duplicate, or replayed ticket" }, "403": { description: "Portal Origin or deployment identity denied" }, "503": { description: "Portal handoff is not configured or unavailable" } } } },
+      "/api/marketplace/auth/session": {
+        get: { security: [], tags: ["Runtime"], summary: "Read the redacted operator-session state", responses: { "200": { description: "Session status" } } },
+        post: { security: [], tags: ["Runtime"], summary: "Exchange the provisioned operator access token for an HttpOnly session", requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["accessToken"], properties: { accessToken: { type: "string", writeOnly: true } } } } } }, responses: { "200": { description: "Session created" }, "401": { description: "Invalid token" }, "429": { description: "Rate limited" }, "503": { description: "Operator access is not configured" } } },
+        delete: { security: operatorSecurity, tags: ["Runtime"], summary: "Revoke the current operator session", responses: { "200": { description: "Session revoked" }, "401": { description: "Unauthorized" } } }
+      },
+      "/api/status": { get: { security: bearerSecurity, tags: ["Runtime"], summary: "Detailed Program status (internal service bearer only)", responses: { "200": { description: "Runtime status" } } } },
+      "/api/marketplace/health": { get: { security: [...operatorSecurity, ...bearerSecurity], tags: ["Runtime"], summary: "Authenticated runtime health: Program and Rules connection state", description: "Returns { program: 'ok', rules: 'connected' | 'not-connected' | 'unavailable' }. The Rules probe is cached briefly and never returns configuration or credentials.", responses: { "200": { description: "Runtime health" }, "401": { description: "Session or bearer required" } } } },
+      "/api/marketplace/cards": { get: { tags: ["Catalog"], summary: "List operator-facing plugin cards", parameters: [{ name: "workspaceSlug", in: "query", schema: { type: "string", default: "default" } }], responses: { "200": { description: "Cards and provider state" } } } },
+      "/api/marketplace/cards/summary": { get: { tags: ["Catalog"], summary: "List a bounded, searchable browser-safe catalog projection", description: "Returns exact catalog totals, redacted provider and connection status, and at most 100 lightweight records from the canonical Marketplace catalog. Arbitrary manifests and provider metadata are omitted.", parameters: [{ name: "workspaceSlug", in: "query", schema: { type: "string", default: "default" } }, { name: "search", in: "query", schema: { type: "string", maxLength: 200 } }, { name: "source", in: "query", schema: { type: "string", enum: ["all", "native", "activepieces", "composio", "nango", "mcp"], default: "all" } }, { name: "installed", in: "query", schema: { type: "boolean", default: false } }, { name: "offset", in: "query", schema: { type: "integer", minimum: 0, default: 0 } }, { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 60 } }], responses: { "200": { description: "Bounded browser-safe catalog projection" } } } },
+      "/api/marketplace/cards/{pluginId}": { get: { tags: ["Catalog"], summary: "Read one browser-safe operator card", description: "Returns the selected card's UI contract without arbitrary manifest, connection metadata, credentials, environment, or runtime endpoint fields.", parameters: [{ name: "pluginId", in: "path", required: true, schema: { type: "string" } }, { name: "workspaceSlug", in: "query", schema: { type: "string", default: "default" } }], responses: { "200": { description: "Redacted operator card and provider status" }, "404": { description: "Not found" } } } },
+      "/api/marketplace/plugins": { get: { tags: ["Catalog"], summary: "List catalog records with workspace state", parameters: [{ name: "workspaceSlug", in: "query", schema: { type: "string", default: "default" } }], responses: { "200": { description: "Plugins" } } } },
+      "/api/marketplace/plugins/{pluginId}": { get: { tags: ["Catalog"], summary: "Read one plugin", parameters: [{ name: "pluginId", in: "path", required: true, schema: { type: "string" } }, { name: "workspaceSlug", in: "query", schema: { type: "string" } }], responses: { "200": { description: "Plugin" }, "404": { description: "Not found" } } } },
+      "/api/marketplace/plugins/{pluginId}/install": { post: { tags: ["Lifecycle"], summary: "Rules-governed install", parameters: [{ name: "pluginId", in: "path", required: true, schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: jsonObject } } }, responses: { "201": { description: "Installed" }, "403": { description: "Rules denied" }, "503": { description: "Rules unavailable" } } } },
+      "/api/marketplace/plugins/{pluginId}/uninstall": { post: { tags: ["Lifecycle"], summary: "Rules-governed uninstall", parameters: [{ name: "pluginId", in: "path", required: true, schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: jsonObject } } }, responses: { "200": { description: "Uninstalled" }, "409": { description: "Required or not installed" } } } },
+      "/api/marketplace/plugins/{pluginId}/register": { post: { tags: ["Lifecycle"], summary: "Register with the plugin runtime", parameters: [{ name: "pluginId", in: "path", required: true, schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: jsonObject } } }, responses: { "201": { description: "Registered" } } } },
+      "/api/marketplace/plugins/{pluginId}/unregister": { post: { tags: ["Lifecycle"], summary: "Unregister from the plugin runtime", parameters: [{ name: "pluginId", in: "path", required: true, schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: jsonObject } } }, responses: { "200": { description: "Unregistered" }, "409": { description: "Required plugin" } } } },
+      "/api/marketplace/plugins/{pluginId}/connection": { post: { tags: ["Connections"], summary: "Start or register a provider connection", parameters: [{ name: "pluginId", in: "path", required: true, schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: jsonObject } } }, responses: { "200": { description: "Connection or OAuth redirect" }, "409": { description: "Provider unavailable" } } } },
+      "/api/marketplace/plugins/{pluginId}/capability-binding": { post: { tags: ["Bindings"], summary: "Set a Rules-governed capability binding", parameters: [{ name: "pluginId", in: "path", required: true, schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: jsonObject } } }, responses: { "201": { description: "Bound" } } } },
+      "/api/marketplace/plugins/{pluginId}/action-binding": { post: { tags: ["Bindings"], summary: "Include or exclude an Agent action", parameters: [{ name: "pluginId", in: "path", required: true, schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: jsonObject } } }, responses: { "201": { description: "Bound" } } } },
+      "/api/marketplace/plugins/{pluginId}/execute": { post: { tags: ["Execution"], summary: "Execute one enabled and connected Composio or custom MCP action through Rules", description: "The launch profile executes Composio-backed actions and the workspace's own custom MCP connectors. Other catalog sources return 501 and are never recorded as successful usage. MCP tool errors return 502 mcp_tool_failed; transport failures return 502 mcp_unreachable. Operator frontends must confirm the impact before sending.", parameters: [{ name: "pluginId", in: "path", required: true, schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: jsonObject } } }, responses: { "200": { description: "Executed through Composio" }, "403": { description: "Rules or binding denied" }, "409": { description: "Not installed or connected" }, "501": { description: "Catalog source is not executable in this launch profile" }, "502": { description: "Provider failed" } } } },
+      "/api/marketplace/connectors/custom": {
+        get: { security: operatorSecurity, tags: ["Custom connectors"], summary: "List this workspace's custom MCP connectors", description: "Browser-safe views: server origin and path, plain header names and values, secret headers as { name, configured, fingerprint }, discovered tools with capabilities, last refresh, install and connection state. Secret values are never returned.", responses: { "200": { description: "Custom connectors" }, "403": { description: "Operator session required" } } },
+        post: { security: operatorSecurity, tags: ["Custom connectors"], summary: "Add a remote MCP server as a custom connector", description: "Rules-governed (connector.admin, custom-mcp.create). HTTPS streamable-http or SSE servers only; stdio, command, args, env, and cwd are refused. Secret header values are encrypted at rest.", requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["displayName", "url"], properties: { displayName: { type: "string", maxLength: 80 }, slug: { type: "string", maxLength: 40 }, description: { type: "string", maxLength: 500 }, transport: { type: "string", enum: ["streamable-http", "sse"], default: "streamable-http" }, url: { type: "string", format: "uri" }, headers: { type: "object", additionalProperties: { type: "string" } }, secretHeaders: { type: "object", additionalProperties: { type: "string", writeOnly: true } } } } } } }, responses: { "201": { description: "Created" }, "400": { description: "Invalid input, URL not allowed, or stdio transport refused" }, "403": { description: "Rules denied" }, "409": { description: "Already exists or Rules review required" }, "503": { description: "Rules or the secret store is unavailable" } } }
+      },
+      "/api/marketplace/connectors/custom/{pluginId}": {
+        patch: { security: operatorSecurity, tags: ["Custom connectors"], summary: "Edit a custom connector", description: "secretHeaders values: string replaces, null removes, omitted keeps. Changing the URL or transport disconnects the connector and clears its tools until the next refresh.", parameters: [{ name: "pluginId", in: "path", required: true, schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: jsonObject } } }, responses: { "200": { description: "Updated" }, "404": { description: "Not found in this workspace" } } },
+        delete: { security: operatorSecurity, tags: ["Custom connectors"], summary: "Delete a custom connector", description: "Removes the install, bindings, connection, secrets and credential references, and revokes broker grants and agent grants or consents for it.", parameters: [{ name: "pluginId", in: "path", required: true, schema: { type: "string" } }], responses: { "200": { description: "Deleted" }, "404": { description: "Not found in this workspace" } } }
+      },
+      "/api/marketplace/connectors/custom/{pluginId}/refresh": { post: { security: operatorSecurity, tags: ["Custom connectors"], summary: "Connect to the MCP server and load its tools", description: "Runs initialize and tools/list (up to 200 tools), derives action keys and capabilities, and marks the connection connected. Failures return a safe error code and record it as the last refresh.", parameters: [{ name: "pluginId", in: "path", required: true, schema: { type: "string" } }], responses: { "200": { description: "Tools refreshed" }, "400": { description: "Server address not allowed" }, "502": { description: "MCP server unreachable or rejected the request" } } } },
+      "/api/marketplace/provider-health": { get: { tags: ["Connections"], summary: "Probe configured provider reachability", responses: { "200": { description: "Provider state" } } } },
+      "/api/marketplace/audit": { get: { tags: ["Audit"], summary: "List lifecycle audit and usage evidence", parameters: [{ name: "workspaceSlug", in: "query", schema: { type: "string" } }, { name: "limit", in: "query", schema: { type: "integer", default: 100 } }], responses: { "200": { description: "Audit" } } } },
+      "/api/settings/providers/composio": {
+        get: { security: operatorSecurity, tags: ["Provider settings"], summary: "Read redacted Composio settings", responses: { "200": { description: "Redacted settings" } } },
+        put: { security: operatorSecurity, tags: ["Provider settings"], summary: "Persist allowlisted Composio settings and an optional API key", requestBody: { required: true, content: { "application/json": { schema: { type: "object", properties: { settings: { type: "object", properties: { composioApiKey: { type: "string", writeOnly: true }, composioBaseUrl: { type: "string", format: "uri" }, composioDefaultUserId: { type: "string" }, composioDefaultConnectedAccountId: { type: "string" } } } } } } } }, responses: { "200": { description: "Saved redacted settings" }, "400": { description: "Provider origin is not allowlisted" } } }
+      },
+      "/api/settings/providers/composio/test": { post: { security: operatorSecurity, tags: ["Provider settings"], summary: "Check a Composio API key against the allowlisted Composio host", description: "Tests the saved key, or an unsaved key in the body, with one read-only request to an https://*.composio.dev base URL. The key is never returned. Records an audit event.", requestBody: { required: false, content: { "application/json": { schema: { type: "object", properties: { composioApiKey: { type: "string", writeOnly: true } } } } } }, responses: { "200": { description: "Key accepted" }, "400": { description: "No key, malformed key, or base URL not allowed" }, "422": { description: "Composio rejected the key" }, "502": { description: "Composio unreachable" } } } },
+      "/api/settings/providers/composio/key": { delete: { security: operatorSecurity, tags: ["Provider settings"], summary: "Remove the Program-stored Composio API key", description: "Records an audit event. A key supplied by the deployment environment cannot be removed here (409).", responses: { "200": { description: "Removed (or already absent)" }, "409": { description: "Key managed by the deployment environment" } } } },
+      "/api/agent/capabilities": { get: { tags: ["Agent"], summary: "List enabled Composio and custom MCP tools currently projected to Agents", description: "Custom MCP connectors are projected after a successful tool refresh. Native, Activepieces, Nango, and Hub MCP records are catalog-only and are not projected as executable Agent tools in this launch profile.", parameters: [{ name: "workspaceSlug", in: "query", schema: { type: "string", default: "default" } }], responses: { "200": { description: "Capabilities" } } } },
+      "/api/marketplace/v1/agent/action-catalog": { get: { security: [...operatorSecurity, ...bearerSecurity], tags: ["Agent"], summary: "List the agent actions this workspace currently publishes", description: "Contract doppelganger.marketplace.agent-action-catalog.v1. Returns { contractVersion, workspaceSlug, actions[] } where each action is { pluginId, pluginName, provider, actionKey, label, description, capability, resourceKind, mode: 'connected-account', accounts: [{ accountId, label? }], allowedArguments: string[] | null, toolName }. An action is listed only while its connector is registered, installed and enabled, executable for agents, connected, the action is enabled, and its capability binding is enabled. Portal selections, consents, grants and runtime calls resolve against this same live catalog. Secrets, connection metadata beyond the account id and label, and raw manifests are never returned. Operator sessions are scoped to their organization; the internal service bearer must pass workspaceSlug.", parameters: [{ name: "workspaceSlug", in: "query", required: false, description: "Must equal the caller's organization. Required for the service bearer.", schema: { type: "string" } }], responses: { "200": { description: "Published agent action catalog" }, "400": { description: "workspaceSlug missing for the service bearer" }, "401": { description: "Session or bearer required" }, "403": { description: "workspaceSlug belongs to a different organization" } } } },
+      "/api/marketplace/broker/grants": { post: { security: bearerSecurity, tags: ["Execution"], summary: "Issue a single-use scoped Composio broker grant", description: "Internal services only. Grants are stored as token hashes, expire within at most 900 seconds, and are consumed atomically before provider dispatch.", requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["requesterMiniappId", "pluginId", "actionKeys"], properties: { requesterMiniappId: { type: "string" }, pluginId: { type: "string" }, actionKeys: { type: "array", minItems: 1, items: { type: "string" } }, ttlSeconds: { type: "integer", minimum: 1, maximum: 900, default: 300 } } } } } }, responses: { "201": { description: "Single-use grant issued" }, "400": { description: "Invalid scope or TTL" }, "401": { description: "Unauthorized" }, "403": { description: "Rules denied" } } } },
+      "/api/marketplace/hub/records": { get: { security: bearerSecurity, tags: ["Hub service"], summary: "Project normalized records to the HDDA Host SDK", responses: { "200": { description: "Projection" }, "401": { description: "Unauthorized" }, "503": { description: "Service auth unconfigured" } } } },
+      "/api/marketplace/hub/plugins/{pluginId}/lifecycle": { post: { security: bearerSecurity, tags: ["Hub service"], summary: "Internal Host SDK lifecycle including enable, disable, and reload", parameters: [{ name: "pluginId", in: "path", required: true, schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: jsonObject } } }, responses: { "200": { description: "Lifecycle changed" }, "401": { description: "Unauthorized" } } } },
+      "/api/marketplace/v1/broker/composio/execute": { post: { security: bearerSecurity, tags: ["Execution"], summary: "Authenticated cross-app Composio broker execution", description: "Issues and consumes one internal single-use grant for this call; raw provider credentials are never returned.", requestBody: { required: true, content: { "application/json": { schema: jsonObject } } }, responses: { "200": { description: "Executed" }, "401": { description: "Unauthorized" }, "403": { description: "Rules denied" } } } }
+    },
+    "x-doppelganger-commands": [
+      { id: "list-cards", method: "GET", path: "/api/marketplace/cards/summary?workspaceSlug={workspaceSlug}&limit=60" },
+      { id: "read-card", method: "GET", path: "/api/marketplace/cards/{pluginId}?workspaceSlug={workspaceSlug}" },
+      { id: "install", method: "POST", path: "/api/marketplace/plugins/{pluginId}/install" },
+      { id: "connect", method: "POST", path: "/api/marketplace/plugins/{pluginId}/connection" },
+      { id: "bind-action", method: "POST", path: "/api/marketplace/plugins/{pluginId}/action-binding" },
+      { id: "inspect-audit", method: "GET", path: "/api/marketplace/audit?workspaceSlug={workspaceSlug}" }
+    ],
+    "x-doppelganger-templates": {
+      install: { workspaceSlug: "default", actorId: "operator" },
+      connectComposio: { workspaceSlug: "default", actorId: "operator", provider: "github", backend: "composio" },
+      bindAction: { workspaceSlug: "default", actorId: "operator", actionKey: "github.tool.execute", enabled: true },
+      execute: { workspaceSlug: "default", actorId: "operator", capability: "connector.dispatch", action: { type: "github.tool.execute" } }
+    }
+  };
+}
+
+// src/frontend.ts
+var PROGRAM = { id: "marketplace", name: "Marketplace", version: MARKETPLACE_VERSION };
+async function registerMarketplaceFrontend(app2) {
+  const webRoot = path5.resolve(path5.dirname(fileURLToPath2(import.meta.url)), "../web-dist");
+  const webIndexPath = path5.join(webRoot, "index.html");
+  if (fs3.existsSync(webIndexPath)) {
+    await app2.register(import_static.default, {
+      root: path5.join(webRoot, "assets"),
+      prefix: "/assets/",
+      immutable: true,
+      maxAge: "1y"
+    });
+  }
+  const sendIndex = async (_request, reply) => {
+    if (!fs3.existsSync(webIndexPath)) {
+      return null;
+    }
+    return reply.type("text/html; charset=utf-8").send(fs3.readFileSync(webIndexPath, "utf8"));
+  };
+  app2.get("/embed", sendIndex);
+  app2.get("/status", async () => ({
+    ok: true,
+    program: PROGRAM,
+    authorization: {
+      browserOperatorRoutes: "operator-session-and-rules-governed",
+      operatorSessionRequired: true,
+      hubRoutesRequireBearer: true,
+      crossAppRoutesRequireBearer: true,
+      credentialExposedToBrowser: false
+    }
+  }));
+  app2.get("/bootstrap.json", async () => ({
+    program: PROGRAM,
+    authorization: {
+      browserOperatorRoutes: "operator-session-and-rules-governed",
+      operatorSessionRequired: true,
+      hubRoutesRequireBearer: true,
+      crossAppRoutesRequireBearer: true,
+      credentialExposedToBrowser: false
+    },
+    surfaces: { standalone: "/", embed: "/embed", openapi: "/openapi.json" },
+    contractGaps: {
+      browserEnableDisable: "hub-auth-required",
+      browserMcpCrud: "remote-only",
+      runtimeAdapterExecution: "composio-and-custom-mcp"
+    }
+  }));
+  app2.get("/openapi.json", async (request) => buildMarketplaceOpenApi(`${request.protocol}://${request.host}`));
+  app2.get("/swagger.json", async (request) => buildMarketplaceOpenApi(`${request.protocol}://${request.host}`));
+  return { sendIndex };
+}
+
+// src/operator-auth.ts
+import { createHash as createHash3, randomBytes as randomBytes2, timingSafeEqual } from "node:crypto";
+var MARKETPLACE_OPERATOR_SESSION_COOKIE = "dg_marketplace_operator_session";
+var MarketplaceAuthenticationError = class extends Error {
+  constructor(code, statusCode, message) {
+    super(message);
+    this.code = code;
+    this.statusCode = statusCode;
+  }
+  code;
+  statusCode;
+};
+function digest(value) {
+  return createHash3("sha256").update(value).digest();
+}
+function matchesDigest(actual, expectedDigest) {
+  if (!actual || !expectedDigest) return false;
+  const actualDigest = digest(actual);
+  return actualDigest.length === expectedDigest.length && timingSafeEqual(actualDigest, expectedDigest);
+}
+function marketplaceSecretMatches(actual, expected) {
+  const normalized2 = expected?.trim() ?? "";
+  return Boolean(normalized2 && matchesDigest(actual.trim(), digest(normalized2)));
+}
+function cookieValue(cookieHeader, name) {
+  const header = Array.isArray(cookieHeader) ? cookieHeader.join(";") : cookieHeader;
+  if (!header) return null;
+  for (const entry of header.split(";")) {
+    const separator = entry.indexOf("=");
+    if (separator < 0 || entry.slice(0, separator).trim() !== name) continue;
+    return decodeURIComponent(entry.slice(separator + 1).trim());
+  }
+  return null;
+}
+function boundedTtl(value) {
+  const fallback = 20 * 60 * 1e3;
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(Math.max(Math.trunc(value ?? fallback), 6e4), 8 * 60 * 60 * 1e3);
+}
+var MarketplaceOperatorSessionManager = class _MarketplaceOperatorSessionManager {
+  accessTokenDigest;
+  principal;
+  ttlMs;
+  allowUnauthenticated;
+  now;
+  sessions = /* @__PURE__ */ new Map();
+  failedLogins = /* @__PURE__ */ new Map();
+  constructor(options = {}) {
+    const accessToken = options.accessToken?.trim() ?? "";
+    this.accessTokenDigest = accessToken.length >= 16 ? digest(accessToken) : null;
+    this.principal = {
+      kind: "operator",
+      id: options.operatorId?.trim() || "operator",
+      organizationId: options.organizationId?.trim() || "default"
+    };
+    this.ttlMs = boundedTtl(options.sessionTtlMs);
+    this.allowUnauthenticated = options.allowUnauthenticated === true;
+    this.now = options.now ?? Date.now;
+  }
+  static fromEnvironment(options = {}) {
+    const ttlSeconds = Number.parseInt(process.env.MARKETPLACE_OPERATOR_SESSION_TTL_SECONDS ?? "", 10);
+    return new _MarketplaceOperatorSessionManager({
+      accessToken: process.env.MARKETPLACE_OPERATOR_ACCESS_TOKEN,
+      operatorId: process.env.MARKETPLACE_OPERATOR_ID,
+      organizationId: process.env.MARKETPLACE_ORGANIZATION_ID,
+      sessionTtlMs: Number.isFinite(ttlSeconds) ? ttlSeconds * 1e3 : void 0,
+      allowUnauthenticated: options.allowUnauthenticated
+    });
+  }
+  status(cookieHeader) {
+    const session = this.sessionForCookie(cookieHeader);
+    if (session) return this.statusForSession(session);
+    if (this.allowUnauthenticated) {
+      return {
+        configured: true,
+        authenticated: true,
+        mode: "test_bypass",
+        principal: this.principal,
+        csrfToken: null,
+        expiresAt: null
+      };
+    }
+    if (!this.accessTokenDigest) {
+      return {
+        configured: false,
+        authenticated: false,
+        mode: "unconfigured",
+        principal: null,
+        csrfToken: null,
+        expiresAt: null
+      };
+    }
+    return {
+      configured: true,
+      authenticated: false,
+      mode: "session",
+      principal: null,
+      csrfToken: null,
+      expiresAt: null
+    };
+  }
+  exchange(accessToken, clientKey) {
+    if (!this.accessTokenDigest) {
+      throw new MarketplaceAuthenticationError(
+        "operator_auth_unconfigured",
+        503,
+        "Marketplace operator access is not configured."
+      );
+    }
+    const now = this.now();
+    const failed = this.failedLogins.get(clientKey);
+    if (failed && failed.resetAtMs > now && failed.count >= 5) {
+      throw new MarketplaceAuthenticationError(
+        "operator_rate_limited",
+        429,
+        "Too many failed unlock attempts. Try again shortly."
+      );
+    }
+    if (!matchesDigest(accessToken.trim(), this.accessTokenDigest)) {
+      const window = failed && failed.resetAtMs > now ? failed : { count: 0, resetAtMs: now + 6e4 };
+      window.count += 1;
+      this.failedLogins.set(clientKey, window);
+      throw new MarketplaceAuthenticationError("operator_unauthorized", 401, "The operator access token is invalid.");
+    }
+    this.failedLogins.delete(clientKey);
+    return this.createSession(this.principal);
+  }
+  issuePortalSession(input) {
+    const id = input.id.trim();
+    const organizationId = input.organizationId.trim();
+    if (!id || !organizationId) {
+      throw new Error("Portal launch identity must include an operator and organization.");
+    }
+    return this.createSession({ kind: "operator", id, organizationId });
+  }
+  authenticate(cookieHeader) {
+    if (this.allowUnauthenticated) return this.principal;
+    return this.sessionForCookie(cookieHeader)?.principal ?? null;
+  }
+  csrfMatches(cookieHeader, csrfToken) {
+    if (this.allowUnauthenticated) return true;
+    const session = this.sessionForCookie(cookieHeader);
+    const actual = Array.isArray(csrfToken) ? csrfToken[0] : csrfToken;
+    return Boolean(session && actual && matchesDigest(actual, digest(session.csrfToken)));
+  }
+  revoke(cookieHeader) {
+    const token = cookieValue(cookieHeader, MARKETPLACE_OPERATOR_SESSION_COOKIE);
+    if (!token) return false;
+    return this.sessions.delete(token.slice(0, 16));
+  }
+  sessionCookie(token, secure, sameSite = "Strict") {
+    return `${MARKETPLACE_OPERATOR_SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=${sameSite}; Max-Age=${Math.floor(this.ttlMs / 1e3)}${secure ? "; Secure" : ""}`;
+  }
+  clearCookie(secure) {
+    return `${MARKETPLACE_OPERATOR_SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT${secure ? "; Secure" : ""}`;
+  }
+  statusForSession(session) {
+    return {
+      configured: true,
+      authenticated: true,
+      mode: "session",
+      principal: session.principal,
+      csrfToken: session.csrfToken,
+      expiresAt: new Date(session.expiresAtMs).toISOString()
+    };
+  }
+  createSession(principal) {
+    this.pruneExpired();
+    const now = this.now();
+    const token = randomBytes2(32).toString("base64url");
+    const session = {
+      tokenDigest: digest(token),
+      csrfToken: randomBytes2(24).toString("base64url"),
+      principal,
+      expiresAtMs: now + this.ttlMs
+    };
+    this.sessions.set(token.slice(0, 16), session);
+    return { token, status: this.statusForSession(session) };
+  }
+  sessionForCookie(cookieHeader) {
+    const token = cookieValue(cookieHeader, MARKETPLACE_OPERATOR_SESSION_COOKIE);
+    if (!token) return null;
+    const key = token.slice(0, 16);
+    const session = this.sessions.get(key);
+    if (!session || !matchesDigest(token, session.tokenDigest)) return null;
+    if (session.expiresAtMs <= this.now()) {
+      this.sessions.delete(key);
+      return null;
+    }
+    return session;
+  }
+  pruneExpired() {
+    const now = this.now();
+    for (const [key, session] of this.sessions) {
+      if (session.expiresAtMs <= now) this.sessions.delete(key);
+    }
+  }
+};
+
+// src/agent-action-catalog.ts
+var MARKETPLACE_AGENT_ACTION_CATALOG_CONTRACT_VERSION = "doppelganger.marketplace.agent-action-catalog.v1";
+var AGENT_SELECTION_PLUGIN_ID_PATTERN = /^[A-Za-z0-9_:-]{1,128}$/u;
+var AGENT_SELECTION_ACTION_KEY_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*){1,7}$/u;
+var AGENT_SELECTION_ACTION_KEY_MAX_LENGTH = 128;
+var AGENT_SELECTION_RESOURCE_KIND_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}\.connected-account$/u;
+var AGENT_SELECTION_ACCOUNT_ID_PATTERN = /^[A-Za-z0-9_:-]{1,128}$/u;
+var AGENT_FORBIDDEN_ARGUMENTS = /* @__PURE__ */ new Set([
+  "connected_account_id",
+  "connectedAccountId",
+  "connected_account",
+  "user_id",
+  "userId",
+  "entity_id",
+  "entityId"
+]);
+var LEGACY_GITHUB_LIST_REPOSITORIES = {
+  pluginId: "github-composio",
+  actionKey: "github.list.repositories",
+  toolName: "GITHUB_LIST_REPOSITORIES",
+  resourceKind: "github.connected-account",
+  allowedArguments: [
+    "page",
+    "sort",
+    "type",
+    "since",
+    "before",
+    "per_page",
+    "direction",
+    "visibility",
+    "affiliation"
+  ]
+};
+var CUSTOM_MCP_AGENT_ACCOUNT_ID = "connector";
+function listingIsAgentCustomMcp(listing, workspaceSlug) {
+  return listing.executionOwner === "mcp" && listingIsOperatorCustomMcp(listing) && listing.ownerWorkspaceSlug === workspaceSlug;
+}
+function listingExecutableForAgents(listing, workspaceSlug) {
+  return listing.executionOwner === "composio" || listingIsAgentCustomMcp(listing, workspaceSlug);
+}
+function agentAccountIdForConnection(input) {
+  if (input.connection?.state !== "connected") return void 0;
+  if (listingIsAgentCustomMcp(input.listing, input.workspaceSlug)) {
+    return customMcpManifest(input.listing).lastRefresh?.ok === true ? CUSTOM_MCP_AGENT_ACCOUNT_ID : void 0;
+  }
+  return connectedAccountIdFromConnection(input.connection);
+}
+function connectedAccountIdFromConnection(connection) {
+  const value = connection?.metadata.connectedAccountId ?? connection?.metadata.connected_account_id ?? connection?.metadata.connectionId;
+  return typeof value === "string" && value.trim() ? value.trim() : void 0;
+}
+function selectionCapability(selection2) {
+  return selection2.capability ?? "connector.observe";
+}
+function agentResourceKindForProvider(provider) {
+  return `${provider}.connected-account`;
+}
+function recordValue5(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value : void 0;
+}
+function stringValue4(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : void 0;
+}
+function composioToolRecord(listing, actionKey) {
+  const composio = recordValue5(listing.manifest.composio);
+  const tools = Array.isArray(composio?.tools) ? composio.tools : [];
+  for (const tool of tools) {
+    const record2 = recordValue5(tool);
+    if (record2?.action === actionKey) return record2;
+  }
+  return void 0;
+}
+function allowedArgumentsFromTool(tool) {
+  const names = tool?.inputArguments;
+  if (!Array.isArray(names)) return null;
+  return allowedArgumentNames(names);
+}
+function allowedArgumentNames(names) {
+  return [
+    ...new Set(
+      names.filter(
+        (name) => typeof name === "string" && Boolean(name.trim()) && name !== "type" && !AGENT_FORBIDDEN_ARGUMENTS.has(name)
+      )
+    )
+  ];
+}
+function accountLabel(connection) {
+  return stringValue4(connection.metadata.accountLabel) ?? stringValue4(connection.metadata.accountName);
+}
+function selectionShapeIsValid(input) {
+  return AGENT_SELECTION_PLUGIN_ID_PATTERN.test(input.pluginId) && input.actionKey.length <= AGENT_SELECTION_ACTION_KEY_MAX_LENGTH && AGENT_SELECTION_ACTION_KEY_PATTERN.test(input.actionKey) && AGENT_SELECTION_RESOURCE_KIND_PATTERN.test(input.resourceKind);
+}
+function entriesForListing(input) {
+  const { store: store2, workspaceSlug, listing } = input;
+  if (!listingExecutableForAgents(listing, workspaceSlug)) return [];
+  if (!store2.isRegistered(listing.pluginId)) return [];
+  const install = store2.getInstall(workspaceSlug, listing.pluginId);
+  if (!install?.enabled || install.lifecycle !== "installed") return [];
+  const connection = store2.getConnection(workspaceSlug, listing.pluginId);
+  const accountId = agentAccountIdForConnection({ listing, workspaceSlug, connection });
+  if (!connection || !accountId || !AGENT_SELECTION_ACCOUNT_ID_PATTERN.test(accountId)) {
+    return [];
+  }
+  const customMcp = listingIsAgentCustomMcp(listing, workspaceSlug);
+  const label = customMcp ? listing.displayName : accountLabel(connection);
+  const account = label ? { accountId, label } : { accountId };
+  const actionKeys = input.onlyActionKey ? listing.actions.filter((action) => action === input.onlyActionKey) : listing.actions;
+  return actionKeys.flatMap((actionKey) => {
+    if (!store2.isActionEnabled({
+      workspaceSlug,
+      pluginId: listing.pluginId,
+      actionKey
+    })) {
+      return [];
+    }
+    const requirement = resolveActionRequirement(listing, actionKey);
+    if (!requirement || requirement.kind !== listing.provider) return [];
+    if (!input.enabledCapabilities.has(`${listing.pluginId}\0${requirement.capability}`)) {
+      return [];
+    }
+    const legacy = listing.pluginId === LEGACY_GITHUB_LIST_REPOSITORIES.pluginId && actionKey === LEGACY_GITHUB_LIST_REPOSITORIES.actionKey;
+    const resourceKind = legacy ? LEGACY_GITHUB_LIST_REPOSITORIES.resourceKind : agentResourceKindForProvider(listing.provider);
+    if (!selectionShapeIsValid({ pluginId: listing.pluginId, actionKey, resourceKind })) {
+      return [];
+    }
+    if (customMcp) {
+      const mcpTool = customMcpToolForAction(listing, actionKey);
+      if (!mcpTool) return [];
+      const properties = mcpTool.inputSchema.properties;
+      return [
+        {
+          pluginId: listing.pluginId,
+          pluginName: listing.displayName,
+          provider: listing.provider,
+          actionKey,
+          label: mcpTool.title ?? mcpTool.name,
+          description: mcpTool.description ?? "",
+          capability: requirement.capability,
+          resourceKind,
+          mode: "connected-account",
+          accounts: [account],
+          allowedArguments: properties && typeof properties === "object" && !Array.isArray(properties) ? allowedArgumentNames(Object.keys(properties)) : null,
+          toolName: mcpTool.name
+        }
+      ];
+    }
+    const tool = composioToolRecord(listing, actionKey);
+    return [
+      {
+        pluginId: listing.pluginId,
+        pluginName: listing.displayName,
+        provider: listing.provider,
+        actionKey,
+        label: stringValue4(tool?.displayName) ?? actionKey,
+        description: stringValue4(tool?.description) ?? "",
+        capability: requirement.capability,
+        resourceKind,
+        mode: "connected-account",
+        accounts: [account],
+        allowedArguments: legacy ? [...LEGACY_GITHUB_LIST_REPOSITORIES.allowedArguments] : allowedArgumentsFromTool(tool),
+        toolName: legacy ? LEGACY_GITHUB_LIST_REPOSITORIES.toolName : stringValue4(tool?.toolName) ?? actionKey
+      }
+    ];
+  });
+}
+function enabledCapabilityKeys(store2, workspaceSlug) {
+  return new Set(
+    store2.listEnabledBindings(workspaceSlug).map((binding) => `${binding.pluginId}\0${binding.capability}`)
+  );
+}
+function publishedAgentActionCatalog(input) {
+  const enabledCapabilities = enabledCapabilityKeys(input.store, input.workspaceSlug);
+  return input.store.listListingsForWorkspace(input.workspaceSlug).flatMap(
+    (listing) => entriesForListing({
+      store: input.store,
+      workspaceSlug: input.workspaceSlug,
+      listing,
+      enabledCapabilities
+    })
+  ).sort(
+    (left, right) => left.pluginName.localeCompare(right.pluginName) || left.pluginId.localeCompare(right.pluginId) || left.label.localeCompare(right.label) || left.actionKey.localeCompare(right.actionKey)
+  );
+}
+function resolvePublishedAgentAction(input) {
+  const listing = input.store.getListingForWorkspace(input.pluginId, input.workspaceSlug);
+  if (!listing) return null;
+  return entriesForListing({
+    store: input.store,
+    workspaceSlug: input.workspaceSlug,
+    listing,
+    enabledCapabilities: enabledCapabilityKeys(input.store, input.workspaceSlug),
+    onlyActionKey: input.actionKey
+  })[0] ?? null;
+}
+
+// src/agent-grant-contract.ts
+var MARKETPLACE_AGENT_GRANT_CONTRACT_VERSION = "doppelganger.marketplace.agent-connector-grant.v1";
+function applyScopedResource(input) {
+  const { entry, grant } = input;
+  if (!entry || entry.pluginId !== grant.pluginId || entry.actionKey !== grant.actionKey || grant.resourceKind !== entry.resourceKind || !grant.accountId.trim() || grant.resourceRef !== `account:${grant.accountId}`) {
+    return { ok: false, error: "resource_mapping_unsupported" };
+  }
+  if (!entry.accounts.some((account) => account.accountId === grant.accountId)) {
+    return { ok: false, error: "agent_grant_connection_mismatch" };
+  }
+  const unsupportedArguments = Object.keys(input.action).filter(
+    (key) => key !== "type" && (AGENT_FORBIDDEN_ARGUMENTS.has(key) || entry.allowedArguments !== null && !entry.allowedArguments.includes(key))
+  );
+  if (unsupportedArguments.length > 0) {
+    return { ok: false, error: "provider_argument_invalid" };
+  }
+  return {
+    ok: true,
+    action: input.action
+  };
+}
+
+// src/portal-scope.ts
+import { createPublicKey, verify as verifySignature } from "node:crypto";
+var PortalScopeError = class extends Error {
+  constructor(code, statusCode, message) {
+    super(message);
+    this.code = code;
+    this.statusCode = statusCode;
+    this.name = "PortalScopeError";
+  }
+  code;
+  statusCode;
+};
+function asObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+function requiredString(value, label) {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new PortalScopeError(
+      "portal_token_invalid",
+      401,
+      `Portal token is missing ${label}.`
+    );
+  }
+  return value.trim();
+}
+function base64UrlJson(value, label) {
+  try {
+    const decoded = Buffer.from(value, "base64url").toString("utf8");
+    return asObject(JSON.parse(decoded));
+  } catch {
+    throw new PortalScopeError(
+      "portal_token_invalid",
+      401,
+      `Portal token has invalid ${label}.`
+    );
+  }
+}
+function parseJwt(token) {
+  const parts = token.split(".");
+  if (parts.length !== 3 || parts.some((part) => !part)) {
+    throw new PortalScopeError(
+      "portal_token_invalid",
+      401,
+      "Portal token is not a compact JWT."
+    );
+  }
+  const [encodedHeader, encodedClaims, encodedSignature] = parts;
+  return {
+    header: base64UrlJson(encodedHeader, "header"),
+    claims: base64UrlJson(encodedClaims, "claims"),
+    signedBytes: Buffer.from(`${encodedHeader}.${encodedClaims}`),
+    signature: Buffer.from(encodedSignature, "base64url")
+  };
+}
+function numericClaim(claims, name) {
+  const value = claims[name];
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new PortalScopeError(
+      "portal_token_invalid",
+      401,
+      `Portal token is missing numeric ${name}.`
+    );
+  }
+  return value;
+}
+function audienceMatches(value, expected) {
+  return value === expected || Array.isArray(value) && value.includes(expected);
+}
+function verifyJwt(token, issuer, jwks, options) {
+  const jwt = parseJwt(token);
+  if (jwt.header.alg !== "ES256") {
+    throw new PortalScopeError(
+      "portal_token_invalid",
+      401,
+      "Marketplace accepts only Portal ES256 tokens."
+    );
+  }
+  const keyId = requiredString(jwt.header.kid, "key id");
+  const jwk = jwks.find((candidate) => candidate.kid === keyId);
+  if (!jwk) {
+    throw new PortalScopeError(
+      "portal_token_invalid",
+      401,
+      "Portal token key is not published by the configured issuer."
+    );
+  }
+  try {
+    const publicKey = createPublicKey({ key: jwk, format: "jwk" });
+    if (!verifySignature(
+      "sha256",
+      jwt.signedBytes,
+      { key: publicKey, dsaEncoding: "ieee-p1363" },
+      jwt.signature
+    )) {
+      throw new Error("signature mismatch");
+    }
+  } catch {
+    throw new PortalScopeError(
+      "portal_token_invalid",
+      401,
+      "Portal token signature is invalid."
+    );
+  }
+  const tokenIssuer = requiredString(jwt.claims.iss, "issuer");
+  if (tokenIssuer !== issuer) {
+    throw new PortalScopeError(
+      "portal_token_invalid",
+      401,
+      "Portal token issuer does not match Marketplace configuration."
+    );
+  }
+  const issuedAt = numericClaim(jwt.claims, "iat");
+  const expiresAt = numericClaim(jwt.claims, "exp");
+  if (issuedAt > options.nowSeconds + 30 || expiresAt <= options.nowSeconds) {
+    throw new PortalScopeError(
+      "portal_token_invalid",
+      401,
+      "Portal token is not currently valid."
+    );
+  }
+  if (options.audience && !audienceMatches(jwt.claims.aud, options.audience)) {
+    throw new PortalScopeError(
+      "portal_token_invalid",
+      401,
+      "Portal attachment audience does not match Marketplace."
+    );
+  }
+  return { claims: jwt.claims, issuedAt, expiresAt };
+}
+function createPortalAgentScopeVerifier(input) {
+  const issuer = input.issuer?.trim().replace(/\/$/u, "") || null;
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const now = input.now ?? (() => Date.now());
+  const cacheTtlMs = input.cacheTtlMs ?? 5 * 6e4;
+  let cachedJwks = null;
+  const loadJwks = async () => {
+    if (!issuer) {
+      throw new PortalScopeError(
+        "portal_identity_unconfigured",
+        503,
+        "MARKETPLACE_PORTAL_ISSUER_URL is required for agent-scoped Marketplace access."
+      );
+    }
+    if (cachedJwks && cachedJwks.expiresAt > now()) {
+      return cachedJwks.keys;
+    }
+    let response;
+    try {
+      response = await fetchImpl(`${issuer}/api/jwks`);
+    } catch {
+      throw new PortalScopeError(
+        "portal_identity_unavailable",
+        503,
+        "Portal JWKS could not be reached."
+      );
+    }
+    if (!response.ok) {
+      throw new PortalScopeError(
+        "portal_identity_unavailable",
+        503,
+        "Portal JWKS could not be loaded."
+      );
+    }
+    const payload = asObject(await response.json());
+    const keys = Array.isArray(payload.keys) ? payload.keys.map(asObject).filter((key) => key.kid) : [];
+    if (!keys.length) {
+      throw new PortalScopeError(
+        "portal_identity_unavailable",
+        503,
+        "Portal JWKS did not publish a usable key."
+      );
+    }
+    cachedJwks = { keys, expiresAt: now() + cacheTtlMs };
+    return keys;
+  };
+  return async ({ agentToken, attachmentToken, audience, requiredCapability }) => {
+    if (!issuer) {
+      throw new PortalScopeError(
+        "portal_identity_unconfigured",
+        503,
+        "MARKETPLACE_PORTAL_ISSUER_URL is required for agent-scoped Marketplace access."
+      );
+    }
+    if (!agentToken.trim() || !attachmentToken.trim()) {
+      throw new PortalScopeError(
+        "portal_token_invalid",
+        401,
+        "Portal agent and attachment tokens are required."
+      );
+    }
+    const jwks = await loadJwks();
+    const nowSeconds = Math.floor(now() / 1e3);
+    const agent = verifyJwt(agentToken, issuer, jwks, { nowSeconds });
+    const attachment = verifyJwt(attachmentToken, issuer, jwks, {
+      audience,
+      nowSeconds
+    });
+    if (agent.claims.kind !== "agent") {
+      throw new PortalScopeError(
+        "portal_token_invalid",
+        401,
+        "The Portal credential is not an agent credential."
+      );
+    }
+    if (attachment.claims.typ !== "attachment" || attachment.claims.status !== "active") {
+      throw new PortalScopeError(
+        "portal_token_invalid",
+        401,
+        "The Portal credential is not an active attachment."
+      );
+    }
+    const agentId = requiredString(agent.claims.sub, "agent subject");
+    const attachmentAgentId = requiredString(attachment.claims.sub, "attachment subject");
+    if (agentId !== attachmentAgentId) {
+      throw new PortalScopeError(
+        "portal_token_invalid",
+        401,
+        "Portal agent and attachment subjects do not match."
+      );
+    }
+    if (attachment.expiresAt - attachment.issuedAt > 300) {
+      throw new PortalScopeError(
+        "portal_token_invalid",
+        401,
+        "Portal attachment lifetime exceeds the supported 300-second contract."
+      );
+    }
+    const organizationId = requiredString(
+      agent.claims.org ?? attachment.claims.orgId ?? attachment.claims.org,
+      "organization"
+    );
+    const attachmentOrganizationId = requiredString(
+      attachment.claims.orgId ?? attachment.claims.org,
+      "attachment organization"
+    );
+    if (organizationId !== attachmentOrganizationId) {
+      throw new PortalScopeError(
+        "portal_token_invalid",
+        401,
+        "Portal agent and attachment organizations do not match."
+      );
+    }
+    const capabilities2 = Array.isArray(attachment.claims.capabilities) ? attachment.claims.capabilities.filter(
+      (capability) => typeof capability === "string" && Boolean(capability.trim())
+    ) : [];
+    if (!capabilities2.includes(requiredCapability)) {
+      throw new PortalScopeError(
+        "portal_capability_denied",
+        403,
+        "Portal attachment does not grant the requested Marketplace capability."
+      );
+    }
+    return {
+      organizationId,
+      agentId,
+      attachmentId: requiredString(attachment.claims.jti, "attachment id"),
+      capabilities: capabilities2,
+      expiresAt: Math.min(agent.expiresAt, attachment.expiresAt)
+    };
+  };
+}
+
+// src/portal-handoff.ts
+var MARKETPLACE_PORTAL_HANDOFF_CONTRACT_VERSION = "tealbrick.marketplace.operator-handoff.v1.1";
+var PortalHandoffError = class extends Error {
+  constructor(code, statusCode, message) {
+    super(message);
+    this.code = code;
+    this.statusCode = statusCode;
+    this.name = "PortalHandoffError";
+  }
+  code;
+  statusCode;
+};
+function object(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+function requiredString2(value, label) {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new PortalHandoffError(
+      "portal_handoff_invalid",
+      503,
+      `Portal handoff response is missing ${label}.`
+    );
+  }
+  return value.trim();
+}
+function opaque(value) {
+  return typeof value === "string" && /^[A-Za-z0-9_-]{43}$/u.test(value);
+}
+function numberValue(value, label) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new PortalHandoffError(
+      "portal_handoff_invalid",
+      503,
+      `Portal handoff response is missing numeric ${label}.`
+    );
+  }
+  return value;
+}
+function capabilities(value) {
+  if (!Array.isArray(value)) {
+    throw new PortalHandoffError(
+      "portal_handoff_invalid",
+      503,
+      "Portal handoff response has invalid capabilities."
+    );
+  }
+  return value.filter(
+    (entry) => entry === "connector.observe" || entry === "connector.dispatch" || entry === "connector.admin"
+  );
+}
+function selection(value) {
+  const input = object(value);
+  const result = {
+    pluginId: requiredString2(input.pluginId, "selection.pluginId"),
+    actionKey: requiredString2(input.actionKey, "selection.actionKey"),
+    accountId: requiredString2(input.accountId, "selection.accountId"),
+    resourceKind: requiredString2(input.resourceKind, "selection.resourceKind"),
+    resourceRef: requiredString2(input.resourceRef, "selection.resourceRef")
+  };
+  if (input.capability !== void 0 && input.capability !== null) {
+    if (input.capability !== "connector.observe" && input.capability !== "connector.dispatch" && input.capability !== "connector.admin") {
+      throw new PortalHandoffError(
+        "portal_handoff_invalid",
+        503,
+        "Portal handoff response has an invalid selection capability."
+      );
+    }
+    result.capability = input.capability;
+  }
+  if (result.resourceRef !== `account:${result.accountId}`) {
+    throw new PortalHandoffError(
+      "portal_handoff_invalid",
+      503,
+      "Portal handoff response has an invalid resource binding."
+    );
+  }
+  return result;
+}
+function consentEnvelope(value) {
+  const input = object(value);
+  if (input.schema !== 1 || input.authorized !== true || input.product !== "marketplace") {
+    throw new PortalHandoffError(
+      "portal_handoff_invalid",
+      503,
+      "Portal handoff response is not an authorized Marketplace envelope."
+    );
+  }
+  const state = input.state;
+  if (state !== "pending" && state !== "active" && state !== "revoked" && state !== "approved" && state !== "denied") {
+    throw new PortalHandoffError(
+      "portal_handoff_invalid",
+      503,
+      "Portal handoff response has an invalid consent state."
+    );
+  }
+  return {
+    schema: 1,
+    authorized: true,
+    product: "marketplace",
+    portalOrgId: requiredString2(input.portalOrgId, "portalOrgId"),
+    productTenantId: requiredString2(input.productTenantId, "productTenantId"),
+    workspaceId: requiredString2(input.workspaceId, "workspaceId"),
+    deploymentId: requiredString2(input.deploymentId, "deploymentId"),
+    userId: requiredString2(input.userId, "userId"),
+    agentId: requiredString2(input.agentId, "agentId"),
+    consentId: input.consentId === null ? null : requiredString2(input.consentId, "consentId"),
+    consentRevision: Math.max(1, Math.floor(numberValue(input.consentRevision, "consentRevision"))),
+    state,
+    capabilities: capabilities(input.capabilities),
+    requiredActions: Array.isArray(input.requiredActions) ? input.requiredActions.filter(
+      (entry) => typeof entry === "string" && Boolean(entry.trim())
+    ) : [],
+    selection: selection(input.selection)
+  };
+}
+function createPortalHandoffClient(input) {
+  const issuer = input.issuer?.trim().replace(/\/$/u, "") || null;
+  const instanceProof = input.instanceProof?.trim() || null;
+  const fetchImpl = input.fetchImpl ?? fetch;
+  async function post(path9, body) {
+    if (!issuer || !instanceProof) {
+      throw new PortalHandoffError(
+        "portal_handoff_unconfigured",
+        503,
+        "Marketplace Portal issuer and instance proof are required."
+      );
+    }
+    let response;
+    try {
+      response = await fetchImpl(`${issuer}${path9}`, {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+          "x-tealbrick-instance-proof": instanceProof
+        },
+        body: JSON.stringify(body)
+      });
+    } catch {
+      throw new PortalHandoffError(
+        "portal_handoff_unavailable",
+        503,
+        "Portal handoff is unavailable."
+      );
+    }
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+    if (!response.ok) {
+      const code = object(payload).error;
+      const status = [400, 401, 403, 409].includes(response.status) ? response.status : 503;
+      throw new PortalHandoffError(
+        status === 503 ? "portal_handoff_unavailable" : "portal_handoff_denied",
+        status,
+        typeof code === "string" && code ? code : "Portal handoff was denied."
+      );
+    }
+    return object(payload);
+  }
+  return {
+    async redeemLaunchTicket(request) {
+      const payload = await post("/api/deployment-browser/redeem", {
+        schema: 1,
+        product: "marketplace",
+        deploymentId: request.deploymentId,
+        ticket: request.ticket
+      });
+      if (payload.schema !== 1 || payload.authorized !== true || payload.product !== "marketplace" || !opaque(payload.session)) {
+        throw new PortalHandoffError(
+          "portal_handoff_invalid",
+          503,
+          "Portal launch did not return a valid Marketplace session."
+        );
+      }
+      return {
+        schema: 1,
+        authorized: true,
+        product: "marketplace",
+        deploymentId: requiredString2(payload.deploymentId, "deploymentId"),
+        workspaceId: requiredString2(payload.workspaceId, "workspaceId"),
+        portalOrgId: requiredString2(payload.orgId, "orgId"),
+        productTenantId: requiredString2(payload.productTenantId, "productTenantId"),
+        userId: requiredString2(payload.userId, "userId"),
+        endpoint: requiredString2(payload.endpoint, "endpoint"),
+        session: payload.session,
+        expiresAt: numberValue(payload.expiresAt, "expiresAt")
+      };
+    },
+    async requestGrant(request) {
+      const payload = await post("/api/deployment-browser/grant-request", {
+        schema: 1,
+        product: "marketplace",
+        deploymentId: request.deploymentId,
+        session: request.session,
+        agentId: request.agentId,
+        selection: request.selection,
+        idempotencyKey: request.idempotencyKey
+      });
+      if (!opaque(payload.requestId)) {
+        throw new PortalHandoffError(
+          "portal_handoff_invalid",
+          503,
+          "Portal grant request did not return an opaque request id."
+        );
+      }
+      return {
+        requestId: payload.requestId,
+        approvalUrl: requiredString2(payload.approvalUrl, "approvalUrl"),
+        expiresAt: numberValue(payload.expiresAt, "expiresAt")
+      };
+    },
+    async redeemGrant(request) {
+      const payload = await post("/api/deployment-browser/grant-redeem", {
+        schema: 1,
+        product: "marketplace",
+        deploymentId: request.deploymentId,
+        session: request.session,
+        requestId: request.requestId
+      });
+      return consentEnvelope(payload);
+    },
+    async receipt(request) {
+      const payload = await post("/api/deployment-browser/grant-receipt", {
+        schema: 1,
+        product: "marketplace",
+        deploymentId: request.deploymentId,
+        session: request.session,
+        requestId: request.requestId
+      });
+      return consentEnvelope(payload);
+    },
+    async introspect(request) {
+      const payload = await post("/api/deployment-browser/grant-introspect", {
+        schema: 1,
+        product: "marketplace",
+        deploymentId: request.deploymentId,
+        attachment: request.attachment,
+        selection: request.selection
+      });
+      if (payload.schema !== 1 || payload.authorized !== true) {
+        throw new PortalHandoffError(
+          "portal_handoff_invalid",
+          503,
+          "Portal introspection did not return an authorized response."
+        );
+      }
+      return {
+        schema: 1,
+        authorized: true,
+        portalOrgId: requiredString2(payload.portalOrgId, "portalOrgId"),
+        productTenantId: requiredString2(payload.productTenantId, "productTenantId"),
+        workspaceId: requiredString2(payload.workspaceId, "workspaceId"),
+        deploymentId: requiredString2(payload.deploymentId, "deploymentId"),
+        agentId: requiredString2(payload.agentId, "agentId"),
+        consentId: requiredString2(payload.consentId, "consentId"),
+        consentRevision: Math.max(1, Math.floor(numberValue(payload.consentRevision, "consentRevision"))),
+        leaseId: requiredString2(payload.leaseId, "leaseId"),
+        capabilities: capabilities(payload.capabilities),
+        expiresAt: numberValue(payload.expiresAt, "expiresAt")
+      };
+    }
+  };
+}
+
+// src/portal-runtime-scope.ts
+import { createPublicKey as createPublicKey2, verify as verifySignature2 } from "node:crypto";
+var PortalRuntimeScopeError = class extends Error {
+  constructor(code, statusCode, message) {
+    super(message);
+    this.code = code;
+    this.statusCode = statusCode;
+    this.name = "PortalRuntimeScopeError";
+  }
+  code;
+  statusCode;
+};
+function object2(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+function requiredString3(value, label) {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new PortalRuntimeScopeError(
+      "portal_runtime_invalid",
+      401,
+      `Runtime lease is missing ${label}.`
+    );
+  }
+  return value.trim();
+}
+function numericClaim2(claims, label) {
+  const value = claims[label];
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    throw new PortalRuntimeScopeError(
+      "portal_runtime_invalid",
+      401,
+      `Runtime lease is missing numeric ${label}.`
+    );
+  }
+  return value;
+}
+function audienceMatches2(value, expected) {
+  return value === expected || Array.isArray(value) && value.includes(expected);
+}
+function parseJwt2(token) {
+  const parts = token.split(".");
+  if (parts.length !== 3 || parts.some((part) => !part)) {
+    throw new PortalRuntimeScopeError(
+      "portal_runtime_invalid",
+      401,
+      "Runtime lease is not a compact JWT."
+    );
+  }
+  const [encodedHeader, encodedClaims, encodedSignature] = parts;
+  try {
+    return {
+      header: object2(JSON.parse(Buffer.from(encodedHeader, "base64url").toString("utf8"))),
+      claims: object2(JSON.parse(Buffer.from(encodedClaims, "base64url").toString("utf8"))),
+      signedBytes: Buffer.from(`${encodedHeader}.${encodedClaims}`),
+      signature: Buffer.from(encodedSignature, "base64url")
+    };
+  } catch {
+    throw new PortalRuntimeScopeError(
+      "portal_runtime_invalid",
+      401,
+      "Runtime lease has invalid JWT JSON."
+    );
+  }
+}
+function createPortalRuntimeScopeVerifier(input) {
+  const issuer = input.issuer?.trim().replace(/\/$/u, "") || null;
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const now = input.now ?? (() => Date.now());
+  const cacheTtlMs = input.cacheTtlMs ?? 5 * 6e4;
+  let cachedJwks = null;
+  const client = createPortalHandoffClient({
+    issuer,
+    instanceProof: input.instanceProof,
+    fetchImpl
+  });
+  const loadJwks = async () => {
+    if (!issuer || !input.instanceProof?.trim()) {
+      throw new PortalRuntimeScopeError(
+        "portal_runtime_unconfigured",
+        503,
+        "Marketplace Portal issuer and instance proof are required for runtime leases."
+      );
+    }
+    if (cachedJwks && cachedJwks.expiresAt > now()) return cachedJwks.keys;
+    let response;
+    try {
+      response = await fetchImpl(`${issuer}/api/jwks`);
+    } catch {
+      throw new PortalRuntimeScopeError(
+        "portal_runtime_unavailable",
+        503,
+        "Portal JWKS could not be reached."
+      );
+    }
+    if (!response.ok) {
+      throw new PortalRuntimeScopeError(
+        "portal_runtime_unavailable",
+        503,
+        "Portal JWKS could not be loaded."
+      );
+    }
+    const payload = object2(await response.json());
+    const keys = Array.isArray(payload.keys) ? payload.keys.map(object2).filter((key) => typeof key.kid === "string") : [];
+    if (!keys.length) {
+      throw new PortalRuntimeScopeError(
+        "portal_runtime_unavailable",
+        503,
+        "Portal JWKS did not publish a usable key."
+      );
+    }
+    cachedJwks = { keys, expiresAt: now() + cacheTtlMs };
+    return keys;
+  };
+  return async ({ attachmentToken, selection: selection2, requiredCapability }) => {
+    if (!issuer || !input.instanceProof?.trim()) {
+      throw new PortalRuntimeScopeError(
+        "portal_runtime_unconfigured",
+        503,
+        "Marketplace Portal issuer and instance proof are required for runtime leases."
+      );
+    }
+    if (!attachmentToken.trim()) {
+      throw new PortalRuntimeScopeError(
+        "portal_runtime_invalid",
+        401,
+        "A Portal runtime lease is required."
+      );
+    }
+    const jwt = parseJwt2(attachmentToken);
+    if (jwt.header.alg !== "ES256") {
+      throw new PortalRuntimeScopeError(
+        "portal_runtime_invalid",
+        401,
+        "Marketplace accepts only Portal ES256 runtime leases."
+      );
+    }
+    const keyId = requiredString3(jwt.header.kid, "key id");
+    const jwk = (await loadJwks()).find((candidate) => candidate.kid === keyId);
+    if (!jwk) {
+      throw new PortalRuntimeScopeError(
+        "portal_runtime_invalid",
+        401,
+        "Runtime lease key is not published by Portal."
+      );
+    }
+    try {
+      const publicKey = createPublicKey2({ key: jwk, format: "jwk" });
+      if (!verifySignature2(
+        "sha256",
+        jwt.signedBytes,
+        { key: publicKey, dsaEncoding: "ieee-p1363" },
+        jwt.signature
+      )) {
+        throw new Error("signature mismatch");
+      }
+    } catch {
+      throw new PortalRuntimeScopeError(
+        "portal_runtime_invalid",
+        401,
+        "Runtime lease signature is invalid."
+      );
+    }
+    const claims = jwt.claims;
+    if (requiredString3(claims.iss, "issuer") !== issuer || !audienceMatches2(claims.aud, "marketplace") || claims.typ !== "attachment" || claims.purpose !== "marketplace-runtime" || claims.kind !== void 0 || claims.status !== "active") {
+      throw new PortalRuntimeScopeError(
+        "portal_runtime_invalid",
+        401,
+        "Runtime lease claims are not valid for Marketplace."
+      );
+    }
+    const nowSeconds = Math.floor(now() / 1e3);
+    const issuedAt = numericClaim2(claims, "iat");
+    const expiresAt = numericClaim2(claims, "exp");
+    if (issuedAt > nowSeconds || expiresAt <= nowSeconds || expiresAt - issuedAt > 300) {
+      throw new PortalRuntimeScopeError(
+        "portal_runtime_invalid",
+        401,
+        "Runtime lease is expired or exceeds the supported lifetime."
+      );
+    }
+    const deploymentId = requiredString3(claims.deploymentId, "deployment id");
+    const agentId = requiredString3(claims.sub, "agent subject");
+    const consentId = requiredString3(claims.consentId, "consent id");
+    const leaseId = requiredString3(claims.jti, "lease id");
+    const capabilities2 = Array.isArray(claims.capabilities) ? claims.capabilities.filter(
+      (entry) => typeof entry === "string" && Boolean(entry.trim())
+    ) : [];
+    if (!capabilities2.includes(requiredCapability)) {
+      throw new PortalRuntimeScopeError(
+        "portal_runtime_denied",
+        403,
+        "Runtime lease does not grant the requested Marketplace capability."
+      );
+    }
+    let introspected;
+    try {
+      introspected = await client.introspect({
+        deploymentId,
+        attachment: attachmentToken,
+        selection: selection2
+      });
+    } catch (error) {
+      if (error instanceof PortalHandoffError) {
+        const mapped = error.code === "portal_handoff_unavailable" ? "portal_runtime_unavailable" : error.statusCode === 401 ? "portal_runtime_invalid" : "portal_runtime_denied";
+        throw new PortalRuntimeScopeError(mapped, mapped === "portal_runtime_unavailable" ? 503 : error.statusCode === 401 ? 401 : 403, "Portal runtime authorization was denied.");
+      }
+      throw error;
+    }
+    if (introspected.deploymentId !== deploymentId || introspected.agentId !== agentId || introspected.consentId !== consentId || introspected.leaseId !== leaseId || introspected.portalOrgId !== requiredString3(claims.orgId ?? claims.org, "organization") || introspected.productTenantId !== requiredString3(claims.productTenantId, "product tenant") || introspected.workspaceId !== requiredString3(claims.workspaceId, "workspace") || introspected.expiresAt > expiresAt * 1e3 || !introspected.capabilities.includes(requiredCapability)) {
+      throw new PortalRuntimeScopeError(
+        "portal_runtime_denied",
+        403,
+        "Portal runtime authorization does not match the attested lease."
+      );
+    }
+    return {
+      portalOrgId: introspected.portalOrgId,
+      productTenantId: introspected.productTenantId,
+      workspaceId: introspected.workspaceId,
+      deploymentId: introspected.deploymentId,
+      agentId: introspected.agentId,
+      consentId: introspected.consentId,
+      leaseId: introspected.leaseId,
+      capabilities: introspected.capabilities,
+      expiresAt: introspected.expiresAt
+    };
+  };
+}
+
+// src/portal-config.ts
+function normalized(value, normalize) {
+  const trimmed = value?.trim();
+  return trimmed ? normalize(trimmed) : null;
+}
+function resolveCompatibleValue(label, candidates, normalize = (value) => value) {
+  const present = candidates.map((candidate) => ({
+    ...candidate,
+    value: normalized(candidate.value, normalize)
+  })).filter((candidate) => Boolean(candidate.value));
+  const distinct = new Set(present.map((candidate) => candidate.value));
+  if (distinct.size > 1) {
+    throw new Error(
+      `${label} configuration conflicts between ${present.map((candidate) => candidate.name).join(", ")}.`
+    );
+  }
+  return present[0]?.value ?? null;
+}
+var normalizeOrigin = (value) => value.replace(/\/+$/u, "");
+function resolvePortalRuntimeConfiguration(input = {}) {
+  const env = input.env ?? process.env;
+  return {
+    issuerUrl: resolveCompatibleValue(
+      "Portal issuer URL",
+      [
+        { name: "options.portalIssuerUrl", value: input.portalIssuerUrl },
+        { name: "MARKETPLACE_PORTAL_ISSUER_URL", value: env.MARKETPLACE_PORTAL_ISSUER_URL },
+        { name: "MARKETPLACE_PORTAL_URL", value: env.MARKETPLACE_PORTAL_URL },
+        { name: "MARKETPLACE_PORTAL_ORIGIN", value: env.MARKETPLACE_PORTAL_ORIGIN }
+      ],
+      normalizeOrigin
+    ),
+    instanceProof: resolveCompatibleValue("Portal instance proof", [
+      { name: "options.portalInstanceProof", value: input.portalInstanceProof },
+      { name: "MARKETPLACE_PORTAL_INSTANCE_PROOF", value: env.MARKETPLACE_PORTAL_INSTANCE_PROOF },
+      { name: "MARKETPLACE_PORTAL_INSTANCE_TOKEN", value: env.MARKETPLACE_PORTAL_INSTANCE_TOKEN }
+    ]),
+    deploymentId: resolveCompatibleValue("Portal deployment identity", [
+      { name: "MARKETPLACE_PORTAL_DEPLOYMENT_ID", value: env.MARKETPLACE_PORTAL_DEPLOYMENT_ID }
+    ]),
+    portalOrgId: resolveCompatibleValue("Portal organization identity", [
+      { name: "MARKETPLACE_PORTAL_ORG_ID", value: env.MARKETPLACE_PORTAL_ORG_ID }
+    ]),
+    workspaceId: resolveCompatibleValue("Portal workspace identity", [
+      { name: "MARKETPLACE_PORTAL_WORKSPACE_ID", value: env.MARKETPLACE_PORTAL_WORKSPACE_ID }
+    ])
+  };
+}
+
+// src/rules-readiness.ts
+var RULES_INTROSPECTION_PATH = "/api/rules/gateway/introspect";
+function objectValue2(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value : null;
+}
+function nonEmptyString(value) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+function parseRulesReadinessPrincipal(input) {
+  const response = objectValue2(input.response);
+  const principal = objectValue2(response?.principal);
+  const expectedCompanyId = input.expectedCompanyId ?? input.organizationId;
+  const allowedMethods = principal?.allowedMethods;
+  const allowedRuleKeys = principal?.allowedRuleKeys;
+  const expiresAt = principal?.expiresAt;
+  if (response?.ok !== true || principal?.active !== true || principal?.kind !== "scoped-evaluation" || principal?.clientId !== "marketplace" || principal?.targetKind !== "plugin" || principal?.companyId !== expectedCompanyId || principal?.workspaceSlug !== input.organizationId || !nonEmptyString(principal.credentialId) || !Array.isArray(allowedMethods) || allowedMethods.length !== 1 || !isAcceptedId("tealbrick.rules.evaluate", allowedMethods[0]) || !Array.isArray(allowedRuleKeys) || allowedRuleKeys.length !== 1 || allowedRuleKeys[0] !== "marketplace.plugin" || !nonEmptyString(expiresAt) || !Number.isFinite(Date.parse(expiresAt)) || Date.parse(expiresAt) <= Date.now()) {
+    throw new Error("rules_readiness_principal_invalid");
+  }
+  return {
+    active: true,
+    kind: "scoped-evaluation",
+    credentialId: principal.credentialId,
+    companyId: principal.companyId,
+    workspaceSlug: principal.workspaceSlug,
+    clientId: "marketplace",
+    targetKind: "plugin",
+    // Rules may report either spelling; Portal Core only accepts the legacy id
+    // until Tealbrick/DPL-Portal-core#9 ships, so keep emitting it here.
+    allowedMethods: ["doppelganger.rules.evaluate"],
+    allowedRuleKeys: ["marketplace.plugin"],
+    expiresAt
+  };
+}
+
+// src/app.ts
+var WorkspaceQuerySchema = external_exports.object({
+  workspaceSlug: external_exports.string().trim().min(1).default("default")
+});
+var CardsSummaryQuerySchema = WorkspaceQuerySchema.extend({
+  search: external_exports.string().trim().max(200).default(""),
+  source: external_exports.enum(["all", "native", "activepieces", "composio", "nango", "mcp"]).default("all"),
+  installed: external_exports.enum(["true", "false"]).optional().transform((value) => value === "true"),
+  offset: external_exports.coerce.number().int().min(0).default(0),
+  limit: external_exports.coerce.number().int().min(1).max(100).default(60)
+});
+function allowedComposioOrigin(value, env = process.env) {
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return false;
+  }
+  if (parsed.username || parsed.password) return false;
+  const hostname = parsed.hostname.toLowerCase();
+  if (parsed.protocol === "https:" && (hostname === "composio.dev" || hostname.endsWith(".composio.dev"))) {
+    return true;
+  }
+  const configured = new Set(
+    (env.MARKETPLACE_COMPOSIO_ALLOWED_ORIGINS ?? "").split(",").map((entry) => entry.trim()).filter(Boolean)
+  );
+  return configured.has(parsed.origin);
+}
+var ComposioProviderSettingsSchema = external_exports.object({
+  composioApiKey: external_exports.string().trim().max(512).refine(
+    (value) => value === "" || /^[\x21-\x7E]+$/u.test(value),
+    "Composio API key must contain printable ASCII without spaces or line breaks."
+  ).optional(),
+  composioBaseUrl: external_exports.string().trim().refine(
+    (value) => allowedComposioOrigin(value),
+    "Composio base URL must be an https://*.composio.dev address or an explicitly allowlisted origin."
+  ),
+  composioDefaultUserId: external_exports.string().trim().min(1),
+  composioDefaultConnectedAccountId: external_exports.string().trim().optional().default("")
+});
+var ComposioProviderSettingsRequestSchema = external_exports.object({
+  settings: ComposioProviderSettingsSchema
+});
+var InstallInputSchema = external_exports.object({
+  workspaceSlug: external_exports.string().trim().min(1),
+  actorId: external_exports.string().trim().min(1).default("operator")
+});
+var HubAuthQuerySchema = external_exports.object({
+  workspaceSlug: external_exports.string().trim().min(1).default("default")
+});
+var SettingsSurfaceDeclarationSchema = external_exports.object({
+  settingsSurfaceId: external_exports.string().trim().min(1).optional(),
+  title: external_exports.string().trim().min(1).optional(),
+  description: external_exports.string().trim().min(1).optional(),
+  schema: external_exports.record(external_exports.unknown()).optional(),
+  uiSchema: external_exports.record(external_exports.unknown()).optional()
+});
+var ExtensionContributionSchema = external_exports.object({
+  id: external_exports.string().trim().min(1),
+  type: external_exports.literal("extension-surface").default("extension-surface"),
+  label: external_exports.string().trim().min(1),
+  mount: external_exports.enum(["workspace", "right-rail", "settings-panel", "overlay"]),
+  routeSegment: external_exports.string().trim().min(1),
+  region: external_exports.string().trim().min(1).optional(),
+  minHostSdk: external_exports.string().trim().min(1).optional(),
+  settings: SettingsSurfaceDeclarationSchema.optional(),
+  enabled: external_exports.boolean().default(true)
+});
+var McpPluginFieldsSchema = external_exports.object({
+  workspaceSlug: external_exports.string().trim().min(1).default("default"),
+  actorId: external_exports.string().trim().min(1).default("operator"),
+  pluginId: external_exports.string().trim().min(1).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u),
+  displayName: external_exports.string().trim().min(1),
+  description: external_exports.string().trim().min(1).optional(),
+  version: external_exports.string().trim().min(1).optional(),
+  transport: external_exports.enum(["stdio", "sse", "streamable-http"]),
+  command: external_exports.string().trim().min(1).optional(),
+  args: external_exports.array(external_exports.string()).optional(),
+  url: external_exports.string().url().optional(),
+  cwd: external_exports.string().trim().min(1).optional(),
+  env: external_exports.record(external_exports.string()).optional(),
+  headers: external_exports.record(external_exports.string()).optional(),
+  config: external_exports.record(external_exports.unknown()).optional(),
+  contributions: external_exports.array(ExtensionContributionSchema).optional(),
+  capabilities: external_exports.array(
+    external_exports.enum(["connector.observe", "connector.dispatch", "connector.admin"])
+  ).optional(),
+  actions: external_exports.array(external_exports.string().trim().min(1)).optional()
+});
+var McpPluginSchema = McpPluginFieldsSchema.superRefine((value, context) => {
+  if (value.transport === "stdio" && !value.command) {
+    context.addIssue({
+      code: external_exports.ZodIssueCode.custom,
+      path: ["command"],
+      message: "stdio MCP Plugins require a command."
+    });
+  }
+  if (value.transport !== "stdio" && !value.url) {
+    context.addIssue({
+      code: external_exports.ZodIssueCode.custom,
+      path: ["url"],
+      message: "Network MCP Plugins require a URL."
+    });
+  }
+  const contributionIds = value.contributions?.map((contribution) => contribution.id) ?? [];
+  if (new Set(contributionIds).size !== contributionIds.length) {
+    context.addIssue({
+      code: external_exports.ZodIssueCode.custom,
+      path: ["contributions"],
+      message: "Each contributed Extension surface requires a unique id."
+    });
+  }
+});
+var McpPluginUpdateSchema = McpPluginFieldsSchema.omit({
+  workspaceSlug: true,
+  actorId: true,
+  pluginId: true
+}).partial();
+var HubLifecycleSchema = external_exports.object({
+  workspaceSlug: external_exports.string().trim().min(1).default("default"),
+  actorId: external_exports.string().trim().min(1).default("operator"),
+  action: external_exports.enum(["install", "enable", "disable", "reload", "uninstall"])
+});
+var GatewayRegistrySnapshotSchema = external_exports.object({
+  contractVersion: external_exports.string().trim().min(1),
+  revision: external_exports.coerce.number().int().nonnegative(),
+  units: external_exports.array(
+    external_exports.object({
+      unitId: external_exports.string().trim().min(1),
+      version: external_exports.string().trim().min(1),
+      enabled: external_exports.boolean(),
+      required: external_exports.boolean().optional()
+    })
+  ),
+  contributions: external_exports.array(
+    external_exports.object({
+      id: external_exports.string().trim().min(1),
+      unitId: external_exports.string().trim().min(1),
+      type: external_exports.string().trim().min(1),
+      label: external_exports.string().trim().min(1),
+      family: external_exports.string().optional(),
+      region: external_exports.string().optional(),
+      mount: external_exports.string().optional(),
+      routeSegment: external_exports.string().optional()
+    })
+  ),
+  flags: external_exports.object({ developerMode: external_exports.boolean().optional() }).optional()
+});
+var BindingInputSchema = external_exports.object({
+  workspaceSlug: external_exports.string().trim().min(1),
+  actorId: external_exports.string().trim().min(1).default("operator"),
+  capability: external_exports.enum([
+    "connector.observe",
+    "connector.dispatch",
+    "connector.admin"
+  ]),
+  enabled: external_exports.boolean().default(true)
+});
+var ActionBindingInputSchema = external_exports.object({
+  workspaceSlug: external_exports.string().trim().min(1),
+  actorId: external_exports.string().trim().min(1).default("operator"),
+  actionKey: external_exports.string().trim().min(1),
+  enabled: external_exports.boolean().default(true)
+});
+var ConnectionInputSchema = external_exports.object({
+  workspaceSlug: external_exports.string().trim().min(1),
+  actorId: external_exports.string().trim().min(1).default("operator"),
+  provider: external_exports.string().trim().min(1),
+  backend: external_exports.enum(["nango", "activepieces", "composio", "native"]).default("composio"),
+  credentialRef: external_exports.string().trim().min(1).optional(),
+  toolkit: external_exports.string().trim().min(1).optional(),
+  authConfigId: external_exports.string().trim().min(1).optional(),
+  callbackUrl: external_exports.string().trim().min(1).optional(),
+  callbackBaseUrl: external_exports.string().trim().min(1).optional(),
+  userId: external_exports.string().trim().min(1).optional(),
+  alias: external_exports.string().trim().min(1).optional(),
+  connectionData: external_exports.record(external_exports.unknown()).optional()
+});
+var ExecuteInputSchema = external_exports.object({
+  workspaceSlug: external_exports.string().trim().min(1),
+  actorId: external_exports.string().trim().min(1).default("operator"),
+  capability: external_exports.enum([
+    "connector.observe",
+    "connector.dispatch",
+    "connector.admin"
+  ]),
+  action: external_exports.object({ type: external_exports.string().trim().min(1) }).passthrough(),
+  runId: external_exports.string().trim().min(1).optional().nullable(),
+  sessionId: external_exports.string().trim().min(1).optional().nullable(),
+  agentGrantId: external_exports.string().trim().min(1).optional(),
+  resourceRef: external_exports.string().trim().min(1).optional()
+});
+var AgentGrantInputSchema = external_exports.object({
+  workspaceSlug: external_exports.string().trim().min(1),
+  pluginId: external_exports.string().trim().min(1),
+  actionKey: external_exports.string().trim().min(1),
+  accountId: external_exports.string().trim().min(1),
+  resourceKind: external_exports.string().trim().min(1),
+  resourceRef: external_exports.string().trim().min(1)
+});
+var PortalIdentifierSchema = external_exports.string().regex(/^[A-Za-z0-9_:-]{1,128}$/u);
+var ConnectorCapabilitySchema = external_exports.enum([
+  "connector.observe",
+  "connector.dispatch",
+  "connector.admin"
+]);
+var PortalSelectionSchema = external_exports.strictObject({
+  pluginId: external_exports.string().regex(AGENT_SELECTION_PLUGIN_ID_PATTERN),
+  actionKey: external_exports.string().max(AGENT_SELECTION_ACTION_KEY_MAX_LENGTH).regex(AGENT_SELECTION_ACTION_KEY_PATTERN),
+  accountId: external_exports.string().regex(AGENT_SELECTION_ACCOUNT_ID_PATTERN),
+  resourceKind: external_exports.string().regex(AGENT_SELECTION_RESOURCE_KIND_PATTERN),
+  resourceRef: external_exports.string().regex(/^account:[A-Za-z0-9_:-]{1,128}$/u),
+  capability: ConnectorCapabilitySchema.optional()
+}).superRefine((value, context) => {
+  if (value.resourceRef !== `account:${value.accountId}`) {
+    context.addIssue({
+      code: external_exports.ZodIssueCode.custom,
+      path: ["resourceRef"],
+      message: "resourceRef must bind exactly to accountId."
+    });
+  }
+});
+var PortalHandoffRequestSchema = external_exports.strictObject({
+  deploymentId: PortalIdentifierSchema,
+  agentId: PortalIdentifierSchema,
+  selection: PortalSelectionSchema,
+  idempotencyKey: external_exports.string().regex(/^[A-Za-z0-9_-]{8,100}$/u)
+});
+var PortalHandoffRedeemSchema = external_exports.strictObject({
+  deploymentId: PortalIdentifierSchema,
+  requestId: external_exports.string().regex(/^[A-Za-z0-9_-]{43}$/u)
+});
+var RuntimeComposioExecuteSchema = external_exports.strictObject({
+  schema: external_exports.literal(1),
+  consentId: PortalIdentifierSchema,
+  selection: PortalSelectionSchema,
+  input: external_exports.record(external_exports.unknown()),
+  idempotencyKey: external_exports.string().regex(/^[A-Za-z0-9_-]{8,100}$/u)
+});
+var AgentCapabilitiesQuerySchema = WorkspaceQuerySchema.extend({
+  grantId: external_exports.string().trim().min(1).optional()
+});
+var AgentGrantListQuerySchema = WorkspaceQuerySchema.extend({
+  agentId: external_exports.string().trim().min(1).optional(),
+  pluginId: external_exports.string().trim().min(1).optional(),
+  state: external_exports.enum(["active", "revoked"]).optional(),
+  limit: external_exports.coerce.number().int().min(1).max(100).default(100)
+});
+var BrokerGrantInputSchema = external_exports.object({
+  workspaceSlug: external_exports.string().trim().min(1),
+  actorId: external_exports.string().trim().min(1).default("operator"),
+  requesterMiniappId: external_exports.string().trim().min(1),
+  pluginId: external_exports.string().trim().min(1),
+  actionKeys: external_exports.array(external_exports.string().trim().min(1)).min(1),
+  ttlSeconds: external_exports.coerce.number().int().positive().max(900).default(300),
+  metadata: external_exports.record(external_exports.unknown()).default({})
+});
+var BrokerExecuteInputSchema = external_exports.object({
+  workspaceSlug: external_exports.string().trim().min(1),
+  requesterMiniappId: external_exports.string().trim().min(1),
+  pluginId: external_exports.string().trim().min(1),
+  brokerToken: external_exports.string().trim().min(1),
+  action: external_exports.object({ type: external_exports.string().trim().min(1) }).passthrough(),
+  runId: external_exports.string().trim().min(1).optional().nullable(),
+  sessionId: external_exports.string().trim().min(1).optional().nullable()
+});
+var CROSS_APP_MARKETPLACE_BROKER_EXECUTE_CONTRACT_VERSION = LEGACY_IDS["tealbrick.cross-app.marketplace.broker-execute.v1"];
+var CrossAppBrokerExecuteInputSchema = external_exports.object({
+  contractVersion: external_exports.enum(acceptedIds("tealbrick.cross-app.marketplace.broker-execute.v1")).transform(() => CROSS_APP_MARKETPLACE_BROKER_EXECUTE_CONTRACT_VERSION),
+  sourceMiniappId: external_exports.string().trim().min(1),
+  requesterMiniappId: external_exports.string().trim().min(1).optional(),
+  sourceId: external_exports.string().trim().min(1),
+  eventType: external_exports.string().trim().min(1),
+  idempotencyKey: external_exports.string().trim().min(1),
+  traceId: external_exports.string().trim().min(1),
+  workspaceSlug: external_exports.string().trim().min(1),
+  pluginId: external_exports.string().trim().min(1),
+  action: external_exports.object({ type: external_exports.string().trim().min(1) }).passthrough(),
+  runId: external_exports.string().trim().min(1).optional().nullable(),
+  sessionId: external_exports.string().trim().min(1).optional().nullable(),
+  ttlSeconds: external_exports.coerce.number().int().positive().max(900).default(300),
+  metadata: external_exports.record(external_exports.unknown()).default({})
+});
+var AuditQuerySchema = external_exports.object({
+  workspaceSlug: external_exports.string().trim().min(1).optional(),
+  pluginId: external_exports.string().trim().min(1).optional(),
+  provider: external_exports.string().trim().min(1).optional(),
+  limit: external_exports.coerce.number().int().positive().max(500).default(100)
+});
+var SessionCorrelationInputSchema = external_exports.object({
+  workspaceSlug: external_exports.string().trim().min(1).default("default"),
+  appThreadId: external_exports.string().trim().min(1),
+  provider: external_exports.string().trim().min(1).default("hermes"),
+  providerInstanceId: external_exports.string().trim().min(1),
+  remoteSessionId: external_exports.string().trim().min(1).optional(),
+  hermesLiveSessionId: external_exports.string().trim().min(1).optional().nullable(),
+  hermesStoredSessionId: external_exports.string().trim().min(1).optional().nullable(),
+  profile: external_exports.string().trim().min(1).optional().nullable(),
+  runtimeMode: external_exports.string().trim().min(1).optional().nullable(),
+  cwd: external_exports.string().trim().min(1).optional().nullable(),
+  source: external_exports.string().trim().min(1).default("doppelganger-app"),
+  eventType: external_exports.string().trim().min(1).default("session.observed"),
+  metadata: external_exports.record(external_exports.unknown()).default({})
+});
+var SessionCorrelationQuerySchema = external_exports.object({
+  workspaceSlug: external_exports.string().trim().min(1).default("default"),
+  appThreadId: external_exports.string().trim().min(1).optional(),
+  remoteSessionId: external_exports.string().trim().min(1).optional(),
+  limit: external_exports.coerce.number().int().positive().max(500).default(100)
+});
+var SkillDeclarationSchema = external_exports.object({
+  skillId: external_exports.string().trim().min(1),
+  skillName: external_exports.string().trim().min(1).optional(),
+  displayName: external_exports.string().trim().min(1),
+  description: external_exports.string().trim().min(1).optional(),
+  sourcePath: external_exports.string().trim().min(1).optional(),
+  skillRoot: external_exports.string().trim().min(1).optional(),
+  requiresConnectors: external_exports.array(external_exports.string().trim().min(1)).default([])
+});
+var ComposioImportInputSchema = external_exports.object({
+  workspaceSlug: external_exports.string().trim().min(1),
+  actorId: external_exports.string().trim().min(1).default("operator"),
+  toolkit: external_exports.string().trim().min(1),
+  pluginId: external_exports.string().trim().min(1).optional(),
+  displayName: external_exports.string().trim().min(1).optional(),
+  description: external_exports.string().trim().min(1).optional(),
+  tools: external_exports.array(external_exports.record(external_exports.unknown())).optional(),
+  actionKeys: external_exports.array(external_exports.string().trim().min(1)).optional(),
+  skills: external_exports.array(SkillDeclarationSchema).optional(),
+  autoEnable: external_exports.boolean().default(true),
+  bindCapabilities: external_exports.array(
+    external_exports.enum(["connector.observe", "connector.dispatch", "connector.admin"])
+  ).optional()
+});
+var ComposioToolsQuerySchema = external_exports.object({
+  toolkit: external_exports.string().trim().min(1),
+  limit: external_exports.coerce.number().int().positive().max(250).default(50)
+});
+var ComposioCallbackQuerySchema = external_exports.object({
+  state: external_exports.string().trim().min(1),
+  status: external_exports.string().trim().min(1).optional(),
+  connected_account_id: external_exports.string().trim().min(1).optional(),
+  connectedAccountId: external_exports.string().trim().min(1).optional(),
+  connection_id: external_exports.string().trim().min(1).optional(),
+  account_id: external_exports.string().trim().min(1).optional(),
+  error: external_exports.string().trim().min(1).optional()
+});
+var PortalLaunchFormSchema = external_exports.strictObject({
+  ticket: external_exports.string().regex(/^[A-Za-z0-9_-]{43}$/u)
+});
+function configuredAllowedOrigins(env = process.env) {
+  return new Set(
+    (env.MARKETPLACE_ALLOWED_ORIGINS ?? "").split(",").map((origin) => origin.trim()).filter(Boolean)
+  );
+}
+function allowedCorsOrigin(origin, env = process.env) {
+  if (typeof origin !== "string" || !origin.trim()) {
+    return null;
+  }
+  const configured = configuredAllowedOrigins(env);
+  if (configured.has(origin)) {
+    return origin;
+  }
+  try {
+    const url = new URL(origin);
+    if (env.NODE_ENV === "test" && (url.protocol === "http:" || url.protocol === "https:") && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) {
+      return origin;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+function corsHeadersForOrigin(origin, env = process.env) {
+  const allowedOrigin = allowedCorsOrigin(origin, env);
+  if (!allowedOrigin) {
+    return {};
+  }
+  return {
+    "access-control-allow-origin": allowedOrigin,
+    "access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+    "access-control-allow-headers": "content-type,x-trace-id,authorization,x-csrf-token,x-tealbrick-agent-token,x-tealbrick-attachment",
+    "access-control-allow-credentials": "true",
+    "access-control-expose-headers": "content-type",
+    "access-control-max-age": "600",
+    vary: "Origin"
+  };
+}
+async function enforceRules(input) {
+  if (!input.rulesClient) {
+    input.reply.code(503);
+    return {
+      ok: false,
+      error: "rules_unavailable",
+      governedCapability: input.capability,
+      detail: "Rules Approvals is required for connector admin, dispatch, generation, and execution."
+    };
+  }
+  const decision = await input.rulesClient({
+    workspaceSlug: input.workspaceSlug,
+    operation: input.operation,
+    capability: input.capability,
+    pluginId: input.pluginId,
+    actorId: input.actorId,
+    payload: input.payload
+  });
+  if (decision.effect === "allow") {
+    return decision;
+  }
+  input.reply.code(decision.effect === "deny" ? 403 : 409);
+  return {
+    ok: false,
+    error: decision.effect === "deny" ? "rules_denied" : "rules_review_required",
+    governedCapability: input.capability,
+    rules: decision
+  };
+}
+function traceIdFrom(request) {
+  const header = request.headers["x-trace-id"];
+  if (typeof header === "string" && header.trim()) {
+    return header.trim();
+  }
+  if (Array.isArray(header) && typeof header[0] === "string" && header[0].trim()) {
+    return header[0].trim();
+  }
+  const body = request.body;
+  if (body && typeof body === "object" && !Array.isArray(body)) {
+    const value = body.traceId;
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return `trace-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+function bearerTokenFrom(request) {
+  const value = request.headers.authorization;
+  if (typeof value !== "string") {
+    return null;
+  }
+  const match = /^Bearer\s+(.+)$/iu.exec(value.trim());
+  return match?.[1]?.trim() || null;
+}
+function secureRequest(request) {
+  const forwarded = request.headers["x-forwarded-proto"];
+  const forwardedProtocol = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+  return request.protocol === "https" || forwardedProtocol?.split(",", 1)[0]?.trim() === "https";
+}
+function isMutation(method) {
+  return !["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());
+}
+function marketplacePublicPath(pathname) {
+  return pathname === "/" || pathname === "/embed" || pathname === "/healthz" || pathname === "/api/portal/readiness" || pathname === "/status" || pathname === "/bootstrap.json" || pathname === "/openapi.json" || pathname === "/swagger.json" || pathname === "/auth/launch" || pathname === "/api/marketplace/auth/session" || pathname.startsWith("/assets/") || /^\/api\/marketplace\/plugins\/[^/]+\/oauth\/composio\/callback$/u.test(pathname);
+}
+function bindMarketplacePrincipalScope(request, principal) {
+  const pathname = request.url.split("?", 1)[0] ?? request.url;
+  const strictBodyPaths = /* @__PURE__ */ new Set([
+    "/api/marketplace/v1/agent/grants/request",
+    "/api/marketplace/v1/agent/grants/redeem",
+    "/api/marketplace/v1/runtime/composio/execute"
+  ]);
+  for (const value of [request.query, request.body]) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    if (value === request.body && strictBodyPaths.has(pathname)) continue;
+    const record2 = value;
+    record2.workspaceSlug = principal.organizationId;
+    record2.actorId = principal.id;
+  }
+}
+function requireCrossAppBearerAuth(input) {
+  if (!input.expectedToken) {
+    input.reply.code(503);
+    return {
+      ok: false,
+      error: "marketplace_cross_app_auth_unconfigured",
+      detail: "MARKETPLACE_INTERNAL_AUTH_TOKEN is required for Marketplace cross-app service routes."
+    };
+  }
+  if (bearerTokenFrom(input.request) !== input.expectedToken) {
+    input.reply.code(401);
+    return {
+      ok: false,
+      error: "marketplace_cross_app_unauthorized"
+    };
+  }
+  return null;
+}
+function requireHubBearerAuth(input) {
+  if (!input.expectedToken) {
+    input.reply.code(503);
+    return {
+      ok: false,
+      error: "marketplace_hub_auth_unconfigured",
+      detail: "MARKETPLACE_INTERNAL_AUTH_TOKEN is required for the HDDA Skills Hub adapter."
+    };
+  }
+  if (bearerTokenFrom(input.request) !== input.expectedToken) {
+    input.reply.code(401);
+    return { ok: false, error: "marketplace_hub_unauthorized" };
+  }
+  return null;
+}
+function toolNameForAction(provider, action) {
+  const providerPrefix = `${provider}.`;
+  const suffix = action.startsWith(providerPrefix) ? action.slice(providerPrefix.length) : action;
+  return `marketplace.${provider}.${suffix}`;
+}
+function actionForTool(toolName) {
+  const parts = toolName.split(".");
+  if (parts.length < 3 || parts[0] !== "marketplace") {
+    return null;
+  }
+  const provider = parts[1];
+  const suffix = parts.slice(2).join(".");
+  return `${provider}.${suffix}`;
+}
+function createBrokerToken() {
+  return `broker_${randomUUID2().replaceAll("-", "")}${randomUUID2().replaceAll("-", "")}`;
+}
+function brokerTokenHash(token) {
+  return createHash4("sha256").update(token).digest("hex");
+}
+function stableJson(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => stableJson(entry)).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+function sanitizeBrokerGrant(grant) {
+  return {
+    id: grant.id,
+    workspaceSlug: grant.workspaceSlug,
+    requesterMiniappId: grant.requesterMiniappId,
+    pluginId: grant.pluginId,
+    actionKeys: grant.actionKeys,
+    capabilities: grant.capabilities,
+    state: grant.state,
+    expiresAt: grant.expiresAt,
+    metadata: grant.metadata,
+    createdAt: grant.createdAt,
+    updatedAt: grant.updatedAt
+  };
+}
+function capabilityWeight(capability) {
+  return capability === "connector.admin" ? 3 : capability === "connector.dispatch" ? 2 : 1;
+}
+function highestCapability(capabilities2) {
+  return capabilities2.reduce(
+    (highest, capability) => capabilityWeight(capability) > capabilityWeight(highest) ? capability : highest,
+    "connector.observe"
+  );
+}
+function brokerGrantIsExpired(grant) {
+  return Date.parse(grant.expiresAt) <= Date.now();
+}
+function portalSelectionForPublishedAction(input) {
+  return {
+    pluginId: input.entry.pluginId,
+    actionKey: input.entry.actionKey,
+    accountId: input.accountId,
+    resourceKind: input.entry.resourceKind,
+    resourceRef: `account:${input.accountId}`,
+    ...input.entry.capability === "connector.observe" ? {} : { capability: input.entry.capability }
+  };
+}
+function portalSelectionsEquivalent(left, right) {
+  return left.pluginId === right.pluginId && left.actionKey === right.actionKey && left.accountId === right.accountId && left.resourceKind === right.resourceKind && left.resourceRef === right.resourceRef && selectionCapability(left) === selectionCapability(right);
+}
+function headerValue(request, name) {
+  const value = request.headers[name];
+  if (typeof value === "string") return value.trim() || null;
+  if (Array.isArray(value) && typeof value[0] === "string") {
+    return value[0].trim() || null;
+  }
+  return null;
+}
+function agentConnectorGrantIsExpired(grant) {
+  return grant.state !== "active" || Date.parse(grant.expiresAt) <= Date.now();
+}
+function sanitizeAgentConnectorGrant(grant) {
+  return {
+    id: grant.id,
+    workspaceSlug: grant.workspaceSlug,
+    agentId: grant.agentId,
+    pluginId: grant.pluginId,
+    actionKey: grant.actionKey,
+    capability: grant.capability,
+    connectionId: grant.connectionId,
+    accountId: grant.accountId,
+    resourceKind: grant.resourceKind,
+    resourceRef: grant.resourceRef,
+    attachmentId: grant.attachmentId,
+    state: grant.state,
+    expiresAt: grant.expiresAt,
+    metadata: grant.metadata,
+    createdAt: grant.createdAt,
+    updatedAt: grant.updatedAt
+  };
+}
+function browserAgentConnectorGrant(grant) {
+  return {
+    id: grant.id,
+    workspaceSlug: grant.workspaceSlug,
+    agentId: grant.agentId,
+    pluginId: grant.pluginId,
+    actionKey: grant.actionKey,
+    capability: grant.capability,
+    connectionId: grant.connectionId,
+    accountId: grant.accountId,
+    resourceKind: grant.resourceKind,
+    resourceRef: grant.resourceRef,
+    state: grant.state,
+    expiresAt: grant.expiresAt,
+    createdAt: grant.createdAt,
+    updatedAt: grant.updatedAt
+  };
+}
+function browserMarketplaceAgentConsent(consent) {
+  if (!consent) return null;
+  return {
+    id: consent.id,
+    portalOrgId: consent.portalOrgId,
+    productTenantId: consent.productTenantId,
+    workspaceId: consent.workspaceId,
+    deploymentId: consent.deploymentId,
+    userId: consent.userId,
+    agentId: consent.agentId,
+    consentId: consent.consentId,
+    consentRevision: consent.consentRevision,
+    pluginId: consent.pluginId,
+    actionKey: consent.actionKey,
+    capability: consent.capability,
+    connectionId: consent.connectionId,
+    accountId: consent.accountId,
+    resourceKind: consent.resourceKind,
+    resourceRef: consent.resourceRef,
+    state: consent.state,
+    capabilities: consent.capabilities,
+    requiredActions: consent.requiredActions,
+    createdAt: consent.createdAt,
+    updatedAt: consent.updatedAt
+  };
+}
+function browserMarketplacePortalGrantRequest(request) {
+  const state = request.state === "pending" && Date.parse(request.expiresAt) <= Date.now() ? "expired" : request.state;
+  return {
+    id: request.id,
+    portalOrgId: request.portalOrgId,
+    productTenantId: request.productTenantId,
+    workspaceId: request.workspaceId,
+    deploymentId: request.deploymentId,
+    agentId: request.agentId,
+    requestId: request.requestId,
+    approvalUrl: request.approvalUrl,
+    expiresAt: request.expiresAt,
+    idempotencyKey: request.idempotencyKey,
+    selection: request.selection,
+    state,
+    consentId: request.consentId,
+    createdAt: request.createdAt,
+    updatedAt: request.updatedAt
+  };
+}
+function runtimeResponse(input) {
+  return {
+    ok: input.ok,
+    schema: 1,
+    traceId: input.traceId,
+    ...input.error ? { error: input.error } : {},
+    ...input.detail ? { detail: input.detail } : {},
+    ...input.result ? { result: input.result } : {},
+    ...input.usageId ? { usageId: input.usageId } : {}
+  };
+}
+function runtimeSafeProviderResult(value) {
+  if (Array.isArray(value)) {
+    return value.map(runtimeSafeProviderResult);
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [
+      key,
+      /key|token|secret|authorization|credential/iu.test(key) ? "[redacted]" : runtimeSafeProviderResult(entry)
+    ])
+  );
+}
+function listingRequiresConnectedAccount(listing) {
+  return listing.source === "composio" && listing.authOwner === "composio" && listing.pluginId !== "composio-bootstrap";
+}
+function recordValue6(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+function listingIsWorkspaceCustomMcp(listing, workspaceSlug) {
+  return listingIsOperatorCustomMcp(listing) && listing.executionOwner === "mcp" && listing.ownerWorkspaceSlug === workspaceSlug;
+}
+function listingLaunchSupported(listing, workspaceSlug) {
+  return listing.executionOwner === "composio" || listingIsWorkspaceCustomMcp(listing, workspaceSlug) && listing.actions.length > 0;
+}
+function listingConnected(input) {
+  if (listingIsWorkspaceCustomMcp(input.listing, input.workspaceSlug)) {
+    return input.connectionState === "connected";
+  }
+  return !listingRequiresConnectedAccount(input.listing) || input.connectionState === "connected";
+}
+function arrayValue(value) {
+  return Array.isArray(value) ? value : [];
+}
+function stringValue5(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+function listingSkills(listing) {
+  const manifest = recordValue6(listing.manifest);
+  return arrayValue(manifest?.skills).flatMap((entry) => {
+    const record2 = recordValue6(entry);
+    if (!record2) {
+      return [];
+    }
+    const skillId = stringValue5(record2.skillId) ?? stringValue5(record2.skillName);
+    const displayName = stringValue5(record2.displayName) ?? skillId;
+    if (!skillId || !displayName) {
+      return [];
+    }
+    return [
+      {
+        skillId,
+        ...stringValue5(record2.skillName) ? { skillName: stringValue5(record2.skillName) } : {},
+        displayName,
+        ...stringValue5(record2.description) ? { description: stringValue5(record2.description) } : {},
+        ...stringValue5(record2.sourcePath) ? { sourcePath: stringValue5(record2.sourcePath) } : {},
+        ...stringValue5(record2.skillRoot) ? { skillRoot: stringValue5(record2.skillRoot) } : {},
+        requiresConnectors: arrayValue(record2.requiresConnectors).map((value) => stringValue5(value)).filter((value) => value !== null)
+      }
+    ];
+  });
+}
+function composioToolsForListing(listing) {
+  const manifest = recordValue6(listing.manifest);
+  const composio = recordValue6(manifest?.composio);
+  return arrayValue(composio?.tools).flatMap((tool) => {
+    const record2 = recordValue6(tool);
+    const action = stringValue5(record2?.action);
+    const toolName = stringValue5(record2?.toolName);
+    const displayName = stringValue5(record2?.displayName) ?? action;
+    const capability = stringValue5(record2?.capability);
+    if (!action || !toolName || !displayName) {
+      return [];
+    }
+    return [
+      {
+        action,
+        toolName,
+        displayName,
+        description: stringValue5(record2?.description) ?? "",
+        capability: capability === "connector.admin" || capability === "connector.dispatch" || capability === "connector.observe" ? capability : "connector.observe"
+      }
+    ];
+  });
+}
+function toolSelectionForListing(store2, workspaceSlug, listing) {
+  const knownTools = new Map(
+    composioToolsForListing(listing).map((tool) => [tool.action, tool])
+  );
+  const actions = listing.actions.map((action) => {
+    const requirement = resolveActionRequirement(listing, action);
+    const tool = knownTools.get(action);
+    const enabled = store2.isActionEnabled({
+      workspaceSlug,
+      pluginId: listing.pluginId,
+      actionKey: action
+    });
+    return {
+      actionKey: action,
+      displayName: tool?.displayName ?? action,
+      description: tool?.description ?? "",
+      toolName: tool?.toolName ?? composioToolNameForAction(listing, action),
+      capability: requirement?.capability ?? tool?.capability ?? "connector.observe",
+      enabled
+    };
+  });
+  return {
+    total: actions.length,
+    enabled: actions.filter((action) => action.enabled).length,
+    disabled: actions.filter((action) => !action.enabled).length,
+    actions
+  };
+}
+function pluginCardForListing(input) {
+  const { store: store2, workspaceSlug, listing } = input;
+  const install = store2.getInstall(workspaceSlug, listing.pluginId);
+  const connection = store2.getConnection(workspaceSlug, listing.pluginId);
+  const registered = store2.isRegistered(listing.pluginId);
+  const installed = install?.enabled === true && install.lifecycle === "installed";
+  const authRequired = listingRequiresConnectedAccount(listing);
+  const connected = listingConnected({
+    listing,
+    workspaceSlug,
+    connectionState: connection?.state
+  });
+  const launchSupported = listingLaunchSupported(listing, workspaceSlug);
+  const ready = launchSupported && registered && installed && connected;
+  const status = !launchSupported ? "catalogOnly" : ready ? "ready" : installed && authRequired && !connected ? "authRequired" : installed ? "installed" : install?.lifecycle === "uninstalled" ? "disabled" : "available";
+  const skills = listingSkills(listing);
+  const toolSelection = toolSelectionForListing(store2, workspaceSlug, listing);
+  const primaryRuntime = listing.runtimeSources?.find((source) => source.primary) ?? listing.runtimeSources?.[0];
+  const provider = listing.source === "composio" ? input.providers?.composio : void 0;
+  const connectStepStatus = !authRequired ? "complete" : connection?.state === "connected" ? "complete" : provider && !provider.configured ? "blocked" : "pending";
+  return {
+    addon: {
+      addonId: listing.pluginId,
+      pluginId: listing.pluginId,
+      displayName: listing.displayName,
+      version: String(recordValue6(listing.manifest)?.version ?? "0.1.0"),
+      kind: listing.kind,
+      enabled: installed,
+      skills,
+      apps: listing.source === "composio" ? [
+        {
+          appKey: listing.provider,
+          appId: listing.provider,
+          label: listing.displayName,
+          backend: "composio"
+        }
+      ] : [],
+      capabilities: listing.capabilities,
+      runtimeSources: listing.runtimeSources ?? [],
+      defaultPrompts: arrayValue(recordValue6(listing.manifest)?.defaultPrompts)
+    },
+    state: {
+      status,
+      ready,
+      registered,
+      installed,
+      enabled: installed,
+      authRequired,
+      apps: [
+        {
+          appId: listing.provider,
+          backend: listing.authOwner,
+          state: connection?.state ?? (authRequired ? "disconnected" : "connected"),
+          detail: connection?.detail ?? (authRequired ? "Connect this plugin before Agent tools are exposed." : "No external account connection is required.")
+        }
+      ],
+      diagnostics: [
+        ...provider && !provider.configured ? [`${listing.source} provider is not configured.`] : [],
+        ...toolSelection.enabled === 0 && toolSelection.total > 0 ? ["No plugin tools are currently selected for Agent exposure."] : []
+      ],
+      refreshedAt: (/* @__PURE__ */ new Date()).toISOString()
+    },
+    description: listing.description,
+    developerName: "Teal Brick",
+    marketplaceName: listing.source === "composio" ? "Composio" : "Teal Brick",
+    capabilityLabels: listing.capabilities,
+    primaryAction: ready ? "configure" : installed ? "connect" : "install",
+    capabilityShape: listing.kind,
+    runtimeSource: primaryRuntime?.kind ?? listing.executionOwner,
+    toolCoverageCount: listing.actions.length,
+    provenance: listing.source === "composio" ? "composio-imported" : "first-party",
+    extensionClass: listing.source === "mcp" ? "mcp" : listing.source === "composio" ? "connector" : "native",
+    sourceLabel: primaryRuntime?.label ?? listing.source,
+    dependencyFlags: listing.runtimeSources?.flatMap((source) => source.requiredEnv ?? []) ?? [],
+    hostAffordances: [
+      ...authRequired ? ["oauth-window"] : [],
+      "settings-panel",
+      "tool-selection"
+    ],
+    parityGaps: [],
+    installStateByTarget: [
+      {
+        targetId: workspaceSlug,
+        status,
+        installed,
+        registered
+      }
+    ],
+    installPlan: {
+      addonId: listing.pluginId,
+      steps: [
+        {
+          kind: "plugin-install",
+          label: "Register and install plugin",
+          status: registered && installed ? "complete" : "pending",
+          detail: registered && installed ? "Plugin is registered and installed for this workspace." : "Register and install before Agent projection."
+        },
+        {
+          kind: "app-connect",
+          label: authRequired ? `Connect ${listing.displayName}` : "Connection",
+          status: connectStepStatus,
+          detail: authRequired ? connection?.detail ?? "Open the Composio authorization popup." : "No external connection required."
+        },
+        {
+          kind: "skill-config",
+          label: "Agent skill guidance",
+          status: skills.length > 0 ? "complete" : "pending",
+          detail: skills.length > 0 ? `${skills.length} skill guidance item${skills.length === 1 ? "" : "s"} available.` : "No skill guidance declared yet."
+        },
+        {
+          kind: "ui-promotion",
+          label: "Tool selection",
+          status: toolSelection.enabled > 0 ? "complete" : "pending",
+          detail: `${toolSelection.enabled}/${toolSelection.total} tools selected for Agent exposure.`
+        }
+      ]
+    },
+    skills,
+    toolSelection,
+    listing,
+    install,
+    connection,
+    imports: store2.listComposioImports({
+      workspaceSlug,
+      pluginId: listing.pluginId
+    })
+  };
+}
+function pluginSummaryForListing(input) {
+  const { store: store2, workspaceSlug, listing } = input;
+  const install = store2.getInstall(workspaceSlug, listing.pluginId);
+  const connection = store2.getConnection(workspaceSlug, listing.pluginId);
+  const registered = store2.isRegistered(listing.pluginId);
+  const installed = install?.enabled === true && install.lifecycle === "installed";
+  const authRequired = listingRequiresConnectedAccount(listing);
+  const connected = listingConnected({
+    listing,
+    workspaceSlug,
+    connectionState: connection?.state
+  });
+  const launchSupported = listingLaunchSupported(listing, workspaceSlug);
+  const ready = launchSupported && registered && installed && connected;
+  const status = !launchSupported ? "catalogOnly" : ready ? "ready" : installed && authRequired && !connected ? "authRequired" : installed ? "installed" : install?.lifecycle === "uninstalled" ? "disabled" : "available";
+  const primaryRuntime = listing.runtimeSources?.find((source) => source.primary) ?? listing.runtimeSources?.[0];
+  return {
+    pluginId: listing.pluginId,
+    displayName: listing.displayName,
+    description: listing.description,
+    kind: listing.kind,
+    provider: listing.provider,
+    source: listing.source,
+    sourceLabel: primaryRuntime?.label ?? listing.source,
+    runtimeSource: primaryRuntime?.kind ?? listing.executionOwner,
+    status,
+    ready,
+    registered,
+    installed,
+    authRequired,
+    toolCount: listing.actions.length,
+    install: install ? {
+      enabled: install.enabled,
+      lifecycle: install.lifecycle,
+      updatedAt: install.updatedAt
+    } : null,
+    connection: connection ? {
+      provider: connection.provider,
+      backend: connection.backend,
+      state: connection.state,
+      detail: connection.detail,
+      updatedAt: connection.updatedAt
+    } : null
+  };
+}
+function browserListingForListing(listing) {
+  const manifest = recordValue6(listing.manifest);
+  return {
+    pluginId: listing.pluginId,
+    displayName: listing.displayName,
+    kind: listing.kind,
+    provider: listing.provider,
+    description: listing.description,
+    capabilities: listing.capabilities,
+    actions: listing.actions,
+    source: listing.source,
+    authOwner: listing.authOwner,
+    executionOwner: listing.executionOwner,
+    enabledByDefault: listing.enabledByDefault,
+    manifest: {
+      ...typeof manifest?.version === "string" ? { version: manifest.version } : {},
+      ...typeof manifest?.required === "boolean" ? { required: manifest.required } : {},
+      ...listingIsOperatorCustomMcp(listing) ? { operatorManaged: true } : {}
+    },
+    createdAt: listing.createdAt,
+    updatedAt: listing.updatedAt
+  };
+}
+function browserPluginCardForListing(input) {
+  const card = pluginCardForListing(input);
+  const launchSupported = listingLaunchSupported(
+    input.listing,
+    input.workspaceSlug
+  );
+  return {
+    addon: {
+      addonId: card.addon.addonId,
+      pluginId: card.addon.pluginId,
+      displayName: card.addon.displayName,
+      version: card.addon.version,
+      kind: card.addon.kind,
+      enabled: card.addon.enabled
+    },
+    state: {
+      ...card.state,
+      status: launchSupported ? card.state.status : "catalogOnly",
+      ready: launchSupported && card.state.ready,
+      diagnostics: [
+        ...card.state.diagnostics,
+        ...!launchSupported ? ["Catalog evidence only; this execution backend is not supported in the launch profile."] : []
+      ]
+    },
+    description: card.description,
+    developerName: card.developerName,
+    marketplaceName: card.marketplaceName,
+    capabilityLabels: card.capabilityLabels,
+    primaryAction: launchSupported ? card.primaryAction : "inspect",
+    capabilityShape: card.capabilityShape,
+    runtimeSource: card.runtimeSource,
+    toolCoverageCount: card.toolCoverageCount,
+    provenance: card.provenance,
+    extensionClass: card.extensionClass,
+    sourceLabel: card.sourceLabel,
+    dependencyFlags: [],
+    hostAffordances: card.hostAffordances,
+    parityGaps: launchSupported ? card.parityGaps : [...card.parityGaps, "execution-backend-not-supported"],
+    installStateByTarget: card.installStateByTarget,
+    installPlan: card.installPlan,
+    toolSelection: card.toolSelection,
+    listing: browserListingForListing(input.listing),
+    install: card.install ? {
+      enabled: card.install.enabled,
+      lifecycle: card.install.lifecycle,
+      updatedAt: card.install.updatedAt
+    } : null,
+    connection: card.connection ? {
+      provider: card.connection.provider,
+      backend: card.connection.backend,
+      state: card.connection.state,
+      detail: card.connection.detail,
+      updatedAt: card.connection.updatedAt
+    } : null
+  };
+}
+function browserProviderHealth(providers) {
+  return Object.fromEntries(
+    Object.entries(providers).map(([name, provider]) => [
+      name,
+      {
+        state: provider.state,
+        configured: provider.configured,
+        reachable: provider.reachable,
+        mode: provider.mode,
+        detail: provider.detail,
+        statusCode: provider.statusCode,
+        checkedAt: provider.checkedAt
+      }
+    ])
+  );
+}
+async function pluginCardsForWorkspace(input) {
+  const providers = input.providers ?? await readProviderHealthWithReachability();
+  return input.store.listListingsForWorkspace(input.workspaceSlug).map(
+    (listing) => pluginCardForListing({
+      store: input.store,
+      workspaceSlug: input.workspaceSlug,
+      listing,
+      providers
+    })
+  );
+}
+function composioListingRole(listing) {
+  return stringValue5(recordValue6(listing.manifest)?.role);
+}
+function composioListingHasCatalog(listing) {
+  const composio = recordValue6(recordValue6(listing.manifest)?.composio);
+  return Boolean(recordValue6(composio?.catalog));
+}
+function composioToolkitForListing(listing) {
+  const composio = recordValue6(recordValue6(listing.manifest)?.composio);
+  const catalog = recordValue6(composio?.catalog);
+  return stringValue5(composio?.toolkit) ?? stringValue5(catalog?.slug) ?? listing.provider;
+}
+function composioAuthMetadataForListing(listing) {
+  const composio = recordValue6(recordValue6(listing.manifest)?.composio);
+  const catalog = recordValue6(composio?.catalog);
+  return {
+    authSchemes: arrayValue(catalog?.authSchemes).map((value) => stringValue5(value)).filter((value) => value !== null),
+    managedAuthSchemes: arrayValue(catalog?.managedAuthSchemes).map((value) => stringValue5(value)).filter((value) => value !== null),
+    noAuth: catalog?.noAuth === true
+  };
+}
+async function synchronizeComposioCatalog(input) {
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const catalog = await fetchComposioCatalog(input.env, fetchImpl);
+  const connectedAccounts = await fetchComposioConnectedAccounts(
+    input.env,
+    fetchImpl
+  ).catch(() => ({ baseUrl: catalog.baseUrl, items: [] }));
+  const existingByToolkit = /* @__PURE__ */ new Map();
+  for (const listing of input.store.listListings()) {
+    if (listing.source !== "composio" || listing.pluginId === "composio-bootstrap") {
+      continue;
+    }
+    existingByToolkit.set(listing.provider, listing);
+    existingByToolkit.set(composioToolkitForListing(listing), listing);
+  }
+  let added = 0;
+  let refreshed = 0;
+  for (const rawToolkit of catalog.items) {
+    const catalogListing = buildComposioCatalogListing({
+      toolkit: rawToolkit
+    });
+    if (!catalogListing) {
+      continue;
+    }
+    const existing = existingByToolkit.get(catalogListing.provider);
+    if (existing && composioListingRole(existing) !== "composio-catalog-connector" && !composioListingHasCatalog(existing)) {
+      continue;
+    }
+    input.store.upsertListing(catalogListing);
+    existingByToolkit.set(catalogListing.provider, catalogListing);
+    if (existing) {
+      refreshed += 1;
+    } else {
+      added += 1;
+    }
+  }
+  const newestActiveByToolkit = /* @__PURE__ */ new Map();
+  for (const account of connectedAccounts.items) {
+    if (account.disabled || account.status.toUpperCase() !== "ACTIVE") {
+      continue;
+    }
+    const existing = newestActiveByToolkit.get(account.toolkit);
+    if (!existing || (account.updatedAt ?? "") > (existing.updatedAt ?? "")) {
+      newestActiveByToolkit.set(account.toolkit, account);
+    }
+  }
+  let connected = 0;
+  for (const [toolkit, account] of newestActiveByToolkit) {
+    const listing = existingByToolkit.get(toolkit);
+    if (!listing || composioListingRole(listing) !== "composio-catalog-connector") {
+      continue;
+    }
+    input.store.upsertConnection({
+      workspaceSlug: input.workspaceSlug,
+      pluginId: listing.pluginId,
+      provider: toolkit,
+      backend: "composio",
+      state: "connected",
+      detail: "An active Composio connected account is available.",
+      metadata: {
+        source: "composio-catalog-sync",
+        connectedAccountId: account.id,
+        toolkit,
+        userId: account.userId,
+        status: account.status
+      }
+    });
+    connected += 1;
+  }
+  return {
+    total: catalog.total,
+    projected: added + refreshed,
+    added,
+    refreshed,
+    connected
+  };
+}
+async function hydrateComposioCatalogConnector(input) {
+  if (composioListingRole(input.listing) !== "composio-catalog-connector") {
+    return input.listing;
+  }
+  const fetched = await fetchComposioToolkitTools({
+    toolkit: input.toolkit,
+    env: input.env,
+    fetchImpl: input.fetchImpl
+  });
+  const existingComposio = recordValue6(input.listing.manifest.composio) ?? {};
+  const hydrated = buildComposioListingFromTools({
+    toolkit: input.listing.provider,
+    upstreamToolkit: input.toolkit,
+    pluginId: input.listing.pluginId,
+    displayName: input.listing.displayName,
+    description: input.listing.description,
+    tools: fetched.items
+  });
+  const hydratedComposio = recordValue6(hydrated.manifest.composio) ?? {};
+  const listing = {
+    ...hydrated,
+    manifest: {
+      ...hydrated.manifest,
+      role: "composio-catalog-connector",
+      ...input.listing.manifest.version ? { version: input.listing.manifest.version } : {},
+      composio: {
+        ...hydratedComposio,
+        ...existingComposio.catalog ? { catalog: existingComposio.catalog } : {}
+      }
+    }
+  };
+  input.store.upsertListing(listing);
+  return listing;
+}
+function enableComposioConnector(input) {
+  input.store.registerPlugin(input.listing.pluginId);
+  input.store.install(input.workspaceSlug, input.listing.pluginId);
+  for (const capability of input.listing.capabilities) {
+    input.store.bindCapability({
+      workspaceSlug: input.workspaceSlug,
+      pluginId: input.listing.pluginId,
+      capability,
+      enabled: true
+    });
+  }
+  for (const actionKey of input.listing.actions) {
+    input.store.bindAction({
+      workspaceSlug: input.workspaceSlug,
+      pluginId: input.listing.pluginId,
+      actionKey,
+      enabled: true
+    });
+  }
+  input.store.upsertComposioImport({
+    workspaceSlug: input.workspaceSlug,
+    pluginId: input.listing.pluginId,
+    toolkit: input.toolkit,
+    importedActionKeys: input.listing.actions,
+    lifecycle: "enabled",
+    metadata: {
+      traceId: input.traceId,
+      source: "composio-catalog-connect",
+      toolCount: input.listing.actions.length
+    }
+  });
+}
+function agentCapabilitiesForWorkspace(store2, workspaceSlug) {
+  const enabledBindings = store2.listEnabledBindings(workspaceSlug);
+  return store2.listListingsForWorkspace(workspaceSlug).flatMap((listing) => {
+    const customMcp = listingIsWorkspaceCustomMcp(listing, workspaceSlug);
+    if (listing.executionOwner !== "composio" && !customMcp) {
+      return [];
+    }
+    if (!store2.isRegistered(listing.pluginId)) {
+      return [];
+    }
+    const install = store2.getInstall(workspaceSlug, listing.pluginId);
+    if (!install?.enabled || install.lifecycle !== "installed") {
+      return [];
+    }
+    const connection = store2.getConnection(workspaceSlug, listing.pluginId);
+    if (!listingConnected({
+      listing,
+      workspaceSlug,
+      connectionState: connection?.state
+    })) {
+      return [];
+    }
+    return listing.actions.flatMap((action) => {
+      if (!store2.isActionEnabled({
+        workspaceSlug,
+        pluginId: listing.pluginId,
+        actionKey: action
+      })) {
+        return [];
+      }
+      const requirement = resolveActionRequirement(listing, action);
+      if (!requirement) {
+        return [];
+      }
+      const matchingBinding = enabledBindings.find(
+        (binding) => binding.pluginId === listing.pluginId && binding.capability === requirement.capability
+      );
+      if (!matchingBinding) {
+        return [];
+      }
+      return [
+        {
+          pluginId: listing.pluginId,
+          workspaceSlug,
+          provider: listing.provider,
+          actionType: action,
+          toolName: toolNameForAction(listing.provider, action),
+          description: customMcp ? `${listing.displayName}: ${customMcpToolForAction(listing, action)?.description ?? action}` : `${listing.displayName}: ${action}`,
+          requiredCapabilities: [requirement.capability],
+          runtimeSource: listing.executionOwner,
+          connectionState: connection?.state ?? null,
+          endpoint: `/api/agent/tools/${toolNameForAction(listing.provider, action)}`
+        }
+      ];
+    });
+  });
+}
+function callbackUrlForRequest(input) {
+  const path9 = `/api/marketplace/plugins/${encodeURIComponent(input.pluginId)}/oauth/composio/callback`;
+  if (!input.publicOrigin?.trim()) {
+    throw new Error("MARKETPLACE_PUBLIC_ORIGIN is required for Composio OAuth callbacks.");
+  }
+  const origin = new URL(input.publicOrigin);
+  if (!["http:", "https:"].includes(origin.protocol) || origin.pathname !== "/" || origin.search || origin.hash) {
+    throw new Error("MARKETPLACE_PUBLIC_ORIGIN must be an exact HTTP(S) origin.");
+  }
+  return `${origin.origin}${path9}`;
+}
+function htmlCloseout(input) {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${input.title}</title>
+    <style>
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f8faf8; color: #1d2524; }
+      main { width: min(520px, calc(100vw - 32px)); border: 1px solid #d7dfda; background: #fff; padding: 24px; }
+      h1 { margin: 0 0 8px; font-size: 22px; letter-spacing: 0; }
+      p { margin: 0; color: #53635f; line-height: 1.5; }
+      .state { display: inline-block; margin-bottom: 14px; font-size: 12px; font-weight: 700; color: ${input.ok ? "#0f6b45" : "#9f2e2e"}; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <span class="state">${input.ok ? "CONNECTED" : "BLOCKED"}</span>
+      <h1>${input.title}</h1>
+      <p>${input.detail}</p>
+    </main>
+  </body>
+</html>`;
+}
+function htmlShell() {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Teal Brick Marketplace</title>
+    <style>
+      body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f8faf8; color: #1d2524; }
+      main { max-width: 1120px; margin: 0 auto; padding: 28px; }
+      header { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; border-bottom: 1px solid #d7dfda; padding-bottom: 18px; }
+      h1 { font-size: 28px; line-height: 1.1; margin: 0 0 8px; letter-spacing: 0; }
+      p { color: #4d5d58; max-width: 760px; }
+      section { margin-top: 24px; }
+      table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #d7dfda; }
+      th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #e5ebe8; font-size: 14px; }
+      th { color: #52615d; background: #f1f5f3; font-weight: 650; }
+      code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+      .chip { border: 1px solid #c8d4cf; border-radius: 999px; padding: 4px 9px; background: #fff; color: #33423e; font-size: 12px; }
+      .controls { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) auto; gap: 10px; align-items: end; }
+      label { display: grid; gap: 6px; color: #52615d; font-size: 12px; font-weight: 700; }
+      input { border: 1px solid #c8d4cf; padding: 9px 10px; font: inherit; color: #1d2524; background: #fff; }
+      button { border: 1px solid #2f6f59; background: #2f6f59; color: #fff; padding: 10px 12px; font: inherit; font-weight: 700; cursor: pointer; }
+      button:disabled { opacity: .55; cursor: default; }
+      .status { min-height: 22px; color: #52615d; font-size: 13px; }
+      .error { color: #9f2e2e; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <h1>Teal Brick Marketplace</h1>
+          <p>Plugin catalog, credentials, provider health, capability bindings, execution ledger, Composio/MCP runtime sources, and promotion candidates.</p>
+        </div>
+        <div class="chips">
+          <span class="chip">SQLite-owned</span>
+          <span class="chip">Rules-gated</span>
+          <span class="chip">Dynamic port</span>
+        </div>
+      </header>
+      <section>
+        <h2>Composio Connect</h2>
+        <div class="controls">
+          <label>Workspace <input id="workspace" value="default" autocomplete="off" /></label>
+          <label>Toolkit <input id="toolkit" value="linear" autocomplete="off" /></label>
+          <button id="connect">Import and connect</button>
+        </div>
+        <p id="status" class="status"></p>
+      </section>
+      <section>
+        <h2>Installed Runtime State</h2>
+        <table>
+          <thead><tr><th>Plugin</th><th>Source</th><th>Install</th><th>Connection</th><th>Actions</th></tr></thead>
+          <tbody id="plugins"><tr><td colspan="5">Loading...</td></tr></tbody>
+        </table>
+      </section>
+      <section>
+        <h2>Program API</h2>
+        <table>
+          <tbody>
+            <tr><th>Health</th><td><code>GET /healthz</code></td></tr>
+            <tr><th>Status</th><td><code>GET /api/status</code></td></tr>
+            <tr><th>Catalog</th><td><code>GET /api/marketplace/catalog</code></td></tr>
+            <tr><th>Plugins</th><td><code>GET /api/marketplace/plugins?workspaceSlug=default</code></td></tr>
+            <tr><th>Provider Health</th><td><code>GET /api/marketplace/provider-health</code></td></tr>
+            <tr><th>Audit</th><td><code>GET /api/marketplace/audit?workspaceSlug=default</code></td></tr>
+          </tbody>
+        </table>
+      </section>
+    </main>
+    <script>
+      const statusEl = document.getElementById("status");
+      const pluginsEl = document.getElementById("plugins");
+      const button = document.getElementById("connect");
+      const workspaceEl = document.getElementById("workspace");
+      const toolkitEl = document.getElementById("toolkit");
+
+      function setStatus(message, error = false) {
+        statusEl.textContent = message;
+        statusEl.className = error ? "status error" : "status";
+      }
+
+      function escapeHtml(value) {
+        return String(value).replace(/[&<>"']/g, (character) => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          """: "&quot;",
+          "'": "&#39;",
+        }[character]));
+      }
+
+      async function jsonFetch(url, options = {}) {
+        const response = await fetch(url, {
+          ...options,
+          headers: { "content-type": "application/json", ...(options.headers || {}) },
+        });
+        const json = await response.json();
+        if (!response.ok) {
+          throw new Error(json.detail || json.error || "Request failed");
+        }
+        return json;
+      }
+
+      async function refresh() {
+        const workspace = encodeURIComponent(workspaceEl.value.trim() || "default");
+        const data = await jsonFetch("/api/marketplace/plugins?workspaceSlug=" + workspace);
+        pluginsEl.innerHTML = data.items.map((item) => (
+          "<tr>" +
+          "<td>" + escapeHtml(item.displayName) + "<br><code>" + escapeHtml(item.pluginId) + "</code></td>" +
+          "<td>" + escapeHtml(item.source) + "</td>" +
+          "<td>" + escapeHtml(item.install?.lifecycle || "not installed") + "</td>" +
+          "<td>" + escapeHtml(item.connection?.state || "not connected") + "</td>" +
+          "<td>" + item.actions.length + "</td>" +
+          "</tr>"
+        )).join("");
+      }
+
+      async function importAndConnect() {
+        button.disabled = true;
+        const workspaceSlug = workspaceEl.value.trim() || "default";
+        const toolkit = toolkitEl.value.trim();
+        try {
+          setStatus("Importing toolkit...");
+          const imported = await jsonFetch("/api/marketplace/catalog/composio/import", {
+            method: "POST",
+            body: JSON.stringify({ workspaceSlug, toolkit, actorId: "operator", autoEnable: true }),
+          });
+          setStatus("Starting Composio authorization...");
+          const connection = await jsonFetch("/api/marketplace/plugins/" + encodeURIComponent(imported.listing.pluginId) + "/connection", {
+            method: "POST",
+            body: JSON.stringify({ workspaceSlug, actorId: "operator", provider: toolkit, toolkit, backend: "composio" }),
+          });
+          if (connection.auth?.redirectUrl) {
+            window.open(connection.auth.redirectUrl, "_blank", "noopener,noreferrer");
+            setStatus("Authorization popup opened. Return here after the connection completes.");
+          } else {
+            setStatus("Connected account recorded.");
+          }
+          await refresh();
+        } catch (error) {
+          setStatus(error instanceof Error ? error.message : String(error), true);
+        } finally {
+          button.disabled = false;
+        }
+      }
+
+      button.addEventListener("click", () => { void importAndConnect(); });
+      void refresh().catch((error) => setStatus(error instanceof Error ? error.message : String(error), true));
+    </script>
+  </body>
+</html>`;
+}
+async function buildMarketplaceApp(options) {
+  const app2 = (0, import_fastify.default)({ logger: false });
+  app2.addContentTypeParser(
+    "application/x-www-form-urlencoded",
+    { parseAs: "string" },
+    (_request, body, done) => {
+      const entries = [
+        ...new URLSearchParams(
+          typeof body === "string" ? body : body.toString("utf8")
+        ).entries()
+      ];
+      done(
+        null,
+        entries.length === 1 && entries[0]?.[0] === "ticket" ? { ticket: entries[0][1] } : null
+      );
+    }
+  );
+  const runtimePath = options.store.describeRuntime().databasePath;
+  const providerSettings2 = options.providerSettings ?? new MarketplaceProviderSettingsStore(
+    path6.join(path6.dirname(runtimePath), "provider-settings.json"),
+    path6.join(path6.dirname(runtimePath), "provider-secrets.json"),
+    options.env
+  );
+  await providerSettings2.load();
+  const providerEnvironment = () => providerSettings2.environment();
+  const frontend = await registerMarketplaceFrontend(app2);
+  const environment = options.environment ?? process.env;
+  const rulesConfiguration = options.rules;
+  const portalConfiguration = resolvePortalRuntimeConfiguration({
+    env: environment,
+    portalIssuerUrl: options.portalIssuerUrl,
+    portalInstanceProof: options.portalInstanceProof
+  });
+  const operatorSessions = options.operatorSessionManager ?? MarketplaceOperatorSessionManager.fromEnvironment({
+    allowUnauthenticated: options.allowUnauthenticatedOperator === true || options.allowUnauthenticatedOperator === void 0 && process.env.NODE_ENV === "test"
+  });
+  const configuredOrganizationId = options.organizationId?.trim() || environment.MARKETPLACE_ORGANIZATION_ID?.trim() || null;
+  const organizationId = configuredOrganizationId ?? portalConfiguration.workspaceId ?? "default";
+  if (portalConfiguration.workspaceId && portalConfiguration.workspaceId !== organizationId) {
+    throw new Error(
+      "MARKETPLACE_ORGANIZATION_ID conflicts with MARKETPLACE_PORTAL_WORKSPACE_ID."
+    );
+  }
+  const requestPrincipals = /* @__PURE__ */ new WeakMap();
+  const servicePrincipal = {
+    kind: "service",
+    id: "marketplace-service",
+    organizationId
+  };
+  const portalAttachmentAudience = options.portalAttachmentAudience?.trim() || process.env.MARKETPLACE_PORTAL_ATTACHMENT_AUDIENCE?.trim() || "marketplace";
+  const portalIssuerUrl = portalConfiguration.issuerUrl;
+  const portalInstanceProof = portalConfiguration.instanceProof;
+  const portalIdentityMatches = (input) => (!portalConfiguration.deploymentId || input.deploymentId === portalConfiguration.deploymentId) && (!portalConfiguration.portalOrgId || input.portalOrgId === portalConfiguration.portalOrgId) && (!portalConfiguration.workspaceId || input.workspaceId === portalConfiguration.workspaceId);
+  const agentScopeVerifier = options.agentScopeVerifier ?? createPortalAgentScopeVerifier({
+    issuer: portalIssuerUrl,
+    fetchImpl: options.portalFetch ?? options.providerFetch
+  });
+  const portalHandoffClient = createPortalHandoffClient({
+    issuer: portalIssuerUrl,
+    instanceProof: portalInstanceProof,
+    fetchImpl: options.portalFetch ?? options.providerFetch
+  });
+  const portalRuntimeScopeVerifier = options.portalRuntimeScopeVerifier ?? createPortalRuntimeScopeVerifier({
+    issuer: portalIssuerUrl,
+    instanceProof: portalInstanceProof,
+    fetchImpl: options.portalFetch ?? options.providerFetch
+  });
+  const requireOperator = (request, reply) => {
+    const principal = requestPrincipals.get(request);
+    if (principal?.kind === "operator") return principal;
+    reply.code(403);
+    return null;
+  };
+  const requireService = (request, reply) => {
+    const principal = requestPrincipals.get(request);
+    if (principal?.kind === "service") return principal;
+    reply.code(403);
+    return null;
+  };
+  const requireHandoffPrincipal = (request, reply) => {
+    const principal = requestPrincipals.get(request);
+    if (principal && ["service", "operator"].includes(principal.kind)) {
+      return principal;
+    }
+    reply.code(403);
+    return null;
+  };
+  const verifyPortalScope = async (input) => {
+    const agentToken = headerValue(input.request, "x-tealbrick-agent-token");
+    const attachmentToken = headerValue(input.request, "x-tealbrick-attachment");
+    if (!agentToken || !attachmentToken) {
+      input.reply.code(401);
+      return { ok: false, error: "agent_scope_required" };
+    }
+    try {
+      const scope = await agentScopeVerifier({
+        agentToken,
+        attachmentToken,
+        audience: portalAttachmentAudience,
+        requiredCapability: input.requiredCapability
+      });
+      return { ok: true, scope };
+    } catch (error) {
+      if (error instanceof PortalScopeError) {
+        input.reply.code(error.statusCode);
+        return { ok: false, error: error.code };
+      }
+      input.reply.code(503);
+      return { ok: false, error: "portal_identity_unavailable" };
+    }
+  };
+  const verifyAgentGrantScope = async (input) => {
+    if (input.grant.state !== "active") {
+      input.reply.code(403);
+      return { ok: false, error: "agent_grant_revoked" };
+    }
+    if (agentConnectorGrantIsExpired(input.grant)) {
+      input.reply.code(403);
+      return { ok: false, error: "agent_grant_expired" };
+    }
+    const verified = await verifyPortalScope(input);
+    if (!verified.ok) {
+      return verified;
+    }
+    const { scope } = verified;
+    if (scope.organizationId !== input.grant.workspaceSlug) {
+      input.reply.code(403);
+      return { ok: false, error: "agent_grant_tenant_mismatch" };
+    }
+    if (scope.agentId !== input.grant.agentId) {
+      input.reply.code(403);
+      return { ok: false, error: "agent_grant_agent_mismatch" };
+    }
+    if (scope.attachmentId !== input.grant.attachmentId) {
+      input.reply.code(403);
+      return { ok: false, error: "agent_grant_attachment_mismatch" };
+    }
+    if (scope.expiresAt * 1e3 <= Date.now()) {
+      input.reply.code(403);
+      return { ok: false, error: "agent_grant_expired" };
+    }
+    return { ok: true, scope };
+  };
+  const logCustomMcpFailure = (input) => {
+    const remote = input.error instanceof McpRemoteError ? input.error : null;
+    console.error(
+      JSON.stringify({
+        event: input.event,
+        pluginId: input.pluginId,
+        workspaceSlug: input.workspaceSlug,
+        code: remote?.code ?? "unexpected",
+        status: remote?.detail.status ?? null,
+        rpcCode: remote?.detail.rpcCode ?? null,
+        reason: remote?.detail.reason ?? null,
+        name: input.error instanceof Error ? input.error.name : typeof input.error
+      })
+    );
+  };
+  const customMcpConnection = (listing, workspaceSlug) => {
+    const manifest = customMcpManifest(listing);
+    return {
+      url: manifest.url,
+      transport: manifest.transport,
+      headers: {
+        ...manifest.headers,
+        ...options.store.readConnectorSecretValues({
+          workspaceSlug,
+          pluginId: listing.pluginId
+        })
+      },
+      fetchImpl: options.mcpFetch,
+      lookup: options.mcpLookup,
+      env: environment
+    };
+  };
+  const executeCustomMcpAction = async (input) => {
+    const { listing, workspaceSlug } = input;
+    const pluginId = listing.pluginId;
+    const tool = customMcpToolForAction(listing, input.action.type);
+    if (!tool) {
+      input.reply.code(400);
+      return { ok: false, traceId: input.traceId, error: "unknown_connector_action" };
+    }
+    const rulesDecisionId = "decisionId" in input.rules ? input.rules.decisionId ?? null : null;
+    const usageBase = {
+      workspaceSlug,
+      pluginId,
+      provider: listing.provider,
+      sourceExecutor: listing.executionOwner,
+      sourceActionKey: input.action.type,
+      productCapabilityKey: `connector.${listing.executionOwner}.${listing.provider}.${input.action.type}`,
+      scopesUsed: [input.capability],
+      runId: input.runId,
+      sessionId: input.sessionId,
+      metadata: {
+        rules: input.rules,
+        toolName: tool.name,
+        ...input.agentGrantId ? { agentGrantId: input.agentGrantId } : {}
+      },
+      input: input.action
+    };
+    const fail = (status, error) => {
+      const usage2 = options.store.recordUsage({
+        ...usageBase,
+        status: "failed",
+        error,
+        output: null
+      });
+      options.store.recordEvent({
+        type: "marketplace.execution.failed",
+        traceId: input.traceId,
+        workspaceSlug,
+        pluginId,
+        actorId: input.actorId,
+        rulesDecisionId,
+        payload: {
+          capability: input.capability,
+          action: input.action.type,
+          usageId: usage2.id,
+          error
+        }
+      });
+      input.reply.code(status);
+      return { ok: false, traceId: input.traceId, error, usage: usage2 };
+    };
+    let connection;
+    try {
+      connection = customMcpConnection(listing, workspaceSlug);
+    } catch (error) {
+      if (error instanceof ConnectorSecretStoreUnavailableError) {
+        return fail(503, "connector_secret_store_unavailable");
+      }
+      throw error;
+    }
+    const { type: _type, ...args } = input.action;
+    let output;
+    try {
+      output = await callMcpTool(connection, tool.name, args);
+    } catch (error) {
+      logCustomMcpFailure({
+        event: "marketplace.custom_mcp.execute_failed",
+        pluginId,
+        workspaceSlug,
+        error
+      });
+      return fail(
+        502,
+        error instanceof McpRemoteError && error.code === "mcp_rpc_error" ? "mcp_tool_failed" : "mcp_unreachable"
+      );
+    }
+    if (output.isError) {
+      return fail(502, "mcp_tool_failed");
+    }
+    const result = {
+      pluginId,
+      workspaceSlug,
+      provider: listing.provider,
+      capability: input.capability,
+      actionType: input.action.type,
+      performedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      simulated: false,
+      summary: `Ran ${tool.title ?? tool.name} on ${listing.displayName}.`,
+      details: {
+        toolName: tool.name,
+        result: {
+          content: output.content,
+          ...output.structuredContent === void 0 ? {} : { structuredContent: output.structuredContent }
+        }
+      }
+    };
+    const usage = options.store.recordUsage({
+      ...usageBase,
+      status: "succeeded",
+      error: null,
+      output: result
+    });
+    options.store.recordEvent({
+      type: "marketplace.execution.completed",
+      traceId: input.traceId,
+      workspaceSlug,
+      pluginId,
+      actorId: input.actorId,
+      rulesDecisionId,
+      payload: {
+        capability: input.capability,
+        action: input.action.type,
+        usageId: usage.id
+      }
+    });
+    return { ok: true, traceId: input.traceId, result, usage, rules: input.rules };
+  };
+  const composioCatalogSyncByWorkspace = /* @__PURE__ */ new Map();
+  const ensureComposioCatalog = async (workspaceSlug = "default") => {
+    if (!readProviderHealth(providerEnvironment()).composio.configured) {
+      return null;
+    }
+    const cached = composioCatalogSyncByWorkspace.get(workspaceSlug);
+    if (cached && Date.now() < cached.expiresAt) {
+      return null;
+    }
+    if (cached?.pending) {
+      return cached.pending;
+    }
+    const pending = synchronizeComposioCatalog({
+      store: options.store,
+      workspaceSlug,
+      env: providerEnvironment(),
+      fetchImpl: options.providerFetch
+    }).then((result) => {
+      composioCatalogSyncByWorkspace.set(workspaceSlug, {
+        expiresAt: Date.now() + 5 * 6e4,
+        pending: null
+      });
+      return result;
+    }).catch(() => null).finally(() => {
+      const latest = composioCatalogSyncByWorkspace.get(workspaceSlug);
+      if (latest?.pending) {
+        composioCatalogSyncByWorkspace.set(workspaceSlug, {
+          expiresAt: latest.expiresAt,
+          pending: null
+        });
+      }
+    });
+    composioCatalogSyncByWorkspace.set(workspaceSlug, {
+      expiresAt: 0,
+      pending
+    });
+    return pending;
+  };
+  app2.addHook("onRequest", async (request, reply) => {
+    const headers = corsHeadersForOrigin(request.headers.origin, environment);
+    for (const [key, value] of Object.entries(headers)) {
+      reply.header(key, value);
+    }
+    if (request.method === "OPTIONS") {
+      reply.code(204).send();
+    }
+  });
+  app2.addHook("preHandler", async (request, reply) => {
+    const pathname = request.url.split("?", 1)[0] ?? request.url;
+    if (request.method === "OPTIONS" || marketplacePublicPath(pathname)) return;
+    const serviceToken = bearerTokenFrom(request);
+    if (pathname === "/api/marketplace/v1/runtime/composio/execute") {
+      if (serviceToken && marketplaceSecretMatches(serviceToken, options.internalAuthToken)) {
+        reply.code(401).send({
+          ok: false,
+          schema: 1,
+          error: "runtime_service_bearer_forbidden"
+        });
+      }
+      return;
+    }
+    if (serviceToken && marketplaceSecretMatches(serviceToken, options.internalAuthToken)) {
+      requestPrincipals.set(request, servicePrincipal);
+      bindMarketplacePrincipalScope(request, servicePrincipal);
+      return;
+    }
+    const sessionStatus = operatorSessions.status(request.headers.cookie);
+    const operator = operatorSessions.authenticate(request.headers.cookie);
+    if (!operator) {
+      const configured = operatorSessions.status(request.headers.cookie).configured;
+      reply.code(configured ? 401 : 503).send({
+        ok: false,
+        error: configured ? "marketplace_unauthorized" : "marketplace_operator_auth_unconfigured",
+        detail: configured ? "Unlock Marketplace with an operator session or use the internal service bearer." : "MARKETPLACE_OPERATOR_ACCESS_TOKEN is required before Marketplace domain data is available."
+      });
+      return;
+    }
+    if (sessionStatus.mode === "test_bypass") {
+      requestPrincipals.set(request, operator);
+      return;
+    }
+    if (isMutation(request.method)) {
+      if (!allowedCorsOrigin(request.headers.origin, environment)) {
+        reply.code(403).send({ ok: false, error: "marketplace_origin_denied" });
+        return;
+      }
+      if (!operatorSessions.csrfMatches(request.headers.cookie, request.headers["x-csrf-token"])) {
+        reply.code(403).send({ ok: false, error: "marketplace_csrf_denied" });
+        return;
+      }
+    }
+    requestPrincipals.set(request, operator);
+    bindMarketplacePrincipalScope(request, operator);
+  });
+  app2.setErrorHandler((error, request, reply) => {
+    const isRuntimeReceiver = request.url.split("?", 1)[0] === "/api/marketplace/v1/runtime/composio/execute";
+    if (isRuntimeReceiver) {
+      const traceId = traceIdFrom(request);
+      if (error instanceof ZodError) {
+        reply.code(400).send(
+          runtimeResponse({
+            ok: false,
+            traceId,
+            error: "runtime_validation_failed"
+          })
+        );
+        return;
+      }
+      if (error.code === "FST_ERR_CTP_BODY_TOO_LARGE") {
+        reply.code(413).send(
+          runtimeResponse({
+            ok: false,
+            traceId,
+            error: "runtime_request_too_large"
+          })
+        );
+        return;
+      }
+    }
+    if (error instanceof ZodError) {
+      reply.code(400).send({
+        ok: false,
+        error: "validation_failed",
+        issues: error.issues
+      });
+      return;
+    }
+    const statusCode = typeof error.statusCode === "number" && error.statusCode >= 400 && error.statusCode < 500 ? error.statusCode : 500;
+    if (statusCode < 500) {
+      reply.code(statusCode).send({
+        ok: false,
+        error: "marketplace_request_invalid",
+        code: error.code ?? null
+      });
+      return;
+    }
+    const errorId = `err_${randomUUID2().replaceAll("-", "").slice(0, 16)}`;
+    console.error(
+      JSON.stringify({
+        event: "marketplace.request.error",
+        errorId,
+        method: request.method,
+        route: request.routeOptions?.url ?? null,
+        name: error instanceof Error ? error.name : typeof error,
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : void 0
+      })
+    );
+    reply.code(500).send({
+      ok: false,
+      error: "marketplace_program_error",
+      errorId
+    });
+  });
+  app2.get("/", async (_request, reply) => {
+    const rendered = await frontend.sendIndex(_request, reply);
+    if (rendered !== null) return rendered;
+    reply.type("text/html; charset=utf-8");
+    return htmlShell();
+  });
+  const completePortalLaunch = async (ticket, deploymentId, reply, input = {}) => {
+    try {
+      const session = await portalHandoffClient.redeemLaunchTicket({
+        deploymentId,
+        ticket
+      });
+      if (session.productTenantId !== organizationId || !portalIdentityMatches(session)) {
+        reply.code(403);
+        reply.type("text/html; charset=utf-8");
+        return htmlCloseout({
+          ok: false,
+          title: "Marketplace launch blocked",
+          detail: "The Portal deployment identity does not match this Marketplace instance."
+        });
+      }
+      options.store.upsertPortalHandoffSession({
+        portalIssuer: portalIssuerUrl ?? "",
+        deploymentId: session.deploymentId,
+        portalOrgId: session.portalOrgId,
+        productTenantId: session.productTenantId,
+        workspaceId: session.workspaceId,
+        userId: session.userId,
+        sessionToken: session.session,
+        expiresAt: new Date(session.expiresAt).toISOString()
+      });
+      if (input.issueOperatorSession) {
+        const operatorSession = operatorSessions.issuePortalSession({
+          id: session.userId,
+          organizationId: session.productTenantId
+        });
+        reply.header(
+          "set-cookie",
+          operatorSessions.sessionCookie(operatorSession.token, input.secure === true, "Lax")
+        );
+        reply.header("location", "/");
+        reply.code(303);
+        return "";
+      }
+      reply.type("text/html; charset=utf-8");
+      return htmlCloseout({
+        ok: true,
+        title: "Marketplace connected",
+        detail: "Portal ownership was verified. Return to Marketplace to continue the connector approval flow."
+      });
+    } catch (error) {
+      reply.code(error instanceof PortalHandoffError ? error.statusCode : 503);
+      reply.type("text/html; charset=utf-8");
+      return htmlCloseout({
+        ok: false,
+        title: "Marketplace launch blocked",
+        detail: error instanceof PortalHandoffError ? "Portal could not authorize this Marketplace launch." : "Portal launch verification failed."
+      });
+    }
+  };
+  app2.get("/auth/launch", async (request, reply) => {
+    const query = external_exports.strictObject({
+      ticket: external_exports.string().regex(/^[A-Za-z0-9_-]{43}$/u),
+      deploymentId: PortalIdentifierSchema
+    }).parse(request.query);
+    return completePortalLaunch(query.ticket, query.deploymentId, reply);
+  });
+  app2.post("/auth/launch", { bodyLimit: 2048 }, async (request, reply) => {
+    reply.header("cache-control", "no-store");
+    reply.header("referrer-policy", "no-referrer");
+    if (!portalIssuerUrl || headerValue(request, "origin") !== portalIssuerUrl || headerValue(request, "authorization")) {
+      reply.code(403);
+      reply.type("text/html; charset=utf-8");
+      return htmlCloseout({
+        ok: false,
+        title: "Marketplace launch blocked",
+        detail: "Portal launch origin verification failed."
+      });
+    }
+    const contentType = headerValue(request, "content-type");
+    const parsed = contentType?.split(";", 1)[0]?.trim().toLowerCase() === "application/x-www-form-urlencoded" ? PortalLaunchFormSchema.safeParse(request.body) : null;
+    const deploymentId = portalConfiguration.deploymentId;
+    if (!parsed?.success || !deploymentId) {
+      reply.code(parsed?.success ? 503 : 401);
+      reply.type("text/html; charset=utf-8");
+      return htmlCloseout({
+        ok: false,
+        title: "Marketplace launch blocked",
+        detail: parsed?.success ? "Marketplace Portal deployment identity is not configured." : "Portal launch ticket is invalid."
+      });
+    }
+    return completePortalLaunch(parsed.data.ticket, deploymentId, reply, {
+      issueOperatorSession: true,
+      secure: secureRequest(request)
+    });
+  });
+  app2.get("/healthz", async () => ({
+    ok: true,
+    service: "marketplace",
+    status: "healthy",
+    time: (/* @__PURE__ */ new Date()).toISOString()
+  }));
+  app2.get("/api/portal/readiness", async (request, reply) => {
+    const suppliedProof = headerValue(request, "x-tealbrick-instance-proof");
+    if (request.headers.cookie || request.headers.origin || request.headers.authorization) {
+      reply.code(403);
+      return { ok: false, error: "portal_readiness_service_request_required" };
+    }
+    if (!suppliedProof || !portalInstanceProof || !marketplaceSecretMatches(suppliedProof, portalInstanceProof)) {
+      reply.code(401);
+      return { ok: false, error: "portal_readiness_instance_auth_required" };
+    }
+    const publicOrigin = environment.MARKETPLACE_PUBLIC_ORIGIN?.trim();
+    if (!portalIssuerUrl || !portalConfiguration.deploymentId || !portalConfiguration.portalOrgId || !portalConfiguration.workspaceId || !publicOrigin) {
+      reply.code(503);
+      return { ok: false, error: "portal_readiness_identity_unconfigured" };
+    }
+    const base = {
+      ok: true,
+      schema: 2,
+      product: "marketplace",
+      deploymentId: portalConfiguration.deploymentId,
+      orgId: portalConfiguration.portalOrgId,
+      workspaceId: portalConfiguration.workspaceId,
+      productTenantId: organizationId,
+      publicOrigin,
+      portal: {
+        configured: true,
+        baseUrl: portalIssuerUrl,
+        instanceProofHeader: "x-tealbrick-instance-proof"
+      },
+      tenant: {
+        configured: true,
+        productTenantId: organizationId
+      },
+      auth: {
+        configured: true,
+        instanceProofHeader: "x-tealbrick-instance-proof"
+      }
+    };
+    if (!rulesConfiguration) {
+      return {
+        ...base,
+        rules: {
+          configured: false,
+          reachable: false,
+          effect: null,
+          detail: "scoped_rules_credential_not_configured"
+        }
+      };
+    }
+    if (!rulesConfiguration.internalAuthToken?.trim()) {
+      reply.code(503);
+      return { ok: false, error: "portal_readiness_rules_auth_unconfigured" };
+    }
+    let response;
+    try {
+      response = await (options.providerFetch ?? fetch)(
+        new URL(RULES_INTROSPECTION_PATH, rulesConfiguration.baseUrl),
+        {
+          method: "GET",
+          headers: {
+            accept: "application/json",
+            authorization: `Bearer ${rulesConfiguration.internalAuthToken}`
+          }
+        }
+      );
+    } catch {
+      reply.code(503);
+      return { ok: false, error: "portal_readiness_rules_unavailable" };
+    }
+    if (!response.ok) {
+      reply.code(503);
+      return { ok: false, error: "portal_readiness_rules_unavailable" };
+    }
+    let payload;
+    try {
+      payload = await response.json();
+    } catch {
+      reply.code(503);
+      return { ok: false, error: "portal_readiness_rules_response_invalid" };
+    }
+    let principal;
+    try {
+      principal = parseRulesReadinessPrincipal({
+        response: payload,
+        organizationId,
+        expectedCompanyId: rulesConfiguration.companyId
+      });
+    } catch {
+      reply.code(503);
+      return { ok: false, error: "portal_readiness_rules_principal_invalid" };
+    }
+    return {
+      ...base,
+      rules: {
+        configured: true,
+        reachable: true,
+        probe: "principal",
+        effect: null,
+        principal: { ready: true, principal }
+      }
+    };
+  });
+  let rulesStatusCache = null;
+  const probeRulesConnection = async () => {
+    if (!options.rulesClient && !rulesConfiguration) return "not-connected";
+    if (!rulesConfiguration) {
+      return options.rulesClient ? "connected" : "not-connected";
+    }
+    if (!options.rulesClient || !rulesConfiguration.internalAuthToken?.trim()) {
+      return "unavailable";
+    }
+    if (rulesStatusCache && Date.now() < rulesStatusCache.expiresAt) {
+      return rulesStatusCache.status;
+    }
+    let status = "unavailable";
+    try {
+      const response = await (options.providerFetch ?? fetch)(
+        new URL(RULES_INTROSPECTION_PATH, rulesConfiguration.baseUrl),
+        {
+          method: "GET",
+          headers: {
+            accept: "application/json",
+            authorization: `Bearer ${rulesConfiguration.internalAuthToken}`
+          },
+          signal: AbortSignal.timeout(5e3)
+        }
+      );
+      if (response.ok) {
+        parseRulesReadinessPrincipal({
+          response: await response.json(),
+          organizationId,
+          expectedCompanyId: rulesConfiguration.companyId
+        });
+        status = "connected";
+      }
+    } catch {
+      status = "unavailable";
+    }
+    rulesStatusCache = { status, expiresAt: Date.now() + 15e3 };
+    return status;
+  };
+  app2.get("/api/marketplace/health", async () => ({
+    ok: true,
+    program: "ok",
+    version: MARKETPLACE_VERSION,
+    rules: await probeRulesConnection(),
+    checkedAt: (/* @__PURE__ */ new Date()).toISOString()
+  }));
+  app2.get("/api/marketplace/auth/session", async (request) => ({
+    session: operatorSessions.status(request.headers.cookie)
+  }));
+  app2.post("/api/marketplace/auth/session", async (request, reply) => {
+    if (!allowedCorsOrigin(request.headers.origin, environment)) {
+      reply.code(403);
+      return { ok: false, error: "marketplace_origin_denied" };
+    }
+    try {
+      const body = external_exports.object({ accessToken: external_exports.string().trim().min(1).max(2048) }).parse(request.body ?? {});
+      const exchanged = operatorSessions.exchange(body.accessToken, request.ip);
+      reply.header("set-cookie", operatorSessions.sessionCookie(exchanged.token, secureRequest(request)));
+      return { ok: true, session: exchanged.status };
+    } catch (error) {
+      if (error instanceof MarketplaceAuthenticationError) {
+        reply.code(error.statusCode);
+        return { ok: false, error: error.code, detail: error.message };
+      }
+      throw error;
+    }
+  });
+  app2.delete("/api/marketplace/auth/session", async (request, reply) => {
+    const operator = operatorSessions.authenticate(request.headers.cookie);
+    if (!operator) {
+      reply.code(401);
+      return { ok: false, error: "marketplace_unauthorized" };
+    }
+    if (!allowedCorsOrigin(request.headers.origin, environment)) {
+      reply.code(403);
+      return { ok: false, error: "marketplace_origin_denied" };
+    }
+    if (!operatorSessions.csrfMatches(request.headers.cookie, request.headers["x-csrf-token"])) {
+      reply.code(403);
+      return { ok: false, error: "marketplace_csrf_denied" };
+    }
+    operatorSessions.revoke(request.headers.cookie);
+    reply.header("set-cookie", operatorSessions.clearCookie(secureRequest(request)));
+    return { ok: true };
+  });
+  app2.get("/api/status", async (request, reply) => {
+    if (!requireService(request, reply)) {
+      return { ok: false, error: "marketplace_service_bearer_required" };
+    }
+    return {
+      version: MARKETPLACE_VERSION,
+      ok: true,
+      service: "marketplace",
+      database: {
+        kind: "sqlite",
+        tables: options.store.listTables(),
+        path: options.store.describeRuntime().databasePath
+      },
+      debug: {
+        enabled: options.debug ?? compatDebugEnabled(),
+        logPath: options.logPath ?? options.store.describeRuntime().logPath
+      },
+      providers: await readProviderHealthWithReachability(
+        providerEnvironment(),
+        options.providerFetch
+      )
+    };
+  });
+  app2.get("/api/settings/providers/composio", async (request, reply) => {
+    if (!requireOperator(request, reply)) return { ok: false, error: "marketplace_operator_required" };
+    return {
+      ...providerSettings2.safeView(),
+      provider: readProviderHealth(providerEnvironment()).composio
+    };
+  });
+  app2.put("/api/settings/providers/composio", async (request, reply) => {
+    const principal = requireOperator(request, reply);
+    if (!principal) return { ok: false, error: "marketplace_operator_required" };
+    const input = ComposioProviderSettingsRequestSchema.parse(request.body);
+    const before = providerSettings2.safeView();
+    let saved;
+    try {
+      saved = await providerSettings2.update(input.settings);
+    } catch (error) {
+      if (error instanceof ProviderSettingsError) {
+        reply.code(error.statusCode);
+        return { ok: false, error: error.code };
+      }
+      throw error;
+    }
+    options.store.recordAudit({
+      workspaceSlug: principal.organizationId,
+      pluginId: "composio",
+      eventType: "marketplace.provider.settings.updated",
+      actorId: principal.id,
+      metadata: {
+        provider: "composio",
+        keyReplaced: Boolean(input.settings.composioApiKey),
+        keyFingerprint: saved.status.composioApiKey.fingerprint,
+        baseUrlChanged: before.values.composioBaseUrl !== saved.values.composioBaseUrl,
+        defaultUserChanged: before.values.composioDefaultUserId !== saved.values.composioDefaultUserId,
+        connectedAccountChanged: before.values.composioDefaultConnectedAccountId !== saved.values.composioDefaultConnectedAccountId
+      }
+    });
+    return {
+      ...saved,
+      provider: readProviderHealth(providerEnvironment()).composio
+    };
+  });
+  app2.delete("/api/settings/providers/composio/key", async (request, reply) => {
+    const principal = requireOperator(request, reply);
+    if (!principal) return { ok: false, error: "marketplace_operator_required" };
+    const previousFingerprint = providerSettings2.safeView().status.composioApiKey.fingerprint;
+    let result;
+    try {
+      result = await providerSettings2.removeApiKey();
+    } catch (error) {
+      if (error instanceof ProviderSettingsError) {
+        reply.code(error.statusCode);
+        return { ok: false, error: error.code };
+      }
+      throw error;
+    }
+    if (result.removed) {
+      composioCatalogSyncByWorkspace.clear();
+      options.store.recordAudit({
+        workspaceSlug: principal.organizationId,
+        pluginId: "composio",
+        eventType: "marketplace.provider.key.removed",
+        actorId: principal.id,
+        metadata: { provider: "composio", keyFingerprint: previousFingerprint }
+      });
+    }
+    return {
+      ...result.view,
+      removed: result.removed,
+      provider: readProviderHealth(providerEnvironment()).composio
+    };
+  });
+  app2.post("/api/settings/providers/composio/test", { bodyLimit: 4096 }, async (request, reply) => {
+    const principal = requireOperator(request, reply);
+    if (!principal) return { ok: false, error: "marketplace_operator_required" };
+    const body = external_exports.object({ composioApiKey: external_exports.string().trim().max(512).optional() }).parse(request.body ?? {});
+    const candidate = body.composioApiKey || providerSettings2.activeApiKey();
+    if (!candidate) {
+      reply.code(400);
+      return { ok: false, error: "composio_key_missing" };
+    }
+    try {
+      assertComposioApiKeyFormat(candidate);
+    } catch (error) {
+      if (error instanceof ProviderSettingsError) {
+        reply.code(error.statusCode);
+        return { ok: false, error: error.code };
+      }
+      throw error;
+    }
+    const baseUrl = providerSettings2.safeView().values.composioBaseUrl;
+    if (!allowedComposioOrigin(baseUrl, environment)) {
+      reply.code(400);
+      return { ok: false, error: "composio_base_url_not_allowed" };
+    }
+    const probeUrl = new URL(`${baseUrl.replace(/\/+$/u, "")}/connected_accounts`);
+    probeUrl.searchParams.set("limit", "1");
+    let outcome;
+    let providerStatus = null;
+    try {
+      const response = await (options.providerFetch ?? fetch)(probeUrl, {
+        method: "GET",
+        headers: { accept: "application/json", "x-api-key": candidate },
+        redirect: "error",
+        signal: AbortSignal.timeout(8e3)
+      });
+      providerStatus = response.status;
+      outcome = response.ok ? "valid" : response.status === 401 || response.status === 403 ? "rejected" : "unreachable";
+    } catch {
+      outcome = "unreachable";
+    }
+    options.store.recordAudit({
+      workspaceSlug: principal.organizationId,
+      pluginId: "composio",
+      eventType: "marketplace.provider.key.tested",
+      actorId: principal.id,
+      metadata: {
+        provider: "composio",
+        outcome,
+        providerStatus,
+        draftKey: Boolean(body.composioApiKey),
+        keyFingerprint: composioKeyFingerprint(candidate)
+      }
+    });
+    if (outcome === "rejected") {
+      reply.code(422);
+      return { ok: false, error: "composio_key_rejected" };
+    }
+    if (outcome === "unreachable") {
+      reply.code(502);
+      return { ok: false, error: "composio_unreachable" };
+    }
+    return { ok: true, status: "valid", checkedAt: (/* @__PURE__ */ new Date()).toISOString() };
+  });
+  const customMcpOperator = (request, reply) => {
+    const principal = requireOperator(request, reply);
+    if (!principal) {
+      return { error: { ok: false, error: "marketplace_operator_required" } };
+    }
+    for (const value of [request.query, request.body]) {
+      const supplied = recordValue6(value)?.workspaceSlug;
+      if (supplied !== void 0 && supplied !== principal.organizationId) {
+        reply.code(403);
+        return { error: { ok: false, error: "workspace_mismatch" } };
+      }
+    }
+    return { principal };
+  };
+  const ownedCustomMcp = (pluginId, workspaceSlug) => {
+    const listing = options.store.getListingForWorkspace(pluginId, workspaceSlug);
+    return listing && listingIsWorkspaceCustomMcp(listing, workspaceSlug) ? listing : null;
+  };
+  const customMcpInputFailure = (reply, error) => {
+    if (error instanceof CustomMcpInputError) {
+      reply.code(400);
+      return { ok: false, error: error.code, ...error.field ? { field: error.field } : {} };
+    }
+    if (error instanceof McpUrlPolicyError) {
+      reply.code(400);
+      return { ok: false, error: error.code, reason: error.reason };
+    }
+    throw error;
+  };
+  const secretAuditView = (workspaceSlug, pluginId) => options.store.listConnectorSecrets({ workspaceSlug, pluginId }).map((secret) => ({ name: secret.name, fingerprint: secret.fingerprint }));
+  app2.get("/api/marketplace/connectors/custom", async (request, reply) => {
+    const gate = customMcpOperator(request, reply);
+    if ("error" in gate) return gate.error;
+    const workspaceSlug = gate.principal.organizationId;
+    return {
+      ok: true,
+      workspaceSlug,
+      secretStoreAvailable: options.store.connectorSecretStoreAvailable(),
+      items: options.store.listOwnedListings(workspaceSlug).filter((listing) => listingIsWorkspaceCustomMcp(listing, workspaceSlug)).map((listing) => customConnectorView(options.store, workspaceSlug, listing))
+    };
+  });
+  app2.post("/api/marketplace/connectors/custom", async (request, reply) => {
+    const gate = customMcpOperator(request, reply);
+    if ("error" in gate) return gate.error;
+    const { principal } = gate;
+    const workspaceSlug = principal.organizationId;
+    if (requestsStdioTransport(request.body)) {
+      reply.code(400);
+      return { ok: false, error: "custom_mcp_transport_not_allowed" };
+    }
+    const input = CustomMcpCreateSchema.parse(request.body);
+    let headers;
+    let secretHeaders;
+    let url;
+    try {
+      headers = normalizePlainHeaders(input.headers);
+      secretHeaders = normalizeSecretHeaderChanges(input.secretHeaders);
+      assertHeaderSets({ plainNames: Object.keys(headers), secretNames: secretHeaders.keys() });
+      url = checkMcpUrlSyntax(input.url, environment).url;
+    } catch (error) {
+      return customMcpInputFailure(reply, error);
+    }
+    if (secretHeaders.size > 0 && !options.store.connectorSecretStoreAvailable()) {
+      reply.code(503);
+      return { ok: false, error: "connector_secret_store_unavailable" };
+    }
+    const pluginId = customMcpPluginId({
+      workspaceSlug,
+      slug: input.slug,
+      displayName: input.displayName
+    });
+    if (options.store.getListing(pluginId)) {
+      reply.code(409);
+      return { ok: false, error: "custom_mcp_already_exists", pluginId };
+    }
+    const rules = await enforceRules({
+      reply,
+      workspaceSlug,
+      operation: "custom-mcp.create",
+      capability: "connector.admin",
+      pluginId,
+      actorId: principal.id,
+      payload: {
+        transport: input.transport,
+        origin: url.origin,
+        headerNames: Object.keys(headers),
+        secretHeaderNames: [...secretHeaders.keys()]
+      },
+      rulesClient: options.rulesClient
+    });
+    if (!("effect" in rules)) return rules;
+    const manifest = {
+      operatorManaged: true,
+      transport: input.transport,
+      url: url.toString(),
+      headers,
+      tools: [],
+      lastRefresh: null
+    };
+    const listing = customMcpListing({
+      pluginId,
+      workspaceSlug,
+      displayName: input.displayName,
+      description: input.description,
+      manifest
+    });
+    options.store.upsertListing(listing);
+    for (const [name, value] of secretHeaders) {
+      if (value !== null) {
+        options.store.putConnectorSecret({ workspaceSlug, pluginId, name, value });
+      }
+    }
+    options.store.recordAudit({
+      workspaceSlug,
+      pluginId,
+      eventType: "marketplace.custom_mcp.created",
+      actorId: principal.id,
+      rulesDecisionId: rules.decisionId,
+      metadata: {
+        transport: input.transport,
+        origin: url.origin,
+        headerNames: Object.keys(headers),
+        secretHeaders: secretAuditView(workspaceSlug, pluginId)
+      }
+    });
+    reply.code(201);
+    return {
+      ok: true,
+      connector: customConnectorView(options.store, workspaceSlug, listing)
+    };
+  });
+  app2.patch("/api/marketplace/connectors/custom/:pluginId", async (request, reply) => {
+    const gate = customMcpOperator(request, reply);
+    if ("error" in gate) return gate.error;
+    const { principal } = gate;
+    const workspaceSlug = principal.organizationId;
+    const { pluginId } = request.params;
+    const current = ownedCustomMcp(pluginId, workspaceSlug);
+    if (!current) {
+      reply.code(404);
+      return { ok: false, error: "plugin_not_found" };
+    }
+    if (requestsStdioTransport(request.body)) {
+      reply.code(400);
+      return { ok: false, error: "custom_mcp_transport_not_allowed" };
+    }
+    const input = CustomMcpPatchSchema.parse(request.body);
+    const manifest = customMcpManifest(current);
+    let headers;
+    let secretChanges;
+    let url;
+    try {
+      headers = input.headers === void 0 ? manifest.headers : normalizePlainHeaders(input.headers);
+      secretChanges = normalizeSecretHeaderChanges(input.secretHeaders);
+      const secretNames = new Set(
+        options.store.listConnectorSecrets({ workspaceSlug, pluginId }).map((secret) => secret.name)
+      );
+      for (const [name, value] of secretChanges) {
+        if (value === null) secretNames.delete(name);
+        else secretNames.add(name);
+      }
+      assertHeaderSets({ plainNames: Object.keys(headers), secretNames });
+      url = checkMcpUrlSyntax(input.url ?? manifest.url, environment).url;
+    } catch (error) {
+      return customMcpInputFailure(reply, error);
+    }
+    const writesSecrets = [...secretChanges.values()].some((value) => value !== null);
+    if (writesSecrets && !options.store.connectorSecretStoreAvailable()) {
+      reply.code(503);
+      return { ok: false, error: "connector_secret_store_unavailable" };
+    }
+    const transport = input.transport ?? manifest.transport;
+    const endpointChanged = url.toString() !== manifest.url || transport !== manifest.transport;
+    const rules = await enforceRules({
+      reply,
+      workspaceSlug,
+      operation: "custom-mcp.update",
+      capability: "connector.admin",
+      pluginId,
+      actorId: principal.id,
+      payload: {
+        transport,
+        origin: url.origin,
+        endpointChanged,
+        headerNames: Object.keys(headers),
+        secretHeaderChanges: [...secretChanges].map(([name, value]) => ({
+          name,
+          change: value === null ? "remove" : "set"
+        }))
+      },
+      rulesClient: options.rulesClient
+    });
+    if (!("effect" in rules)) return rules;
+    const listing = customMcpListing({
+      pluginId,
+      workspaceSlug,
+      displayName: input.displayName ?? current.displayName,
+      description: input.description ?? current.description,
+      version: typeof current.manifest.version === "string" ? current.manifest.version : void 0,
+      createdAt: current.createdAt,
+      manifest: {
+        ...manifest,
+        transport,
+        url: url.toString(),
+        headers,
+        ...endpointChanged ? { tools: [], lastRefresh: null } : {}
+      }
+    });
+    options.store.upsertListing(listing);
+    for (const [name, value] of secretChanges) {
+      if (value === null) {
+        options.store.deleteConnectorSecret({ workspaceSlug, pluginId, name });
+      } else {
+        options.store.putConnectorSecret({ workspaceSlug, pluginId, name, value });
+      }
+    }
+    if (endpointChanged && options.store.getConnection(workspaceSlug, pluginId)) {
+      options.store.upsertConnection({
+        workspaceSlug,
+        pluginId,
+        provider: listing.provider,
+        backend: "mcp",
+        state: "disconnected",
+        detail: "Server address changed. Refresh tools to reconnect.",
+        metadata: { reason: "endpoint_changed" }
+      });
+    }
+    options.store.recordAudit({
+      workspaceSlug,
+      pluginId,
+      eventType: "marketplace.custom_mcp.updated",
+      actorId: principal.id,
+      rulesDecisionId: rules.decisionId,
+      metadata: {
+        transport,
+        origin: url.origin,
+        endpointChanged,
+        headerNames: Object.keys(headers),
+        removedSecretHeaders: [...secretChanges].filter(([, value]) => value === null).map(([name]) => name),
+        secretHeaders: secretAuditView(workspaceSlug, pluginId)
+      }
+    });
+    return {
+      ok: true,
+      connector: customConnectorView(options.store, workspaceSlug, listing)
+    };
+  });
+  app2.delete("/api/marketplace/connectors/custom/:pluginId", async (request, reply) => {
+    const gate = customMcpOperator(request, reply);
+    if ("error" in gate) return gate.error;
+    const { principal } = gate;
+    const workspaceSlug = principal.organizationId;
+    const { pluginId } = request.params;
+    const listing = ownedCustomMcp(pluginId, workspaceSlug);
+    if (!listing) {
+      reply.code(404);
+      return { ok: false, error: "plugin_not_found" };
+    }
+    const rules = await enforceRules({
+      reply,
+      workspaceSlug,
+      operation: "custom-mcp.delete",
+      capability: "connector.admin",
+      pluginId,
+      actorId: principal.id,
+      payload: {},
+      rulesClient: options.rulesClient
+    });
+    if (!("effect" in rules)) return rules;
+    const secretHeaders = secretAuditView(workspaceSlug, pluginId);
+    const brokerGrantsRevoked = options.store.revokeBrokerGrantsForPlugin({ workspaceSlug, pluginId });
+    const agentAccess = options.store.revokeAgentAccessForPlugin({ workspaceSlug, pluginId });
+    options.store.deleteListing(pluginId);
+    options.store.recordAudit({
+      workspaceSlug,
+      pluginId,
+      eventType: "marketplace.custom_mcp.deleted",
+      actorId: principal.id,
+      rulesDecisionId: rules.decisionId,
+      metadata: {
+        secretHeaders,
+        brokerGrantsRevoked,
+        agentGrantsRevoked: agentAccess.grants,
+        agentConsentsRevoked: agentAccess.consents
+      }
+    });
+    return { ok: true, pluginId, deleted: true };
+  });
+  app2.post("/api/marketplace/connectors/custom/:pluginId/refresh", async (request, reply) => {
+    const gate = customMcpOperator(request, reply);
+    if ("error" in gate) return gate.error;
+    const { principal } = gate;
+    const workspaceSlug = principal.organizationId;
+    const { pluginId } = request.params;
+    const current = ownedCustomMcp(pluginId, workspaceSlug);
+    if (!current) {
+      reply.code(404);
+      return { ok: false, error: "plugin_not_found" };
+    }
+    const rules = await enforceRules({
+      reply,
+      workspaceSlug,
+      operation: "custom-mcp.refresh",
+      capability: "connector.admin",
+      pluginId,
+      actorId: principal.id,
+      payload: { transport: customMcpManifest(current).transport },
+      rulesClient: options.rulesClient
+    });
+    if (!("effect" in rules)) return rules;
+    let connection;
+    try {
+      connection = customMcpConnection(current, workspaceSlug);
+    } catch (error) {
+      if (error instanceof ConnectorSecretStoreUnavailableError) {
+        reply.code(503);
+        return { ok: false, error: "connector_secret_store_unavailable" };
+      }
+      throw error;
+    }
+    const requested = customMcpManifest(current);
+    const at = (/* @__PURE__ */ new Date()).toISOString();
+    let errorCode = null;
+    let remoteTools = [];
+    try {
+      remoteTools = await listMcpTools(connection);
+    } catch (error) {
+      logCustomMcpFailure({ event: "marketplace.custom_mcp.refresh_failed", pluginId, workspaceSlug, error });
+      errorCode = error instanceof McpRemoteError ? error.code : "mcp_protocol_error";
+    }
+    const latest = ownedCustomMcp(pluginId, workspaceSlug);
+    if (!latest) {
+      reply.code(404);
+      return { ok: false, error: "plugin_not_found" };
+    }
+    const manifest = customMcpManifest(latest);
+    if (manifest.url !== requested.url || manifest.transport !== requested.transport) {
+      reply.code(409);
+      return { ok: false, error: "custom_mcp_changed_during_refresh" };
+    }
+    const rebuild = (next) => customMcpListing({
+      pluginId,
+      workspaceSlug,
+      displayName: latest.displayName,
+      description: latest.description,
+      version: typeof latest.manifest.version === "string" ? latest.manifest.version : void 0,
+      createdAt: latest.createdAt,
+      manifest: { ...manifest, ...next }
+    });
+    let listing;
+    if (errorCode === null) {
+      try {
+        const tools = toolRecordsFromRemote(latest.provider, remoteTools);
+        listing = rebuild({ tools, lastRefresh: { at, ok: true, errorCode: null } });
+      } catch (error) {
+        logCustomMcpFailure({ event: "marketplace.custom_mcp.refresh_failed", pluginId, workspaceSlug, error });
+        errorCode = "mcp_protocol_error";
+        listing = rebuild({ lastRefresh: { at, ok: false, errorCode } });
+      }
+    } else {
+      listing = rebuild({ lastRefresh: { at, ok: false, errorCode } });
+    }
+    options.store.upsertListing(listing);
+    if (errorCode === null) {
+      options.store.upsertConnection({
+        workspaceSlug,
+        pluginId,
+        provider: listing.provider,
+        backend: "mcp",
+        state: "connected",
+        detail: `Connected. ${listing.actions.length} tool${listing.actions.length === 1 ? "" : "s"} available.`,
+        metadata: { lastRefreshAt: at, toolCount: listing.actions.length }
+      });
+      if (options.store.getInstall(workspaceSlug, pluginId)?.lifecycle === "installed") {
+        bindCustomMcpForWorkspace(options.store, workspaceSlug, listing);
+      }
+    } else {
+      options.store.upsertConnection({
+        workspaceSlug,
+        pluginId,
+        provider: listing.provider,
+        backend: "mcp",
+        state: "blocked",
+        detail: "Marketplace couldn't load tools from this server.",
+        metadata: { lastRefreshAt: at, errorCode }
+      });
+    }
+    options.store.recordAudit({
+      workspaceSlug,
+      pluginId,
+      eventType: "marketplace.custom_mcp.refreshed",
+      actorId: principal.id,
+      rulesDecisionId: rules.decisionId,
+      metadata: {
+        ok: errorCode === null,
+        errorCode,
+        toolCount: listing.actions.length,
+        secretHeaders: secretAuditView(workspaceSlug, pluginId)
+      }
+    });
+    const view = customConnectorView(options.store, workspaceSlug, listing);
+    if (errorCode) {
+      reply.code(errorCode === "custom_mcp_url_not_allowed" ? 400 : 502);
+      return { ok: false, error: errorCode, connector: view };
+    }
+    return { ok: true, connector: view };
+  });
+  const capabilityProjectionHandler = async (request, reply) => {
+    const authError = requireHubBearerAuth({
+      request,
+      reply,
+      expectedToken: options.internalAuthToken
+    });
+    if (authError) return authError;
+    const query = HubAuthQuerySchema.parse(request.query);
+    try {
+      await ensureComposioCatalog(query.workspaceSlug);
+      const baseProjection = marketplaceCapabilitiesHostProjection({
+        store: options.store,
+        workspaceSlug: query.workspaceSlug
+      });
+      const projection = await projectExtensionSettings({
+        microappsRoot: options.microappsRoot,
+        baseProjection
+      });
+      return {
+        ok: true,
+        workspaceSlug: query.workspaceSlug,
+        ...projection,
+        dependencies: {
+          registryAuthority: "doppelganger-registry",
+          recordMode: "gateway-projected-records",
+          lifecycleAuthority: "marketplace",
+          directHermesRole: "underlying-adapters-only",
+          normalModeDirectHermesControls: false,
+          auth: {
+            owner: "hdda-host-sdk",
+            scope: "auth",
+            status: "dependency"
+          }
+        }
+      };
+    } catch (error) {
+      reply.code(409);
+      return {
+        ok: false,
+        error: "capabilities_ownership_conflict",
+        detail: error instanceof Error ? error.message : String(error)
+      };
+    }
+  };
+  app2.get("/api/marketplace/hub/records", capabilityProjectionHandler);
+  app2.get("/api/plugins/marketplace-hub/records", capabilityProjectionHandler);
+  app2.get("/api/marketplace/hub/plugins/:pluginId", async (request, reply) => {
+    const authError = requireHubBearerAuth({
+      request,
+      reply,
+      expectedToken: options.internalAuthToken
+    });
+    if (authError) return authError;
+    const query = HubAuthQuerySchema.parse(request.query);
+    const { pluginId } = request.params;
+    const listing = options.store.getListingForWorkspace(
+      pluginId,
+      query.workspaceSlug
+    );
+    if (!listing) {
+      reply.code(404);
+      return { ok: false, error: "plugin_not_found" };
+    }
+    return {
+      ok: true,
+      record: marketplacePluginRecord({
+        store: options.store,
+        workspaceSlug: query.workspaceSlug,
+        listing
+      })
+    };
+  });
+  app2.post("/api/marketplace/hub/plugins/mcp", async (request, reply) => {
+    const authError = requireHubBearerAuth({
+      request,
+      reply,
+      expectedToken: options.internalAuthToken
+    });
+    if (authError) return authError;
+    const input = McpPluginSchema.parse(request.body);
+    if (options.store.getListing(input.pluginId)) {
+      reply.code(409);
+      return { ok: false, error: "plugin_already_exists" };
+    }
+    const rules = await enforceRules({
+      reply,
+      workspaceSlug: input.workspaceSlug,
+      operation: "hub.mcp.create",
+      capability: "connector.admin",
+      pluginId: input.pluginId,
+      actorId: input.actorId,
+      payload: { transport: input.transport },
+      rulesClient: options.rulesClient
+    });
+    if (!("effect" in rules)) return rules;
+    const listing = mcpListingFromInput(input);
+    options.store.upsertListing(listing);
+    options.store.recordAudit({
+      workspaceSlug: input.workspaceSlug,
+      pluginId: input.pluginId,
+      eventType: "marketplace.plugin.created",
+      actorId: input.actorId,
+      rulesDecisionId: rules.decisionId,
+      metadata: { kind: "mcp", transport: input.transport }
+    });
+    reply.code(201);
+    return {
+      ok: true,
+      record: marketplacePluginRecord({
+        store: options.store,
+        workspaceSlug: input.workspaceSlug,
+        listing
+      })
+    };
+  });
+  app2.patch(
+    "/api/marketplace/hub/plugins/:pluginId",
+    async (request, reply) => {
+      const authError = requireHubBearerAuth({
+        request,
+        reply,
+        expectedToken: options.internalAuthToken
+      });
+      if (authError) return authError;
+      const query = HubAuthQuerySchema.parse(request.query);
+      const { pluginId } = request.params;
+      const current = options.store.getListingForWorkspace(
+        pluginId,
+        query.workspaceSlug
+      );
+      if (!current) {
+        reply.code(404);
+        return { ok: false, error: "plugin_not_found" };
+      }
+      if (listingIsOperatorCustomMcp(current)) {
+        reply.code(409);
+        return { ok: false, error: "plugin_managed_by_operator" };
+      }
+      if (!listingIsCustomMcp(current)) {
+        reply.code(409);
+        return { ok: false, error: "plugin_not_custom_mcp" };
+      }
+      const requestBody = recordValue6(request.body);
+      const patch = McpPluginUpdateSchema.parse(
+        requestBody?.settings ?? request.body
+      );
+      const currentRecord = marketplacePluginRecord({
+        store: options.store,
+        workspaceSlug: query.workspaceSlug,
+        listing: current
+      });
+      if (currentRecord.adapter.type !== "mcp") {
+        reply.code(409);
+        return { ok: false, error: "plugin_not_mcp" };
+      }
+      const merged = McpPluginSchema.parse({
+        workspaceSlug: query.workspaceSlug,
+        actorId: "operator",
+        pluginId,
+        displayName: current.displayName,
+        description: current.description,
+        version: currentRecord.version,
+        capabilities: current.capabilities,
+        actions: current.actions,
+        contributions: currentRecord.contributions,
+        ...marketplaceMcpAdapterConfig(current, true),
+        ...patch
+      });
+      const rules = await enforceRules({
+        reply,
+        workspaceSlug: query.workspaceSlug,
+        operation: "hub.mcp.update",
+        capability: "connector.admin",
+        pluginId,
+        actorId: "operator",
+        payload: { transport: merged.transport },
+        rulesClient: options.rulesClient
+      });
+      if (!("effect" in rules)) return rules;
+      const listing = mcpListingFromInput(merged, current);
+      options.store.upsertListing(listing);
+      const connection = options.store.getConnection(
+        query.workspaceSlug,
+        pluginId
+      );
+      if (connection) {
+        options.store.upsertConnection({
+          workspaceSlug: query.workspaceSlug,
+          pluginId,
+          provider: connection.provider,
+          backend: connection.backend,
+          state: "disconnected",
+          detail: "MCP adapter configuration changed; reload is required.",
+          metadata: connection.metadata
+        });
+      }
+      options.store.recordAudit({
+        workspaceSlug: query.workspaceSlug,
+        pluginId,
+        eventType: "marketplace.plugin.updated",
+        actorId: "operator",
+        rulesDecisionId: rules.decisionId,
+        metadata: { kind: "mcp", transport: merged.transport }
+      });
+      return {
+        ok: true,
+        record: marketplacePluginRecord({
+          store: options.store,
+          workspaceSlug: query.workspaceSlug,
+          listing
+        })
+      };
+    }
+  );
+  app2.delete(
+    "/api/marketplace/hub/plugins/:pluginId",
+    async (request, reply) => {
+      const authError = requireHubBearerAuth({
+        request,
+        reply,
+        expectedToken: options.internalAuthToken
+      });
+      if (authError) return authError;
+      const query = HubAuthQuerySchema.parse(request.query);
+      const { pluginId } = request.params;
+      const listing = options.store.getListingForWorkspace(
+        pluginId,
+        query.workspaceSlug
+      );
+      if (!listing) {
+        reply.code(404);
+        return { ok: false, error: "plugin_not_found" };
+      }
+      if (listingIsOperatorCustomMcp(listing)) {
+        reply.code(409);
+        return { ok: false, error: "plugin_managed_by_operator" };
+      }
+      if (!listingIsCustomMcp(listing)) {
+        reply.code(409);
+        return { ok: false, error: "plugin_not_custom_mcp" };
+      }
+      if (listingIsRequired(listing)) {
+        reply.code(409);
+        return { ok: false, error: "required_plugin_protected" };
+      }
+      if (options.store.getInstall(query.workspaceSlug, pluginId)?.lifecycle === "installed") {
+        reply.code(409);
+        return { ok: false, error: "plugin_must_be_uninstalled_first" };
+      }
+      const rules = await enforceRules({
+        reply,
+        workspaceSlug: query.workspaceSlug,
+        operation: "hub.mcp.delete",
+        capability: "connector.admin",
+        pluginId,
+        actorId: "operator",
+        payload: {},
+        rulesClient: options.rulesClient
+      });
+      if (!("effect" in rules)) return rules;
+      options.store.revokeBrokerGrantsForPlugin({
+        workspaceSlug: query.workspaceSlug,
+        pluginId
+      });
+      options.store.deleteListing(pluginId);
+      return { ok: true, pluginId, deleted: true };
+    }
+  );
+  app2.post(
+    "/api/marketplace/hub/plugins/:pluginId/lifecycle",
+    async (request, reply) => {
+      const authError = requireHubBearerAuth({
+        request,
+        reply,
+        expectedToken: options.internalAuthToken
+      });
+      if (authError) return authError;
+      const input = HubLifecycleSchema.parse(request.body);
+      const { pluginId } = request.params;
+      let listing = options.store.getListingForWorkspace(
+        pluginId,
+        input.workspaceSlug
+      );
+      if (!listing) {
+        reply.code(404);
+        return { ok: false, error: "plugin_not_found" };
+      }
+      if (listingIsRequired(listing) && (input.action === "disable" || input.action === "uninstall")) {
+        reply.code(409);
+        return { ok: false, error: "required_plugin_protected" };
+      }
+      const install = options.store.getInstall(input.workspaceSlug, pluginId);
+      if (input.action !== "install" && (!install || install.lifecycle !== "installed")) {
+        reply.code(409);
+        return { ok: false, error: "plugin_not_installed" };
+      }
+      const rules = await enforceRules({
+        reply,
+        workspaceSlug: input.workspaceSlug,
+        operation: `hub.lifecycle.${input.action}`,
+        capability: "connector.admin",
+        pluginId,
+        actorId: input.actorId,
+        payload: { action: input.action },
+        rulesClient: options.rulesClient
+      });
+      if (!("effect" in rules)) return rules;
+      if (input.action === "install") {
+        options.store.registerPlugin(pluginId);
+        options.store.install(input.workspaceSlug, pluginId);
+        for (const capability of listing.capabilities) {
+          options.store.bindCapability({
+            workspaceSlug: input.workspaceSlug,
+            pluginId,
+            capability,
+            enabled: true
+          });
+        }
+        for (const actionKey of listing.actions) {
+          options.store.bindAction({
+            workspaceSlug: input.workspaceSlug,
+            pluginId,
+            actionKey,
+            enabled: true
+          });
+        }
+      } else if (input.action === "enable") {
+        options.store.setInstallEnabled({
+          workspaceSlug: input.workspaceSlug,
+          pluginId,
+          enabled: true
+        });
+      } else if (input.action === "disable") {
+        options.store.setInstallEnabled({
+          workspaceSlug: input.workspaceSlug,
+          pluginId,
+          enabled: false
+        });
+        options.store.revokeBrokerGrantsForPlugin({
+          workspaceSlug: input.workspaceSlug,
+          pluginId
+        });
+      } else if (input.action === "reload") {
+        options.store.requireInstall(input.workspaceSlug, pluginId);
+        listing = options.store.touchListing(pluginId);
+        if (listing.source === "mcp") {
+          options.store.upsertConnection({
+            workspaceSlug: input.workspaceSlug,
+            pluginId,
+            provider: listing.provider,
+            backend: "mcp",
+            state: "pending",
+            detail: "MCP adapter reload requested; transport connection is pending runtime confirmation.",
+            metadata: { reloadedAt: (/* @__PURE__ */ new Date()).toISOString() }
+          });
+        }
+      } else if (input.action === "uninstall") {
+        options.store.revokeBrokerGrantsForPlugin({
+          workspaceSlug: input.workspaceSlug,
+          pluginId
+        });
+        options.store.uninstall(input.workspaceSlug, pluginId);
+        const connection = options.store.getConnection(
+          input.workspaceSlug,
+          pluginId
+        );
+        if (connection) {
+          options.store.upsertConnection({
+            workspaceSlug: input.workspaceSlug,
+            pluginId,
+            provider: connection.provider,
+            backend: connection.backend,
+            state: "disconnected",
+            detail: "Plugin uninstalled through the unified Hub lifecycle.",
+            metadata: connection.metadata
+          });
+        }
+      }
+      options.store.recordAudit({
+        workspaceSlug: input.workspaceSlug,
+        pluginId,
+        eventType: `marketplace.plugin.${input.action}`,
+        actorId: input.actorId,
+        rulesDecisionId: rules.decisionId,
+        metadata: { source: "skills-hub" }
+      });
+      return {
+        ok: true,
+        record: marketplacePluginRecord({
+          store: options.store,
+          workspaceSlug: input.workspaceSlug,
+          listing
+        })
+      };
+    }
+  );
+  app2.post("/api/marketplace/hub/reconcile", async (request, reply) => {
+    const authError = requireHubBearerAuth({
+      request,
+      reply,
+      expectedToken: options.internalAuthToken
+    });
+    if (authError) return authError;
+    const snapshot = GatewayRegistrySnapshotSchema.parse(
+      request.body
+    );
+    return reconcileGatewayRegistry(snapshot);
+  });
+  app2.get("/events", async (request, reply) => {
+    reply.raw.writeHead(200, {
+      ...corsHeadersForOrigin(request.headers.origin, environment),
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache",
+      connection: "keep-alive"
+    });
+    reply.raw.write(
+      `event: marketplace.status
+data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOString() })}
+
+`
+    );
+    reply.raw.end();
+  });
+  app2.get("/api/marketplace/catalog", async (request) => {
+    const query = WorkspaceQuerySchema.parse(request.query);
+    await ensureComposioCatalog(query.workspaceSlug);
+    return {
+      items: options.store.listListingsForWorkspace(query.workspaceSlug).map(browserListingForListing),
+      providers: await readProviderHealthWithReachability(
+        providerEnvironment(),
+        options.providerFetch
+      )
+    };
+  });
+  app2.get("/api/marketplace/cards", async (request) => {
+    const query = WorkspaceQuerySchema.parse(request.query);
+    await ensureComposioCatalog(query.workspaceSlug);
+    const providers = await readProviderHealthWithReachability(
+      providerEnvironment(),
+      options.providerFetch
+    );
+    return {
+      workspaceSlug: query.workspaceSlug,
+      providers,
+      cards: await pluginCardsForWorkspace({
+        store: options.store,
+        workspaceSlug: query.workspaceSlug,
+        providers
+      })
+    };
+  });
+  app2.get("/api/marketplace/cards/summary", async (request) => {
+    const query = CardsSummaryQuerySchema.parse(request.query);
+    await ensureComposioCatalog(query.workspaceSlug);
+    const providers = await readProviderHealthWithReachability(
+      providerEnvironment(),
+      options.providerFetch
+    );
+    const summaries = options.store.listListingsForWorkspace(query.workspaceSlug).map(
+      (listing) => pluginSummaryForListing({
+        store: options.store,
+        workspaceSlug: query.workspaceSlug,
+        listing
+      })
+    );
+    const search = query.search.toLocaleLowerCase();
+    const filtered = summaries.filter((summary) => {
+      if (query.source !== "all" && summary.source !== query.source) {
+        return false;
+      }
+      if (query.installed && !summary.installed) {
+        return false;
+      }
+      if (!search) {
+        return true;
+      }
+      return [
+        summary.displayName,
+        summary.description,
+        summary.provider,
+        summary.pluginId
+      ].join(" ").toLocaleLowerCase().includes(search);
+    });
+    const connections = summaries.filter((summary) => summary.connection !== null).map((summary) => ({
+      pluginId: summary.pluginId,
+      displayName: summary.displayName,
+      ...summary.connection
+    }));
+    const sources = [...new Set(summaries.map((summary) => summary.source))];
+    return {
+      workspaceSlug: query.workspaceSlug,
+      providers: browserProviderHealth(providers),
+      total: summaries.length,
+      filteredTotal: filtered.length,
+      installedTotal: summaries.filter((summary) => summary.installed).length,
+      offset: query.offset,
+      limit: query.limit,
+      hasMore: query.offset + query.limit < filtered.length,
+      sources,
+      connections,
+      items: filtered.slice(query.offset, query.offset + query.limit)
+    };
+  });
+  app2.get("/api/marketplace/cards/:pluginId", async (request, reply) => {
+    const { pluginId } = request.params;
+    const query = WorkspaceQuerySchema.parse(request.query);
+    await ensureComposioCatalog(query.workspaceSlug);
+    const listing = options.store.getListingForWorkspace(
+      pluginId,
+      query.workspaceSlug
+    );
+    if (!listing) {
+      reply.code(404);
+      return { ok: false, error: "plugin_not_found" };
+    }
+    const providers = await readProviderHealthWithReachability(
+      providerEnvironment(),
+      options.providerFetch
+    );
+    return {
+      workspaceSlug: query.workspaceSlug,
+      providers: browserProviderHealth(providers),
+      card: browserPluginCardForListing({
+        store: options.store,
+        workspaceSlug: query.workspaceSlug,
+        listing,
+        providers
+      })
+    };
+  });
+  app2.get("/api/marketplace/plugins", async (request) => {
+    const query = WorkspaceQuerySchema.parse(request.query);
+    await ensureComposioCatalog(query.workspaceSlug);
+    return {
+      workspaceSlug: query.workspaceSlug,
+      items: options.store.listListingsForWorkspace(query.workspaceSlug).map((listing) => ({
+        ...browserListingForListing(listing),
+        install: options.store.getInstall(
+          query.workspaceSlug,
+          listing.pluginId
+        ),
+        connection: options.store.getConnection(
+          query.workspaceSlug,
+          listing.pluginId
+        ),
+        imports: options.store.listComposioImports({
+          workspaceSlug: query.workspaceSlug,
+          pluginId: listing.pluginId
+        }),
+        actionBindings: options.store.listActionBindings({
+          workspaceSlug: query.workspaceSlug,
+          pluginId: listing.pluginId
+        })
+      }))
+    };
+  });
+  app2.get("/api/marketplace/plugins/:pluginId", async (request, reply) => {
+    const { pluginId } = request.params;
+    const query = WorkspaceQuerySchema.partial().parse(request.query);
+    const listing = options.store.getListingForWorkspace(
+      pluginId,
+      query.workspaceSlug ?? requestPrincipals.get(request)?.organizationId ?? organizationId
+    );
+    if (!listing) {
+      reply.code(404);
+      return { ok: false, error: "plugin_not_found" };
+    }
+    return {
+      listing: browserListingForListing(listing),
+      ...query.workspaceSlug ? {
+        install: options.store.getInstall(query.workspaceSlug, pluginId),
+        connection: options.store.getConnection(
+          query.workspaceSlug,
+          pluginId
+        ),
+        imports: options.store.listComposioImports({
+          workspaceSlug: query.workspaceSlug,
+          pluginId
+        }),
+        actionBindings: options.store.listActionBindings({
+          workspaceSlug: query.workspaceSlug,
+          pluginId
+        })
+      } : {}
+    };
+  });
+  app2.post(
+    "/api/marketplace/plugins/:pluginId/install",
+    async (request, reply) => {
+      const { pluginId } = request.params;
+      const input = InstallInputSchema.parse(request.body);
+      const traceId = traceIdFrom(request);
+      const listing = options.store.getListingForWorkspace(
+        pluginId,
+        input.workspaceSlug
+      );
+      if (!listing) {
+        reply.code(404);
+        return { ok: false, error: "plugin_not_found" };
+      }
+      const rules = await enforceRules({
+        reply,
+        workspaceSlug: input.workspaceSlug,
+        operation: "install",
+        capability: "connector.admin",
+        pluginId,
+        actorId: input.actorId,
+        payload: { ...request.body, traceId },
+        rulesClient: options.rulesClient
+      });
+      if ("ok" in rules && rules.ok === false) {
+        return rules;
+      }
+      const install = options.store.install(input.workspaceSlug, pluginId);
+      if (listingIsWorkspaceCustomMcp(listing, input.workspaceSlug)) {
+        bindCustomMcpForWorkspace(options.store, input.workspaceSlug, listing);
+      }
+      options.store.recordEvent({
+        type: "marketplace.plugin.installed",
+        traceId,
+        workspaceSlug: input.workspaceSlug,
+        pluginId,
+        actorId: input.actorId,
+        rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
+        payload: { lifecycle: install.lifecycle }
+      });
+      reply.code(201);
+      return { ok: true, traceId, listing, install, rules };
+    }
+  );
+  app2.post(
+    "/api/marketplace/plugins/:pluginId/uninstall",
+    async (request, reply) => {
+      const { pluginId } = request.params;
+      const input = InstallInputSchema.parse(request.body);
+      const traceId = traceIdFrom(request);
+      const listing = options.store.getListingForWorkspace(
+        pluginId,
+        input.workspaceSlug
+      );
+      if (!listing) {
+        reply.code(404);
+        return { ok: false, error: "plugin_not_found" };
+      }
+      if (listingIsRequired(listing)) {
+        reply.code(409);
+        return { ok: false, error: "required_plugin_protected" };
+      }
+      if (!options.store.getInstall(input.workspaceSlug, pluginId)) {
+        reply.code(409);
+        return { ok: false, error: "plugin_not_installed" };
+      }
+      const rules = await enforceRules({
+        reply,
+        workspaceSlug: input.workspaceSlug,
+        operation: "uninstall",
+        capability: "connector.admin",
+        pluginId,
+        actorId: input.actorId,
+        payload: { ...request.body, traceId },
+        rulesClient: options.rulesClient
+      });
+      if ("ok" in rules && rules.ok === false) {
+        return { ...rules, traceId };
+      }
+      const install = options.store.uninstall(input.workspaceSlug, pluginId);
+      options.store.recordEvent({
+        type: "marketplace.plugin.uninstalled",
+        traceId,
+        workspaceSlug: input.workspaceSlug,
+        pluginId,
+        actorId: input.actorId,
+        rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
+        payload: { lifecycle: install.lifecycle }
+      });
+      return { ok: true, traceId, install, rules };
+    }
+  );
+  app2.post(
+    "/api/marketplace/plugins/:pluginId/register",
+    async (request, reply) => {
+      const { pluginId } = request.params;
+      const input = InstallInputSchema.parse(request.body);
+      const traceId = traceIdFrom(request);
+      const listing = options.store.getListingForWorkspace(
+        pluginId,
+        input.workspaceSlug
+      );
+      if (!listing) {
+        reply.code(404);
+        return { ok: false, error: "plugin_not_found" };
+      }
+      const rules = await enforceRules({
+        reply,
+        workspaceSlug: input.workspaceSlug,
+        operation: "register",
+        capability: "connector.admin",
+        pluginId,
+        actorId: input.actorId,
+        payload: { ...request.body, traceId },
+        rulesClient: options.rulesClient
+      });
+      if ("ok" in rules && rules.ok === false) {
+        return { ...rules, traceId };
+      }
+      const registration = options.store.registerPlugin(pluginId);
+      options.store.recordEvent({
+        type: "marketplace.plugin.registered",
+        traceId,
+        workspaceSlug: input.workspaceSlug,
+        pluginId,
+        actorId: input.actorId,
+        rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
+        payload: { registryState: registration.registryState }
+      });
+      reply.code(201);
+      return { ok: true, traceId, registration, rules };
+    }
+  );
+  app2.post(
+    "/api/marketplace/plugins/:pluginId/unregister",
+    async (request, reply) => {
+      const { pluginId } = request.params;
+      const input = InstallInputSchema.parse(request.body);
+      const traceId = traceIdFrom(request);
+      const listing = options.store.getListingForWorkspace(
+        pluginId,
+        input.workspaceSlug
+      );
+      if (!listing) {
+        reply.code(404);
+        return { ok: false, error: "plugin_not_found" };
+      }
+      if (listingIsRequired(listing)) {
+        reply.code(409);
+        return { ok: false, error: "required_plugin_protected" };
+      }
+      const rules = await enforceRules({
+        reply,
+        workspaceSlug: input.workspaceSlug,
+        operation: "unregister",
+        capability: "connector.admin",
+        pluginId,
+        actorId: input.actorId,
+        payload: { ...request.body, traceId },
+        rulesClient: options.rulesClient
+      });
+      if ("ok" in rules && rules.ok === false) {
+        return { ...rules, traceId };
+      }
+      const registration = options.store.unregisterPlugin(pluginId);
+      options.store.recordEvent({
+        type: "marketplace.plugin.unregistered",
+        traceId,
+        workspaceSlug: input.workspaceSlug,
+        pluginId,
+        actorId: input.actorId,
+        rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
+        payload: { registryState: registration.registryState }
+      });
+      return { ok: true, traceId, registration, rules };
+    }
+  );
+  app2.post(
+    "/api/marketplace/plugins/:pluginId/connection",
+    async (request, reply) => {
+      const { pluginId } = request.params;
+      const input = ConnectionInputSchema.parse(request.body);
+      const traceId = traceIdFrom(request);
+      let listing = options.store.getListingForWorkspace(
+        pluginId,
+        input.workspaceSlug
+      );
+      if (!listing) {
+        reply.code(404);
+        return { ok: false, error: "plugin_not_found" };
+      }
+      if (listingIsOperatorCustomMcp(listing)) {
+        reply.code(409);
+        return { ok: false, error: "custom_mcp_refresh_required" };
+      }
+      const rules = await enforceRules({
+        reply,
+        workspaceSlug: input.workspaceSlug,
+        operation: input.backend === "composio" ? "composio.connect" : "connector.connection.register",
+        capability: "connector.admin",
+        pluginId,
+        actorId: input.actorId,
+        payload: { ...request.body, traceId },
+        rulesClient: options.rulesClient
+      });
+      if ("ok" in rules && rules.ok === false) {
+        return { ...rules, traceId };
+      }
+      const providerHealth = readProviderHealth(providerEnvironment());
+      const provider = providerHealth[input.backend === "native" ? "nango" : input.backend];
+      if (input.backend !== "native" && !provider.configured) {
+        reply.code(409);
+        return {
+          ok: false,
+          error: "provider_unavailable",
+          provider: input.backend,
+          detail: provider.detail
+        };
+      }
+      if (input.backend === "composio") {
+        const state = `cmp_${randomUUID2()}`;
+        const toolkit = composioListingRole(listing) === "composio-catalog-connector" ? composioToolkitForListing(listing) : (input.toolkit ?? input.provider ?? listing.provider).trim();
+        try {
+          const hydratedListing = await hydrateComposioCatalogConnector({
+            store: options.store,
+            workspaceSlug: input.workspaceSlug,
+            listing,
+            toolkit,
+            traceId,
+            env: providerEnvironment(),
+            fetchImpl: options.providerFetch
+          });
+          listing = hydratedListing;
+        } catch (error) {
+          reply.code(502);
+          return {
+            ok: false,
+            error: "composio_toolkit_activation_failed",
+            detail: error instanceof Error ? error.message : String(error)
+          };
+        }
+        let callbackUrl;
+        try {
+          callbackUrl = callbackUrlForRequest({
+            pluginId,
+            publicOrigin: environment.MARKETPLACE_PUBLIC_ORIGIN
+          });
+        } catch (error) {
+          reply.code(503);
+          return {
+            ok: false,
+            error: "marketplace_public_origin_unconfigured",
+            detail: error instanceof Error ? error.message : String(error)
+          };
+        }
+        const auth = await createComposioAuthLink({
+          toolkit,
+          state,
+          callbackUrl,
+          env: providerEnvironment(),
+          fetchImpl: options.providerFetch,
+          authConfigId: input.authConfigId,
+          userId: input.userId,
+          alias: input.alias ?? `${input.workspaceSlug}-${toolkit}`,
+          connectionData: input.connectionData,
+          ...composioAuthMetadataForListing(listing)
+        });
+        if (auth.redirectUrl || auth.connectedAccountId) {
+          enableComposioConnector({
+            store: options.store,
+            workspaceSlug: input.workspaceSlug,
+            listing,
+            toolkit,
+            traceId
+          });
+        }
+        const connectionState2 = auth.redirectUrl ? "pending" : auth.connectedAccountId ? "connected" : "blocked";
+        const connection2 = options.store.upsertConnection({
+          workspaceSlug: input.workspaceSlug,
+          pluginId,
+          provider: toolkit,
+          backend: "composio",
+          state: connectionState2,
+          detail: auth.redirectUrl ? "Composio authorization popup is pending." : auth.connectedAccountId ? "Composio connected account is available." : "Composio did not return an authorization URL or connected account id.",
+          metadata: {
+            provider: toolkit,
+            toolkit,
+            state,
+            traceId,
+            authConfigId: auth.authConfigId,
+            connectedAccountId: auth.connectedAccountId,
+            callbackUrl,
+            redirectUrl: auth.redirectUrl,
+            status: auth.status
+          }
+        });
+        options.store.recordEvent({
+          type: "marketplace.composio.connection.started",
+          traceId,
+          workspaceSlug: input.workspaceSlug,
+          pluginId,
+          actorId: input.actorId,
+          rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
+          payload: {
+            provider: toolkit,
+            backend: input.backend,
+            connectionState: connection2.state,
+            rawSecretStored: false,
+            redirectRequired: Boolean(auth.redirectUrl)
+          }
+        });
+        return {
+          ok: true,
+          traceId,
+          connection: connection2,
+          auth: {
+            kind: auth.redirectUrl ? "redirect-required" : "connected-account",
+            redirectUrl: auth.redirectUrl,
+            connectedAccountId: auth.connectedAccountId,
+            authConfigId: auth.authConfigId,
+            status: auth.status
+          },
+          rules
+        };
+      }
+      const connection = options.store.upsertConnection({
+        workspaceSlug: input.workspaceSlug,
+        pluginId,
+        provider: input.provider,
+        backend: input.backend,
+        state: input.backend === "native" ? "connected" : "pending",
+        detail: input.backend === "native" ? "Native connection is available." : "External connection reference is pending.",
+        metadata: {
+          provider: input.provider,
+          backend: input.backend,
+          rawSecretStored: false,
+          credentialRef: input.credentialRef ?? null,
+          traceId
+        }
+      });
+      if (input.credentialRef) {
+        options.store.upsertCredentialRef({
+          workspaceSlug: input.workspaceSlug,
+          pluginId,
+          providerHint: input.provider,
+          secretRefKey: input.credentialRef,
+          externalRef: null,
+          state: input.backend === "native" ? "active" : "pending",
+          detail: "Credential reference registered without storing raw secret material.",
+          metadata: { backend: input.backend, traceId }
+        });
+      }
+      options.store.recordEvent({
+        type: "connector.connection.ref_registered",
+        traceId,
+        workspaceSlug: input.workspaceSlug,
+        pluginId,
+        actorId: input.actorId,
+        rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
+        payload: {
+          provider: input.provider,
+          backend: input.backend,
+          rawSecretStored: false,
+          credentialRef: input.credentialRef ?? null
+        }
+      });
+      return {
+        ok: true,
+        traceId,
+        connection: {
+          ...connection,
+          rawSecretStored: false
+        },
+        rules
+      };
+    }
+  );
+  app2.get(
+    "/api/marketplace/plugins/:pluginId/oauth/composio/callback",
+    async (request, reply) => {
+      const { pluginId } = request.params;
+      const query = ComposioCallbackQuerySchema.parse(request.query);
+      const traceId = traceIdFrom(request);
+      const pending = options.store.findConnectionByState(
+        query.state,
+        pluginId
+      );
+      reply.type("text/html; charset=utf-8");
+      if (!pending) {
+        reply.code(404);
+        return htmlCloseout({
+          ok: false,
+          title: "Session not found",
+          detail: "Teal Brick could not match this Composio callback to a pending plugin connection."
+        });
+      }
+      const connectedAccountId = query.connected_account_id ?? query.connectedAccountId ?? query.connection_id ?? query.account_id ?? connectedAccountIdFromConnection(pending);
+      const status = query.status ?? (query.error ? "ERROR" : "CONNECTED");
+      const connected = !query.error && Boolean(connectedAccountId) && !["error", "failed", "blocked"].includes(status.toLowerCase());
+      const connection = options.store.upsertConnection({
+        workspaceSlug: pending.workspaceSlug,
+        pluginId: pending.pluginId,
+        provider: pending.provider,
+        backend: "composio",
+        state: connected ? "connected" : "blocked",
+        detail: connected ? "Composio connected account completed." : query.error ?? "Composio callback did not include a connected account.",
+        metadata: {
+          ...pending.metadata,
+          traceId,
+          status,
+          connectedAccountId: connectedAccountId ?? null,
+          callbackCompletedAt: (/* @__PURE__ */ new Date()).toISOString(),
+          error: query.error ?? null
+        }
+      });
+      if (connected && connectedAccountId) {
+        options.store.upsertCredentialRef({
+          workspaceSlug: pending.workspaceSlug,
+          pluginId: pending.pluginId,
+          providerHint: pending.provider,
+          secretRefKey: `composio:${pending.provider}:${connectedAccountId}`,
+          externalRef: connectedAccountId,
+          state: "active",
+          detail: "Composio connected account reference is active. Raw OAuth material stays with Composio.",
+          metadata: {
+            backend: "composio",
+            authConfigId: pending.metadata.authConfigId ?? null,
+            traceId
+          }
+        });
+      }
+      options.store.recordEvent({
+        type: connected ? "marketplace.composio.connection.completed" : "marketplace.composio.connection.blocked",
+        traceId,
+        workspaceSlug: pending.workspaceSlug,
+        pluginId: pending.pluginId,
+        payload: {
+          provider: pending.provider,
+          connectionState: connection.state,
+          connectedAccountId: connectedAccountId ?? null,
+          rawSecretStored: false,
+          error: query.error ?? null
+        }
+      });
+      return htmlCloseout({
+        ok: connected,
+        title: connected ? "Teal Brick connection complete" : "Teal Brick connection blocked",
+        detail: connected ? "The connected account is recorded. You can close this window and return to Teal Brick." : "The Composio callback did not complete successfully. Return to Teal Brick and retry the connection."
+      });
+    }
+  );
+  app2.post(
+    "/api/marketplace/plugins/:pluginId/capability-binding",
+    async (request, reply) => {
+      const { pluginId } = request.params;
+      const input = BindingInputSchema.parse(request.body);
+      const traceId = traceIdFrom(request);
+      if (!options.store.getListingForWorkspace(pluginId, input.workspaceSlug)) {
+        reply.code(404);
+        return { ok: false, error: "plugin_not_found" };
+      }
+      if (!options.store.getInstall(input.workspaceSlug, pluginId)) {
+        reply.code(409);
+        return { ok: false, error: "plugin_not_installed" };
+      }
+      const rules = await enforceRules({
+        reply,
+        workspaceSlug: input.workspaceSlug,
+        operation: "capability.bind",
+        capability: "connector.admin",
+        pluginId,
+        actorId: input.actorId,
+        payload: { ...request.body, traceId },
+        rulesClient: options.rulesClient
+      });
+      if ("ok" in rules && rules.ok === false) {
+        return { ...rules, traceId };
+      }
+      const binding = options.store.bindCapability({ ...input, pluginId });
+      options.store.recordEvent({
+        type: "marketplace.capability.bound",
+        traceId,
+        workspaceSlug: input.workspaceSlug,
+        pluginId,
+        actorId: input.actorId,
+        rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
+        payload: { capability: input.capability, enabled: input.enabled }
+      });
+      reply.code(201);
+      return { ok: true, traceId, binding, rules };
+    }
+  );
+  app2.post(
+    "/api/marketplace/plugins/:pluginId/action-binding",
+    async (request, reply) => {
+      const { pluginId } = request.params;
+      const input = ActionBindingInputSchema.parse(request.body);
+      const traceId = traceIdFrom(request);
+      const listing = options.store.getListingForWorkspace(
+        pluginId,
+        input.workspaceSlug
+      );
+      if (!listing) {
+        reply.code(404);
+        return { ok: false, error: "plugin_not_found" };
+      }
+      if (!listing.actions.includes(input.actionKey)) {
+        reply.code(404);
+        return { ok: false, error: "plugin_action_not_found" };
+      }
+      if (!options.store.getInstall(input.workspaceSlug, pluginId)) {
+        reply.code(409);
+        return { ok: false, error: "plugin_not_installed" };
+      }
+      const rules = await enforceRules({
+        reply,
+        workspaceSlug: input.workspaceSlug,
+        operation: "action.bind",
+        capability: "connector.admin",
+        pluginId,
+        actorId: input.actorId,
+        payload: { ...request.body, traceId },
+        rulesClient: options.rulesClient
+      });
+      if ("ok" in rules && rules.ok === false) {
+        return { ...rules, traceId };
+      }
+      const binding = options.store.bindAction({ ...input, pluginId });
+      options.store.recordEvent({
+        type: "marketplace.action.bound",
+        traceId,
+        workspaceSlug: input.workspaceSlug,
+        pluginId,
+        actorId: input.actorId,
+        rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
+        payload: { actionKey: input.actionKey, enabled: input.enabled }
+      });
+      reply.code(201);
+      return { ok: true, traceId, binding, rules };
+    }
+  );
+  app2.post(
+    "/api/marketplace/v1/agent/grants/request",
+    async (request, reply) => {
+      const principal = requireHandoffPrincipal(request, reply);
+      if (!principal) {
+        return { ok: false, error: "marketplace_service_required" };
+      }
+      const input = PortalHandoffRequestSchema.parse(request.body);
+      const session = options.store.getPortalHandoffSession(input.deploymentId);
+      if (!session || session.portalIssuer !== (portalIssuerUrl ?? "") || session.productTenantId !== organizationId || !portalIdentityMatches(session)) {
+        reply.code(409);
+        return { ok: false, schema: 1, error: "portal_session_required" };
+      }
+      if (Date.parse(session.expiresAt) <= Date.now()) {
+        reply.code(401);
+        return { ok: false, schema: 1, error: "portal_session_expired" };
+      }
+      const published = resolvePublishedAgentAction({
+        store: options.store,
+        workspaceSlug: organizationId,
+        pluginId: input.selection.pluginId,
+        actionKey: input.selection.actionKey
+      });
+      if (!published) {
+        reply.code(404);
+        return { ok: false, schema: 1, error: "agent_action_not_published" };
+      }
+      if (input.selection.resourceKind !== published.resourceKind) {
+        reply.code(409);
+        return { ok: false, schema: 1, error: "agent_action_resource_mismatch" };
+      }
+      if (!published.accounts.some(
+        (account) => account.accountId === input.selection.accountId
+      )) {
+        reply.code(409);
+        return { ok: false, schema: 1, error: "agent_action_account_mismatch" };
+      }
+      if (input.selection.capability !== void 0 && input.selection.capability !== published.capability) {
+        reply.code(409);
+        return { ok: false, schema: 1, error: "agent_action_capability_mismatch" };
+      }
+      const outboundSelection = portalSelectionForPublishedAction({
+        entry: published,
+        accountId: input.selection.accountId
+      });
+      try {
+        const handoff = await portalHandoffClient.requestGrant({
+          deploymentId: input.deploymentId,
+          session: session.sessionToken,
+          agentId: input.agentId,
+          selection: outboundSelection,
+          idempotencyKey: input.idempotencyKey
+        });
+        const projection = options.store.upsertMarketplacePortalGrantRequest({
+          portalIssuer: session.portalIssuer,
+          portalOrgId: session.portalOrgId,
+          productTenantId: session.productTenantId,
+          workspaceId: session.workspaceId,
+          deploymentId: input.deploymentId,
+          agentId: input.agentId,
+          requestId: handoff.requestId,
+          approvalUrl: handoff.approvalUrl,
+          expiresAt: new Date(handoff.expiresAt).toISOString(),
+          idempotencyKey: input.idempotencyKey,
+          selection: outboundSelection
+        });
+        return {
+          ok: true,
+          schema: 1,
+          contractVersion: MARKETPLACE_PORTAL_HANDOFF_CONTRACT_VERSION,
+          authority: principal.kind === "operator" ? "marketplace_operator_session" : "marketplace_service_bearer",
+          request: handoff,
+          projection: browserMarketplacePortalGrantRequest(projection)
+        };
+      } catch (error) {
+        reply.code(error instanceof PortalHandoffError ? error.statusCode : 503);
+        return {
+          ok: false,
+          schema: 1,
+          error: error instanceof PortalHandoffError ? error.code : "portal_handoff_unavailable"
+        };
+      }
+    }
+  );
+  app2.post(
+    "/api/marketplace/v1/agent/grants/redeem",
+    async (request, reply) => {
+      const principal = requireHandoffPrincipal(request, reply);
+      if (!principal) {
+        return { ok: false, error: "marketplace_service_required" };
+      }
+      const input = PortalHandoffRedeemSchema.parse(request.body);
+      const session = options.store.getPortalHandoffSession(input.deploymentId);
+      if (!session || session.portalIssuer !== (portalIssuerUrl ?? "") || session.productTenantId !== organizationId || !portalIdentityMatches(session)) {
+        reply.code(409);
+        return { ok: false, schema: 1, error: "portal_session_required" };
+      }
+      if (Date.parse(session.expiresAt) <= Date.now()) {
+        reply.code(401);
+        return { ok: false, schema: 1, error: "portal_session_expired" };
+      }
+      const persistedRequest = options.store.getMarketplacePortalGrantRequest({
+        portalIssuer: session.portalIssuer,
+        deploymentId: input.deploymentId,
+        requestId: input.requestId
+      });
+      const traceId = traceIdFrom(request);
+      let consent;
+      let reconciled = false;
+      try {
+        consent = await portalHandoffClient.redeemGrant({
+          deploymentId: input.deploymentId,
+          session: session.sessionToken,
+          requestId: input.requestId
+        });
+      } catch (error) {
+        if (!(error instanceof PortalHandoffError) || error.code !== "portal_handoff_unavailable") {
+          reply.code(error instanceof PortalHandoffError ? error.statusCode : 503);
+          return {
+            ok: false,
+            schema: 1,
+            traceId,
+            error: error instanceof PortalHandoffError ? error.code : "portal_handoff_unavailable"
+          };
+        }
+        try {
+          consent = await portalHandoffClient.receipt({
+            deploymentId: input.deploymentId,
+            session: session.sessionToken,
+            requestId: input.requestId
+          });
+          reconciled = true;
+        } catch (receiptError) {
+          reply.code(receiptError instanceof PortalHandoffError ? receiptError.statusCode : 503);
+          return {
+            ok: false,
+            schema: 1,
+            traceId,
+            error: "portal_receipt_reconciliation_required"
+          };
+        }
+      }
+      if (consent.productTenantId !== organizationId || consent.deploymentId !== input.deploymentId || consent.state !== "active" || !consent.consentId) {
+        if (persistedRequest) {
+          options.store.updateMarketplacePortalGrantRequest({
+            portalIssuer: session.portalIssuer,
+            deploymentId: input.deploymentId,
+            requestId: input.requestId,
+            state: "denied"
+          });
+        }
+        reply.code(403);
+        return { ok: false, schema: 1, traceId, error: "portal_consent_invalid" };
+      }
+      if (persistedRequest && !portalSelectionsEquivalent(persistedRequest.selection, consent.selection)) {
+        reply.code(403);
+        return { ok: false, schema: 1, traceId, error: "portal_consent_invalid" };
+      }
+      const listing = options.store.getListingForWorkspace(
+        consent.selection.pluginId,
+        organizationId
+      );
+      const connection = options.store.getConnection(
+        organizationId,
+        consent.selection.pluginId
+      );
+      const accountId = listing ? agentAccountIdForConnection({ listing, workspaceSlug: organizationId, connection }) : void 0;
+      if (!listing || !listingExecutableForAgents(listing, organizationId) || !listing.actions.includes(consent.selection.actionKey) || !options.store.getInstall(organizationId, consent.selection.pluginId)?.enabled || !options.store.isActionEnabled({
+        workspaceSlug: organizationId,
+        pluginId: consent.selection.pluginId,
+        actionKey: consent.selection.actionKey
+      }) || connection?.state !== "connected" || accountId !== consent.selection.accountId || consent.selection.resourceRef !== `account:${accountId}`) {
+        reply.code(409);
+        return { ok: false, schema: 1, traceId, error: "portal_consent_scope_unavailable" };
+      }
+      const consentCapability = selectionCapability(consent.selection);
+      let binding;
+      try {
+        binding = options.store.requireCapabilityBinding(
+          organizationId,
+          consent.selection.pluginId,
+          consentCapability
+        );
+      } catch {
+        reply.code(403);
+        return { ok: false, schema: 1, traceId, error: "connector_capability_denied" };
+      }
+      if (!binding.enabled) {
+        reply.code(403);
+        return { ok: false, schema: 1, traceId, error: "connector_capability_denied" };
+      }
+      const published = resolvePublishedAgentAction({
+        store: options.store,
+        workspaceSlug: organizationId,
+        pluginId: consent.selection.pluginId,
+        actionKey: consent.selection.actionKey
+      });
+      if (!published || published.capability !== consentCapability || published.resourceKind !== consent.selection.resourceKind || !published.accounts.some((account) => account.accountId === accountId) || !consent.capabilities.includes(published.capability)) {
+        reply.code(409);
+        return { ok: false, schema: 1, traceId, error: "portal_consent_scope_unavailable" };
+      }
+      const rules = await enforceRules({
+        reply,
+        workspaceSlug: organizationId,
+        operation: "execute",
+        capability: published.capability,
+        pluginId: consent.selection.pluginId,
+        actorId: `agent:${consent.agentId}`,
+        payload: {
+          contractVersion: MARKETPLACE_PORTAL_HANDOFF_CONTRACT_VERSION,
+          phase: "grant",
+          portalOrgId: consent.portalOrgId,
+          productTenantId: consent.productTenantId,
+          deploymentId: consent.deploymentId,
+          agentId: consent.agentId,
+          consentId: consent.consentId,
+          selection: consent.selection,
+          traceId
+        },
+        rulesClient: options.rulesClient
+      });
+      if ("ok" in rules && rules.ok === false) {
+        return { ...rules, traceId };
+      }
+      const created = options.store.createMarketplaceAgentConsent({
+        portalIssuer: session.portalIssuer,
+        portalOrgId: consent.portalOrgId,
+        productTenantId: consent.productTenantId,
+        workspaceId: consent.workspaceId,
+        deploymentId: consent.deploymentId,
+        userId: consent.userId,
+        agentId: consent.agentId,
+        consentId: consent.consentId,
+        consentRevision: consent.consentRevision,
+        pluginId: consent.selection.pluginId,
+        actionKey: consent.selection.actionKey,
+        capability: published.capability,
+        connectionId: connection.id,
+        accountId: consent.selection.accountId,
+        resourceKind: consent.selection.resourceKind,
+        resourceRef: consent.selection.resourceRef,
+        capabilities: consent.capabilities,
+        requiredActions: consent.requiredActions,
+        metadata: {
+          contractVersion: MARKETPLACE_PORTAL_HANDOFF_CONTRACT_VERSION,
+          durableConsent: true,
+          rawTokensStored: false
+        }
+      });
+      if (created.created) {
+        options.store.recordEvent({
+          type: "marketplace.agent.consent.created",
+          traceId,
+          workspaceSlug: organizationId,
+          pluginId: consent.selection.pluginId,
+          actorId: `agent:${consent.agentId}`,
+          rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
+          payload: {
+            grantId: created.consent.id,
+            consentId: created.consent.consentId,
+            portalOrgId: created.consent.portalOrgId,
+            productTenantId: created.consent.productTenantId,
+            deploymentId: created.consent.deploymentId,
+            agentId: created.consent.agentId,
+            rawTokensStored: false
+          }
+        });
+      }
+      const projection = persistedRequest ? options.store.updateMarketplacePortalGrantRequest({
+        portalIssuer: session.portalIssuer,
+        deploymentId: input.deploymentId,
+        requestId: input.requestId,
+        state: "redeemed",
+        consentId: created.consent.consentId
+      }) : null;
+      return {
+        ok: true,
+        schema: 1,
+        contractVersion: MARKETPLACE_PORTAL_HANDOFF_CONTRACT_VERSION,
+        authority: principal.kind === "operator" ? "marketplace_operator_session" : "marketplace_service_bearer",
+        traceId,
+        reconciled,
+        created: created.created,
+        consent: browserMarketplaceAgentConsent(created.consent),
+        ...projection ? { projection: browserMarketplacePortalGrantRequest(projection) } : {},
+        rules
+      };
+    }
+  );
+  app2.post(
+    "/api/marketplace/agent/grants",
+    async (request, reply) => {
+      if (!requireService(request, reply)) {
+        return { ok: false, error: "marketplace_service_required" };
+      }
+      const input = AgentGrantInputSchema.parse(request.body);
+      const traceId = traceIdFrom(request);
+      const service = requestPrincipals.get(request);
+      const workspaceSlug = service?.organizationId ?? input.workspaceSlug;
+      const listing = options.store.getListingForWorkspace(input.pluginId, workspaceSlug);
+      if (!listing) {
+        reply.code(404);
+        return { ok: false, error: "plugin_not_found" };
+      }
+      if (!listingExecutableForAgents(listing, workspaceSlug)) {
+        reply.code(409);
+        return { ok: false, error: "plugin_not_composio_backed" };
+      }
+      if (!listing.actions.includes(input.actionKey)) {
+        reply.code(400);
+        return { ok: false, error: "agent_grant_action_not_registered" };
+      }
+      const requirement = resolveActionRequirement(listing, input.actionKey);
+      if (!requirement) {
+        reply.code(400);
+        return { ok: false, error: "agent_grant_action_contract_mismatch" };
+      }
+      const install = options.store.getInstall(workspaceSlug, input.pluginId);
+      if (!install || !install.enabled || install.lifecycle !== "installed") {
+        reply.code(409);
+        return { ok: false, error: "plugin_not_installed" };
+      }
+      if (!options.store.isActionEnabled({
+        workspaceSlug,
+        pluginId: input.pluginId,
+        actionKey: input.actionKey
+      })) {
+        reply.code(403);
+        return { ok: false, error: "connector_action_denied" };
+      }
+      const connection = options.store.getConnection(workspaceSlug, input.pluginId);
+      const accountId = agentAccountIdForConnection({ listing, workspaceSlug, connection });
+      if (!connection || !accountId || accountId !== input.accountId) {
+        reply.code(409);
+        return { ok: false, error: "agent_grant_account_mismatch" };
+      }
+      if (input.resourceRef !== `account:${accountId}`) {
+        reply.code(403);
+        return { ok: false, error: "resource_mismatch" };
+      }
+      let binding;
+      try {
+        binding = options.store.requireCapabilityBinding(
+          workspaceSlug,
+          input.pluginId,
+          requirement.capability
+        );
+      } catch {
+        reply.code(403);
+        return { ok: false, error: "connector_capability_denied" };
+      }
+      if (!binding.enabled) {
+        reply.code(403);
+        return { ok: false, error: "connector_capability_denied" };
+      }
+      const mapping = resolvePublishedAgentAction({
+        store: options.store,
+        workspaceSlug,
+        pluginId: input.pluginId,
+        actionKey: input.actionKey
+      });
+      if (!mapping) {
+        reply.code(409);
+        return {
+          ok: false,
+          error: "agent_grant_action_not_supported",
+          detail: "This action is not published to agents in this workspace."
+        };
+      }
+      if (input.resourceKind !== mapping.resourceKind) {
+        reply.code(400);
+        return { ok: false, error: "agent_grant_resource_invalid" };
+      }
+      const portal = await verifyPortalScope({
+        request,
+        reply,
+        requiredCapability: mapping.capability
+      });
+      if (!portal.ok) {
+        return { ok: false, error: portal.error };
+      }
+      if (portal.scope.organizationId !== workspaceSlug) {
+        reply.code(403);
+        return { ok: false, error: "agent_grant_tenant_mismatch" };
+      }
+      const rules = await enforceRules({
+        reply,
+        workspaceSlug,
+        operation: "execute",
+        capability: mapping.capability,
+        pluginId: input.pluginId,
+        actorId: `agent:${portal.scope.agentId}`,
+        payload: {
+          contractVersion: MARKETPLACE_AGENT_GRANT_CONTRACT_VERSION,
+          phase: "grant",
+          agentId: portal.scope.agentId,
+          attachmentId: portal.scope.attachmentId,
+          accountId: input.accountId,
+          actionKey: input.actionKey,
+          resourceKind: input.resourceKind,
+          resourceRef: input.resourceRef,
+          traceId
+        },
+        rulesClient: options.rulesClient
+      });
+      if ("ok" in rules && rules.ok === false) {
+        return { ...rules, traceId };
+      }
+      if (options.store.findActiveAgentConnectorGrant({
+        workspaceSlug,
+        agentId: portal.scope.agentId,
+        pluginId: input.pluginId,
+        actionKey: input.actionKey,
+        accountId: input.accountId,
+        resourceKind: input.resourceKind,
+        resourceRef: input.resourceRef
+      })) {
+        reply.code(409);
+        return { ok: false, error: "agent_grant_already_active" };
+      }
+      const expiresAt = new Date(
+        Math.min(portal.scope.expiresAt * 1e3, Date.now() + 5 * 6e4)
+      ).toISOString();
+      const grant = options.store.createAgentConnectorGrant({
+        workspaceSlug,
+        agentId: portal.scope.agentId,
+        pluginId: input.pluginId,
+        actionKey: input.actionKey,
+        capability: mapping.capability,
+        connectionId: connection.id,
+        accountId: input.accountId,
+        resourceKind: input.resourceKind,
+        resourceRef: input.resourceRef,
+        attachmentId: portal.scope.attachmentId,
+        expiresAt,
+        metadata: {
+          contractVersion: MARKETPLACE_AGENT_GRANT_CONTRACT_VERSION,
+          provider: listing.provider,
+          toolName: mapping.toolName,
+          rawTokensStored: false
+        }
+      });
+      options.store.recordEvent({
+        type: "marketplace.agent.grant.created",
+        traceId,
+        workspaceSlug,
+        pluginId: input.pluginId,
+        actorId: `agent:${portal.scope.agentId}`,
+        rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
+        payload: {
+          grantId: grant.id,
+          agentId: grant.agentId,
+          accountId: grant.accountId,
+          actionKey: grant.actionKey,
+          resourceKind: grant.resourceKind,
+          resourceRef: grant.resourceRef,
+          attachmentId: grant.attachmentId,
+          rawTokensStored: false
+        }
+      });
+      reply.code(201);
+      return { ok: true, traceId, grant: sanitizeAgentConnectorGrant(grant), rules };
+    }
+  );
+  app2.post(
+    "/api/marketplace/plugins/:pluginId/execute",
+    async (request, reply) => {
+      const { pluginId } = request.params;
+      const input = ExecuteInputSchema.parse(request.body);
+      const traceId = traceIdFrom(request);
+      let scopedGrant = null;
+      let effectiveActorId = input.actorId;
+      let effectiveAction = input.action;
+      if (input.agentGrantId) {
+        scopedGrant = options.store.getAgentConnectorGrant(input.agentGrantId);
+        if (!scopedGrant) {
+          reply.code(404);
+          return { ok: false, error: "agent_grant_not_found" };
+        }
+        if (scopedGrant.workspaceSlug !== input.workspaceSlug || scopedGrant.pluginId !== pluginId || scopedGrant.actionKey !== input.action.type || scopedGrant.capability !== input.capability) {
+          reply.code(403);
+          return { ok: false, error: "agent_grant_scope_mismatch" };
+        }
+        const verified = await verifyAgentGrantScope({
+          request,
+          reply,
+          grant: scopedGrant,
+          requiredCapability: input.capability
+        });
+        if (!verified.ok) {
+          return { ok: false, error: verified.error };
+        }
+        if (input.resourceRef !== void 0 && input.resourceRef !== scopedGrant.resourceRef) {
+          reply.code(403);
+          return { ok: false, error: "resource_mismatch" };
+        }
+        effectiveActorId = `agent:${verified.scope.agentId}`;
+      }
+      options.store.recordEvent({
+        type: "marketplace.execution.requested",
+        traceId,
+        workspaceSlug: input.workspaceSlug,
+        pluginId,
+        actorId: effectiveActorId,
+        payload: {
+          capability: input.capability,
+          action: input.action.type,
+          ...scopedGrant ? {
+            agentGrantId: scopedGrant.id,
+            resourceKind: scopedGrant.resourceKind,
+            resourceRef: scopedGrant.resourceRef
+          } : {}
+        }
+      });
+      const listing = options.store.getListingForWorkspace(
+        pluginId,
+        input.workspaceSlug
+      );
+      if (!listing) {
+        reply.code(404);
+        return { ok: false, error: "plugin_not_found" };
+      }
+      const customMcp = listingIsWorkspaceCustomMcp(listing, input.workspaceSlug);
+      const install = options.store.getInstall(input.workspaceSlug, pluginId);
+      if (!install || !install.enabled || install.lifecycle !== "installed") {
+        reply.code(409);
+        return { ok: false, error: "plugin_not_installed" };
+      }
+      const requirement = resolveActionRequirement(listing, input.action.type);
+      if (!requirement) {
+        reply.code(400);
+        return { ok: false, error: "unknown_connector_action" };
+      }
+      if (requirement.capability !== input.capability) {
+        reply.code(400);
+        return {
+          ok: false,
+          error: "connector_capability_mismatch",
+          requiredCapability: requirement.capability
+        };
+      }
+      if (requirement.kind !== listing.provider) {
+        reply.code(409);
+        return {
+          ok: false,
+          error: "connector_kind_mismatch",
+          provider: listing.provider
+        };
+      }
+      if (!options.store.isActionEnabled({
+        workspaceSlug: input.workspaceSlug,
+        pluginId,
+        actionKey: input.action.type
+      })) {
+        reply.code(403);
+        return { ok: false, error: "connector_action_denied" };
+      }
+      const connection = options.store.getConnection(
+        input.workspaceSlug,
+        pluginId
+      );
+      if (!listingConnected({
+        listing,
+        workspaceSlug: input.workspaceSlug,
+        connectionState: connection?.state
+      })) {
+        reply.code(409);
+        return {
+          ok: false,
+          error: "connector_not_connected",
+          provider: listing.provider
+        };
+      }
+      if (scopedGrant && (connection?.id !== scopedGrant.connectionId || agentAccountIdForConnection({
+        listing,
+        workspaceSlug: input.workspaceSlug,
+        connection
+      }) !== scopedGrant.accountId)) {
+        reply.code(403);
+        return { ok: false, error: "agent_grant_connection_mismatch" };
+      }
+      const binding = options.store.getCapabilityBinding(
+        input.workspaceSlug,
+        pluginId,
+        input.capability
+      );
+      if (!binding?.enabled) {
+        reply.code(403);
+        return { ok: false, error: "connector_capability_denied" };
+      }
+      if (scopedGrant) {
+        const scopedAction = applyScopedResource({
+          action: input.action,
+          grant: scopedGrant,
+          entry: resolvePublishedAgentAction({
+            store: options.store,
+            workspaceSlug: input.workspaceSlug,
+            pluginId,
+            actionKey: input.action.type
+          })
+        });
+        if (!scopedAction.ok) {
+          reply.code(403);
+          return { ok: false, error: scopedAction.error };
+        }
+        effectiveAction = { ...scopedAction.action, type: input.action.type };
+      }
+      if (listing.executionOwner !== "composio" && !customMcp) {
+        options.store.recordEvent({
+          type: "marketplace.execution.unsupported",
+          traceId,
+          workspaceSlug: input.workspaceSlug,
+          pluginId,
+          actorId: effectiveActorId,
+          payload: {
+            executionOwner: listing.executionOwner,
+            action: input.action.type,
+            supportedExecutionOwners: ["composio", "mcp"]
+          }
+        });
+        reply.code(501);
+        return {
+          ok: false,
+          traceId,
+          error: "connector_execution_not_supported",
+          executionOwner: listing.executionOwner,
+          supportedExecutionOwners: ["composio", "mcp"],
+          detail: "This launch profile executes Composio-backed tools and the workspace's own custom MCP connectors only. Native, Activepieces, Nango, and Hub MCP execution are unavailable rather than simulated."
+        };
+      }
+      const rules = await enforceRules({
+        reply,
+        workspaceSlug: input.workspaceSlug,
+        operation: "execute",
+        capability: input.capability,
+        pluginId,
+        actorId: effectiveActorId,
+        payload: {
+          ...request.body,
+          action: effectiveAction,
+          ...scopedGrant ? {
+            agentId: scopedGrant.agentId,
+            accountId: scopedGrant.accountId,
+            resourceKind: scopedGrant.resourceKind,
+            resourceRef: scopedGrant.resourceRef,
+            agentGrantId: scopedGrant.id
+          } : {},
+          traceId
+        },
+        rulesClient: options.rulesClient
+      });
+      if ("ok" in rules && rules.ok === false) {
+        options.store.recordEvent({
+          type: "marketplace.execution.denied",
+          traceId,
+          workspaceSlug: input.workspaceSlug,
+          pluginId,
+          actorId: effectiveActorId,
+          payload: {
+            capability: input.capability,
+            action: input.action.type,
+            error: rules.error
+          }
+        });
+        return { ...rules, traceId };
+      }
+      if (customMcp) {
+        return executeCustomMcpAction({
+          reply,
+          listing,
+          workspaceSlug: input.workspaceSlug,
+          capability: input.capability,
+          action: effectiveAction,
+          actorId: effectiveActorId,
+          traceId,
+          rules,
+          runId: input.runId ?? null,
+          sessionId: input.sessionId ?? null,
+          agentGrantId: scopedGrant?.id ?? null
+        });
+      }
+      const toolName = composioToolNameForAction(listing, input.action.type);
+      let providerResult;
+      try {
+        const providerOutput = await executeComposioTool({
+          toolName,
+          arguments: { ...effectiveAction, type: void 0 },
+          connectedAccountId: connectedAccountIdFromConnection(connection),
+          userId: typeof connection?.metadata.userId === "string" ? connection.metadata.userId : void 0,
+          env: providerEnvironment(),
+          fetchImpl: options.providerFetch
+        });
+        providerResult = {
+          summary: `Executed ${toolName} through Composio.`,
+          details: {
+            toolName,
+            result: providerOutput
+          }
+        };
+      } catch (error) {
+        const usage2 = options.store.recordUsage({
+          workspaceSlug: input.workspaceSlug,
+          pluginId,
+          provider: listing.provider,
+          sourceExecutor: listing.executionOwner,
+          sourceActionKey: input.action.type,
+          productCapabilityKey: `connector.${listing.executionOwner}.${listing.provider}.${input.action.type}`,
+          scopesUsed: [input.capability],
+          status: "failed",
+          runId: input.runId ?? null,
+          sessionId: input.sessionId ?? null,
+          error: error instanceof Error ? error.message : String(error),
+          metadata: {
+            rules,
+            ...scopedGrant ? { agentGrantId: scopedGrant.id } : {}
+          },
+          input: effectiveAction,
+          output: null
+        });
+        options.store.recordEvent({
+          type: "marketplace.execution.failed",
+          traceId,
+          workspaceSlug: input.workspaceSlug,
+          pluginId,
+          actorId: effectiveActorId,
+          rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
+          payload: {
+            capability: input.capability,
+            action: input.action.type,
+            usageId: usage2.id
+          }
+        });
+        reply.code(502);
+        return {
+          ok: false,
+          traceId,
+          error: "composio_execute_failed",
+          detail: error instanceof Error ? error.message : String(error),
+          usage: usage2
+        };
+      }
+      const result = {
+        pluginId,
+        workspaceSlug: input.workspaceSlug,
+        provider: listing.provider,
+        capability: input.capability,
+        actionType: input.action.type,
+        performedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        simulated: false,
+        summary: providerResult.summary,
+        details: providerResult.details
+      };
+      const usage = options.store.recordUsage({
+        workspaceSlug: input.workspaceSlug,
+        pluginId,
+        provider: listing.provider,
+        sourceExecutor: listing.executionOwner,
+        sourceActionKey: input.action.type,
+        productCapabilityKey: `connector.${listing.executionOwner}.${listing.provider}.${input.action.type}`,
+        scopesUsed: [input.capability],
+        status: "succeeded",
+        runId: input.runId ?? null,
+        sessionId: input.sessionId ?? null,
+        error: null,
+        metadata: {
+          rules,
+          ...scopedGrant ? { agentGrantId: scopedGrant.id } : {}
+        },
+        input: effectiveAction,
+        output: result
+      });
+      options.store.recordEvent({
+        type: "marketplace.execution.completed",
+        traceId,
+        workspaceSlug: input.workspaceSlug,
+        pluginId,
+        actorId: effectiveActorId,
+        rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
+        payload: {
+          capability: input.capability,
+          action: input.action.type,
+          usageId: usage.id
+        }
+      });
+      return { ok: true, traceId, result, usage, rules };
+    }
+  );
+  app2.route({
+    method: "POST",
+    url: "/api/marketplace/v1/runtime/composio/execute",
+    bodyLimit: 16384,
+    handler: async (request, reply) => {
+      const traceId = traceIdFrom(request);
+      if (request.headers.cookie || request.headers.origin) {
+        reply.code(403);
+        return runtimeResponse({
+          ok: false,
+          traceId,
+          error: "runtime_service_request_required"
+        });
+      }
+      const attachmentToken = bearerTokenFrom(request);
+      if (!attachmentToken) {
+        reply.code(401);
+        return runtimeResponse({
+          ok: false,
+          traceId,
+          error: "runtime_lease_required"
+        });
+      }
+      const input = RuntimeComposioExecuteSchema.parse(request.body);
+      let scope;
+      try {
+        scope = await portalRuntimeScopeVerifier({
+          attachmentToken,
+          selection: input.selection,
+          requiredCapability: selectionCapability(input.selection)
+        });
+      } catch (error) {
+        const status = error instanceof PortalRuntimeScopeError ? error.statusCode : 503;
+        reply.code(status);
+        return runtimeResponse({
+          ok: false,
+          traceId,
+          error: error instanceof PortalRuntimeScopeError ? error.code : "portal_runtime_unavailable"
+        });
+      }
+      if (scope.productTenantId !== organizationId) {
+        reply.code(403);
+        return runtimeResponse({
+          ok: false,
+          traceId,
+          error: "runtime_tenant_mismatch"
+        });
+      }
+      if (!portalIdentityMatches(scope)) {
+        reply.code(403);
+        return runtimeResponse({
+          ok: false,
+          traceId,
+          error: "runtime_identity_mismatch"
+        });
+      }
+      if (scope.consentId !== input.consentId) {
+        reply.code(403);
+        return runtimeResponse({
+          ok: false,
+          traceId,
+          error: "runtime_consent_mismatch"
+        });
+      }
+      const consent = options.store.getMarketplaceAgentConsent({
+        portalIssuer: portalIssuerUrl ?? "",
+        deploymentId: scope.deploymentId,
+        consentId: scope.consentId
+      });
+      if (!consent || consent.state !== "active") {
+        reply.code(403);
+        return runtimeResponse({
+          ok: false,
+          traceId,
+          error: consent ? "runtime_consent_revoked" : "runtime_consent_not_found"
+        });
+      }
+      if (consent.productTenantId !== scope.productTenantId || consent.portalOrgId !== scope.portalOrgId || consent.workspaceId !== scope.workspaceId || consent.deploymentId !== scope.deploymentId || consent.agentId !== scope.agentId || consent.pluginId !== input.selection.pluginId || consent.actionKey !== input.selection.actionKey || consent.accountId !== input.selection.accountId || consent.resourceKind !== input.selection.resourceKind || consent.resourceRef !== input.selection.resourceRef || consent.capability !== selectionCapability(input.selection)) {
+        reply.code(403);
+        return runtimeResponse({
+          ok: false,
+          traceId,
+          error: "runtime_scope_mismatch"
+        });
+      }
+      const listing = options.store.getListingForWorkspace(
+        input.selection.pluginId,
+        organizationId
+      );
+      const connection = options.store.getConnection(
+        organizationId,
+        input.selection.pluginId
+      );
+      if (!listing || !listingExecutableForAgents(listing, organizationId) || !listing.actions.includes(input.selection.actionKey) || !options.store.getInstall(organizationId, input.selection.pluginId)?.enabled || !options.store.isActionEnabled({
+        workspaceSlug: organizationId,
+        pluginId: input.selection.pluginId,
+        actionKey: input.selection.actionKey
+      }) || !connection || agentAccountIdForConnection({ listing, workspaceSlug: organizationId, connection }) !== consent.accountId || connection.id !== consent.connectionId) {
+        reply.code(409);
+        return runtimeResponse({
+          ok: false,
+          traceId,
+          error: "runtime_connection_unavailable"
+        });
+      }
+      let binding;
+      try {
+        binding = options.store.requireCapabilityBinding(
+          organizationId,
+          input.selection.pluginId,
+          consent.capability
+        );
+      } catch {
+        reply.code(403);
+        return runtimeResponse({
+          ok: false,
+          traceId,
+          error: "connector_capability_denied"
+        });
+      }
+      if (!binding.enabled) {
+        reply.code(403);
+        return runtimeResponse({
+          ok: false,
+          traceId,
+          error: "connector_capability_denied"
+        });
+      }
+      const published = resolvePublishedAgentAction({
+        store: options.store,
+        workspaceSlug: organizationId,
+        pluginId: consent.pluginId,
+        actionKey: consent.actionKey
+      });
+      if (!published || published.capability !== consent.capability) {
+        reply.code(409);
+        return runtimeResponse({
+          ok: false,
+          traceId,
+          error: "runtime_connection_unavailable"
+        });
+      }
+      const action = { type: input.selection.actionKey, ...input.input };
+      const scopedAction = applyScopedResource({
+        action,
+        grant: consent,
+        entry: published
+      });
+      if (!scopedAction.ok) {
+        reply.code(403);
+        return runtimeResponse({
+          ok: false,
+          traceId,
+          error: scopedAction.error
+        });
+      }
+      const rules = await enforceRules({
+        reply,
+        workspaceSlug: organizationId,
+        operation: "execute",
+        capability: consent.capability,
+        pluginId: consent.pluginId,
+        actorId: `agent:${consent.agentId}`,
+        payload: {
+          contractVersion: MARKETPLACE_PORTAL_HANDOFF_CONTRACT_VERSION,
+          phase: "execute",
+          portalOrgId: consent.portalOrgId,
+          productTenantId: consent.productTenantId,
+          workspaceId: consent.workspaceId,
+          deploymentId: consent.deploymentId,
+          agentId: consent.agentId,
+          consentId: consent.consentId,
+          leaseId: scope.leaseId,
+          action: scopedAction.action,
+          selection: input.selection,
+          traceId
+        },
+        rulesClient: options.rulesClient
+      });
+      if ("ok" in rules && rules.ok === false) {
+        options.store.recordEvent({
+          type: "marketplace.runtime.execution.denied",
+          traceId,
+          workspaceSlug: organizationId,
+          pluginId: consent.pluginId,
+          actorId: `agent:${consent.agentId}`,
+          payload: {
+            consentId: consent.consentId,
+            leaseId: scope.leaseId,
+            capability: consent.capability,
+            action: input.selection.actionKey,
+            error: rules.error
+          }
+        });
+        return runtimeResponse({
+          ok: false,
+          traceId,
+          error: rules.error
+        });
+      }
+      let mcpConnection = null;
+      if (listingIsWorkspaceCustomMcp(listing, organizationId)) {
+        try {
+          mcpConnection = customMcpConnection(listing, organizationId);
+        } catch (error) {
+          if (!(error instanceof ConnectorSecretStoreUnavailableError)) throw error;
+          reply.code(503);
+          return runtimeResponse({
+            ok: false,
+            traceId,
+            error: "connector_secret_store_unavailable"
+          });
+        }
+      }
+      const fingerprint = createHash4("sha256").update(
+        stableJson({
+          consentId: input.consentId,
+          selection: input.selection,
+          input: input.input
+        })
+      ).digest("hex");
+      let operation;
+      try {
+        operation = options.store.beginMarketplaceRuntimeOperation({
+          consentId: input.consentId,
+          idempotencyKey: input.idempotencyKey,
+          fingerprint
+        });
+      } catch (error) {
+        reply.code(409);
+        return runtimeResponse({
+          ok: false,
+          traceId,
+          error: error instanceof Error && error.message === "runtime_operation_idempotency_conflict" ? "runtime_idempotency_conflict" : "runtime_operation_unavailable"
+        });
+      }
+      if (!operation.created) {
+        if (operation.operation.status === "succeeded" && operation.operation.response) {
+          return { ...operation.operation.response, replayed: true };
+        }
+        reply.code(409);
+        return runtimeResponse({
+          ok: false,
+          traceId,
+          error: operation.operation.status === "pending" ? "runtime_operation_in_progress" : "runtime_operation_reconciliation_required"
+        });
+      }
+      const toolName = mcpConnection ? published.toolName : composioToolNameForAction(listing, input.selection.actionKey);
+      try {
+        let providerOutput;
+        if (mcpConnection) {
+          const { type: _type, ...args } = scopedAction.action;
+          const output = await callMcpTool(mcpConnection, toolName, args);
+          if (output.isError) {
+            throw new Error("mcp_tool_failed");
+          }
+          providerOutput = {
+            content: output.content,
+            ...output.structuredContent === void 0 ? {} : { structuredContent: output.structuredContent }
+          };
+        } else {
+          providerOutput = await executeComposioTool({
+            toolName,
+            arguments: { ...scopedAction.action, type: void 0 },
+            connectedAccountId: connectedAccountIdFromConnection(connection),
+            userId: typeof connection?.metadata.userId === "string" ? connection.metadata.userId : void 0,
+            env: providerEnvironment(),
+            fetchImpl: options.providerFetch
+          });
+        }
+        const result = {
+          pluginId: input.selection.pluginId,
+          workspaceSlug: organizationId,
+          provider: listing.provider,
+          capability: consent.capability,
+          actionType: input.selection.actionKey,
+          performedAt: (/* @__PURE__ */ new Date()).toISOString(),
+          simulated: false,
+          summary: mcpConnection ? `Ran ${toolName} on ${listing.displayName}.` : `Executed ${toolName} through Composio.`,
+          details: { toolName, result: runtimeSafeProviderResult(providerOutput) }
+        };
+        if (JSON.stringify(result).length > 65536) {
+          throw new Error("runtime_result_too_large");
+        }
+        const usage = options.store.recordUsage({
+          workspaceSlug: organizationId,
+          pluginId: input.selection.pluginId,
+          provider: listing.provider,
+          sourceExecutor: listing.executionOwner,
+          sourceActionKey: input.selection.actionKey,
+          productCapabilityKey: `connector.${listing.executionOwner}.${listing.provider}.${input.selection.actionKey}`,
+          scopesUsed: [consent.capability],
+          status: "succeeded",
+          runId: null,
+          sessionId: null,
+          error: null,
+          metadata: {
+            contractVersion: MARKETPLACE_PORTAL_HANDOFF_CONTRACT_VERSION,
+            consentId: consent.consentId,
+            leaseId: scope.leaseId
+          },
+          input: scopedAction.action,
+          output: result
+        });
+        options.store.recordEvent({
+          type: "marketplace.runtime.execution.completed",
+          traceId,
+          workspaceSlug: organizationId,
+          pluginId: input.selection.pluginId,
+          actorId: `agent:${consent.agentId}`,
+          rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
+          payload: {
+            consentId: consent.consentId,
+            leaseId: scope.leaseId,
+            usageId: usage.id
+          }
+        });
+        const response = runtimeResponse({
+          ok: true,
+          traceId,
+          result,
+          usageId: usage.id
+        });
+        options.store.finishMarketplaceRuntimeOperation({
+          id: operation.operation.id,
+          status: "succeeded",
+          response
+        });
+        return response;
+      } catch (error) {
+        const detail = error instanceof Error && error.message === "runtime_result_too_large" ? "Provider result exceeded the bounded runtime response size." : "Provider dispatch may have completed; reconcile before retrying this idempotency key.";
+        const usage = options.store.recordUsage({
+          workspaceSlug: organizationId,
+          pluginId: input.selection.pluginId,
+          provider: listing.provider,
+          sourceExecutor: listing.executionOwner,
+          sourceActionKey: input.selection.actionKey,
+          productCapabilityKey: `connector.${listing.executionOwner}.${listing.provider}.${input.selection.actionKey}`,
+          scopesUsed: [consent.capability],
+          status: "failed",
+          runId: null,
+          sessionId: null,
+          error: error instanceof Error ? error.message : String(error),
+          metadata: { consentId: consent.consentId, leaseId: scope.leaseId },
+          input: scopedAction.action,
+          output: null
+        });
+        const response = runtimeResponse({
+          ok: false,
+          traceId,
+          error: "runtime_operation_reconciliation_required",
+          detail,
+          usageId: usage.id
+        });
+        options.store.finishMarketplaceRuntimeOperation({
+          id: operation.operation.id,
+          status: "reconciliation-required",
+          response
+        });
+        options.store.recordEvent({
+          type: "marketplace.runtime.execution.failed",
+          traceId,
+          workspaceSlug: organizationId,
+          pluginId: consent.pluginId,
+          actorId: `agent:${consent.agentId}`,
+          payload: {
+            consentId: consent.consentId,
+            leaseId: scope.leaseId,
+            usageId: usage.id,
+            reconciliationRequired: true
+          }
+        });
+        reply.code(502);
+        return response;
+      }
+    }
+  });
+  app2.post(
+    "/api/marketplace/agent/grants/:grantId/revoke",
+    async (request, reply) => {
+      const principal = requestPrincipals.get(request);
+      if (!principal || !["service", "operator"].includes(principal.kind)) {
+        reply.code(403);
+        return { ok: false, error: "marketplace_authority_required" };
+      }
+      const { grantId } = request.params;
+      const durableConsent = options.store.getMarketplaceAgentConsentById(grantId);
+      if (durableConsent) {
+        if (principal.organizationId !== durableConsent.productTenantId) {
+          reply.code(403);
+          return { ok: false, error: "agent_grant_tenant_mismatch" };
+        }
+        const revoked2 = options.store.revokeMarketplaceAgentConsent(grantId);
+        const traceId2 = traceIdFrom(request);
+        options.store.recordEvent({
+          type: "marketplace.agent.consent.revoked",
+          traceId: traceId2,
+          workspaceSlug: durableConsent.productTenantId,
+          pluginId: durableConsent.pluginId,
+          actorId: principal.kind === "operator" ? `operator:${principal.id}` : "marketplace-service",
+          payload: {
+            grantId,
+            consentId: durableConsent.consentId,
+            portalOrgId: durableConsent.portalOrgId,
+            deploymentId: durableConsent.deploymentId
+          }
+        });
+        return {
+          ok: true,
+          schema: 1,
+          traceId: traceId2,
+          grant: browserMarketplaceAgentConsent(revoked2)
+        };
+      }
+      const grant = options.store.getAgentConnectorGrant(grantId);
+      if (!grant) {
+        reply.code(404);
+        return { ok: false, error: "agent_grant_not_found" };
+      }
+      if (principal.organizationId !== grant.workspaceSlug) {
+        reply.code(403);
+        return { ok: false, error: "agent_grant_tenant_mismatch" };
+      }
+      const revoked = options.store.revokeAgentConnectorGrant(grantId);
+      const traceId = traceIdFrom(request);
+      options.store.recordEvent({
+        type: "marketplace.agent.grant.revoked",
+        traceId,
+        workspaceSlug: grant.workspaceSlug,
+        pluginId: grant.pluginId,
+        actorId: principal.kind === "operator" ? `operator:${principal.id}` : "marketplace-service",
+        payload: {
+          grantId,
+          agentId: grant.agentId,
+          accountId: grant.accountId,
+          resourceKind: grant.resourceKind,
+          resourceRef: grant.resourceRef
+        }
+      });
+      return {
+        ok: true,
+        traceId,
+        grant: revoked && principal.kind === "operator" ? browserAgentConnectorGrant(revoked) : revoked ? sanitizeAgentConnectorGrant(revoked) : null
+      };
+    }
+  );
+  app2.get("/api/marketplace/agent/grants", async (request, reply) => {
+    const principal = requireOperator(request, reply);
+    if (!principal) return { ok: false, error: "marketplace_operator_required" };
+    const query = AgentGrantListQuerySchema.parse(request.query);
+    if (query.workspaceSlug !== principal.organizationId) {
+      reply.code(403);
+      return { ok: false, error: "agent_grant_tenant_mismatch" };
+    }
+    const grants = options.store.listAgentConnectorGrants({
+      workspaceSlug: query.workspaceSlug,
+      agentId: query.agentId,
+      pluginId: query.pluginId,
+      state: query.state,
+      limit: query.limit
+    });
+    return {
+      contractVersion: MARKETPLACE_AGENT_GRANT_CONTRACT_VERSION,
+      workspaceSlug: query.workspaceSlug,
+      grants: grants.map(browserAgentConnectorGrant),
+      handoffRequests: options.store.listMarketplacePortalGrantRequests({
+        productTenantId: query.workspaceSlug,
+        agentId: query.agentId
+      }).map(browserMarketplacePortalGrantRequest),
+      consents: options.store.listMarketplaceAgentConsents({
+        productTenantId: query.workspaceSlug,
+        agentId: query.agentId,
+        state: query.state
+      }).map(browserMarketplaceAgentConsent),
+      handoffContractVersion: MARKETPLACE_PORTAL_HANDOFF_CONTRACT_VERSION,
+      grantCreation: {
+        available: false,
+        code: "portal_handoff_required",
+        detail: "Agent grants require a Portal-attested server-side handoff; raw agent or attachment credentials are never accepted from browser code."
+      }
+    };
+  });
+  app2.get("/api/marketplace/v1/agent/action-catalog", async (request, reply) => {
+    const principal = requireHandoffPrincipal(request, reply);
+    if (!principal) {
+      return { ok: false, error: "marketplace_operator_required" };
+    }
+    const rawQuery = new URLSearchParams(request.url.split("?")[1] ?? "");
+    const requested = rawQuery.getAll("workspaceSlug");
+    if (requested.length > 1) {
+      reply.code(400);
+      return { ok: false, error: "validation_failed" };
+    }
+    const requestedSlug = requested[0]?.trim() || null;
+    if (principal.kind === "service" && !requestedSlug) {
+      reply.code(400);
+      return { ok: false, error: "workspace_slug_required" };
+    }
+    if (requestedSlug && requestedSlug !== principal.organizationId) {
+      reply.code(403);
+      return { ok: false, error: "agent_action_catalog_tenant_mismatch" };
+    }
+    const workspaceSlug = principal.organizationId;
+    return {
+      contractVersion: MARKETPLACE_AGENT_ACTION_CATALOG_CONTRACT_VERSION,
+      workspaceSlug,
+      actions: publishedAgentActionCatalog({ store: options.store, workspaceSlug })
+    };
+  });
+  app2.get("/api/agent/capabilities", async (request, reply) => {
+    const query = AgentCapabilitiesQuerySchema.parse(request.query);
+    const capabilities2 = agentCapabilitiesForWorkspace(
+      options.store,
+      query.workspaceSlug
+    );
+    if (!query.grantId) {
+      return { workspaceSlug: query.workspaceSlug, capabilities: capabilities2 };
+    }
+    const grant = options.store.getAgentConnectorGrant(query.grantId);
+    if (!grant) {
+      reply.code(404);
+      return { ok: false, error: "agent_grant_not_found" };
+    }
+    if (grant.workspaceSlug !== query.workspaceSlug) {
+      reply.code(403);
+      return { ok: false, error: "agent_grant_tenant_mismatch" };
+    }
+    const verified = await verifyAgentGrantScope({
+      request,
+      reply,
+      grant,
+      requiredCapability: grant.capability
+    });
+    if (!verified.ok) {
+      return { ok: false, error: verified.error };
+    }
+    return {
+      workspaceSlug: query.workspaceSlug,
+      grant: sanitizeAgentConnectorGrant(grant),
+      capabilities: capabilities2.filter(
+        (capability) => capability.pluginId === grant.pluginId && capability.actionType === grant.actionKey
+      )
+    };
+  });
+  app2.post("/api/agent/tools/:toolName", async (request, reply) => {
+    const { toolName } = request.params;
+    const body = external_exports.object({
+      workspaceSlug: external_exports.string().trim().min(1),
+      actorId: external_exports.string().trim().min(1).default("agent"),
+      pluginId: external_exports.string().trim().min(1),
+      input: external_exports.record(external_exports.unknown()).default({}),
+      grantId: external_exports.string().trim().min(1).optional(),
+      resourceRef: external_exports.string().trim().min(1).optional()
+    }).parse(request.body);
+    const actionType = actionForTool(toolName);
+    if (!actionType) {
+      reply.code(404);
+      return { ok: false, error: "agent_tool_not_found" };
+    }
+    const listing = options.store.getListingForWorkspace(
+      body.pluginId,
+      body.workspaceSlug
+    );
+    const requirement = listing ? resolveActionRequirement(listing, actionType) : null;
+    if (!requirement) {
+      reply.code(404);
+      return { ok: false, error: "agent_tool_not_registered" };
+    }
+    let grant = null;
+    if (body.grantId) {
+      grant = options.store.getAgentConnectorGrant(body.grantId);
+      if (!grant) {
+        reply.code(404);
+        return { ok: false, error: "agent_grant_not_found" };
+      }
+      if (grant.workspaceSlug !== body.workspaceSlug || grant.pluginId !== body.pluginId || grant.actionKey !== actionType || grant.capability !== requirement.capability) {
+        reply.code(403);
+        return { ok: false, error: "agent_grant_scope_mismatch" };
+      }
+      const verified = await verifyAgentGrantScope({
+        request,
+        reply,
+        grant,
+        requiredCapability: requirement.capability
+      });
+      if (!verified.ok) {
+        return { ok: false, error: verified.error };
+      }
+      if (body.resourceRef && body.resourceRef !== grant.resourceRef) {
+        reply.code(403);
+        return { ok: false, error: "resource_mismatch" };
+      }
+    }
+    const available = agentCapabilitiesForWorkspace(
+      options.store,
+      body.workspaceSlug
+    ).some(
+      (capability) => capability.toolName === toolName && capability.pluginId === body.pluginId
+    );
+    if (!available) {
+      reply.code(404);
+      return { ok: false, error: "agent_tool_not_available" };
+    }
+    const injected = await app2.inject({
+      method: "POST",
+      url: `/api/marketplace/plugins/${encodeURIComponent(body.pluginId)}/execute`,
+      headers: {
+        "x-trace-id": traceIdFrom(request),
+        ...options.internalAuthToken ? { authorization: `Bearer ${options.internalAuthToken}` } : {},
+        ...headerValue(request, "x-tealbrick-agent-token") ? { "x-tealbrick-agent-token": headerValue(request, "x-tealbrick-agent-token") } : {},
+        ...headerValue(request, "x-tealbrick-attachment") ? { "x-tealbrick-attachment": headerValue(request, "x-tealbrick-attachment") } : {}
+      },
+      payload: {
+        workspaceSlug: body.workspaceSlug,
+        actorId: body.actorId,
+        capability: requirement.capability,
+        ...grant ? { agentGrantId: grant.id, resourceRef: grant.resourceRef } : {},
+        action: { ...body.input, type: actionType }
+      }
+    });
+    reply.code(injected.statusCode);
+    return injected.json();
+  });
+  app2.post("/api/marketplace/broker/grants", async (request, reply) => {
+    if (!requireService(request, reply)) {
+      return { ok: false, error: "marketplace_service_required" };
+    }
+    const input = BrokerGrantInputSchema.parse(request.body);
+    const traceId = traceIdFrom(request);
+    const listing = options.store.getListing(input.pluginId);
+    if (!listing) {
+      reply.code(404);
+      return { ok: false, error: "plugin_not_found" };
+    }
+    if (listing.executionOwner !== "composio") {
+      reply.code(409);
+      return { ok: false, error: "plugin_not_composio_backed" };
+    }
+    const install = options.store.getInstall(
+      input.workspaceSlug,
+      listing.pluginId
+    );
+    if (!install || !install.enabled || install.lifecycle !== "installed") {
+      reply.code(409);
+      return { ok: false, error: "plugin_not_installed" };
+    }
+    const connection = options.store.getConnection(
+      input.workspaceSlug,
+      listing.pluginId
+    );
+    if (connection?.state !== "connected") {
+      reply.code(409);
+      return {
+        ok: false,
+        error: "connector_not_connected",
+        provider: listing.provider
+      };
+    }
+    const actionRequirements = input.actionKeys.map((actionKey) => {
+      if (!listing.actions.includes(actionKey)) {
+        return { actionKey, requirement: null };
+      }
+      return {
+        actionKey,
+        requirement: resolveActionRequirement(listing, actionKey)
+      };
+    });
+    const unknownAction = actionRequirements.find(
+      (entry) => entry.requirement === null
+    );
+    if (unknownAction) {
+      reply.code(404);
+      return {
+        ok: false,
+        error: "plugin_action_not_found",
+        actionKey: unknownAction.actionKey
+      };
+    }
+    const disabledAction = input.actionKeys.find(
+      (actionKey) => !options.store.isActionEnabled({
+        workspaceSlug: input.workspaceSlug,
+        pluginId: listing.pluginId,
+        actionKey
+      })
+    );
+    if (disabledAction) {
+      reply.code(403);
+      return {
+        ok: false,
+        error: "connector_action_denied",
+        actionKey: disabledAction
+      };
+    }
+    const capabilities2 = [
+      ...new Set(
+        actionRequirements.map((entry) => entry.requirement.capability)
+      )
+    ];
+    const unboundCapability = capabilities2.find((capability) => {
+      try {
+        return !options.store.requireCapabilityBinding(
+          input.workspaceSlug,
+          listing.pluginId,
+          capability
+        ).enabled;
+      } catch {
+        return true;
+      }
+    });
+    if (unboundCapability) {
+      reply.code(403);
+      return {
+        ok: false,
+        error: "connector_capability_denied",
+        capability: unboundCapability
+      };
+    }
+    const rules = await enforceRules({
+      reply,
+      workspaceSlug: input.workspaceSlug,
+      operation: "broker.grant",
+      capability: highestCapability(capabilities2),
+      pluginId: listing.pluginId,
+      actorId: input.actorId,
+      payload: {
+        requesterMiniappId: input.requesterMiniappId,
+        actionKeys: input.actionKeys,
+        metadata: input.metadata,
+        ...recordValue6(input.metadata.crossApp) ? {
+          crossApp: recordValue6(input.metadata.crossApp),
+          contractVersion: stringValue5(
+            recordValue6(input.metadata.crossApp)?.contractVersion
+          ),
+          sourceMiniappId: stringValue5(
+            recordValue6(input.metadata.crossApp)?.sourceMiniappId
+          ),
+          idempotencyKey: stringValue5(
+            recordValue6(input.metadata.crossApp)?.idempotencyKey
+          )
+        } : {},
+        traceId
+      },
+      rulesClient: options.rulesClient
+    });
+    if ("ok" in rules && rules.ok === false) {
+      return { ...rules, traceId };
+    }
+    const providers = await readProviderHealthWithReachability(
+      providerEnvironment(),
+      options.providerFetch
+    );
+    if (!providers.composio.configured) {
+      reply.code(409);
+      return {
+        ok: false,
+        error: "composio_unavailable",
+        detail: providers.composio.detail
+      };
+    }
+    const token = createBrokerToken();
+    const grant = options.store.createBrokerGrant({
+      workspaceSlug: input.workspaceSlug,
+      requesterMiniappId: input.requesterMiniappId,
+      pluginId: listing.pluginId,
+      actionKeys: input.actionKeys,
+      capabilities: capabilities2,
+      tokenHash: brokerTokenHash(token),
+      expiresAt: new Date(Date.now() + input.ttlSeconds * 1e3).toISOString(),
+      metadata: {
+        ...input.metadata,
+        traceId,
+        provider: listing.provider,
+        rawSecretStored: false
+      }
+    });
+    options.store.recordEvent({
+      type: "marketplace.broker.grant.created",
+      traceId,
+      workspaceSlug: input.workspaceSlug,
+      pluginId: listing.pluginId,
+      actorId: input.actorId,
+      rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
+      payload: {
+        grantId: grant.id,
+        requesterMiniappId: input.requesterMiniappId,
+        actionKeys: input.actionKeys,
+        capabilities: capabilities2,
+        rawSecretReturned: false
+      }
+    });
+    reply.code(201);
+    return {
+      ok: true,
+      traceId,
+      token,
+      grant: sanitizeBrokerGrant(grant),
+      rules
+    };
+  });
+  app2.post(
+    "/api/marketplace/broker/composio/execute",
+    async (request, reply) => {
+      const input = BrokerExecuteInputSchema.parse(request.body);
+      const traceId = traceIdFrom(request);
+      const grant = options.store.getBrokerGrantByTokenHash(
+        brokerTokenHash(input.brokerToken)
+      );
+      if (!grant || grant.state !== "active") {
+        reply.code(401);
+        return { ok: false, error: "broker_grant_not_found", traceId };
+      }
+      if (brokerGrantIsExpired(grant)) {
+        reply.code(401);
+        return { ok: false, error: "broker_grant_expired", traceId };
+      }
+      if (grant.workspaceSlug !== input.workspaceSlug || grant.pluginId !== input.pluginId || grant.requesterMiniappId !== input.requesterMiniappId) {
+        reply.code(403);
+        return { ok: false, error: "broker_grant_scope_mismatch", traceId };
+      }
+      if (!grant.actionKeys.includes(input.action.type)) {
+        reply.code(403);
+        return {
+          ok: false,
+          error: "broker_action_not_granted",
+          traceId,
+          actionKey: input.action.type
+        };
+      }
+      const listing = options.store.getListing(input.pluginId);
+      const requirement = listing ? resolveActionRequirement(listing, input.action.type) : null;
+      if (!listing || listing.executionOwner !== "composio" || !requirement) {
+        reply.code(404);
+        return { ok: false, error: "broker_tool_not_registered", traceId };
+      }
+      if (!grant.capabilities.includes(requirement.capability)) {
+        reply.code(403);
+        return {
+          ok: false,
+          error: "broker_capability_not_granted",
+          traceId,
+          capability: requirement.capability
+        };
+      }
+      if (!options.store.consumeBrokerGrant(grant.id)) {
+        reply.code(401);
+        return { ok: false, error: "broker_grant_already_used", traceId };
+      }
+      const injected = await app2.inject({
+        method: "POST",
+        url: `/api/marketplace/plugins/${encodeURIComponent(input.pluginId)}/execute`,
+        headers: {
+          "x-trace-id": traceId,
+          ...options.internalAuthToken ? { authorization: `Bearer ${options.internalAuthToken}` } : {}
+        },
+        payload: {
+          workspaceSlug: input.workspaceSlug,
+          actorId: `miniapp:${input.requesterMiniappId}`,
+          capability: requirement.capability,
+          action: input.action,
+          runId: input.runId ?? null,
+          sessionId: input.sessionId ?? null
+        }
+      });
+      const result = injected.json();
+      options.store.recordEvent({
+        type: injected.statusCode >= 200 && injected.statusCode < 300 ? "marketplace.broker.execution.completed" : "marketplace.broker.execution.failed",
+        traceId,
+        workspaceSlug: input.workspaceSlug,
+        pluginId: input.pluginId,
+        actorId: input.requesterMiniappId,
+        payload: {
+          grantId: grant.id,
+          grantConsumed: true,
+          requesterMiniappId: input.requesterMiniappId,
+          actionKey: input.action.type,
+          statusCode: injected.statusCode,
+          rawSecretReturned: false
+        }
+      });
+      reply.code(injected.statusCode);
+      return {
+        ...result,
+        broker: {
+          grantId: grant.id,
+          requesterMiniappId: input.requesterMiniappId,
+          pluginId: input.pluginId,
+          actionKey: input.action.type,
+          rawSecretReturned: false
+        }
+      };
+    }
+  );
+  app2.post(
+    "/api/marketplace/v1/broker/composio/execute",
+    async (request, reply) => {
+      const authFailure = requireCrossAppBearerAuth({
+        expectedToken: options.internalAuthToken,
+        reply,
+        request
+      });
+      if (authFailure) {
+        return authFailure;
+      }
+      const input = CrossAppBrokerExecuteInputSchema.parse(request.body);
+      if (input.requesterMiniappId && input.requesterMiniappId !== input.sourceMiniappId) {
+        reply.code(400);
+        return {
+          ok: false,
+          error: "cross_app_requester_source_mismatch",
+          traceId: input.traceId
+        };
+      }
+      const crossApp = {
+        contractVersion: input.contractVersion,
+        sourceMiniappId: input.sourceMiniappId,
+        sourceId: input.sourceId,
+        eventType: input.eventType,
+        idempotencyKey: input.idempotencyKey,
+        traceId: input.traceId
+      };
+      const requesterMiniappId = input.sourceMiniappId;
+      const grantResponse = await app2.inject({
+        method: "POST",
+        url: "/api/marketplace/broker/grants",
+        headers: {
+          "x-trace-id": input.traceId,
+          ...options.internalAuthToken ? { authorization: `Bearer ${options.internalAuthToken}` } : {}
+        },
+        payload: {
+          workspaceSlug: input.workspaceSlug,
+          actorId: `miniapp:${requesterMiniappId}`,
+          requesterMiniappId,
+          pluginId: input.pluginId,
+          actionKeys: [input.action.type],
+          ttlSeconds: input.ttlSeconds,
+          metadata: {
+            ...input.metadata,
+            crossApp
+          }
+        }
+      });
+      const grantResult = grantResponse.json();
+      if (grantResponse.statusCode < 200 || grantResponse.statusCode >= 300) {
+        reply.code(grantResponse.statusCode);
+        return {
+          ...grantResult,
+          crossApp
+        };
+      }
+      const brokerToken = typeof grantResult.token === "string" ? grantResult.token : null;
+      if (!brokerToken) {
+        reply.code(502);
+        return {
+          ok: false,
+          error: "cross_app_broker_token_missing",
+          traceId: input.traceId,
+          crossApp
+        };
+      }
+      const executeResponse = await app2.inject({
+        method: "POST",
+        url: "/api/marketplace/broker/composio/execute",
+        headers: {
+          "x-trace-id": input.traceId,
+          ...options.internalAuthToken ? { authorization: `Bearer ${options.internalAuthToken}` } : {}
+        },
+        payload: {
+          workspaceSlug: input.workspaceSlug,
+          requesterMiniappId,
+          pluginId: input.pluginId,
+          brokerToken,
+          action: input.action,
+          runId: input.runId ?? null,
+          sessionId: input.sessionId ?? null
+        }
+      });
+      reply.code(executeResponse.statusCode);
+      return {
+        ...executeResponse.json(),
+        crossApp
+      };
+    }
+  );
+  app2.get("/api/marketplace/provider-health", async (request) => {
+    const traceId = traceIdFrom(request);
+    const query = external_exports.object({
+      workspaceSlug: external_exports.string().trim().min(1).optional()
+    }).parse(request.query);
+    const providers = await readProviderHealthWithReachability(
+      providerEnvironment(),
+      options.providerFetch
+    );
+    options.store.recordEvent({
+      type: "marketplace.provider.health",
+      traceId,
+      workspaceSlug: query.workspaceSlug ?? null,
+      payload: { providers }
+    });
+    return { traceId, providers };
+  });
+  app2.get("/api/marketplace/audit", async (request) => {
+    const query = AuditQuerySchema.parse(request.query);
+    return {
+      usage: query.workspaceSlug ? options.store.listUsage({
+        workspaceSlug: query.workspaceSlug,
+        provider: query.provider,
+        limit: query.limit
+      }) : [],
+      audit: options.store.listAudit(query)
+    };
+  });
+  app2.post("/api/marketplace/session-correlations", async (request, reply) => {
+    const input = SessionCorrelationInputSchema.parse(request.body);
+    const remoteSessionId = input.remoteSessionId ?? input.hermesStoredSessionId ?? input.hermesLiveSessionId;
+    if (!remoteSessionId) {
+      reply.code(400);
+      return {
+        ok: false,
+        error: "remote_session_id_required",
+        detail: "Provide remoteSessionId, hermesStoredSessionId, or hermesLiveSessionId."
+      };
+    }
+    const correlation = options.store.recordSessionCorrelation({
+      workspaceSlug: input.workspaceSlug,
+      appThreadId: input.appThreadId,
+      provider: input.provider,
+      providerInstanceId: input.providerInstanceId,
+      remoteSessionId,
+      hermesLiveSessionId: input.hermesLiveSessionId ?? null,
+      hermesStoredSessionId: input.hermesStoredSessionId ?? null,
+      profile: input.profile ?? null,
+      runtimeMode: input.runtimeMode ?? null,
+      cwd: input.cwd ?? null,
+      source: input.source,
+      eventType: input.eventType,
+      metadata: input.metadata
+    });
+    options.store.recordEvent({
+      type: "marketplace.agent.session-correlated",
+      traceId: traceIdFrom(request),
+      workspaceSlug: input.workspaceSlug,
+      pluginId: "marketplace",
+      payload: {
+        appThreadId: correlation.appThreadId,
+        providerInstanceId: correlation.providerInstanceId,
+        remoteSessionId: correlation.remoteSessionId,
+        hermesStoredSessionId: correlation.hermesStoredSessionId,
+        hermesLiveSessionId: correlation.hermesLiveSessionId
+      }
+    });
+    reply.code(201);
+    return { ok: true, correlation };
+  });
+  app2.get("/api/marketplace/session-correlations", async (request) => {
+    const query = SessionCorrelationQuerySchema.parse(request.query);
+    return {
+      correlations: options.store.listSessionCorrelations(query)
+    };
+  });
+  app2.get("/api/debug/events", async (request) => {
+    const query = AuditQuerySchema.parse(request.query);
+    return {
+      debug: {
+        enabled: options.debug ?? compatDebugEnabled(),
+        logPath: options.logPath ?? options.store.describeRuntime().logPath
+      },
+      storage: options.store.describeRuntime(),
+      events: options.store.listEvents(query)
+    };
+  });
+  app2.get("/api/debug/logs", async (request, reply) => {
+    if (!requireService(request, reply)) {
+      return { ok: false, error: "marketplace_service_bearer_required" };
+    }
+    const query = external_exports.object({
+      tail: external_exports.coerce.number().int().positive().max(500).default(100)
+    }).parse(request.query);
+    const runtime = options.store.describeRuntime();
+    if (!runtime.logPath) {
+      return { debug: { enabled: false, logPath: null }, lines: [] };
+    }
+    try {
+      const text = await readFile3(runtime.logPath, "utf8");
+      return {
+        debug: {
+          enabled: runtime.debug,
+          logPath: runtime.logPath
+        },
+        lines: text.trim().split("\n").filter(Boolean).slice(-query.tail)
+      };
+    } catch (error) {
+      reply.code(404);
+      return {
+        ok: false,
+        error: "debug_log_not_found",
+        logPath: runtime.logPath,
+        detail: error instanceof Error ? error.message : String(error)
+      };
+    }
+  });
+  app2.get("/api/marketplace/catalog/activepieces", async (request, reply) => {
+    const providers = await readProviderHealthWithReachability(
+      providerEnvironment(),
+      options.providerFetch
+    );
+    if (!providers.activepieces.baseUrl || !providers.activepieces.reachable) {
+      reply.code(409);
+      return {
+        ok: false,
+        error: "activepieces_unavailable",
+        detail: providers.activepieces.detail
+      };
+    }
+    try {
+      const catalog = await fetchActivepiecesCatalog(
+        providerEnvironment(),
+        options.providerFetch
+      );
+      return { ok: true, provider: "activepieces", ...catalog };
+    } catch (error) {
+      reply.code(502);
+      return {
+        ok: false,
+        error: "activepieces_catalog_fetch_failed",
+        detail: error instanceof Error ? error.message : String(error)
+      };
+    }
+  });
+  app2.post(
+    "/api/marketplace/catalog/activepieces/scaffold",
+    async (request, reply) => {
+      const payload = request.body ?? {};
+      const workspaceSlug = String(payload.workspaceSlug ?? "");
+      const rules = await enforceRules({
+        reply,
+        workspaceSlug,
+        operation: "activepieces.scaffold",
+        capability: "connector.admin",
+        pluginId: "activepieces-pack-generator",
+        actorId: String(payload.actorId ?? "operator"),
+        payload,
+        rulesClient: options.rulesClient
+      });
+      if ("ok" in rules && rules.ok === false) {
+        return rules;
+      }
+      const providers = await readProviderHealthWithReachability(
+        providerEnvironment(),
+        options.providerFetch
+      );
+      if (!providers.activepieces.configured) {
+        reply.code(409);
+        return {
+          ok: false,
+          error: "activepieces_unavailable",
+          detail: providers.activepieces.detail
+        };
+      }
+      return { ok: true, scaffold: null, rules };
+    }
+  );
+  app2.get("/api/marketplace/catalog/composio", async (request, reply) => {
+    const providers = await readProviderHealthWithReachability(
+      providerEnvironment(),
+      options.providerFetch
+    );
+    if (!providers.composio.configured) {
+      reply.code(409);
+      return {
+        ok: false,
+        error: "composio_unavailable",
+        detail: providers.composio.detail
+      };
+    }
+    try {
+      const catalog = await fetchComposioCatalog(
+        providerEnvironment(),
+        options.providerFetch
+      );
+      return { ok: true, provider: "composio", ...catalog };
+    } catch (error) {
+      reply.code(502);
+      return {
+        ok: false,
+        error: "composio_catalog_fetch_failed",
+        detail: error instanceof Error ? error.message : String(error)
+      };
+    }
+  });
+  app2.get("/api/marketplace/catalog/composio/tools", async (request, reply) => {
+    const query = ComposioToolsQuerySchema.parse(request.query);
+    const providers = await readProviderHealthWithReachability(
+      providerEnvironment(),
+      options.providerFetch
+    );
+    if (!providers.composio.configured) {
+      reply.code(409);
+      return {
+        ok: false,
+        error: "composio_unavailable",
+        detail: providers.composio.detail
+      };
+    }
+    try {
+      const upstreamToolkit = query.toolkit.trim();
+      const toolkit = normalizeConnectorSlug(upstreamToolkit);
+      const catalog = await fetchComposioToolkitTools({
+        toolkit: upstreamToolkit,
+        limit: query.limit,
+        env: providerEnvironment(),
+        fetchImpl: options.providerFetch
+      });
+      const tools = normalizeComposioTools(toolkit, catalog.items);
+      return {
+        ok: true,
+        provider: "composio",
+        toolkit,
+        upstreamToolkit,
+        total: catalog.total,
+        items: catalog.items,
+        tools: tools.map((tool) => ({
+          ...tool,
+          actionKey: tool.action
+        })),
+        skills: defaultSkillsForComposioToolkit(toolkit)
+      };
+    } catch (error) {
+      reply.code(502);
+      return {
+        ok: false,
+        error: "composio_toolkit_tools_fetch_failed",
+        detail: error instanceof Error ? error.message : String(error)
+      };
+    }
+  });
+  app2.post(
+    "/api/marketplace/catalog/composio/import",
+    async (request, reply) => {
+      const input = ComposioImportInputSchema.parse(request.body);
+      const traceId = traceIdFrom(request);
+      const rules = await enforceRules({
+        reply,
+        workspaceSlug: input.workspaceSlug,
+        operation: "composio.import",
+        capability: "connector.admin",
+        pluginId: "composio-bootstrap",
+        actorId: input.actorId,
+        payload: { ...request.body, traceId },
+        rulesClient: options.rulesClient
+      });
+      if ("ok" in rules && rules.ok === false) {
+        return { ...rules, traceId };
+      }
+      const providers = await readProviderHealthWithReachability(
+        providerEnvironment(),
+        options.providerFetch
+      );
+      if (!providers.composio.configured) {
+        reply.code(409);
+        return {
+          ok: false,
+          error: "composio_unavailable",
+          detail: providers.composio.detail
+        };
+      }
+      const upstreamToolkit = input.toolkit.trim();
+      const toolkit = normalizeConnectorSlug(upstreamToolkit);
+      const fetchedTools = input.tools ?? (await fetchComposioToolkitTools({
+        toolkit: upstreamToolkit,
+        env: providerEnvironment(),
+        fetchImpl: options.providerFetch
+      })).items;
+      const selectedActions = input.actionKeys?.map((action) => action.trim()).filter(Boolean) ?? [];
+      if (selectedActions.length > 0) {
+        const normalizedTools = normalizeComposioTools(toolkit, fetchedTools);
+        const knownActions = new Set(
+          normalizedTools.flatMap((tool) => [tool.action, tool.toolName])
+        );
+        const unknownActions = selectedActions.filter(
+          (action) => !knownActions.has(action)
+        );
+        if (unknownActions.length > 0) {
+          reply.code(400);
+          return {
+            ok: false,
+            error: "unknown_composio_action_keys",
+            actionKeys: unknownActions
+          };
+        }
+      }
+      const listing = buildComposioListingFromTools({
+        toolkit,
+        upstreamToolkit,
+        pluginId: input.pluginId,
+        displayName: input.displayName,
+        description: input.description,
+        tools: fetchedTools,
+        selectedActions,
+        skills: input.skills
+      });
+      options.store.upsertListing(listing);
+      let registration = null;
+      let install = null;
+      const bindings = [];
+      if (input.autoEnable) {
+        registration = options.store.registerPlugin(listing.pluginId);
+        install = options.store.install(input.workspaceSlug, listing.pluginId);
+        const capabilities2 = input.bindCapabilities ?? listing.capabilities;
+        for (const capability of capabilities2) {
+          bindings.push(
+            options.store.bindCapability({
+              workspaceSlug: input.workspaceSlug,
+              pluginId: listing.pluginId,
+              capability,
+              enabled: true
+            })
+          );
+        }
+      }
+      const actionBindings = listing.actions.map(
+        (actionKey) => options.store.bindAction({
+          workspaceSlug: input.workspaceSlug,
+          pluginId: listing.pluginId,
+          actionKey,
+          enabled: true
+        })
+      );
+      const importRecord = options.store.upsertComposioImport({
+        workspaceSlug: input.workspaceSlug,
+        pluginId: listing.pluginId,
+        toolkit,
+        importedActionKeys: listing.actions,
+        lifecycle: input.autoEnable ? "enabled" : "imported",
+        metadata: {
+          traceId,
+          source: input.tools ? "request" : "composio",
+          toolCount: fetchedTools.length,
+          providerConfigured: providers.composio.configured
+        }
+      });
+      options.store.recordEvent({
+        type: "marketplace.composio.toolkit.imported",
+        traceId,
+        workspaceSlug: input.workspaceSlug,
+        pluginId: listing.pluginId,
+        actorId: input.actorId,
+        rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
+        payload: {
+          toolkit,
+          actions: listing.actions,
+          lifecycle: importRecord.lifecycle,
+          autoEnable: input.autoEnable
+        }
+      });
+      reply.code(201);
+      return {
+        ok: true,
+        traceId,
+        listing,
+        import: importRecord,
+        registration,
+        install,
+        bindings,
+        actionBindings,
+        rules
+      };
+    }
+  );
+  app2.post("/api/runtime/plugins/:pluginId/execute", async (request, reply) => {
+    reply.code(501);
+    return {
+      ok: false,
+      error: "runtime_execute_adapter_not_wired",
+      detail: "Use /api/marketplace/plugins/:pluginId/execute in the standalone candidate. App runtime adapter wiring is pending."
+    };
+  });
+  return app2;
+}
+
+// src/config.ts
+import path7 from "node:path";
+function numberFromEnv(value, fallback) {
+  if (!value?.trim()) {
+    return fallback;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+function loadConfig(env = process.env, options = {}) {
+  const productWorkspaceDir = readCompatEnv(env, "PRODUCT_WORKSPACE_DIR", options.warn) || env.PRODUCT_WORKSPACE_DIR?.trim();
+  const dataDir = env.MARKETPLACE_DATA_DIR?.trim() || (productWorkspaceDir ? path7.join(productWorkspaceDir, "data") : void 0) || path7.join(
+    resolveDefaultStateRoot({
+      homeDir: options.homeDir,
+      migrate: options.migrateLegacyStateDir === true,
+      warn: options.warn
+    }).root,
+    "data"
+  );
+  const internalAuthToken = env.MARKETPLACE_INTERNAL_AUTH_TOKEN?.trim() || readCompatEnv(env, "MARKETPLACE_INTERNAL_AUTH_TOKEN", options.warn);
+  const dbPath = env.MARKETPLACE_DATABASE_PATH?.trim() || path7.join(dataDir, "marketplace.sqlite");
+  return {
+    host: env.MARKETPLACE_HOST?.trim() || "127.0.0.1",
+    port: numberFromEnv(env.MARKETPLACE_PORT, 0),
+    dbPath,
+    ...env.MARKETPLACE_HANDOFF_ENCRYPTION_KEY?.trim() ? { handoffEncryptionKey: env.MARKETPLACE_HANDOFF_ENCRYPTION_KEY.trim() } : {},
+    settingsPath: env.MARKETPLACE_SETTINGS_PATH?.trim() || path7.join(path7.dirname(dbPath), "provider-settings.json"),
+    secretsPath: env.MARKETPLACE_SECRETS_PATH?.trim() || path7.join(path7.dirname(dbPath), "provider-secrets.json"),
+    ...internalAuthToken ? { internalAuthToken } : {},
+    ...env.RULES_BASE_URL?.trim() ? {
+      rules: {
+        baseUrl: env.RULES_BASE_URL.trim(),
+        ...env.RULES_INTERNAL_AUTH_TOKEN?.trim() ? { internalAuthToken: env.RULES_INTERNAL_AUTH_TOKEN.trim() } : {},
+        ...env.RULES_COMPANY_ID?.trim() ? { companyId: env.RULES_COMPANY_ID.trim() } : {}
+      }
+    } : {}
+  };
+}
+
+// src/rules-client.ts
+var OPERATOR_CONFIRMED_CONNECTOR_OPERATIONS = /* @__PURE__ */ new Set([
+  "install",
+  "uninstall",
+  "register",
+  "unregister",
+  "composio.connect",
+  "composio.import",
+  "connector.connection.register",
+  "capability.bind",
+  "action.bind",
+  "hub.mcp.create",
+  "hub.mcp.update",
+  "hub.mcp.delete",
+  "hub.lifecycle.install",
+  "hub.lifecycle.enable",
+  "hub.lifecycle.disable",
+  "hub.lifecycle.reload",
+  "hub.lifecycle.uninstall"
+]);
+var AGENT_ENABLED_CONNECTOR_CAPABILITIES = /* @__PURE__ */ new Set([
+  "connector.observe",
+  "connector.dispatch"
+]);
+function roleForActor(actorId) {
+  const normalized2 = actorId.trim().toLowerCase();
+  return normalized2 === "agent" || isAcceptedId("tealbrick-agent", normalized2) || normalized2.startsWith("agent-") || normalized2.startsWith("agent:") ? "agent" : "operator";
+}
+function isMissingPolicyDenial(reason) {
+  return typeof reason === "string" && reason.includes("no live ruleset matched this request");
+}
+function failedClosedDecision(reason) {
+  return {
+    effect: "deny",
+    reason
+  };
+}
+function isAgentGrantPolicyPath(input) {
+  const contractVersion = input.payload.contractVersion;
+  return input.operation === "execute" && (typeof input.payload.agentGrantId === "string" || isAcceptedId("tealbrick.marketplace.agent-connector-grant.v1", contractVersion) || typeof contractVersion === "string" && contractVersion.startsWith("tealbrick.marketplace.operator-handoff.v1."));
+}
+function makeRulesClient(config2) {
+  const rules = config2.rules;
+  if (!rules) {
+    return void 0;
+  }
+  return async (input) => {
+    try {
+      const companyId = rules.companyId ?? input.workspaceSlug;
+      const actorRole = roleForActor(input.actorId);
+      const response = await fetch(
+        new URL("/api/rules/gateway/evaluate", rules.baseUrl),
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            ...rules.internalAuthToken ? { authorization: `Bearer ${rules.internalAuthToken}` } : {}
+          },
+          body: JSON.stringify({
+            // Rules only dispatches the legacy method today; flip once it
+            // accepts "tealbrick.rules.evaluate" (see legacy-ids.ts).
+            method: LEGACY_IDS["tealbrick.rules.evaluate"],
+            params: {
+              companyId,
+              ruleKey: "marketplace.plugin",
+              operation: input.operation,
+              actor: {
+                kind: actorRole,
+                id: input.actorId,
+                roles: [actorRole],
+                companyId
+              },
+              target: {
+                kind: "plugin",
+                id: input.pluginId,
+                pluginId: input.pluginId,
+                capability: input.capability,
+                companyId
+              },
+              payload: {
+                ...input.payload,
+                capability: input.capability,
+                pluginId: input.pluginId
+              },
+              runtimeContext: {
+                surface: "capabilities.plugins",
+                lane: actorRole,
+                session: {
+                  sessionKey: `marketplace:${input.workspaceSlug}`
+                }
+              }
+            }
+          })
+        }
+      );
+      const parsed = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        return failedClosedDecision(
+          `Rules request failed closed with HTTP ${response.status}.`
+        );
+      }
+      const effect = parsed.allowed === true ? "allow" : parsed.allowed === false ? "deny" : parsed.effect;
+      if (effect !== "allow" && effect !== "deny" && effect !== "review") {
+        return failedClosedDecision(
+          "Rules response was invalid; failed closed."
+        );
+      }
+      if (effect === "deny" && input.actorId === "operator" && input.capability === "connector.admin" && OPERATOR_CONFIRMED_CONNECTOR_OPERATIONS.has(input.operation) && isMissingPolicyDenial(parsed.reason)) {
+        return {
+          effect: "allow",
+          decisionId: `operator-confirmed:${input.operation}:${input.pluginId}`,
+          reason: "Operator-confirmed connector lifecycle action; no explicit Rules policy matched."
+        };
+      }
+      if (effect === "deny" && actorRole === "agent" && input.operation === "execute" && AGENT_ENABLED_CONNECTOR_CAPABILITIES.has(input.capability) && !isAgentGrantPolicyPath(input) && isMissingPolicyDenial(parsed.reason)) {
+        return {
+          effect: "allow",
+          decisionId: `operator-enabled:execute:${input.pluginId}`,
+          reason: "Operator-enabled connector action and capability binding remain authoritative when no explicit Rules policy matched."
+        };
+      }
+      return {
+        effect,
+        ...typeof parsed.decisionId === "string" ? { decisionId: parsed.decisionId } : typeof parsed.id === "string" ? { decisionId: parsed.id } : typeof parsed.traceId === "string" ? { decisionId: parsed.traceId } : {},
+        ...typeof parsed.reason === "string" ? { reason: parsed.reason } : {}
+      };
+    } catch (error) {
+      return failedClosedDecision(
+        error instanceof Error ? `Rules request failed closed: ${error.message}` : "Rules request failed closed."
+      );
+    }
+  };
+}
+
 // src/index.ts
-var config = loadConfig();
+var config = loadConfig(process.env, { migrateLegacyStateDir: true });
 var store = new SqliteMarketplaceStore(config.dbPath, {
   handoffEncryptionKey: config.handoffEncryptionKey
 });
@@ -58516,9 +60959,9 @@ var readyPayload = {
   pluginId: "marketplace",
   sidecarId: "marketplace-program"
 };
-var runtimeFilePath = process.env.DOPPELGANGER_RUNTIME_FILE?.trim();
+var runtimeFilePath = readCompatEnv(process.env, "RUNTIME_FILE");
 if (runtimeFilePath) {
-  await mkdir2(path7.dirname(runtimeFilePath), { recursive: true });
+  await mkdir2(path8.dirname(runtimeFilePath), { recursive: true });
   await writeFile2(runtimeFilePath, `${JSON.stringify(readyPayload)}
 `);
 }

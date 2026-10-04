@@ -1,14 +1,15 @@
-# Marketplace standalone 0.1.7 image
+# Marketplace standalone 0.1.8 image
 
-This bundle is the public Marketplace 0.1.7 release line and supersedes
-0.1.6 with the customer-ready UI and Teal Brick branding. The release image
+This bundle is the public Marketplace 0.1.8 release line and supersedes
+0.1.7 with operator custom MCP connectors, the agent action catalog, and
+Teal Brick identifiers. The release image
 contains the Fastify Program, the built browser application, the tracked
 entrypoint, and no provider credentials, operator sessions, tenant data, or
 runtime database.
 
-Source snapshot: `422c0de694003bfee63de678598115a1d39a3071`
-Source archive SHA256: `b122da75d35821c3f4c57bd3f96ce79f2e7ae600d19cefe7734b87dbbcb2df0f`
-Image: `ghcr.io/tealbrick/marketplace:0.1.7`
+Source snapshot: `2affb91eae6234facb438164f3bfd79d81b3552a`
+Source archive SHA256: `f7d851d50fe930fba7f06db22e410d4f23c4fb5a14c208848107e086804b519a`
+Image: `ghcr.io/tealbrick/marketplace:0.1.8`
 
 ## Runtime contract
 
@@ -26,13 +27,39 @@ Image: `ghcr.io/tealbrick/marketplace:0.1.7`
   into the image or returned to browser code.
 
 The source-backed Railway path uses the fixed public release branch
-`release-marketplace-v0.1.7` (slash-free so the Railway template editor
+`release-marketplace-v0.1.8` (slash-free so the Railway template editor
 accepts it); its exact tag target, branch ruleset, and image
 digest are recorded in the successor receipt. Set the service root directory
 to `release/railway`, keep the Dockerfile entrypoint, and use the relay
 contract in `deploy/railway/recipe.json` and `deploy/railway/railway-blueprint.json`.
 GHCR is optional for the source-build path; no template ID or publication is
 implied by these files.
+
+## v0.1.8 connectors and action catalog disposition
+
+This successor merges Tealbrick/marketplace#3 (operator custom MCP
+connectors: remote HTTPS streamable-http/SSE only, outbound URL policy with
+private and metadata addresses blocked and DNS re-checked per connection,
+secret headers encrypted with AES-256-GCM in a new `connector_secret` table,
+workspace-owned listings via a nullable `marketplace_listing.workspace_slug`
+column added by an idempotent migration, Rules-gated admin and execution),
+Tealbrick/marketplace#2 (published agent action catalog; grants, consents and
+runtime resolve against it), and Tealbrick/marketplace#5 (Tealbrick wire
+identifiers accepted alongside legacy ids; vendored UI SDK renamed to
+`.sdk/tealbrick-ui` with a compatibility symlink).
+
+Behaviour changes: connector secret writes fail closed without
+`MARKETPLACE_HANDOFF_ENCRYPTION_KEY`; custom connector admin and execution
+fail closed without Rules; grant requests require an installed, connected and
+bound connector; dispatch and admin consents require Portal handoff v1.2
+(observe consents remain v1.1-compatible). `MARKETPLACE_MCP_ALLOWED_ORIGINS`
+is for fixtures only and stays unset in production. The schema change is
+additive, so rollback to 0.1.7 keeps working with the same handoff key; the
+new column and table are ignored by 0.1.7.
+
+Local verification at the source snapshot: 164 Program tests, 15 web tests,
+17 Playwright e2e, 4 handoff e2e, TypeScript typecheck, production miniapp
+build, and bundled Program syntax check.
 
 ## v0.1.7 customer UI disposition
 
