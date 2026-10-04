@@ -4,7 +4,9 @@ import { isIP } from "node:net";
 /**
  * Outbound URL policy for operator-configured remote MCP servers.
  *
- * - `https:` only, no userinfo, no fragment.
+ * - `https:` only, no userinfo, no fragment, no query string (query strings
+ *   often carry API keys and the URL is stored in the listing manifest; keys
+ *   belong in secret headers).
  * - Hostnames `localhost`, `*.localhost`, `*.local`, `*.internal` are refused.
  * - IP literals and every DNS answer must be public: loopback, RFC1918,
  *   link-local (incl. cloud metadata 169.254.169.254), ULA fc00::/7,
@@ -20,6 +22,7 @@ export type McpUrlPolicyReason =
   | "scheme_not_https"
   | "userinfo_not_allowed"
   | "fragment_not_allowed"
+  | "query_not_allowed"
   | "hostname_not_allowed"
   | "address_not_allowed"
   | "dns_lookup_failed";
@@ -169,6 +172,7 @@ export function checkMcpUrlSyntax(value: string, env: Env = process.env): McpUrl
   if (url.protocol !== "https:") throw new McpUrlPolicyError("scheme_not_https");
   if (url.username || url.password) throw new McpUrlPolicyError("userinfo_not_allowed");
   if (url.hash) throw new McpUrlPolicyError("fragment_not_allowed");
+  if (url.search) throw new McpUrlPolicyError("query_not_allowed");
   const hostname = url.hostname.replace(/^\[|\]$/gu, "");
   if (isIP(hostname)) {
     if (isForbiddenMcpAddress(hostname)) throw new McpUrlPolicyError("address_not_allowed");

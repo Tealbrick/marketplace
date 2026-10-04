@@ -35,6 +35,7 @@ describe("MCP URL policy", () => {
     ["ftp://mcp.example.com/", "scheme_not_https"],
     ["https://user:pass@mcp.example.com/", "userinfo_not_allowed"],
     ["https://mcp.example.com/mcp#frag", "fragment_not_allowed"],
+    ["https://mcp.example.com/mcp?api_key=secret", "query_not_allowed"],
     ["https://localhost/mcp", "hostname_not_allowed"],
     ["https://api.localhost/mcp", "hostname_not_allowed"],
     ["https://printer.local/mcp", "hostname_not_allowed"],

@@ -150,6 +150,7 @@ describe("custom MCP connector routes", () => {
       ["https://169.254.169.254/latest", "address_not_allowed"],
       ["https://localhost/mcp", "hostname_not_allowed"],
       ["https://user:pw@mcp.example.com/", "userinfo_not_allowed"],
+      ["https://mcp.example.com/mcp?token=abc", "query_not_allowed"],
     ]) {
       const refused = await call("POST", "/api/marketplace/connectors/custom", a, createBody(url!));
       expect(refused.statusCode).toBe(400);

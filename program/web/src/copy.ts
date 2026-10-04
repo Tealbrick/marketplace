@@ -114,7 +114,7 @@ export function errorCopy(error: Error): ErrorCopy {
     case "custom_mcp_transport_not_allowed":
       return { title: "Local command servers aren't supported here", detail: "Add an MCP server by its https:// address. Servers that run as a local command (stdio) can't be added from the browser.", reference };
     case "custom_mcp_url_not_allowed":
-      return { title: "That server address isn't allowed", detail: "Use an https:// address on the public internet or your Tailscale network (*.ts.net). Local, private-network, and cloud metadata addresses are blocked.", reference };
+      return { title: "That server address isn't allowed", detail: "Use an https:// address on the public internet or your Tailscale network (*.ts.net). Local, private-network, and cloud metadata addresses are blocked. Put API keys in a secret header, not in the address.", reference };
     case "custom_mcp_header_invalid":
       return { title: "A header isn't valid", detail: "Header names can use letters, numbers, and dashes, and values can't contain line breaks. Headers such as Host or Content-Type are set by Marketplace and can't be changed.", reference };
     case "custom_mcp_header_conflict":
