@@ -14,6 +14,9 @@ Image: `ghcr.io/tealbrick/marketplace:0.1.3`
 
 * Container port: `5314`; health: `GET /healthz`.
 * Persistent state: `/data/state`; optional debug logs: `/data/logs`.
+* Railway source builds must set `RAILWAY_RUN_UID=0`; Railway volumes are
+  root-mounted and the tracked entrypoint performs the bounded ownership
+  bootstrap before dropping to uid/gid `1000`.
 * Runtime user: uid/gid `1000`; the entrypoint rejects unsafe volume paths and
   does not recursively traverse or re-own mounted contents.
 * Private routes require an operator session, a scoped internal bearer, or the
@@ -21,6 +24,12 @@ Image: `ghcr.io/tealbrick/marketplace:0.1.3`
   the only unauthenticated liveness surface.
 * Provider, Rules, and Portal values are injected at runtime and never baked
   into the image or returned to browser code.
+
+The source-backed Railway path uses the public tag and tracked bundle: set the
+service root directory to `release/railway`, keep the Dockerfile entrypoint,
+and use the relay contract in `deploy/railway/recipe.json` and
+`deploy/railway/railway-blueprint.json`. GHCR is optional for this path; no
+template ID or publication is implied by these files.
 
 ## Required server configuration
 

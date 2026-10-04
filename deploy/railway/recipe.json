@@ -1,0 +1,243 @@
+{
+  "schemaVersion": 1,
+  "id": "tealbrick-marketplace-source",
+  "version": "0.1.3",
+  "status": "candidate-for-portal-template",
+  "distribution": "public-source",
+  "source": {
+    "repository": "https://github.com/Tealbrick/marketplace",
+    "ref": "v0.1.3",
+    "commit": "28552dcf4917c8d3bb449b13473b8645c780e9a4",
+    "sourceUrl": "https://github.com/Tealbrick/marketplace/tree/v0.1.3",
+    "rootDirectory": "release/railway",
+    "mutableRefsForbidden": true,
+    "portalMustResolveAndRecordCommit": true,
+    "providerSemanticsGate": "Portal must verify that the Railway GitHub source/template configuration can deploy this exact tag or resolved commit. If it only supports a mutable branch, stop; do not substitute main."
+  },
+  "sourceBuild": {
+    "mode": "railway-build-from-public-git-source",
+    "buildContext": "release/railway",
+    "dockerfilePath": "Dockerfile",
+    "startCommand": null,
+    "startCommandPolicy": "Keep the tracked image entrypoint; never launch program/src/index.ts directly.",
+    "artifactMode": "tracked-release-bundle",
+    "privateRegistryRequired": false,
+    "ghcrRequired": false,
+    "buildInputs": [
+      "Dockerfile",
+      "entrypoint.mjs",
+      "dist/marketplace-program.mjs",
+      "web-dist/**",
+      "RELEASE.md",
+      "SOURCE-SHA256",
+      "build-input-manifest.sha256",
+      "bundle-manifest.sha256"
+    ],
+    "verification": {
+      "sourceSnapshotCommit": "4bb86a70621171cc546c2639a1c9675ed53a353e",
+      "sourceArchiveSha256": "9f14b79272625a4ae66aab1582683163a7765d6b44ed3173cb9a27a9b0910fa9",
+      "requiredChecks": [
+        "shasum -a 256 -c release/railway/build-input-manifest.sha256",
+        "shasum -a 256 -c release/railway/bundle-manifest.sha256",
+        "git archive --format=tar 4bb86a70621171cc546c2639a1c9675ed53a353e | shasum -a 256"
+      ],
+      "runtimeSourceIdentity": "Record the Railway-resolved commit and deployment ID; Railway health alone is not source or acceptance proof."
+    }
+  },
+  "service": {
+    "name": "Marketplace",
+    "publicNetworking": true,
+    "publicTargetPort": 5314,
+    "port": 5314,
+    "replicas": 1,
+    "volume": {
+      "mountPath": "/data",
+      "contents": [
+        "/data/state/marketplace.sqlite",
+        "/data/state/provider-settings.json",
+        "/data/state/provider-secrets.json",
+        "/data/logs/marketplace-debug.jsonl"
+      ],
+      "ownership": {
+        "platformMountOwner": "root",
+        "requiredPlatformVariable": "RAILWAY_RUN_UID=0",
+        "bootstrap": "entrypoint.mjs verifies /data without following symlinks, prepares only /data/state and /data/logs, then drops to uid/gid 1000",
+        "runtimeUid": 1000,
+        "runtimeGid": 1000,
+        "recursiveVolumeReownership": false
+      }
+    },
+    "health": {
+      "path": "/healthz",
+      "authenticated": false,
+      "meaning": "Program liveness only"
+    },
+    "readiness": {
+      "path": "/api/portal/readiness",
+      "authenticated": true,
+      "header": "x-tealbrick-instance-proof",
+      "meaning": "Portal identity and scoped Rules credential readiness; not provider execution proof"
+    }
+  },
+  "requiredRuntimeEnv": [
+    "NODE_ENV=production",
+    "RAILWAY_RUN_UID=0",
+    "MARKETPLACE_HOST=0.0.0.0",
+    "MARKETPLACE_PORT=5314",
+    "MARKETPLACE_DATA_DIR=/data/state",
+    "MARKETPLACE_INTERNAL_AUTH_TOKEN",
+    "MARKETPLACE_OPERATOR_ACCESS_TOKEN",
+    "MARKETPLACE_OPERATOR_ID",
+    "MARKETPLACE_ORGANIZATION_ID",
+    "MARKETPLACE_ALLOWED_ORIGINS",
+    "MARKETPLACE_PUBLIC_ORIGIN",
+    "MARKETPLACE_HANDOFF_ENCRYPTION_KEY",
+    "MARKETPLACE_PORTAL_ISSUER_URL",
+    "MARKETPLACE_PORTAL_ATTACHMENT_AUDIENCE",
+    "MARKETPLACE_PORTAL_INSTANCE_PROOF",
+    "MARKETPLACE_PORTAL_DEPLOYMENT_ID",
+    "MARKETPLACE_PORTAL_ORG_ID",
+    "MARKETPLACE_PORTAL_WORKSPACE_ID",
+    "RULES_BASE_URL",
+    "RULES_INTERNAL_AUTH_TOKEN",
+    "RULES_COMPANY_ID"
+  ],
+  "optionalRuntimeEnv": [
+    "MARKETPLACE_DATABASE_PATH",
+    "MARKETPLACE_SETTINGS_PATH",
+    "MARKETPLACE_SECRETS_PATH",
+    "MARKETPLACE_OPERATOR_SESSION_TTL_SECONDS",
+    "DOPPELGANGER_DEBUG",
+    "MARKETPLACE_DEBUG",
+    "MARKETPLACE_PORTAL_INSTANCE_TOKEN",
+    "MARKETPLACE_PORTAL_URL",
+    "MARKETPLACE_PORTAL_ORIGIN",
+    "COMPOSIO_API_KEY",
+    "COMPOSIO_BASE_URL",
+    "COMPOSIO_CONNECT_BASE_URL",
+    "COMPOSIO_EXECUTE_BASE_URL",
+    "COMPOSIO_DEFAULT_USER_ID",
+    "COMPOSIO_DEFAULT_CONNECTED_ACCOUNT_ID",
+    "NANGO_SECRET_KEY",
+    "NANGO_BASE_URL",
+    "NANGO_PUBLIC_SERVER_URL",
+    "NANGO_PUBLIC_CONNECT_URL",
+    "ACTIVEPIECES_BASE_URL",
+    "ACTIVEPIECES_API_KEY",
+    "ACTIVEPIECES_SHARED_SECRET",
+    "DOPPELGANGER_MCP_CONFIG_PATH"
+  ],
+  "secretHandling": {
+    "serverOnly": true,
+    "neverExposeToBrowser": [
+      "MARKETPLACE_INTERNAL_AUTH_TOKEN",
+      "MARKETPLACE_OPERATOR_ACCESS_TOKEN",
+      "MARKETPLACE_HANDOFF_ENCRYPTION_KEY",
+      "MARKETPLACE_PORTAL_INSTANCE_PROOF",
+      "RULES_INTERNAL_AUTH_TOKEN",
+      "COMPOSIO_API_KEY",
+      "NANGO_SECRET_KEY",
+      "ACTIVEPIECES_API_KEY"
+    ],
+    "handoffKey": "Generate a unique 32-byte hex or base64url value in the trusted deployment secret store; reuse it across retries, restarts, upgrades and restores; never put it in SQLite backups or the source artifact."
+  },
+  "claimsAndScopes": {
+    "tenantAuthority": "MARKETPLACE_ORGANIZATION_ID is the server-bound product tenant; browser workspace, actor and agent labels are not authority.",
+    "portalRuntimeLease": {
+      "issuerEnv": "MARKETPLACE_PORTAL_ISSUER_URL",
+      "audience": "marketplace",
+      "type": "attachment",
+      "purpose": "marketplace-runtime",
+      "requiredBinding": [
+        "portalOrgId",
+        "productTenantId",
+        "workspaceId",
+        "deploymentId",
+        "agentId",
+        "consentId",
+        "leaseId",
+        "capabilities",
+        "expiresAt"
+      ],
+      "verification": "ES256 signature against Portal /api/jwks plus live Portal introspection/revocation checks"
+    },
+    "rulesEvaluation": {
+      "method": "doppelganger.rules.evaluate",
+      "ruleKey": "marketplace.plugin",
+      "companyId": "RULES_COMPANY_ID",
+      "credential": "tenant-scoped evaluation-only RULES_INTERNAL_AUTH_TOKEN"
+    }
+  },
+  "typedDependencies": [
+    {
+      "id": "rules-approvals",
+      "kind": "remote-policy-contract",
+      "requiredFor": ["governed install/configure/connect/enable", "governed execution", "Portal readiness"],
+      "failurePolicy": "fail-closed"
+    },
+    {
+      "id": "portal",
+      "kind": "remote-consent-and-runtime-lease-contract",
+      "requiredFor": ["operator handoff", "agent grant", "agent runtime execution"],
+      "failurePolicy": "deny or unavailable; no local substitute"
+    },
+    {
+      "id": "composio",
+      "kind": "optional-provider-adapter",
+      "requiredFor": ["provider catalog", "connected-account OAuth", "provider tool execution"],
+      "failurePolicy": "provider surface remains unavailable"
+    }
+  ],
+  "providerSetup": {
+    "scope": "Optional, consented provider canary only; no provider account or credential is bundled.",
+    "supportedCanary": {
+      "pluginId": "github-composio",
+      "actionKey": "github.list.repositories",
+      "toolName": "GITHUB_LIST_REPOSITORIES",
+      "capability": "connector.observe",
+      "resourceKind": "github.connected-account",
+      "resourceRef": "account:<connected_account_id>",
+      "allowedArguments": ["page", "sort", "type", "since", "before", "per_page", "direction", "visibility", "affiliation"]
+    },
+    "minimumNormallyConsentedSetup": [
+      "Configure a dedicated or community-scoped Composio GitHub connected account server-side; do not borrow a personal/admin token.",
+      "Install and enable github-composio for the bound product tenant and bind connector.observe to github.list.repositories.",
+      "Request Portal consent for the exact agent, deployment, connected account and account:<connected_account_id> resource.",
+      "Execute only the published repository-list action and record the provider response, Marketplace audit event and Portal consent/lease identifiers.",
+      "Revoke or expire the Portal consent and verify the same action is denied after revocation."
+    ],
+    "notProvenByThisManifest": ["provider OAuth authorization", "live GitHub response", "real agent connection/reconnect", "human UAT"]
+  },
+  "migrationAndRecovery": {
+    "database": "SQLite at /data/state/marketplace.sqlite; WAL and foreign keys are enabled; migrations are owned by program/src/store.ts.",
+    "migrationBehavior": [
+      "Create missing Marketplace tables and indexes on startup.",
+      "Add runtime_sources_json idempotently when upgrading older Marketplace databases.",
+      "Decrypt and validate existing Portal handoff rows before any legacy plaintext re-encryption transaction.",
+      "Missing or wrong MARKETPLACE_HANDOFF_ENCRYPTION_KEY fails startup without rewriting the restored database."
+    ],
+    "backup": "Use a consistent SQLite backup after graceful stop or an approved online-backup procedure; back up provider settings and secrets separately with protected modes; never include the handoff key.",
+    "restore": "Restore database/settings/secrets into an isolated service, inject the exact same handoff key before startup, then run health, protected auth, tenant isolation, Rules, Portal and idempotency checks before cutover.",
+    "rollback": "Rollback only to a pinned Marketplace source/image revision after schema and encrypted-row compatibility is checked; preserve the same handoff key and restore backup together when compatibility is uncertain.",
+    "keyRotation": "Not a retry/restart/rollback operation; perform only as an explicit migration with a tested re-encryption and recovery plan."
+  },
+  "templateOwnership": {
+    "owner": "Portal",
+    "templateId": null,
+    "templateUrl": null,
+    "publicationClaim": false,
+    "requiredPortalEvidence": [
+      "Railway-resolved source commit equals the pinned source commit.",
+      "Railway source/template semantics preserve the pinned source identity rather than silently following a mutable branch.",
+      "Customer project builds the public source without GHCR or private registry credentials.",
+      "Persistent volume ownership/bootstrap, health, protected readiness and exact source identity are recorded.",
+      "Portal-owned deployment binding and consented provider read-canary are separately accepted."
+    ]
+  },
+  "limitations": [
+    "This manifest does not create or publish a Railway template.",
+    "GHCR is optional and is not an onboarding or source-build dependency.",
+    "A public source build, health response or synthetic smoke does not prove Portal deployment, provider authorization, end-to-end execution or human UAT.",
+    "Nango, Activepieces and MCP remain declared adapter boundaries; this recipe does not add or broaden those providers."
+  ]
+}

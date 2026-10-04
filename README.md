@@ -80,6 +80,10 @@ health response is not proof of provider authorization or end-to-end tenant
 acceptance. See `release/railway/RELEASE.md` for the required configuration,
 storage, rollback, and verification boundary.
 
+For the source-backed Railway path, use the pinned public-source contract under
+`deploy/railway/`. Portal owns the actual Railway template and customer-project
+writes; GHCR is optional and is not required for a source build.
+
 ## License
 
 Original source and assets are MIT-licensed except where `NOTICE` identifies a

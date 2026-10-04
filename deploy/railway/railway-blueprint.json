@@ -1,0 +1,104 @@
+{
+  "format": "tealbrick.railway-blueprint.v1",
+  "providerImportFormat": false,
+  "status": "authored-not-created-or-published-on-railway",
+  "name": "Teal Brick Marketplace — public source",
+  "architecture": "linux/amd64",
+  "projectPolicy": "One Marketplace service and one private persistent volume per customer workspace environment.",
+  "source": {
+    "repository": "https://github.com/Tealbrick/marketplace",
+    "ref": "v0.1.3",
+    "commit": "28552dcf4917c8d3bb449b13473b8645c780e9a4",
+    "rootDirectory": "release/railway",
+    "build": "Railway builds the Dockerfile from the public repository; no GHCR pull is required.",
+    "sourcePinGate": "Portal must verify exact tag/commit semantics in Railway before template creation; a mutable branch is not an acceptable substitute."
+  },
+  "requiredInputs": {
+    "MARKETPLACE_INTERNAL_AUTH_TOKEN": "Portal-generated server-only service bearer; never a browser or agent credential.",
+    "MARKETPLACE_OPERATOR_ACCESS_TOKEN": "Operator recovery/login secret held by the trusted deployment owner.",
+    "MARKETPLACE_OPERATOR_ID": "Server-issued operator identity; never derived from a browser label.",
+    "MARKETPLACE_ORGANIZATION_ID": "Server-bound Marketplace product tenant/workspace identity.",
+    "MARKETPLACE_ALLOWED_ORIGINS": "Exact HTTPS Marketplace origin; wildcard is forbidden.",
+    "MARKETPLACE_PUBLIC_ORIGIN": "Exact HTTPS origin used to construct provider OAuth callbacks.",
+    "MARKETPLACE_HANDOFF_ENCRYPTION_KEY": "Unique per-instance 32-byte hex or base64url secret, external to SQLite backups.",
+    "MARKETPLACE_PORTAL_ISSUER_URL": "Exact trusted Portal HTTPS origin.",
+    "MARKETPLACE_PORTAL_ATTACHMENT_AUDIENCE": "Portal attachment audience; use marketplace for the current contract.",
+    "MARKETPLACE_PORTAL_INSTANCE_PROOF": "Portal-issued per-instance proof used by readiness and handoff calls.",
+    "MARKETPLACE_PORTAL_DEPLOYMENT_ID": "Server-issued Portal deployment identity.",
+    "MARKETPLACE_PORTAL_ORG_ID": "Server-bound Portal organization identity.",
+    "MARKETPLACE_PORTAL_WORKSPACE_ID": "Server-bound Portal workspace identity; must match the product tenant.",
+    "RULES_BASE_URL": "Trusted Rules service origin.",
+    "RULES_INTERNAL_AUTH_TOKEN": "Tenant-scoped evaluation-only Rules credential.",
+    "RULES_COMPANY_ID": "Rules company/workspace identity; must match the Marketplace tenant scope."
+  },
+  "services": [
+    {
+      "name": "Marketplace",
+      "source": {
+        "repository": "https://github.com/Tealbrick/marketplace",
+        "ref": "v0.1.3",
+        "commit": "28552dcf4917c8d3bb449b13473b8645c780e9a4",
+        "rootDirectory": "release/railway"
+      },
+      "publicNetworking": true,
+      "publicTargetPort": 5314,
+      "tcpProxy": false,
+      "port": 5314,
+      "replicas": 1,
+      "volume": {
+        "name": "marketplace-data",
+        "mountPath": "/data"
+      },
+      "startCommand": null,
+      "startCommandPolicy": "Keep the Dockerfile ENTRYPOINT; do not bypass the volume ownership checks or launch the development source entrypoint.",
+      "healthcheckPath": "/healthz",
+      "healthcheckTimeout": 300,
+      "variables": {
+        "NODE_ENV": "production",
+        "RAILWAY_RUN_UID": "0",
+        "MARKETPLACE_HOST": "0.0.0.0",
+        "MARKETPLACE_PORT": "5314",
+        "MARKETPLACE_DATA_DIR": "/data/state",
+        "MARKETPLACE_INTERNAL_AUTH_TOKEN": "<Portal-injected-secret>",
+        "MARKETPLACE_OPERATOR_ACCESS_TOKEN": "<trusted-operator-injected-secret>",
+        "MARKETPLACE_OPERATOR_ID": "<Portal-supplied-operator-id>",
+        "MARKETPLACE_ORGANIZATION_ID": "<Portal-supplied-product-tenant-id>",
+        "MARKETPLACE_ALLOWED_ORIGINS": "<Portal-supplied-https-origin>",
+        "MARKETPLACE_PUBLIC_ORIGIN": "<Portal-supplied-https-origin>",
+        "MARKETPLACE_HANDOFF_ENCRYPTION_KEY": "<Portal-injected-unique-32-byte-secret>",
+        "MARKETPLACE_PORTAL_ISSUER_URL": "<Portal-supplied-https-origin>",
+        "MARKETPLACE_PORTAL_ATTACHMENT_AUDIENCE": "marketplace",
+        "MARKETPLACE_PORTAL_INSTANCE_PROOF": "<Portal-injected-instance-proof>",
+        "MARKETPLACE_PORTAL_DEPLOYMENT_ID": "<Portal-supplied-deployment-id>",
+        "MARKETPLACE_PORTAL_ORG_ID": "<Portal-supplied-portal-org-id>",
+        "MARKETPLACE_PORTAL_WORKSPACE_ID": "<Portal-supplied-workspace-id>",
+        "RULES_BASE_URL": "<Rules-service-origin>",
+        "RULES_INTERNAL_AUTH_TOKEN": "<Portal-or-Rules-supplied-scoped-evaluation-token>",
+        "RULES_COMPANY_ID": "<Portal-supplied-rules-company-id>"
+      },
+      "optionalProviderSecretVariables": [
+        "COMPOSIO_API_KEY",
+        "NANGO_SECRET_KEY",
+        "ACTIVEPIECES_API_KEY"
+      ],
+      "forbiddenDefaults": [
+        "MARKETPLACE_ORGANIZATION_ID=default",
+        "MARKETPLACE_OPERATOR_ID=operator",
+        "MARKETPLACE_ALLOWED_ORIGINS=*",
+        "provider credentials from an operator or another workspace"
+      ]
+    }
+  ],
+  "manualBootstrapOrder": ["Marketplace source resolution", "Marketplace build", "Volume and runtime variables", "Marketplace health", "Portal readiness", "Consented provider read-canary"],
+  "continuousMonitorRequired": true,
+  "templateUrl": null,
+  "remainingGates": [
+    "Portal creates and verifies the actual Railway template",
+    "Railway source/template semantics preserve the pinned tag or resolved commit",
+    "Railway-resolved source identity and customer endpoint",
+    "Persistent volume restart/restore acceptance",
+    "Portal deployment binding and human operator acceptance",
+    "A separately authorized community-scoped GitHub repository-list canary",
+    "Provider reconnection and revocation evidence"
+  ]
+}
