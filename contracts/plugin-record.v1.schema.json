@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "doppelganger.marketplace.plugin-record.v1",
-  "title": "Doppelganger Marketplace Plugin Record v1",
+  "title": "Teal Brick Marketplace Plugin Record v1",
   "type": "object",
   "additionalProperties": false,
   "required": [

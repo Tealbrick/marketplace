@@ -1226,9 +1226,9 @@ function pluginCardForListing(input: {
       refreshedAt: new Date().toISOString(),
     },
     description: listing.description,
-    developerName: "Doppelganger",
+    developerName: "Teal Brick",
     marketplaceName:
-      listing.source === "composio" ? "Composio" : "Doppelganger",
+      listing.source === "composio" ? "Composio" : "Teal Brick",
     capabilityLabels: listing.capabilities,
     primaryAction: ready ? "configure" : installed ? "connect" : "install",
     capabilityShape: listing.kind,
@@ -1838,7 +1838,7 @@ function htmlShell() {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Doppelganger Plugins</title>
+    <title>Teal Brick Marketplace</title>
     <style>
       body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f8faf8; color: #1d2524; }
       main { max-width: 1120px; margin: 0 auto; padding: 28px; }
@@ -1865,7 +1865,7 @@ function htmlShell() {
     <main>
       <header>
         <div>
-          <h1>Doppelganger Plugins</h1>
+          <h1>Teal Brick Marketplace</h1>
           <p>Plugin catalog, credentials, provider health, capability bindings, execution ledger, Composio/MCP runtime sources, and promotion candidates.</p>
         </div>
         <div class="chips">
@@ -3854,7 +3854,7 @@ export async function buildMarketplaceApp(
           ok: false,
           title: "Session not found",
           detail:
-            "Doppelganger could not match this Composio callback to a pending plugin connection.",
+            "Teal Brick could not match this Composio callback to a pending plugin connection.",
         });
       }
       const connectedAccountId =
@@ -3922,11 +3922,11 @@ export async function buildMarketplaceApp(
       return htmlCloseout({
         ok: connected,
         title: connected
-          ? "Doppelganger plugin connected"
-          : "Doppelganger plugin connection blocked",
+          ? "Teal Brick connection complete"
+          : "Teal Brick connection blocked",
         detail: connected
-          ? "The connected account is recorded. You can close this window and return to Doppelganger."
-          : "The Composio callback did not complete successfully. Return to Doppelganger and retry the connection.",
+          ? "The connected account is recorded. You can close this window and return to Teal Brick."
+          : "The Composio callback did not complete successfully. Return to Teal Brick and retry the connection.",
       });
     },
   );

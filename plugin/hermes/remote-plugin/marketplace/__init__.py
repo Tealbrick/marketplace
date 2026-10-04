@@ -1,4 +1,4 @@
-"""Doppelganger Marketplace Hermes plugin."""
+"""Teal Brick Marketplace Hermes plugin."""
 
 from __future__ import annotations
 

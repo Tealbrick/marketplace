@@ -314,7 +314,7 @@ export function buildComposioListingFromTools(input: {
     provider: toolkit,
     description:
       input.description?.trim() ||
-      `Composio-backed ${titleCase(toolkit)} connector imported into Doppelganger Plugins.`,
+      `Composio-backed ${titleCase(toolkit)} connector imported into Teal Brick Marketplace.`,
     capabilities,
     actions,
     source: "composio",
@@ -450,7 +450,7 @@ export function buildComposioCatalogListing(input: {
     displayName: toolkit.name,
     description:
       toolkit.description ||
-      `Connect ${toolkit.name} to Doppelganger through Composio.`,
+      `Connect ${toolkit.name} to Teal Brick through Composio.`,
     tools: [],
     now: input.now,
   });
@@ -548,7 +548,7 @@ export function nativeConnectorListings(
     displayName: `${LABELS[kind]} Native Connector`,
     kind: "connector",
     provider: kind,
-    description: `Doppelganger native ${LABELS[kind]} connector candidate ported from the donor connector contract.`,
+    description: `Teal Brick native ${LABELS[kind]} connector candidate ported from the donor connector contract.`,
     capabilities: CONNECTOR_SUPPORTED_CAPABILITIES[kind],
     actions: ACTIONS_BY_KIND[kind],
     source: "native",
@@ -738,7 +738,7 @@ export function providerBackedListings(
       kind: "toolset",
       provider: "mcp",
       description:
-        "Consumes configured MCP servers and projects allowed MCP tools into governed Doppelganger plugin capabilities.",
+        "Consumes configured MCP servers and projects allowed MCP tools into governed Teal Brick plugin capabilities.",
       capabilities: ["connector.observe", "connector.dispatch"],
       actions: ["mcp.servers.list", "mcp.tools.list", "mcp.tools.call"],
       source: "mcp",

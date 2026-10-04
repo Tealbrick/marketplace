@@ -1,6 +1,6 @@
 {
   "id": "marketplace",
-  "name": "Doppelganger Plugins",
+  "name": "Teal Brick Marketplace",
   "kind": "microapp-extension",
   "status": "registered-manifest-first",
   "hostSlots": ["settingsPanels", "surfaces", "dataTransports", "sidecars"],

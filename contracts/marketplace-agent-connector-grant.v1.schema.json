@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "doppelganger.marketplace.agent-connector-grant.v1",
-  "title": "Doppelganger Marketplace Agent Connector Grant v1",
+  "title": "Teal Brick Marketplace Agent Connector Grant v1",
   "type": "object",
   "additionalProperties": false,
   "required": [

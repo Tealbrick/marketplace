@@ -1,7 +1,7 @@
 name: marketplace
 version: 0.1.0
-description: "Remote Hermes adapter for the Doppelganger Marketplace Program."
-author: Doppelganger
+description: "Remote Hermes adapter for the Teal Brick Marketplace Program."
+author: Teal Brick
 toolset: marketplace
 requires_env:
   - MARKETPLACE_BASE_URL

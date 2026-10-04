@@ -1,7 +1,7 @@
 name: marketplace
 version: 0.1.0
-description: "Agent adapter manifest for the Doppelganger Marketplace Micro-app. Connector admin, dispatch, generation, and execution are Rules-gated and fail closed when Rules is unavailable."
-author: Doppelganger
+description: "Agent adapter manifest for the Teal Brick Marketplace mini-app. Connector admin, dispatch, generation, and execution are Rules-gated and fail closed when Rules is unavailable."
+author: Teal Brick
 kind: full-on
 depends_on:
   - rules-approvals
