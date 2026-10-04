@@ -937,6 +937,26 @@ function portalSelectionForPublishedAction(input: {
   };
 }
 
+/**
+ * The exact selection shape Portal stores on a consent: observe omits
+ * `capability` (v1.1), every other capability carries it (v1.2). Portal
+ * compares runtime selections byte-for-byte, so an agent that spells observe
+ * out explicitly must still introspect against the v1.1 shape.
+ */
+function canonicalPortalSelection(
+  selection: MarketplacePortalSelection,
+): MarketplacePortalSelection {
+  const capability = selectionCapability(selection);
+  return {
+    pluginId: selection.pluginId,
+    actionKey: selection.actionKey,
+    accountId: selection.accountId,
+    resourceKind: selection.resourceKind,
+    resourceRef: selection.resourceRef,
+    ...(capability === "connector.observe" ? {} : { capability }),
+  };
+}
+
 /** Compare selections, treating an absent capability as observe. */
 function portalSelectionsEquivalent(
   left: MarketplacePortalSelection,
@@ -5751,7 +5771,7 @@ export async function buildMarketplaceApp(
       try {
         scope = await portalRuntimeScopeVerifier({
           attachmentToken,
-          selection: input.selection,
+          selection: canonicalPortalSelection(input.selection),
           requiredCapability: selectionCapability(input.selection),
         });
       } catch (error) {
