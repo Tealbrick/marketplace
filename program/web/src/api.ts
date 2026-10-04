@@ -131,3 +131,12 @@ export const executeAction = (pluginId: string, workspaceSlug: string, capabilit
 
 export const saveProviderSettings = (settings: ProviderSettings["values"] & { composioApiKey?: string }) =>
   api<ProviderSettings>("/api/settings/providers/composio", { method: "PUT", body: JSON.stringify({ settings }) });
+
+export const testProviderKey = (composioApiKey?: string) =>
+  api<{ ok: true; status: "valid"; checkedAt: string }>("/api/settings/providers/composio/test", {
+    method: "POST",
+    body: JSON.stringify(composioApiKey ? { composioApiKey } : {}),
+  });
+
+export const removeProviderKey = () =>
+  api<ProviderSettings & { removed: boolean }>("/api/settings/providers/composio/key", { method: "DELETE" });

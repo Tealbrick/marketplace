@@ -148,3 +148,30 @@ test("real health indicators and the Installed empty state", async ({ page }) =>
   await expect(modal.getByLabel("Service status")).toContainText("Not set up");
   await expect(modal.getByText("Technical details")).toBeVisible();
 });
+
+test("Composio key settings: empty state copy, bad key, save, and remove", async ({ page }) => {
+  await page.setViewportSize({ width: 1152, height: 820 });
+  await unlockMarketplace(page);
+  await page.getByRole("button", { name: "Open settings" }).last().click();
+  const modal = page.getByRole("dialog", { name: "Settings" });
+  const status = modal.getByTestId("composio-key-status");
+  await expect(status).toContainText("No API key yet");
+  await expect(modal).not.toContainText("fingerprint —");
+  await expect(modal).not.toContainText("Source: none");
+  await expect(modal.getByRole("button", { name: "Test key" })).toBeDisabled();
+
+  const keyInput = modal.getByLabel("API key", { exact: true });
+  await keyInput.fill("not a valid key");
+  await modal.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(modal.getByRole("alert")).toContainText("That API key doesn't look right");
+
+  await keyInput.fill("e2e_fixture_key_9876");
+  await modal.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(status).toContainText("API key ending in …9876");
+  await expect(status).toContainText("saved in Marketplace");
+
+  await modal.getByRole("button", { name: "Remove key" }).click();
+  await modal.getByRole("button", { name: "Confirm removal" }).click();
+  await expect(modal.getByText("API key removed.")).toBeVisible();
+  await expect(status).toContainText("No API key yet");
+});

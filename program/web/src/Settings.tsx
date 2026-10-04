@@ -2,22 +2,49 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Tabs from "@radix-ui/react-tabs";
-import { AlertTriangle, Check, Code2, Copy, LoaderCircle, LogOut, Plug, ShieldCheck, TerminalSquare, X } from "lucide-react";
+import { AlertTriangle, Check, Code2, Copy, LoaderCircle, LogOut, Plug, PlugZap, ShieldCheck, TerminalSquare, Trash2, X } from "lucide-react";
 import { Button, IconButton, Tag } from "@doppelganger/ui";
 
-import { getAgentCapabilities, getOpenApi, getProviderSettings, logoutOperator, saveProviderSettings } from "./api";
+import { getAgentCapabilities, getOpenApi, getProviderSettings, logoutOperator, removeProviderKey, saveProviderSettings, testProviderKey } from "./api";
 import type { FrontendBootstrap, OperatorSession, ProviderSettings, RulesConnectionStatus } from "./types";
 import { RULES_STATUS_COPY } from "./copy";
 import { InlineError, StatePanel, words } from "./ui";
 
+function keySourceCopy(source: string | null) {
+  if (source === "program") return "saved in Marketplace";
+  if (source === "bootstrap-environment") return "provided by your deployment";
+  return null;
+}
+
 function ProviderSettingsPanel() {
   const settings = useQuery({ queryKey: ["provider-settings"], queryFn: getProviderSettings, retry: false });
   const [draft, setDraft] = useState<ProviderSettings["values"] & { composioApiKey: string }>({ composioBaseUrl: "", composioDefaultUserId: "", composioDefaultConnectedAccountId: "", composioApiKey: "" });
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   useEffect(() => { if (settings.data) setDraft({ ...settings.data.values, composioApiKey: "" }); }, [settings.data]);
-  const mutation = useMutation({ mutationFn: () => saveProviderSettings({ ...draft, ...(draft.composioApiKey ? { composioApiKey: draft.composioApiKey } : {}) }), onSuccess: async () => { setDraft((value) => ({ ...value, composioApiKey: "" })); await settings.refetch(); } });
-  if (settings.isLoading) return <p className="muted">Loading redacted provider settings…</p>;
+  const resetFeedback = () => { setNotice(null); mutation.reset(); test.reset(); remove.reset(); };
+  const mutation = useMutation({ mutationFn: () => saveProviderSettings({ ...draft, ...(draft.composioApiKey ? { composioApiKey: draft.composioApiKey } : {}) }), onSuccess: async () => { setDraft((value) => ({ ...value, composioApiKey: "" })); setNotice("Settings saved."); await settings.refetch(); } });
+  const test = useMutation({ mutationFn: () => testProviderKey(draft.composioApiKey.trim() || undefined), onSuccess: () => setNotice(draft.composioApiKey.trim() ? "Composio accepted this key. Save to start using it." : "Composio accepted the saved key.") });
+  const remove = useMutation({ mutationFn: removeProviderKey, onSuccess: async () => { setConfirmRemove(false); setNotice("API key removed."); await settings.refetch(); } });
+  if (settings.isLoading) return <p className="muted">Loading provider settings…</p>;
   if (settings.error) return <StatePanel error={settings.error} onRetry={() => void settings.refetch()} />;
-  return <form className="settings-stack" onSubmit={(event) => { event.preventDefault(); mutation.mutate(); }}><div className="settings-intro"><div><h3>Composio provider</h3><p>Marketplace owns this provider credential. The browser can replace it but never reads it back.</p></div><Tag tone={settings.data!.status.composioApiKey.configured ? "success" : "warning"}>{settings.data!.status.composioApiKey.configured ? `Configured · …${settings.data!.status.composioApiKey.keyTail}` : "Not configured"}</Tag></div><div className="form-grid two"><label>API base URL<input type="url" value={draft.composioBaseUrl} onChange={(event) => setDraft((value) => ({ ...value, composioBaseUrl: event.target.value }))} required /></label><label>Default user ID<input value={draft.composioDefaultUserId} onChange={(event) => setDraft((value) => ({ ...value, composioDefaultUserId: event.target.value }))} required /></label></div><label>Connected account override<input value={draft.composioDefaultConnectedAccountId} onChange={(event) => setDraft((value) => ({ ...value, composioDefaultConnectedAccountId: event.target.value }))} placeholder="Optional" /></label><label>Replace API key<input type="password" autoComplete="off" value={draft.composioApiKey} onChange={(event) => setDraft((value) => ({ ...value, composioApiKey: event.target.value }))} placeholder="Leave blank to keep the current key" /></label><div className="credential-proof"><ShieldCheck size={18} /><div><strong>Secret remains server-side</strong><p>Source: {settings.data!.status.composioApiKey.source ?? "none"} · fingerprint {settings.data!.status.composioApiKey.fingerprint ?? "—"}</p></div></div>{mutation.error && <InlineError error={mutation.error} />}<div><Button tone="primary" type="submit" disabled={mutation.isPending}>{mutation.isPending ? <LoaderCircle className="spin" size={15} /> : <Check size={15} />}Save provider settings</Button></div></form>;
+  const key = settings.data!.status.composioApiKey;
+  const busy = mutation.isPending || test.isPending || remove.isPending;
+  const failure = mutation.error ?? test.error ?? remove.error;
+  return <form className="settings-stack" onSubmit={(event) => { event.preventDefault(); resetFeedback(); mutation.mutate(); }}>
+    <div className="settings-intro"><div><h3>Composio</h3><p>Connect Composio so you can install and run its connectors. Your API key is stored on the server and is never shown again after you save it.</p></div><Tag tone={key.configured ? "success" : "warning"}>{key.configured ? "Key saved" : "Not set up"}</Tag></div>
+    <div className="credential-proof" data-testid="composio-key-status"><ShieldCheck size={18} /><div>{key.configured ? <><strong>API key ending in …{key.keyTail}</strong><p>{keySourceCopy(key.source) ? `Key ${keySourceCopy(key.source)}. ` : ""}Use “Test key” to check that Composio still accepts it.</p></> : <><strong>No API key yet</strong><p>Paste your Composio API key below, then save. You can find it in your Composio dashboard under API keys.</p></>}</div></div>
+    <label>{key.configured ? "Replace API key" : "API key"}<input type="password" autoComplete="off" value={draft.composioApiKey} onChange={(event) => { resetFeedback(); setDraft((value) => ({ ...value, composioApiKey: event.target.value })); }} placeholder={key.configured ? "Leave blank to keep the current key" : "Paste your Composio API key"} /></label>
+    <details className="technical-details"><summary>Advanced</summary><div className="settings-stack"><div className="form-grid two"><label>API address<input type="url" value={draft.composioBaseUrl} onChange={(event) => setDraft((value) => ({ ...value, composioBaseUrl: event.target.value }))} required /></label><label>Default user ID<input value={draft.composioDefaultUserId} onChange={(event) => setDraft((value) => ({ ...value, composioDefaultUserId: event.target.value }))} required /></label></div><label>Connected account override<input value={draft.composioDefaultConnectedAccountId} onChange={(event) => setDraft((value) => ({ ...value, composioDefaultConnectedAccountId: event.target.value }))} placeholder="Optional" /></label>{key.fingerprint && <p className="muted-detail">Key fingerprint <code>{key.fingerprint}</code></p>}</div></details>
+    {failure && <InlineError error={failure} />}
+    {notice && !failure && <p className="inline-success" role="status"><Check size={14} />{notice}</p>}
+    <div className="dialog-actions settings-actions">
+      <Button tone="primary" type="submit" disabled={busy}>{mutation.isPending ? <LoaderCircle className="spin" size={15} /> : <Check size={15} />}Save</Button>
+      <Button type="button" disabled={busy || (!key.configured && !draft.composioApiKey.trim())} onClick={() => { resetFeedback(); test.mutate(); }}>{test.isPending ? <LoaderCircle className="spin" size={15} /> : <PlugZap size={15} />}{draft.composioApiKey.trim() ? "Test new key" : "Test key"}</Button>
+      {key.source === "program" && (confirmRemove ? <><Button type="button" tone="danger" disabled={busy} onClick={() => { resetFeedback(); remove.mutate(); }}>{remove.isPending ? <LoaderCircle className="spin" size={15} /> : <Trash2 size={15} />}Confirm removal</Button><Button type="button" disabled={busy} onClick={() => setConfirmRemove(false)}>Keep key</Button></> : <Button type="button" disabled={busy} onClick={() => { resetFeedback(); setConfirmRemove(true); }}><Trash2 size={15} />Remove key</Button>)}
+    </div>
+    {confirmRemove && <p className="muted-detail">Removing the key stops Composio connectors from working until a new key is saved.</p>}
+  </form>;
 }
 
 function DeveloperPanel() {

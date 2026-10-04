@@ -58,6 +58,13 @@ export function errorCodeOf(error: unknown): string | null {
   return null;
 }
 
+function validationField(error: unknown) {
+  if (!(error instanceof ApiError)) return null;
+  const body = error.body as { issues?: Array<{ path?: unknown[] }> } | null;
+  const path = body?.issues?.[0]?.path;
+  return Array.isArray(path) ? path.map(String).join(".") : null;
+}
+
 function isSecurityCheckCode(code: string) {
   return /(^|_)(origin|csrf)(_|$)/u.test(code) || code.includes("_origin_") || code.endsWith("_service_request_required");
 }
@@ -90,6 +97,18 @@ export function errorCopy(error: Error): ErrorCopy {
     case "operator_auth_unconfigured":
     case "marketplace_operator_auth_unconfigured":
       return { title: "Sign-in isn't set up yet", detail: "This Marketplace hasn't been fully set up. Ask your administrator to finish setup, then relaunch from Teal Brick Portal.", reference };
+    case "composio_api_key_invalid":
+      return { title: "That API key doesn't look right", detail: "Paste the key exactly as Composio shows it, without spaces or line breaks.", reference };
+    case "composio_key_rejected":
+      return { title: "Composio didn't accept this key", detail: "The key may have been revoked or copied incorrectly. Create a new key in Composio and paste it here.", reference };
+    case "composio_key_missing":
+      return { title: "No API key saved", detail: "Paste your Composio API key and save it before testing.", reference };
+    case "composio_unreachable":
+      return { title: "Couldn't reach Composio", detail: "Marketplace couldn't contact Composio to check the key. Try again in a few minutes.", reference };
+    case "composio_base_url_not_allowed":
+      return { title: "That API address isn't allowed", detail: "Use a Composio address such as https://backend.composio.dev/api/v3.1.", reference };
+    case "composio_key_managed_by_environment":
+      return { title: "This key is managed by your deployment", detail: "The key was provided when Marketplace was deployed, so it can't be removed here. Ask your administrator to change it.", reference };
     case "portal_handoff_denied":
       return { title: "Access was declined in Teal Brick Portal", detail: "The request was denied, so no access was granted. Start a new request if this was a mistake.", reference };
     default:
@@ -109,6 +128,9 @@ export function errorCopy(error: Error): ErrorCopy {
     return { title: "You don't have access to this", detail: "Your session can't perform this action. Ask your administrator if you need access.", reference };
   }
   if (status === 400 || status === 422) {
+    const field = validationField(error);
+    if (field?.includes("composioApiKey")) return errorCopy(new ApiError("", 400, { error: "composio_api_key_invalid" }));
+    if (field?.includes("composioBaseUrl")) return errorCopy(new ApiError("", 400, { error: "composio_base_url_not_allowed" }));
     return { title: "Check the details and try again", detail: "Some of the information couldn't be accepted. Review it and try again.", reference };
   }
   if (status === 404) {

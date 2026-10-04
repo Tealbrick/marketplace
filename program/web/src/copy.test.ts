@@ -58,3 +58,13 @@ describe("customer-safe copy", () => {
     expect(errorCopy(apiError(500, "plain text")).reference).toBe("http_500");
   });
 });
+
+describe("Composio key copy", () => {
+  it("maps key validation and test outcomes to clear copy", () => {
+    expect(errorCopy(new ApiError("", 400, { error: "validation_failed", issues: [{ path: ["settings", "composioApiKey"] }] })).title).toBe("That API key doesn't look right");
+    expect(errorCopy(new ApiError("", 400, { error: "validation_failed", issues: [{ path: ["settings", "composioBaseUrl"] }] })).title).toBe("That API address isn't allowed");
+    expect(errorCopy(new ApiError("", 422, { error: "composio_key_rejected" })).title).toBe("Composio didn't accept this key");
+    expect(errorCopy(new ApiError("", 502, { error: "composio_unreachable" })).title).toBe("Couldn't reach Composio");
+    expect(errorCopy(new ApiError("", 409, { error: "composio_key_managed_by_environment" })).title).toBe("This key is managed by your deployment");
+  });
+});

@@ -28,7 +28,12 @@ import {
   type ProviderEnvironment,
 } from "./provider-health.js";
 import { SqliteMarketplaceStore } from "./store.js";
-import { MarketplaceProviderSettingsStore } from "./provider-settings.js";
+import {
+  assertComposioApiKeyFormat,
+  composioKeyFingerprint,
+  MarketplaceProviderSettingsStore,
+  ProviderSettingsError,
+} from "./provider-settings.js";
 import {
   listingIsCustomMcp,
   listingIsRequired,
@@ -104,16 +109,34 @@ const CardsSummaryQuerySchema = WorkspaceQuerySchema.extend({
   limit: z.coerce.number().int().min(1).max(100).default(60),
 });
 
-function allowedComposioOrigin(value: string) {
-  const parsed = new URL(value);
+/**
+ * Composio API base URLs are restricted to HTTPS composio.dev hosts. A
+ * deployment may add exact extra origins through
+ * MARKETPLACE_COMPOSIO_ALLOWED_ORIGINS (for example a local fixture); nothing
+ * else is reachable with the provider key attached.
+ */
+export function allowedComposioOrigin(value: string, env: Record<string, string | undefined> = process.env) {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return false;
+  }
+  if (parsed.username || parsed.password) return false;
+  const hostname = parsed.hostname.toLowerCase();
+  if (
+    parsed.protocol === "https:" &&
+    (hostname === "composio.dev" || hostname.endsWith(".composio.dev"))
+  ) {
+    return true;
+  }
   const configured = new Set(
-    (process.env.MARKETPLACE_COMPOSIO_ALLOWED_ORIGINS ?? "https://backend.composio.dev")
+    (env.MARKETPLACE_COMPOSIO_ALLOWED_ORIGINS ?? "")
       .split(",")
       .map((entry) => entry.trim())
       .filter(Boolean),
   );
-  if (configured.has(parsed.origin)) return true;
-  return parsed.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(parsed.hostname);
+  return configured.has(parsed.origin);
 }
 
 const ComposioProviderSettingsSchema = z.object({
@@ -129,10 +152,9 @@ const ComposioProviderSettingsSchema = z.object({
   composioBaseUrl: z
     .string()
     .trim()
-    .url()
     .refine(
-      allowedComposioOrigin,
-      "Composio base URL must use an explicitly allowlisted provider origin or HTTP loopback.",
+      (value) => allowedComposioOrigin(value),
+      "Composio base URL must be an https://*.composio.dev address or an explicitly allowlisted origin.",
     ),
   composioDefaultUserId: z.string().trim().min(1),
   composioDefaultConnectedAccountId: z.string().trim().optional().default(""),
@@ -2669,13 +2691,139 @@ export async function buildMarketplaceApp(
   });
 
   app.put("/api/settings/providers/composio", async (request, reply) => {
-    if (!requireOperator(request, reply)) return { ok: false, error: "marketplace_operator_required" };
+    const principal = requireOperator(request, reply);
+    if (!principal) return { ok: false, error: "marketplace_operator_required" };
     const input = ComposioProviderSettingsRequestSchema.parse(request.body);
-    const saved = await providerSettings.update(input.settings);
+    const before = providerSettings.safeView();
+    let saved: ReturnType<typeof providerSettings.safeView>;
+    try {
+      saved = await providerSettings.update(input.settings);
+    } catch (error) {
+      if (error instanceof ProviderSettingsError) {
+        reply.code(error.statusCode);
+        return { ok: false, error: error.code };
+      }
+      throw error;
+    }
+    options.store.recordAudit({
+      workspaceSlug: principal.organizationId,
+      pluginId: "composio",
+      eventType: "marketplace.provider.settings.updated",
+      actorId: principal.id,
+      metadata: {
+        provider: "composio",
+        keyReplaced: Boolean(input.settings.composioApiKey),
+        keyFingerprint: saved.status.composioApiKey.fingerprint,
+        baseUrlChanged: before.values.composioBaseUrl !== saved.values.composioBaseUrl,
+        defaultUserChanged: before.values.composioDefaultUserId !== saved.values.composioDefaultUserId,
+        connectedAccountChanged:
+          before.values.composioDefaultConnectedAccountId !== saved.values.composioDefaultConnectedAccountId,
+      },
+    });
     return {
       ...saved,
       provider: readProviderHealth(providerEnvironment()).composio,
     };
+  });
+
+  app.delete("/api/settings/providers/composio/key", async (request, reply) => {
+    const principal = requireOperator(request, reply);
+    if (!principal) return { ok: false, error: "marketplace_operator_required" };
+    const previousFingerprint = providerSettings.safeView().status.composioApiKey.fingerprint;
+    let result: Awaited<ReturnType<typeof providerSettings.removeApiKey>>;
+    try {
+      result = await providerSettings.removeApiKey();
+    } catch (error) {
+      if (error instanceof ProviderSettingsError) {
+        reply.code(error.statusCode);
+        return { ok: false, error: error.code };
+      }
+      throw error;
+    }
+    if (result.removed) {
+      composioCatalogSyncByWorkspace.clear();
+      options.store.recordAudit({
+        workspaceSlug: principal.organizationId,
+        pluginId: "composio",
+        eventType: "marketplace.provider.key.removed",
+        actorId: principal.id,
+        metadata: { provider: "composio", keyFingerprint: previousFingerprint },
+      });
+    }
+    return {
+      ...result.view,
+      removed: result.removed,
+      provider: readProviderHealth(providerEnvironment()).composio,
+    };
+  });
+
+  app.post("/api/settings/providers/composio/test", { bodyLimit: 4_096 }, async (request, reply) => {
+    const principal = requireOperator(request, reply);
+    if (!principal) return { ok: false, error: "marketplace_operator_required" };
+    const body = z
+      .object({ composioApiKey: z.string().trim().max(512).optional() })
+      .parse(request.body ?? {});
+    const candidate = body.composioApiKey || providerSettings.activeApiKey();
+    if (!candidate) {
+      reply.code(400);
+      return { ok: false, error: "composio_key_missing" };
+    }
+    try {
+      assertComposioApiKeyFormat(candidate);
+    } catch (error) {
+      if (error instanceof ProviderSettingsError) {
+        reply.code(error.statusCode);
+        return { ok: false, error: error.code };
+      }
+      throw error;
+    }
+    const baseUrl = providerSettings.safeView().values.composioBaseUrl;
+    if (!allowedComposioOrigin(baseUrl, environment)) {
+      reply.code(400);
+      return { ok: false, error: "composio_base_url_not_allowed" };
+    }
+    const probeUrl = new URL(`${baseUrl.replace(/\/+$/u, "")}/connected_accounts`);
+    probeUrl.searchParams.set("limit", "1");
+    let outcome: "valid" | "rejected" | "unreachable";
+    let providerStatus: number | null = null;
+    try {
+      const response = await (options.providerFetch ?? fetch)(probeUrl, {
+        method: "GET",
+        headers: { accept: "application/json", "x-api-key": candidate },
+        redirect: "error",
+        signal: AbortSignal.timeout(8_000),
+      });
+      providerStatus = response.status;
+      outcome = response.ok
+        ? "valid"
+        : response.status === 401 || response.status === 403
+          ? "rejected"
+          : "unreachable";
+    } catch {
+      outcome = "unreachable";
+    }
+    options.store.recordAudit({
+      workspaceSlug: principal.organizationId,
+      pluginId: "composio",
+      eventType: "marketplace.provider.key.tested",
+      actorId: principal.id,
+      metadata: {
+        provider: "composio",
+        outcome,
+        providerStatus,
+        draftKey: Boolean(body.composioApiKey),
+        keyFingerprint: composioKeyFingerprint(candidate),
+      },
+    });
+    if (outcome === "rejected") {
+      reply.code(422);
+      return { ok: false, error: "composio_key_rejected" };
+    }
+    if (outcome === "unreachable") {
+      reply.code(502);
+      return { ok: false, error: "composio_unreachable" };
+    }
+    return { ok: true, status: "valid" as const, checkedAt: new Date().toISOString() };
   });
 
   const capabilityProjectionHandler = async (request: { headers: Record<string, unknown>; query: unknown }, reply: FastifyReply) => {

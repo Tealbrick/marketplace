@@ -40,6 +40,30 @@ async function atomicPrivateJson(file: string, value: unknown) {
   await chmod(file, 0o600);
 }
 
+export class ProviderSettingsError extends Error {
+  constructor(
+    readonly code: string,
+    readonly statusCode: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+export function composioKeyFingerprint(secret: string) {
+  return createHash("sha256").update(secret).digest("hex").slice(0, 12);
+}
+
+export function assertComposioApiKeyFormat(value: string) {
+  if (!value || value.length > 512 || !/^[\x21-\x7E]+$/u.test(value)) {
+    throw new ProviderSettingsError(
+      "composio_api_key_invalid",
+      400,
+      "Composio API key must be printable ASCII without spaces or line breaks.",
+    );
+  }
+}
+
 function cleanString(value: unknown, fallback = "") {
   return typeof value === "string" ? value.trim() : fallback;
 }
@@ -111,9 +135,7 @@ export class MarketplaceProviderSettingsStore {
           configured: Boolean(secret),
           source: persisted ? "program" : bootstrap ? "bootstrap-environment" : null,
           keyTail: secret ? secret.slice(-4) : null,
-          fingerprint: secret
-            ? createHash("sha256").update(secret).digest("hex").slice(0, 12)
-            : null,
+          fingerprint: secret ? composioKeyFingerprint(secret) : null,
         },
       },
     };
@@ -132,9 +154,7 @@ export class MarketplaceProviderSettingsStore {
       ),
     };
     const nextSecret = cleanString(input.composioApiKey);
-    if (nextSecret && (nextSecret.length > 512 || !/^[\x21-\x7E]+$/u.test(nextSecret))) {
-      throw new Error("Composio API key must be printable ASCII without spaces or line breaks.");
-    }
+    if (nextSecret) assertComposioApiKeyFormat(nextSecret);
     this.settings = nextSettings;
     if (nextSecret) {
       this.secrets = { composioApiKey: nextSecret };
@@ -144,5 +164,30 @@ export class MarketplaceProviderSettingsStore {
       await atomicPrivateJson(this.secretsPath, this.secrets);
     }
     return this.safeView();
+  }
+
+  /** The key the Program would use right now (persisted first, then bootstrap). */
+  activeApiKey() {
+    return this.secrets.composioApiKey || cleanString(this.bootstrapEnv.COMPOSIO_API_KEY) || null;
+  }
+
+  /**
+   * Remove the Program-stored key. A key supplied by the deployment
+   * environment cannot be removed from the browser.
+   */
+  async removeApiKey() {
+    if (!this.secrets.composioApiKey) {
+      if (cleanString(this.bootstrapEnv.COMPOSIO_API_KEY)) {
+        throw new ProviderSettingsError(
+          "composio_key_managed_by_environment",
+          409,
+          "The Composio API key is supplied by the deployment environment.",
+        );
+      }
+      return { removed: false, view: this.safeView() };
+    }
+    this.secrets = {};
+    await atomicPrivateJson(this.secretsPath, this.secrets);
+    return { removed: true, view: this.safeView() };
   }
 }
