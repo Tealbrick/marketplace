@@ -164,6 +164,10 @@ type ComposioToolRecord = {
   displayName?: unknown;
   display_name?: unknown;
   description?: unknown;
+  input_parameters?: unknown;
+  inputParameters?: unknown;
+  input_schema?: unknown;
+  inputSchema?: unknown;
 };
 
 export type ComposioListingTool = {
@@ -172,6 +176,11 @@ export type ComposioListingTool = {
   displayName: string;
   description: string;
   capability: ConnectorCapability;
+  /**
+   * Top-level argument names from the Composio tool input schema, when the
+   * tool record carried one. Used as the agent argument allowlist.
+   */
+  inputArguments?: string[];
 };
 
 export function normalizeConnectorSlug(value: string) {
@@ -589,6 +598,7 @@ function normalizeComposioTool(
   const actionSuffix = actionSuffixFromToolName(rawToolName, toolkit);
   const action = `${toolkit}.${actionSuffix}`;
   const capability = inferConnectorCapabilityFromAction(action);
+  const inputArguments = composioToolInputArguments(record);
   return [
     {
       action,
@@ -599,8 +609,25 @@ function normalizeComposioTool(
         titleCase(actionSuffix),
       description: stringValue(record.description) ?? "",
       capability,
+      ...(inputArguments ? { inputArguments } : {}),
     },
   ];
+}
+
+function composioToolInputArguments(record: ComposioToolRecord) {
+  const schema = recordValue(
+    record.input_parameters ??
+      record.inputParameters ??
+      record.input_schema ??
+      record.inputSchema,
+  );
+  const properties = recordValue(schema?.properties);
+  if (!properties) {
+    return undefined;
+  }
+  return Object.keys(properties)
+    .filter((name) => /^[A-Za-z0-9_.-]{1,128}$/u.test(name))
+    .sort();
 }
 
 function actionSuffixFromToolName(toolName: string, toolkit: string) {
