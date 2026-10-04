@@ -1264,6 +1264,21 @@ export class SqliteMarketplaceStore {
     );
   }
 
+  getCapabilityBinding(
+    workspaceSlug: string,
+    pluginId: string,
+    capability: ConnectorCapability,
+  ): CapabilityBinding | null {
+    const row = this.db
+      .prepare(
+        "SELECT * FROM plugin_capability_binding WHERE workspace_slug = ? AND plugin_id = ? AND capability = ?",
+      )
+      .get(workspaceSlug, pluginId, capability) as
+      | Record<string, unknown>
+      | undefined;
+    return row ? bindingFromRow(row) : null;
+  }
+
   requireCapabilityBinding(
     workspaceSlug: string,
     pluginId: string,

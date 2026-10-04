@@ -93,6 +93,21 @@ export function listingIsCustomMcp(listing: MarketplaceListing): boolean {
   return listing.source === "mcp" && skillsHubMetadata(listing).custom === true;
 }
 
+/**
+ * Custom MCP connector created by an operator for one workspace through the
+ * operator-session routes. Its secrets live in the encrypted connector secret
+ * store, so the Hub adapter must not rewrite or delete it.
+ */
+export function listingIsOperatorCustomMcp(
+  listing: MarketplaceListing,
+): boolean {
+  return (
+    listingIsCustomMcp(listing) &&
+    skillsHubMetadata(listing).operatorManaged === true &&
+    typeof listing.ownerWorkspaceSlug === "string"
+  );
+}
+
 function extensionContributions(
   listing: MarketplaceListing,
 ): MarketplaceExtensionContribution[] {
@@ -479,7 +494,10 @@ export function marketplacePluginRecord(input: {
   const installed = install?.lifecycle === "installed";
   const enabled = installed && install?.enabled === true;
   const required = listingIsRequired(input.listing);
-  const custom = listingIsCustomMcp(input.listing);
+  // Operator-managed connectors are edited from the Marketplace UI only.
+  const custom =
+    listingIsCustomMcp(input.listing) &&
+    !listingIsOperatorCustomMcp(input.listing);
   const connection = input.store.getConnection(
     input.workspaceSlug,
     input.listing.pluginId,
@@ -560,7 +578,7 @@ export function marketplacePluginRecords(input: {
   workspaceSlug: string;
 }): MarketplacePluginRecord[] {
   return input.store
-    .listListings()
+    .listListingsForWorkspace(input.workspaceSlug)
     .map((listing) => marketplacePluginRecord({ ...input, listing }));
 }
 

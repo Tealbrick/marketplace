@@ -27,7 +27,37 @@ import {
   readProviderHealthWithReachability,
   type ProviderEnvironment,
 } from "./provider-health.js";
-import { SqliteMarketplaceStore } from "./store.js";
+import {
+  ConnectorSecretStoreUnavailableError,
+  SqliteMarketplaceStore,
+} from "./store.js";
+import {
+  assertHeaderSets,
+  bindCustomMcpForWorkspace,
+  customConnectorView,
+  customMcpListing,
+  customMcpManifest,
+  customMcpPluginId,
+  customMcpToolForAction,
+  CustomMcpCreateSchema,
+  CustomMcpInputError,
+  CustomMcpPatchSchema,
+  normalizePlainHeaders,
+  normalizeSecretHeaderChanges,
+  requestsStdioTransport,
+  toolRecordsFromRemote,
+  type CustomMcpManifest,
+} from "./custom-mcp.js";
+import {
+  callMcpTool,
+  listMcpTools,
+  McpRemoteError,
+} from "./mcp-remote-client.js";
+import {
+  checkMcpUrlSyntax,
+  McpUrlPolicyError,
+  type McpLookup,
+} from "./mcp-url-policy.js";
 import {
   assertComposioApiKeyFormat,
   composioKeyFingerprint,
@@ -36,6 +66,7 @@ import {
 } from "./provider-settings.js";
 import {
   listingIsCustomMcp,
+  listingIsOperatorCustomMcp,
   listingIsRequired,
   marketplaceCapabilitiesHostProjection,
   marketplacePluginRecord,
@@ -527,6 +558,10 @@ export type BuildMarketplaceAppOptions = {
   microappsRoot?: string;
   rulesClient?: RulesClient;
   providerFetch?: typeof fetch;
+  /** Outbound fetch for operator custom MCP servers (tests inject a fake). */
+  mcpFetch?: typeof fetch;
+  /** DNS lookup used by the MCP URL policy (tests inject a resolver). */
+  mcpLookup?: McpLookup;
   env?: ProviderEnvironment;
   debug?: boolean;
   logPath?: string;
@@ -1017,6 +1052,45 @@ function recordValue(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+/** Custom MCP connector owned by (and therefore runnable in) `workspaceSlug`. */
+function listingIsWorkspaceCustomMcp(
+  listing: MarketplaceListing,
+  workspaceSlug: string,
+) {
+  return (
+    listingIsOperatorCustomMcp(listing) &&
+    listing.executionOwner === "mcp" &&
+    listing.ownerWorkspaceSlug === workspaceSlug
+  );
+}
+
+/** Composio listings, and custom MCP connectors with tools, can run actions. */
+function listingLaunchSupported(
+  listing: MarketplaceListing,
+  workspaceSlug: string,
+) {
+  return (
+    listing.executionOwner === "composio" ||
+    (listingIsWorkspaceCustomMcp(listing, workspaceSlug) &&
+      listing.actions.length > 0)
+  );
+}
+
+/** Custom MCP connectors are "connected" only after a successful refresh. */
+function listingConnected(input: {
+  listing: MarketplaceListing;
+  workspaceSlug: string;
+  connectionState: string | undefined;
+}) {
+  if (listingIsWorkspaceCustomMcp(input.listing, input.workspaceSlug)) {
+    return input.connectionState === "connected";
+  }
+  return (
+    !listingRequiresConnectedAccount(input.listing) ||
+    input.connectionState === "connected"
+  );
+}
+
 function arrayValue(value: unknown): readonly unknown[] {
   return Array.isArray(value) ? value : [];
 }
@@ -1142,8 +1216,12 @@ function pluginCardForListing(input: {
   const installed =
     install?.enabled === true && install.lifecycle === "installed";
   const authRequired = listingRequiresConnectedAccount(listing);
-  const connected = !authRequired || connection?.state === "connected";
-  const launchSupported = listing.executionOwner === "composio";
+  const connected = listingConnected({
+    listing,
+    workspaceSlug,
+    connectionState: connection?.state,
+  });
+  const launchSupported = listingLaunchSupported(listing, workspaceSlug);
   const ready = launchSupported && registered && installed && connected;
   const status = !launchSupported
     ? "catalogOnly"
@@ -1321,8 +1399,12 @@ function pluginSummaryForListing(input: {
   const installed =
     install?.enabled === true && install.lifecycle === "installed";
   const authRequired = listingRequiresConnectedAccount(listing);
-  const connected = !authRequired || connection?.state === "connected";
-  const launchSupported = listing.executionOwner === "composio";
+  const connected = listingConnected({
+    listing,
+    workspaceSlug,
+    connectionState: connection?.state,
+  });
+  const launchSupported = listingLaunchSupported(listing, workspaceSlug);
   const ready = launchSupported && registered && installed && connected;
   const status = !launchSupported
     ? "catalogOnly"
@@ -1407,7 +1489,10 @@ function browserPluginCardForListing(input: {
   providers: Awaited<ReturnType<typeof readProviderHealthWithReachability>>;
 }) {
   const card = pluginCardForListing(input);
-  const launchSupported = input.listing.executionOwner === "composio";
+  const launchSupported = listingLaunchSupported(
+    input.listing,
+    input.workspaceSlug,
+  );
   return {
     addon: {
       addonId: card.addon.addonId,
@@ -1493,7 +1578,7 @@ async function pluginCardsForWorkspace(input: {
 }) {
   const providers =
     input.providers ?? (await readProviderHealthWithReachability());
-  return input.store.listListings().map((listing) =>
+  return input.store.listListingsForWorkspace(input.workspaceSlug).map((listing) =>
     pluginCardForListing({
       store: input.store,
       workspaceSlug: input.workspaceSlug,
@@ -1729,8 +1814,9 @@ function agentCapabilitiesForWorkspace(
   workspaceSlug: string,
 ) {
   const enabledBindings = store.listEnabledBindings(workspaceSlug);
-  return store.listListings().flatMap((listing) => {
-    if (listing.executionOwner !== "composio") {
+  return store.listListingsForWorkspace(workspaceSlug).flatMap((listing) => {
+    const customMcp = listingIsWorkspaceCustomMcp(listing, workspaceSlug);
+    if (listing.executionOwner !== "composio" && !customMcp) {
       return [];
     }
     if (!store.isRegistered(listing.pluginId)) {
@@ -1742,8 +1828,11 @@ function agentCapabilitiesForWorkspace(
     }
     const connection = store.getConnection(workspaceSlug, listing.pluginId);
     if (
-      listingRequiresConnectedAccount(listing) &&
-      connection?.state !== "connected"
+      !listingConnected({
+        listing,
+        workspaceSlug,
+        connectionState: connection?.state,
+      })
     ) {
       return [];
     }
@@ -1776,7 +1865,9 @@ function agentCapabilitiesForWorkspace(
           provider: listing.provider,
           actionType: action,
           toolName: toolNameForAction(listing.provider, action),
-          description: `${listing.displayName}: ${action}`,
+          description: customMcp
+            ? `${listing.displayName}: ${customMcpToolForAction(listing, action)?.description ?? action}`
+            : `${listing.displayName}: ${action}`,
           requiredCapabilities: [requirement.capability],
           runtimeSource: listing.executionOwner,
           connectionState: connection?.state ?? null,
@@ -2170,6 +2261,181 @@ export async function buildMarketplaceApp(
       return { ok: false, error: "agent_grant_expired" };
     }
     return { ok: true, scope };
+  };
+  const logCustomMcpFailure = (input: {
+    event: string;
+    pluginId: string;
+    workspaceSlug: string;
+    error: unknown;
+  }) => {
+    // Never log header values or upstream bodies; codes and statuses only.
+    const remote = input.error instanceof McpRemoteError ? input.error : null;
+    console.error(
+      JSON.stringify({
+        event: input.event,
+        pluginId: input.pluginId,
+        workspaceSlug: input.workspaceSlug,
+        code: remote?.code ?? "unexpected",
+        status: remote?.detail.status ?? null,
+        rpcCode: remote?.detail.rpcCode ?? null,
+        reason: remote?.detail.reason ?? null,
+        name: input.error instanceof Error ? input.error.name : typeof input.error,
+      }),
+    );
+  };
+  /** Plain + decrypted secret headers. Throws ConnectorSecretStoreUnavailableError. */
+  const customMcpConnection = (
+    listing: MarketplaceListing,
+    workspaceSlug: string,
+  ) => {
+    const manifest = customMcpManifest(listing);
+    return {
+      url: manifest.url,
+      transport: manifest.transport,
+      headers: {
+        ...manifest.headers,
+        ...options.store.readConnectorSecretValues({
+          workspaceSlug,
+          pluginId: listing.pluginId,
+        }),
+      },
+      fetchImpl: options.mcpFetch,
+      lookup: options.mcpLookup,
+      env: environment,
+    };
+  };
+  const executeCustomMcpAction = async (input: {
+    reply: FastifyReply;
+    listing: MarketplaceListing;
+    workspaceSlug: string;
+    capability: ConnectorCapability;
+    action: Record<string, unknown> & { type: string };
+    actorId: string;
+    traceId: string;
+    rules: Awaited<ReturnType<typeof enforceRules>>;
+    runId: string | null;
+    sessionId: string | null;
+    agentGrantId: string | null;
+  }) => {
+    const { listing, workspaceSlug } = input;
+    const pluginId = listing.pluginId;
+    const tool = customMcpToolForAction(listing, input.action.type);
+    if (!tool) {
+      input.reply.code(400);
+      return { ok: false, traceId: input.traceId, error: "unknown_connector_action" };
+    }
+    const rulesDecisionId =
+      "decisionId" in input.rules ? (input.rules.decisionId ?? null) : null;
+    const usageBase = {
+      workspaceSlug,
+      pluginId,
+      provider: listing.provider,
+      sourceExecutor: listing.executionOwner,
+      sourceActionKey: input.action.type,
+      productCapabilityKey: `connector.${listing.executionOwner}.${listing.provider}.${input.action.type}`,
+      scopesUsed: [input.capability],
+      runId: input.runId,
+      sessionId: input.sessionId,
+      metadata: {
+        rules: input.rules,
+        toolName: tool.name,
+        ...(input.agentGrantId ? { agentGrantId: input.agentGrantId } : {}),
+      },
+      input: input.action,
+    };
+    const fail = (status: number, error: string) => {
+      const usage = options.store.recordUsage({
+        ...usageBase,
+        status: "failed",
+        error,
+        output: null,
+      });
+      options.store.recordEvent({
+        type: "marketplace.execution.failed",
+        traceId: input.traceId,
+        workspaceSlug,
+        pluginId,
+        actorId: input.actorId,
+        rulesDecisionId,
+        payload: {
+          capability: input.capability,
+          action: input.action.type,
+          usageId: usage.id,
+          error,
+        },
+      });
+      input.reply.code(status);
+      return { ok: false, traceId: input.traceId, error, usage };
+    };
+    let connection: ReturnType<typeof customMcpConnection>;
+    try {
+      connection = customMcpConnection(listing, workspaceSlug);
+    } catch (error) {
+      if (error instanceof ConnectorSecretStoreUnavailableError) {
+        return fail(503, "connector_secret_store_unavailable");
+      }
+      throw error;
+    }
+    const { type: _type, ...args } = input.action;
+    let output: Awaited<ReturnType<typeof callMcpTool>>;
+    try {
+      output = await callMcpTool(connection, tool.name, args);
+    } catch (error) {
+      logCustomMcpFailure({
+        event: "marketplace.custom_mcp.execute_failed",
+        pluginId,
+        workspaceSlug,
+        error,
+      });
+      return fail(
+        502,
+        error instanceof McpRemoteError && error.code === "mcp_rpc_error"
+          ? "mcp_tool_failed"
+          : "mcp_unreachable",
+      );
+    }
+    if (output.isError) {
+      return fail(502, "mcp_tool_failed");
+    }
+    const result = {
+      pluginId,
+      workspaceSlug,
+      provider: listing.provider,
+      capability: input.capability,
+      actionType: input.action.type,
+      performedAt: new Date().toISOString(),
+      simulated: false,
+      summary: `Ran ${tool.title ?? tool.name} on ${listing.displayName}.`,
+      details: {
+        toolName: tool.name,
+        result: {
+          content: output.content,
+          ...(output.structuredContent === undefined
+            ? {}
+            : { structuredContent: output.structuredContent }),
+        },
+      },
+    };
+    const usage = options.store.recordUsage({
+      ...usageBase,
+      status: "succeeded",
+      error: null,
+      output: result,
+    });
+    options.store.recordEvent({
+      type: "marketplace.execution.completed",
+      traceId: input.traceId,
+      workspaceSlug,
+      pluginId,
+      actorId: input.actorId,
+      rulesDecisionId,
+      payload: {
+        capability: input.capability,
+        action: input.action.type,
+        usageId: usage.id,
+      },
+    });
+    return { ok: true, traceId: input.traceId, result, usage, rules: input.rules };
   };
   const composioCatalogSyncByWorkspace = new Map<
     string,
@@ -2864,6 +3130,419 @@ export async function buildMarketplaceApp(
     return { ok: true, status: "valid" as const, checkedAt: new Date().toISOString() };
   });
 
+  // ---------------------------------------------------------------------
+  // Operator custom MCP connectors (remote streamable-http / SSE only).
+  // Workspace comes from the operator principal; every mutation is
+  // Rules-gated as connector.admin; secrets never leave the server.
+  // ---------------------------------------------------------------------
+  const customMcpOperator = (request: FastifyRequest, reply: FastifyReply) => {
+    const principal = requireOperator(request, reply);
+    if (!principal) {
+      return { error: { ok: false, error: "marketplace_operator_required" } } as const;
+    }
+    for (const value of [request.query, request.body]) {
+      const supplied = recordValue(value)?.workspaceSlug;
+      if (supplied !== undefined && supplied !== principal.organizationId) {
+        reply.code(403);
+        return { error: { ok: false, error: "workspace_mismatch" } } as const;
+      }
+    }
+    return { principal } as const;
+  };
+  const ownedCustomMcp = (pluginId: string, workspaceSlug: string) => {
+    const listing = options.store.getListingForWorkspace(pluginId, workspaceSlug);
+    return listing && listingIsWorkspaceCustomMcp(listing, workspaceSlug)
+      ? listing
+      : null;
+  };
+  const customMcpInputFailure = (reply: FastifyReply, error: unknown) => {
+    if (error instanceof CustomMcpInputError) {
+      reply.code(400);
+      return { ok: false, error: error.code, ...(error.field ? { field: error.field } : {}) };
+    }
+    if (error instanceof McpUrlPolicyError) {
+      reply.code(400);
+      return { ok: false, error: error.code, reason: error.reason };
+    }
+    throw error;
+  };
+  const secretAuditView = (workspaceSlug: string, pluginId: string) =>
+    options.store
+      .listConnectorSecrets({ workspaceSlug, pluginId })
+      .map((secret) => ({ name: secret.name, fingerprint: secret.fingerprint }));
+
+  app.get("/api/marketplace/connectors/custom", async (request, reply) => {
+    const gate = customMcpOperator(request, reply);
+    if ("error" in gate) return gate.error;
+    const workspaceSlug = gate.principal.organizationId;
+    return {
+      ok: true,
+      workspaceSlug,
+      secretStoreAvailable: options.store.connectorSecretStoreAvailable(),
+      items: options.store
+        .listOwnedListings(workspaceSlug)
+        .filter((listing) => listingIsWorkspaceCustomMcp(listing, workspaceSlug))
+        .map((listing) => customConnectorView(options.store, workspaceSlug, listing)),
+    };
+  });
+
+  app.post("/api/marketplace/connectors/custom", async (request, reply) => {
+    const gate = customMcpOperator(request, reply);
+    if ("error" in gate) return gate.error;
+    const { principal } = gate;
+    const workspaceSlug = principal.organizationId;
+    if (requestsStdioTransport(request.body)) {
+      reply.code(400);
+      return { ok: false, error: "custom_mcp_transport_not_allowed" };
+    }
+    const input = CustomMcpCreateSchema.parse(request.body);
+    let headers: Record<string, string>;
+    let secretHeaders: Map<string, string | null>;
+    let url: URL;
+    try {
+      headers = normalizePlainHeaders(input.headers);
+      secretHeaders = normalizeSecretHeaderChanges(input.secretHeaders);
+      assertHeaderSets({ plainNames: Object.keys(headers), secretNames: secretHeaders.keys() });
+      url = checkMcpUrlSyntax(input.url, environment).url;
+    } catch (error) {
+      return customMcpInputFailure(reply, error);
+    }
+    if (secretHeaders.size > 0 && !options.store.connectorSecretStoreAvailable()) {
+      reply.code(503);
+      return { ok: false, error: "connector_secret_store_unavailable" };
+    }
+    const pluginId = customMcpPluginId({
+      workspaceSlug,
+      slug: input.slug,
+      displayName: input.displayName,
+    });
+    if (options.store.getListing(pluginId)) {
+      reply.code(409);
+      return { ok: false, error: "custom_mcp_already_exists", pluginId };
+    }
+    const rules = await enforceRules({
+      reply,
+      workspaceSlug,
+      operation: "custom-mcp.create",
+      capability: "connector.admin",
+      pluginId,
+      actorId: principal.id,
+      payload: {
+        transport: input.transport,
+        origin: url.origin,
+        headerNames: Object.keys(headers),
+        secretHeaderNames: [...secretHeaders.keys()],
+      },
+      rulesClient: options.rulesClient,
+    });
+    if (!("effect" in rules)) return rules;
+    const manifest: CustomMcpManifest = {
+      operatorManaged: true,
+      transport: input.transport,
+      url: url.toString(),
+      headers,
+      tools: [],
+      lastRefresh: null,
+    };
+    const listing = customMcpListing({
+      pluginId,
+      workspaceSlug,
+      displayName: input.displayName,
+      description: input.description,
+      manifest,
+    });
+    options.store.upsertListing(listing);
+    for (const [name, value] of secretHeaders) {
+      if (value !== null) {
+        options.store.putConnectorSecret({ workspaceSlug, pluginId, name, value });
+      }
+    }
+    options.store.recordAudit({
+      workspaceSlug,
+      pluginId,
+      eventType: "marketplace.custom_mcp.created",
+      actorId: principal.id,
+      rulesDecisionId: rules.decisionId,
+      metadata: {
+        transport: input.transport,
+        origin: url.origin,
+        headerNames: Object.keys(headers),
+        secretHeaders: secretAuditView(workspaceSlug, pluginId),
+      },
+    });
+    reply.code(201);
+    return {
+      ok: true,
+      connector: customConnectorView(options.store, workspaceSlug, listing),
+    };
+  });
+
+  app.patch("/api/marketplace/connectors/custom/:pluginId", async (request, reply) => {
+    const gate = customMcpOperator(request, reply);
+    if ("error" in gate) return gate.error;
+    const { principal } = gate;
+    const workspaceSlug = principal.organizationId;
+    const { pluginId } = request.params as { pluginId: string };
+    const current = ownedCustomMcp(pluginId, workspaceSlug);
+    if (!current) {
+      reply.code(404);
+      return { ok: false, error: "plugin_not_found" };
+    }
+    if (requestsStdioTransport(request.body)) {
+      reply.code(400);
+      return { ok: false, error: "custom_mcp_transport_not_allowed" };
+    }
+    const input = CustomMcpPatchSchema.parse(request.body);
+    const manifest = customMcpManifest(current);
+    let headers: Record<string, string>;
+    let secretChanges: Map<string, string | null>;
+    let url: URL;
+    try {
+      headers = input.headers === undefined ? manifest.headers : normalizePlainHeaders(input.headers);
+      secretChanges = normalizeSecretHeaderChanges(input.secretHeaders);
+      const secretNames = new Set(
+        options.store
+          .listConnectorSecrets({ workspaceSlug, pluginId })
+          .map((secret) => secret.name),
+      );
+      for (const [name, value] of secretChanges) {
+        if (value === null) secretNames.delete(name);
+        else secretNames.add(name);
+      }
+      assertHeaderSets({ plainNames: Object.keys(headers), secretNames });
+      url = checkMcpUrlSyntax(input.url ?? manifest.url, environment).url;
+    } catch (error) {
+      return customMcpInputFailure(reply, error);
+    }
+    const writesSecrets = [...secretChanges.values()].some((value) => value !== null);
+    if (writesSecrets && !options.store.connectorSecretStoreAvailable()) {
+      reply.code(503);
+      return { ok: false, error: "connector_secret_store_unavailable" };
+    }
+    const transport = input.transport ?? manifest.transport;
+    const endpointChanged = url.toString() !== manifest.url || transport !== manifest.transport;
+    const rules = await enforceRules({
+      reply,
+      workspaceSlug,
+      operation: "custom-mcp.update",
+      capability: "connector.admin",
+      pluginId,
+      actorId: principal.id,
+      payload: {
+        transport,
+        origin: url.origin,
+        endpointChanged,
+        headerNames: Object.keys(headers),
+        secretHeaderChanges: [...secretChanges].map(([name, value]) => ({
+          name,
+          change: value === null ? "remove" : "set",
+        })),
+      },
+      rulesClient: options.rulesClient,
+    });
+    if (!("effect" in rules)) return rules;
+    const listing = customMcpListing({
+      pluginId,
+      workspaceSlug,
+      displayName: input.displayName ?? current.displayName,
+      description: input.description ?? current.description,
+      version: typeof current.manifest.version === "string" ? current.manifest.version : undefined,
+      createdAt: current.createdAt,
+      manifest: {
+        ...manifest,
+        transport,
+        url: url.toString(),
+        headers,
+        ...(endpointChanged ? { tools: [], lastRefresh: null } : {}),
+      },
+    });
+    options.store.upsertListing(listing);
+    for (const [name, value] of secretChanges) {
+      if (value === null) {
+        options.store.deleteConnectorSecret({ workspaceSlug, pluginId, name });
+      } else {
+        options.store.putConnectorSecret({ workspaceSlug, pluginId, name, value });
+      }
+    }
+    if (endpointChanged && options.store.getConnection(workspaceSlug, pluginId)) {
+      options.store.upsertConnection({
+        workspaceSlug,
+        pluginId,
+        provider: listing.provider,
+        backend: "mcp",
+        state: "disconnected",
+        detail: "Server address changed. Refresh tools to reconnect.",
+        metadata: { reason: "endpoint_changed" },
+      });
+    }
+    options.store.recordAudit({
+      workspaceSlug,
+      pluginId,
+      eventType: "marketplace.custom_mcp.updated",
+      actorId: principal.id,
+      rulesDecisionId: rules.decisionId,
+      metadata: {
+        transport,
+        origin: url.origin,
+        endpointChanged,
+        headerNames: Object.keys(headers),
+        removedSecretHeaders: [...secretChanges].filter(([, value]) => value === null).map(([name]) => name),
+        secretHeaders: secretAuditView(workspaceSlug, pluginId),
+      },
+    });
+    return {
+      ok: true,
+      connector: customConnectorView(options.store, workspaceSlug, listing),
+    };
+  });
+
+  app.delete("/api/marketplace/connectors/custom/:pluginId", async (request, reply) => {
+    const gate = customMcpOperator(request, reply);
+    if ("error" in gate) return gate.error;
+    const { principal } = gate;
+    const workspaceSlug = principal.organizationId;
+    const { pluginId } = request.params as { pluginId: string };
+    const listing = ownedCustomMcp(pluginId, workspaceSlug);
+    if (!listing) {
+      reply.code(404);
+      return { ok: false, error: "plugin_not_found" };
+    }
+    const rules = await enforceRules({
+      reply,
+      workspaceSlug,
+      operation: "custom-mcp.delete",
+      capability: "connector.admin",
+      pluginId,
+      actorId: principal.id,
+      payload: {},
+      rulesClient: options.rulesClient,
+    });
+    if (!("effect" in rules)) return rules;
+    const secretHeaders = secretAuditView(workspaceSlug, pluginId);
+    const brokerGrantsRevoked = options.store.revokeBrokerGrantsForPlugin({ workspaceSlug, pluginId });
+    const agentAccess = options.store.revokeAgentAccessForPlugin({ workspaceSlug, pluginId });
+    options.store.deleteListing(pluginId);
+    options.store.recordAudit({
+      workspaceSlug,
+      pluginId,
+      eventType: "marketplace.custom_mcp.deleted",
+      actorId: principal.id,
+      rulesDecisionId: rules.decisionId,
+      metadata: {
+        secretHeaders,
+        brokerGrantsRevoked,
+        agentGrantsRevoked: agentAccess.grants,
+        agentConsentsRevoked: agentAccess.consents,
+      },
+    });
+    return { ok: true, pluginId, deleted: true };
+  });
+
+  app.post("/api/marketplace/connectors/custom/:pluginId/refresh", async (request, reply) => {
+    const gate = customMcpOperator(request, reply);
+    if ("error" in gate) return gate.error;
+    const { principal } = gate;
+    const workspaceSlug = principal.organizationId;
+    const { pluginId } = request.params as { pluginId: string };
+    const current = ownedCustomMcp(pluginId, workspaceSlug);
+    if (!current) {
+      reply.code(404);
+      return { ok: false, error: "plugin_not_found" };
+    }
+    const rules = await enforceRules({
+      reply,
+      workspaceSlug,
+      operation: "custom-mcp.refresh",
+      capability: "connector.admin",
+      pluginId,
+      actorId: principal.id,
+      payload: { transport: customMcpManifest(current).transport },
+      rulesClient: options.rulesClient,
+    });
+    if (!("effect" in rules)) return rules;
+    let connection: ReturnType<typeof customMcpConnection>;
+    try {
+      connection = customMcpConnection(current, workspaceSlug);
+    } catch (error) {
+      if (error instanceof ConnectorSecretStoreUnavailableError) {
+        reply.code(503);
+        return { ok: false, error: "connector_secret_store_unavailable" };
+      }
+      throw error;
+    }
+    const manifest = customMcpManifest(current);
+    const at = new Date().toISOString();
+    let errorCode: string | null = null;
+    let listing = current;
+    try {
+      const remoteTools = await listMcpTools(connection);
+      const tools = toolRecordsFromRemote(current.provider, remoteTools);
+      listing = customMcpListing({
+        pluginId,
+        workspaceSlug,
+        displayName: current.displayName,
+        description: current.description,
+        version: typeof current.manifest.version === "string" ? current.manifest.version : undefined,
+        createdAt: current.createdAt,
+        manifest: { ...manifest, tools, lastRefresh: { at, ok: true, errorCode: null } },
+      });
+      options.store.upsertListing(listing);
+      options.store.upsertConnection({
+        workspaceSlug,
+        pluginId,
+        provider: listing.provider,
+        backend: "mcp",
+        state: "connected",
+        detail: `Connected. ${tools.length} tool${tools.length === 1 ? "" : "s"} available.`,
+        metadata: { lastRefreshAt: at, toolCount: tools.length },
+      });
+      if (options.store.getInstall(workspaceSlug, pluginId)?.lifecycle === "installed") {
+        bindCustomMcpForWorkspace(options.store, workspaceSlug, listing);
+      }
+    } catch (error) {
+      logCustomMcpFailure({ event: "marketplace.custom_mcp.refresh_failed", pluginId, workspaceSlug, error });
+      errorCode = error instanceof McpRemoteError ? error.code : "mcp_protocol_error";
+      listing = customMcpListing({
+        pluginId,
+        workspaceSlug,
+        displayName: current.displayName,
+        description: current.description,
+        version: typeof current.manifest.version === "string" ? current.manifest.version : undefined,
+        createdAt: current.createdAt,
+        manifest: { ...manifest, lastRefresh: { at, ok: false, errorCode } },
+      });
+      options.store.upsertListing(listing);
+      options.store.upsertConnection({
+        workspaceSlug,
+        pluginId,
+        provider: listing.provider,
+        backend: "mcp",
+        state: "blocked",
+        detail: "Marketplace couldn't load tools from this server.",
+        metadata: { lastRefreshAt: at, errorCode },
+      });
+    }
+    options.store.recordAudit({
+      workspaceSlug,
+      pluginId,
+      eventType: "marketplace.custom_mcp.refreshed",
+      actorId: principal.id,
+      rulesDecisionId: rules.decisionId,
+      metadata: {
+        ok: errorCode === null,
+        errorCode,
+        toolCount: listing.actions.length,
+        secretHeaders: secretAuditView(workspaceSlug, pluginId),
+      },
+    });
+    const view = customConnectorView(options.store, workspaceSlug, listing);
+    if (errorCode) {
+      reply.code(errorCode === "custom_mcp_url_not_allowed" ? 400 : 502);
+      return { ok: false, error: errorCode, connector: view };
+    }
+    return { ok: true, connector: view };
+  });
+
   const capabilityProjectionHandler = async (request: { headers: Record<string, unknown>; query: unknown }, reply: FastifyReply) => {
     const authError = requireHubBearerAuth({
       request,
@@ -2921,7 +3600,10 @@ export async function buildMarketplaceApp(
     if (authError) return authError;
     const query = HubAuthQuerySchema.parse(request.query);
     const { pluginId } = request.params as { pluginId: string };
-    const listing = options.store.getListing(pluginId);
+    const listing = options.store.getListingForWorkspace(
+      pluginId,
+      query.workspaceSlug,
+    );
     if (!listing) {
       reply.code(404);
       return { ok: false, error: "plugin_not_found" };
@@ -2991,10 +3673,17 @@ export async function buildMarketplaceApp(
       if (authError) return authError;
       const query = HubAuthQuerySchema.parse(request.query);
       const { pluginId } = request.params as { pluginId: string };
-      const current = options.store.getListing(pluginId);
+      const current = options.store.getListingForWorkspace(
+        pluginId,
+        query.workspaceSlug,
+      );
       if (!current) {
         reply.code(404);
         return { ok: false, error: "plugin_not_found" };
+      }
+      if (listingIsOperatorCustomMcp(current)) {
+        reply.code(409);
+        return { ok: false, error: "plugin_managed_by_operator" };
       }
       if (!listingIsCustomMcp(current)) {
         reply.code(409);
@@ -3084,10 +3773,17 @@ export async function buildMarketplaceApp(
       if (authError) return authError;
       const query = HubAuthQuerySchema.parse(request.query);
       const { pluginId } = request.params as { pluginId: string };
-      const listing = options.store.getListing(pluginId);
+      const listing = options.store.getListingForWorkspace(
+        pluginId,
+        query.workspaceSlug,
+      );
       if (!listing) {
         reply.code(404);
         return { ok: false, error: "plugin_not_found" };
+      }
+      if (listingIsOperatorCustomMcp(listing)) {
+        reply.code(409);
+        return { ok: false, error: "plugin_managed_by_operator" };
       }
       if (!listingIsCustomMcp(listing)) {
         reply.code(409);
@@ -3135,7 +3831,10 @@ export async function buildMarketplaceApp(
       if (authError) return authError;
       const input = HubLifecycleSchema.parse(request.body);
       const { pluginId } = request.params as { pluginId: string };
-      let listing = options.store.getListing(pluginId);
+      let listing = options.store.getListingForWorkspace(
+        pluginId,
+        input.workspaceSlug,
+      );
       if (!listing) {
         reply.code(404);
         return { ok: false, error: "plugin_not_found" };
@@ -3289,7 +3988,9 @@ export async function buildMarketplaceApp(
     const query = WorkspaceQuerySchema.parse(request.query);
     await ensureComposioCatalog(query.workspaceSlug);
     return {
-      items: options.store.listListings().map(browserListingForListing),
+      items: options.store
+        .listListingsForWorkspace(query.workspaceSlug)
+        .map(browserListingForListing),
       providers: await readProviderHealthWithReachability(
         providerEnvironment(),
         options.providerFetch,
@@ -3322,7 +4023,9 @@ export async function buildMarketplaceApp(
       providerEnvironment(),
       options.providerFetch,
     );
-    const summaries = options.store.listListings().map((listing) =>
+    const summaries = options.store
+      .listListingsForWorkspace(query.workspaceSlug)
+      .map((listing) =>
       pluginSummaryForListing({
         store: options.store,
         workspaceSlug: query.workspaceSlug,
@@ -3378,7 +4081,10 @@ export async function buildMarketplaceApp(
     const { pluginId } = request.params as { pluginId: string };
     const query = WorkspaceQuerySchema.parse(request.query);
     await ensureComposioCatalog(query.workspaceSlug);
-    const listing = options.store.getListing(pluginId);
+    const listing = options.store.getListingForWorkspace(
+      pluginId,
+      query.workspaceSlug,
+    );
     if (!listing) {
       reply.code(404);
       return { ok: false, error: "plugin_not_found" };
@@ -3404,7 +4110,9 @@ export async function buildMarketplaceApp(
     await ensureComposioCatalog(query.workspaceSlug);
     return {
       workspaceSlug: query.workspaceSlug,
-      items: options.store.listListings().map((listing) => ({
+      items: options.store
+        .listListingsForWorkspace(query.workspaceSlug)
+        .map((listing) => ({
         ...browserListingForListing(listing),
         install: options.store.getInstall(
           query.workspaceSlug,
@@ -3428,12 +4136,17 @@ export async function buildMarketplaceApp(
 
   app.get("/api/marketplace/plugins/:pluginId", async (request, reply) => {
     const { pluginId } = request.params as { pluginId: string };
-    const listing = options.store.getListing(pluginId);
+    const query = WorkspaceQuerySchema.partial().parse(request.query);
+    const listing = options.store.getListingForWorkspace(
+      pluginId,
+      query.workspaceSlug ??
+        requestPrincipals.get(request)?.organizationId ??
+        organizationId,
+    );
     if (!listing) {
       reply.code(404);
       return { ok: false, error: "plugin_not_found" };
     }
-    const query = WorkspaceQuerySchema.partial().parse(request.query);
     return {
       listing: browserListingForListing(listing),
       ...(query.workspaceSlug
@@ -3462,7 +4175,10 @@ export async function buildMarketplaceApp(
       const { pluginId } = request.params as { pluginId: string };
       const input = InstallInputSchema.parse(request.body);
       const traceId = traceIdFrom(request);
-      const listing = options.store.getListing(pluginId);
+      const listing = options.store.getListingForWorkspace(
+        pluginId,
+        input.workspaceSlug,
+      );
       if (!listing) {
         reply.code(404);
         return { ok: false, error: "plugin_not_found" };
@@ -3481,6 +4197,9 @@ export async function buildMarketplaceApp(
         return rules;
       }
       const install = options.store.install(input.workspaceSlug, pluginId);
+      if (listingIsWorkspaceCustomMcp(listing, input.workspaceSlug)) {
+        bindCustomMcpForWorkspace(options.store, input.workspaceSlug, listing);
+      }
       options.store.recordEvent({
         type: "marketplace.plugin.installed",
         traceId,
@@ -3501,7 +4220,10 @@ export async function buildMarketplaceApp(
       const { pluginId } = request.params as { pluginId: string };
       const input = InstallInputSchema.parse(request.body);
       const traceId = traceIdFrom(request);
-      const listing = options.store.getListing(pluginId);
+      const listing = options.store.getListingForWorkspace(
+        pluginId,
+        input.workspaceSlug,
+      );
       if (!listing) {
         reply.code(404);
         return { ok: false, error: "plugin_not_found" };
@@ -3547,7 +4269,10 @@ export async function buildMarketplaceApp(
       const { pluginId } = request.params as { pluginId: string };
       const input = InstallInputSchema.parse(request.body);
       const traceId = traceIdFrom(request);
-      const listing = options.store.getListing(pluginId);
+      const listing = options.store.getListingForWorkspace(
+        pluginId,
+        input.workspaceSlug,
+      );
       if (!listing) {
         reply.code(404);
         return { ok: false, error: "plugin_not_found" };
@@ -3586,7 +4311,10 @@ export async function buildMarketplaceApp(
       const { pluginId } = request.params as { pluginId: string };
       const input = InstallInputSchema.parse(request.body);
       const traceId = traceIdFrom(request);
-      const listing = options.store.getListing(pluginId);
+      const listing = options.store.getListingForWorkspace(
+        pluginId,
+        input.workspaceSlug,
+      );
       if (!listing) {
         reply.code(404);
         return { ok: false, error: "plugin_not_found" };
@@ -3628,10 +4356,18 @@ export async function buildMarketplaceApp(
       const { pluginId } = request.params as { pluginId: string };
       const input = ConnectionInputSchema.parse(request.body);
       const traceId = traceIdFrom(request);
-      let listing = options.store.getListing(pluginId);
+      let listing = options.store.getListingForWorkspace(
+        pluginId,
+        input.workspaceSlug,
+      );
       if (!listing) {
         reply.code(404);
         return { ok: false, error: "plugin_not_found" };
+      }
+      if (listingIsOperatorCustomMcp(listing)) {
+        // Custom MCP connections are established only by a successful refresh.
+        reply.code(409);
+        return { ok: false, error: "custom_mcp_refresh_required" };
       }
       const rules = await enforceRules({
         reply,
@@ -3937,6 +4673,10 @@ export async function buildMarketplaceApp(
       const { pluginId } = request.params as { pluginId: string };
       const input = BindingInputSchema.parse(request.body);
       const traceId = traceIdFrom(request);
+      if (!options.store.getListingForWorkspace(pluginId, input.workspaceSlug)) {
+        reply.code(404);
+        return { ok: false, error: "plugin_not_found" };
+      }
       if (!options.store.getInstall(input.workspaceSlug, pluginId)) {
         reply.code(409);
         return { ok: false, error: "plugin_not_installed" };
@@ -3975,7 +4715,10 @@ export async function buildMarketplaceApp(
       const { pluginId } = request.params as { pluginId: string };
       const input = ActionBindingInputSchema.parse(request.body);
       const traceId = traceIdFrom(request);
-      const listing = options.store.getListing(pluginId);
+      const listing = options.store.getListingForWorkspace(
+        pluginId,
+        input.workspaceSlug,
+      );
       if (!listing) {
         reply.code(404);
         return { ok: false, error: "plugin_not_found" };
@@ -4554,11 +5297,15 @@ export async function buildMarketplaceApp(
             : {}),
         },
       });
-      const listing = options.store.getListing(pluginId);
+      const listing = options.store.getListingForWorkspace(
+        pluginId,
+        input.workspaceSlug,
+      );
       if (!listing) {
         reply.code(404);
         return { ok: false, error: "plugin_not_found" };
       }
+      const customMcp = listingIsWorkspaceCustomMcp(listing, input.workspaceSlug);
       const install = options.store.getInstall(input.workspaceSlug, pluginId);
       if (!install || !install.enabled || install.lifecycle !== "installed") {
         reply.code(409);
@@ -4600,8 +5347,11 @@ export async function buildMarketplaceApp(
         pluginId,
       );
       if (
-        listingRequiresConnectedAccount(listing) &&
-        connection?.state !== "connected"
+        !listingConnected({
+          listing,
+          workspaceSlug: input.workspaceSlug,
+          connectionState: connection?.state,
+        })
       ) {
         reply.code(409);
         return {
@@ -4618,16 +5368,16 @@ export async function buildMarketplaceApp(
         reply.code(403);
         return { ok: false, error: "agent_grant_connection_mismatch" };
       }
-      const binding = options.store.requireCapabilityBinding(
+      const binding = options.store.getCapabilityBinding(
         input.workspaceSlug,
         pluginId,
         input.capability,
       );
-      if (!binding.enabled) {
+      if (!binding?.enabled) {
         reply.code(403);
         return { ok: false, error: "connector_capability_denied" };
       }
-      if (listing.executionOwner !== "composio") {
+      if (listing.executionOwner !== "composio" && !customMcp) {
         options.store.recordEvent({
           type: "marketplace.execution.unsupported",
           traceId,
@@ -4637,7 +5387,7 @@ export async function buildMarketplaceApp(
           payload: {
             executionOwner: listing.executionOwner,
             action: input.action.type,
-            supportedExecutionOwners: ["composio"],
+            supportedExecutionOwners: ["composio", "mcp"],
           },
         });
         reply.code(501);
@@ -4646,9 +5396,9 @@ export async function buildMarketplaceApp(
           traceId,
           error: "connector_execution_not_supported",
           executionOwner: listing.executionOwner,
-          supportedExecutionOwners: ["composio"],
+          supportedExecutionOwners: ["composio", "mcp"],
           detail:
-            "This launch profile executes Composio-backed tools only. Native, Activepieces, Nango, and MCP execution are unavailable rather than simulated.",
+            "This launch profile executes Composio-backed tools and the workspace's own custom MCP connectors only. Native, Activepieces, Nango, and Hub MCP execution are unavailable rather than simulated.",
         };
       }
       const rules = await enforceRules({
@@ -4688,6 +5438,22 @@ export async function buildMarketplaceApp(
           },
         });
         return { ...rules, traceId };
+      }
+
+      if (customMcp) {
+        return executeCustomMcpAction({
+          reply,
+          listing,
+          workspaceSlug: input.workspaceSlug,
+          capability: input.capability,
+          action: effectiveAction,
+          actorId: effectiveActorId,
+          traceId,
+          rules,
+          runId: input.runId ?? null,
+          sessionId: input.sessionId ?? null,
+          agentGrantId: scopedGrant?.id ?? null,
+        });
       }
 
       const toolName = composioToolNameForAction(listing, input.action.type);
@@ -5367,7 +6133,10 @@ export async function buildMarketplaceApp(
       reply.code(404);
       return { ok: false, error: "agent_tool_not_found" };
     }
-    const listing = options.store.getListing(body.pluginId);
+    const listing = options.store.getListingForWorkspace(
+      body.pluginId,
+      body.workspaceSlug,
+    );
     const requirement = listing
       ? resolveActionRequirement(listing, actionType)
       : null;
