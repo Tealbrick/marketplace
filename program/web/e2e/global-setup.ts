@@ -74,7 +74,7 @@ export default async function globalSetup(config: FullConfig) {
     "Marketplace E2E fixture server must remain on loopback",
   );
 
-  const dataDir = await mkdtemp(path.join(tmpdir(), "doppelganger-marketplace-e2e-"));
+  const dataDir = await mkdtemp(path.join(tmpdir(), "tealbrick-marketplace-e2e-"));
   const store = new SqliteMarketplaceStore(path.join(dataDir, "marketplace.sqlite"), {
     debug: false,
     logPath: path.join(dataDir, "logs", "marketplace-debug.jsonl"),

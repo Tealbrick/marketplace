@@ -31,7 +31,7 @@
     "envelope": ["eventId", "sourceProgram", "type", "workspaceSlug", "occurredAt", "payload", "traceId"]
   },
   "debug": {
-    "env": ["DOPPELGANGER_DEBUG", "MARKETPLACE_DEBUG"],
+    "env": ["TEALBRICK_DEBUG", "DOPPELGANGER_DEBUG", "MARKETPLACE_DEBUG"],
     "logs": {
       "defaultDir": "~/.doppelganger/programs/marketplace/logs"
     }

@@ -25,20 +25,31 @@ type Registry = {
   [key: string]: unknown;
 };
 
+type ManifestNamespace = {
+  surfaces?: Array<Record<string, unknown>>;
+  settingsPanels?: Array<Record<string, unknown>>;
+  dataTransports?: Array<Record<string, unknown>>;
+};
+
 type ManifestRecord = {
   name?: string;
-  doppelganger?: {
-    surfaces?: Array<Record<string, unknown>>;
-    settingsPanels?: Array<Record<string, unknown>>;
-    dataTransports?: Array<Record<string, unknown>>;
-  };
+  tealbrick?: ManifestNamespace;
+  doppelganger?: ManifestNamespace;
 };
 
 const sourceRoot = path.resolve(import.meta.dirname, "..");
 
+// TEALBRICK_APP_HOME; DOPPELGANGER_APP_HOME is a deprecated alias.
+function envAppHome() {
+  if (!process.env.TEALBRICK_APP_HOME && process.env.DOPPELGANGER_APP_HOME) {
+    console.warn("[marketplace] DOPPELGANGER_APP_HOME is deprecated; set TEALBRICK_APP_HOME instead.");
+  }
+  return process.env.TEALBRICK_APP_HOME || process.env.DOPPELGANGER_APP_HOME || process.env.T3CODE_HOME;
+}
+
 function parseArgs(argv: string[]) {
   const result = {
-    appHome: process.env.DOPPELGANGER_APP_HOME || process.env.T3CODE_HOME || path.join(os.homedir(), ".t3"),
+    appHome: envAppHome() || path.join(os.homedir(), ".t3"),
     sourceRoot,
     programHealth: true,
   };
@@ -61,7 +72,7 @@ function parseArgs(argv: string[]) {
   }
 
   if (!result.appHome.trim()) {
-    throw new Error("Missing App home. Pass --app-home or set DOPPELGANGER_APP_HOME/T3CODE_HOME.");
+    throw new Error("Missing App home. Pass --app-home or set TEALBRICK_APP_HOME/T3CODE_HOME.");
   }
   if (!result.sourceRoot.trim()) {
     throw new Error("Missing Marketplace source root.");
@@ -162,13 +173,15 @@ async function verifyInstalledDiscovery(input: { appHome: string; registryPath: 
     await readFile(path.join(installedRoot, ".codex-plugin", "plugin.json"), "utf8"),
   ) as ManifestRecord;
 
-  const surface = manifest.doppelganger?.surfaces?.find(
+  // Namespace key `tealbrick`, legacy `doppelganger` (see program/src/legacy-ids.ts).
+  const namespace = manifest.tealbrick ?? manifest.doppelganger;
+  const surface = namespace?.surfaces?.find(
     (candidate) => candidate.surfaceId === "marketplace" && candidate.routeSegment === "marketplace",
   );
-  const settingsPanel = manifest.doppelganger?.settingsPanels?.find(
+  const settingsPanel = namespace?.settingsPanels?.find(
     (candidate) => candidate.panelId === "marketplace",
   );
-  const dataTransport = manifest.doppelganger?.dataTransports?.find(
+  const dataTransport = namespace?.dataTransports?.find(
     (candidate) => candidate.transportId === "marketplace-api",
   );
 
@@ -252,7 +265,7 @@ async function verifyProgramHealth(input: { appHome: string; installedRoot: stri
   const child = spawn("pnpm", ["--dir", path.join(input.installedRoot, "program"), "dev:miniapp"], {
     env: {
       ...process.env,
-      DOPPELGANGER_DEBUG: "1",
+      TEALBRICK_DEBUG: "1",
       MARKETPLACE_PORT: "0",
       MARKETPLACE_DATA_DIR: path.join(input.appHome, "programs", "marketplace", "data"),
     },

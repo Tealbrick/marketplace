@@ -33,6 +33,7 @@ import type {
   WorkspacePluginInstall,
 } from "./types.js";
 import { shapeOf } from "./usage-ledger.js";
+import { compatDebugEnabled } from "./legacy-ids.js";
 
 export const MARKETPLACE_TABLES = [
   "marketplace_listing",
@@ -525,7 +526,7 @@ export class SqliteMarketplaceStore {
         "logs",
         "marketplace-debug.jsonl",
       );
-    this.debug = options.debug ?? process.env.DOPPELGANGER_DEBUG === "1";
+    this.debug = options.debug ?? compatDebugEnabled();
     this.handoffEncryptionKey = encryptionKeyFromSecret(
       options.handoffEncryptionKey ?? process.env.MARKETPLACE_HANDOFF_ENCRYPTION_KEY,
     );

@@ -8,7 +8,12 @@ import { defineConfig } from "vite";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const localSdk = path.resolve(here, "../../.sdk/doppelganger-ui");
 const deployedSdk = path.resolve(here, "../../.sdk/doppelganger-ui");
-const sdkRoot = process.env.DOPPELGANGER_UI_SDK_ROOT
+// TEALBRICK_UI_SDK_ROOT; DOPPELGANGER_UI_SDK_ROOT is a deprecated alias.
+if (!process.env.TEALBRICK_UI_SDK_ROOT && process.env.DOPPELGANGER_UI_SDK_ROOT) {
+  console.warn("[marketplace] DOPPELGANGER_UI_SDK_ROOT is deprecated; set TEALBRICK_UI_SDK_ROOT instead.");
+}
+const sdkRoot = process.env.TEALBRICK_UI_SDK_ROOT
+  ?? process.env.DOPPELGANGER_UI_SDK_ROOT
   ?? (fs.existsSync(path.join(deployedSdk, "src", "fleet.css")) ? deployedSdk : localSdk);
 const programOrigin = process.env.MARKETPLACE_PROGRAM_ORIGIN ?? "http://127.0.0.1:5314";
 

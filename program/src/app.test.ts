@@ -17,7 +17,7 @@ const tempRoots: string[] = [];
 
 async function tempDbPath() {
   const root = await mkdtemp(
-    path.join(os.tmpdir(), "doppelganger-marketplace-"),
+    path.join(os.tmpdir(), "tealbrick-marketplace-"),
   );
   tempRoots.push(root);
   return path.join(root, "marketplace.sqlite");
@@ -25,7 +25,7 @@ async function tempDbPath() {
 
 async function tempRuntimePaths() {
   const root = await mkdtemp(
-    path.join(os.tmpdir(), "doppelganger-marketplace-runtime-"),
+    path.join(os.tmpdir(), "tealbrick-marketplace-runtime-"),
   );
   tempRoots.push(root);
   return {

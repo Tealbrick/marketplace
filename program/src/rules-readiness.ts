@@ -1,3 +1,5 @@
+import { isAcceptedId } from "./legacy-ids.js";
+
 export type RulesReadinessConfiguration = {
   baseUrl: string;
   internalAuthToken?: string;
@@ -58,7 +60,7 @@ export function parseRulesReadinessPrincipal(input: {
     !nonEmptyString(principal.credentialId) ||
     !Array.isArray(allowedMethods) ||
     allowedMethods.length !== 1 ||
-    allowedMethods[0] !== "doppelganger.rules.evaluate" ||
+    !isAcceptedId("tealbrick.rules.evaluate", allowedMethods[0]) ||
     !Array.isArray(allowedRuleKeys) ||
     allowedRuleKeys.length !== 1 ||
     allowedRuleKeys[0] !== "marketplace.plugin" ||
@@ -77,6 +79,8 @@ export function parseRulesReadinessPrincipal(input: {
     workspaceSlug: principal.workspaceSlug,
     clientId: "marketplace",
     targetKind: "plugin",
+    // Rules may report either spelling; Portal Core only accepts the legacy id
+    // until Tealbrick/DPL-Portal-core#9 ships, so keep emitting it here.
     allowedMethods: ["doppelganger.rules.evaluate"],
     allowedRuleKeys: ["marketplace.plugin"],
     expiresAt,

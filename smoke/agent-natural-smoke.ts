@@ -6,7 +6,7 @@ import { buildMarketplaceApp } from "../program/src/app.js";
 import { SqliteMarketplaceStore } from "../program/src/store.js";
 
 async function main() {
-  const root = await mkdtemp(path.join(os.tmpdir(), "doppelganger-marketplace-agent-smoke-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "tealbrick-marketplace-agent-smoke-"));
   const dbPath = path.join(root, "data", "marketplace.sqlite");
   const logPath = path.join(root, "logs", "marketplace-debug.jsonl");
   const decisions = new Map<string, "allow" | "deny">([

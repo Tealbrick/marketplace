@@ -72,10 +72,19 @@ Requires Node `>=22.22.0` and pnpm `>=9.15.4`.
 
 ```sh
 pnpm --dir program install --frozen-lockfile
-DOPPELGANGER_MICROAPPS_ROOT="$PWD" pnpm --dir program test
+TEALBRICK_MICROAPPS_ROOT="$PWD" pnpm --dir program test
 pnpm --dir program typecheck
 pnpm --dir program build:miniapp
 ```
+
+Tealbrick environment variables use the `TEALBRICK_` prefix
+(`TEALBRICK_MICROAPPS_ROOT`, `TEALBRICK_DEBUG`, `TEALBRICK_RUNTIME_FILE`,
+`TEALBRICK_PRODUCT_WORKSPACE_DIR`, `TEALBRICK_MARKETPLACE_INTERNAL_AUTH_TOKEN`,
+`TEALBRICK_UI_SDK_ROOT`, `TEALBRICK_APP_HOME`). The old `DOPPELGANGER_*` names
+are deprecated aliases that still work and log a one-time warning. Without an
+explicit data directory, state defaults to `~/.tealbrick/programs/marketplace`;
+an existing `~/.doppelganger/programs/marketplace` is moved there once on
+server start (a symlink is left at the old path; nothing is deleted).
 
 For an isolated local run, set `MARKETPLACE_DATA_DIR` to a disposable
 directory, provide non-production fixture tokens, and keep provider variables

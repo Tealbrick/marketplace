@@ -25,7 +25,7 @@ const allowRules = async () => ({
 
 async function makeStore() {
   const root = await mkdtemp(
-    path.join(os.tmpdir(), "doppelganger-marketplace-hub-"),
+    path.join(os.tmpdir(), "tealbrick-marketplace-hub-"),
   );
   roots.push(root);
   return new SqliteMarketplaceStore(path.join(root, "marketplace.sqlite"));

@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { validateSettingsDeclaration } from "../../.sdk/extension-settings.mjs";
+import { manifestNamespace, readCompatEnv } from "./legacy-ids.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -122,11 +123,14 @@ export function defaultMicroappsRoot(
   env: NodeJS.ProcessEnv = process.env,
   moduleDir = path.dirname(fileURLToPath(import.meta.url)),
 ) {
-  const explicit = env.DOPPELGANGER_MICROAPPS_ROOT?.trim();
+  const explicit = readCompatEnv(env, "MICROAPPS_ROOT");
   if (explicit) {
     const resolved = path.resolve(explicit);
     if (!isManifestRoot(resolved)) {
-      throw new Error(`DOPPELGANGER_MICROAPPS_ROOT does not contain Extension manifests: ${resolved}`);
+      const source = env.TEALBRICK_MICROAPPS_ROOT?.trim()
+        ? "TEALBRICK_MICROAPPS_ROOT"
+        : "DOPPELGANGER_MICROAPPS_ROOT";
+      throw new Error(`${source} does not contain Extension manifests: ${resolved}`);
     }
     return resolved;
   }
@@ -139,7 +143,7 @@ export function defaultMicroappsRoot(
   const resolved = candidates.find(isManifestRoot);
   if (!resolved) {
     throw new Error(
-      `No Micro-app Extension manifest root found. Set DOPPELGANGER_MICROAPPS_ROOT; checked: ${candidates.join(", ")}`,
+      `No Micro-app Extension manifest root found. Set TEALBRICK_MICROAPPS_ROOT; checked: ${candidates.join(", ")}`,
     );
   }
   return resolved;
@@ -192,7 +196,7 @@ async function loadDynamicProviderPanels(
   }
   const pluginManifest = await loadSourcePluginManifest(microappsRoot, manifest, true);
   if (!pluginManifest) return [];
-  const panels = asRecord(pluginManifest.doppelganger)?.settingsPanels;
+  const panels = manifestNamespace(pluginManifest)?.settingsPanels;
   if (!Array.isArray(panels)) return [];
 
   return panels.flatMap((value) => {
@@ -265,7 +269,10 @@ async function loadSourcePluginManifest(
     const productPath = path.join(unitRoot, "manifest.json");
     if (existsSync(productPath)) {
       const product = JSON.parse(await readFile(productPath, "utf8")) as JsonRecord;
-      plugin.doppelganger = product.doppelganger ?? plugin.doppelganger;
+      // Product manifest's namespace wins; either the `tealbrick` or the
+      // legacy `doppelganger` key is accepted (see legacy-ids.ts).
+      const namespace = manifestNamespace(product) ?? manifestNamespace(plugin);
+      if (namespace) plugin.tealbrick = namespace;
     }
     return plugin;
   } catch (error) {
