@@ -14,7 +14,7 @@ test("runs request, explicit Portal approval, return, and reconcile through the 
   await page.getByRole("button", { name: "Agent grants" }).click();
   await page.getByLabel("Portal deployment ID").fill("deployment-1");
   await page.getByLabel("Agent selection").fill("agent-1");
-  await page.getByLabel("Connected account ID").fill("ca_1");
+  await expect(page.getByLabel("Connected account")).toHaveValue("ca_1");
   await page.getByRole("button", { name: "Request Portal consent" }).click();
 
   const request = page.getByTestId(/^handoff-request-/u).first();
@@ -74,7 +74,7 @@ test("paired backend exposes expired handoff state without a reconcile action", 
   await page.getByRole("button", { name: "Agent grants" }).click();
   await page.getByLabel("Portal deployment ID").fill("deployment-1");
   await page.getByLabel("Agent selection").fill("agent-expired");
-  await page.getByLabel("Connected account ID").fill("ca_1");
+  await expect(page.getByLabel("Connected account")).toHaveValue("ca_1");
   await page.getByRole("button", { name: "Request Portal consent" }).click();
   const request = page.getByTestId(/^handoff-request-/u).first();
   await expect(request).toContainText("Expired");
@@ -86,7 +86,7 @@ test("paired Portal denial fails reconciliation without creating a grant", async
   await page.getByRole("button", { name: "Agent grants" }).click();
   await page.getByLabel("Portal deployment ID").fill("deployment-1");
   await page.getByLabel("Agent selection").fill("agent-denied");
-  await page.getByLabel("Connected account ID").fill("ca_1");
+  await expect(page.getByLabel("Connected account")).toHaveValue("ca_1");
   await page.getByRole("button", { name: "Request Portal consent" }).click();
   const request = page.getByTestId(/^handoff-request-/u).first();
   const approvalUrl = await request.getByRole("link", { name: "Open Portal review" }).getAttribute("href");

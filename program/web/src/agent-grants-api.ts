@@ -1,5 +1,6 @@
 import { api } from "./api";
 import type {
+  AgentActionCatalogResponse,
   AgentGrantRequestResponse,
   AgentGrantRedeemResponse,
   AgentGrantSelection,
@@ -9,6 +10,11 @@ import type {
 export const getAgentGrants = (workspaceSlug: string) => {
   const query = new URLSearchParams({ workspaceSlug });
   return api<AgentGrantsResponse>(`/api/marketplace/agent/grants?${query.toString()}`);
+};
+
+export const getAgentActionCatalog = (workspaceSlug: string) => {
+  const query = new URLSearchParams({ workspaceSlug });
+  return api<AgentActionCatalogResponse>(`/api/marketplace/v1/agent/action-catalog?${query.toString()}`);
 };
 
 export const requestAgentGrant = (input: {

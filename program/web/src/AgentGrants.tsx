@@ -1,26 +1,19 @@
 import { useMemo, useState } from "react";
-import { Bot, Clock3, ExternalLink, KeyRound, LoaderCircle, RefreshCw, ShieldCheck, XCircle } from "lucide-react";
+import { Bot, Boxes, Clock3, ExternalLink, KeyRound, LoaderCircle, PackageCheck, Plug, RefreshCw, ShieldCheck, XCircle } from "lucide-react";
 import { Button, Tag } from "@doppelganger/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { getAgentGrants, redeemAgentGrant, requestAgentGrant } from "./agent-grants-api";
+import { getAgentActionCatalog, getAgentGrants, redeemAgentGrant, requestAgentGrant } from "./agent-grants-api";
 import type {
+  AgentActionCatalogEntry,
   AgentConsentSummary,
   AgentGrantRequestResponse,
-  AgentGrantSelection,
+  ConnectorCapability,
   AgentGrantSummary,
   AgentGrantsResponse,
   HandoffRequestSummary,
 } from "./types";
 import { formatWhen, InlineError, StatePanel, statusLabel, statusTone, words } from "./ui";
-
-const SUPPORTED_SELECTION: AgentGrantSelection = {
-  pluginId: "github-composio",
-  actionKey: "github.list.repositories",
-  resourceKind: "github.connected-account",
-  accountId: "",
-  resourceRef: "",
-};
 
 function newIdempotencyKey() {
   const random = typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -123,41 +116,106 @@ function HandoffRequestRow({ request, onRedeem, redeeming }: { request: HandoffR
   );
 }
 
-function RequestGrantForm({ data, workspaceSlug, onRequested }: { data: AgentGrantsResponse; workspaceSlug: string; onRequested: (result: AgentGrantRequestResponse) => void }) {
+const CAPABILITY_COPY: Record<ConnectorCapability, { badge: string; tone: "default" | "warning" | "danger"; detail: string }> = {
+  "connector.observe": { badge: "Read only", tone: "default", detail: "The agent can look up information through this account. It can't change anything." },
+  "connector.dispatch": { badge: "Can make changes", tone: "warning", detail: "The agent can create and update items through this account, for example opening an issue or sending a message." },
+  "connector.admin": { badge: "Full control", tone: "danger", detail: "The agent can create, change, and delete items and manage settings through this account." },
+};
+
+function connectorsFrom(actions: AgentActionCatalogEntry[]) {
+  const connectors = new Map<string, { pluginId: string; pluginName: string }>();
+  for (const action of actions) {
+    if (!connectors.has(action.pluginId)) connectors.set(action.pluginId, { pluginId: action.pluginId, pluginName: action.pluginName });
+  }
+  return [...connectors.values()];
+}
+
+function accountLabel(account: { accountId: string; label?: string }) {
+  return account.label ? `${account.label} (${account.accountId})` : account.accountId;
+}
+
+function RequestGrantForm({ data, workspaceSlug, onRequested, onNavigate }: { data: AgentGrantsResponse; workspaceSlug: string; onRequested: (result: AgentGrantRequestResponse) => void; onNavigate?: (section: "catalog" | "installed") => void }) {
   const seedRequest = data.handoffRequests?.[0];
   const seedConsent = data.consents?.[0];
+  const catalog = useQuery({
+    queryKey: ["agent-action-catalog", workspaceSlug],
+    queryFn: () => getAgentActionCatalog(workspaceSlug),
+    enabled: Boolean(workspaceSlug),
+    retry: false,
+  });
+  const actions = catalog.data?.actions ?? [];
+  const connectors = useMemo(() => connectorsFrom(actions), [actions]);
   const [deploymentId, setDeploymentId] = useState(seedRequest?.deploymentId ?? seedConsent?.deploymentId ?? "");
   const [agentId, setAgentId] = useState(seedRequest?.agentId ?? seedConsent?.agentId ?? "");
-  const [accountId, setAccountId] = useState(seedRequest?.selection.accountId ?? seedConsent?.accountId ?? "");
+  const [pluginChoice, setPluginChoice] = useState(seedRequest?.selection.pluginId ?? seedConsent?.pluginId ?? "");
+  const [actionChoice, setActionChoice] = useState(seedRequest?.selection.actionKey ?? seedConsent?.actionKey ?? "");
+  const [accountChoice, setAccountChoice] = useState(seedRequest?.selection.accountId ?? seedConsent?.accountId ?? "");
   const [idempotencyKey, setIdempotencyKey] = useState(newIdempotencyKey);
+
+  // Derive the effective picks from what the catalog currently publishes, so
+  // stale seeds or removed connectors never reach the request.
+  const pluginId = connectors.some((connector) => connector.pluginId === pluginChoice)
+    ? pluginChoice
+    : connectors.length === 1 ? connectors[0]!.pluginId : "";
+  const connectorActions = actions.filter((action) => action.pluginId === pluginId);
+  const action = connectorActions.find((entry) => entry.actionKey === actionChoice)
+    ?? (connectorActions.length === 1 ? connectorActions[0] : undefined);
+  const accountId = action?.accounts.some((account) => account.accountId === accountChoice)
+    ? accountChoice
+    : action?.accounts.length === 1 ? action.accounts[0]!.accountId : "";
+  const resourceRef = accountId ? `account:${accountId}` : "";
+
   const request = useMutation({
-    mutationFn: () => requestAgentGrant({
-      deploymentId: deploymentId.trim(),
-      agentId: agentId.trim(),
-      selection: { ...SUPPORTED_SELECTION, accountId: accountId.trim(), resourceRef: `account:${accountId.trim()}` },
-      idempotencyKey,
-    }),
+    mutationFn: () => {
+      if (!action || !accountId) throw new Error("No published action selected.");
+      return requestAgentGrant({
+        deploymentId: deploymentId.trim(),
+        agentId: agentId.trim(),
+        selection: { pluginId: action.pluginId, actionKey: action.actionKey, accountId, resourceKind: action.resourceKind, resourceRef },
+        idempotencyKey,
+      });
+    },
     onSuccess: (result) => {
       onRequested(result);
       setIdempotencyKey(newIdempotencyKey());
     },
   });
-  const valid = Boolean(deploymentId.trim() && agentId.trim() && accountId.trim());
+  const valid = Boolean(deploymentId.trim() && agentId.trim() && action && accountId);
+  const capability = action ? CAPABILITY_COPY[action.capability] : null;
+
+  let picker;
+  if (catalog.isLoading) {
+    picker = <p className="grant-catalog-state" role="status"><LoaderCircle className="spin" size={15} />Loading the actions your connectors make available to agents…</p>;
+  } else if (catalog.error) {
+    picker = <div className="grant-catalog-state"><InlineError error={catalog.error} /><Button size="small" onClick={() => void catalog.refetch()}><RefreshCw size={14} />Retry</Button></div>;
+  } else if (!actions.length) {
+    picker = <div className="collection-empty compact grant-catalog-empty"><Plug /><h3>Install and connect a connector first</h3><p>Agents can only be given access to actions from connectors that are installed, connected to an account, and turned on in this workspace.</p>{onNavigate && <div className="grant-catalog-empty__actions"><Button tone="primary" size="small" onClick={() => onNavigate("catalog")}><Boxes size={14} />Browse the catalog</Button><Button size="small" onClick={() => onNavigate("installed")}><PackageCheck size={14} />View installed</Button></div>}</div>;
+  } else {
+    picker = <>
+      <div className="form-grid two">
+        <label>Connector<select aria-label="Connector" value={pluginId} onChange={(event) => { setPluginChoice(event.target.value); setActionChoice(""); setAccountChoice(""); }} required><option value="" disabled>Choose a connector</option>{connectors.map((connector) => <option key={connector.pluginId} value={connector.pluginId}>{connector.pluginName}</option>)}</select></label>
+        <label>Action<select aria-label="Action" value={action?.actionKey ?? ""} onChange={(event) => { setActionChoice(event.target.value); setAccountChoice(""); }} disabled={!pluginId} required><option value="" disabled>{pluginId ? "Choose an action" : "Choose a connector first"}</option>{connectorActions.map((entry) => <option key={entry.actionKey} value={entry.actionKey}>{entry.label} — {CAPABILITY_COPY[entry.capability].badge}</option>)}</select></label>
+        <label>Connected account<select aria-label="Connected account" value={accountId} onChange={(event) => setAccountChoice(event.target.value)} disabled={!action} required><option value="" disabled>{action ? "Choose an account" : "Choose an action first"}</option>{action?.accounts.map((account) => <option key={account.accountId} value={account.accountId}>{accountLabel(account)}</option>)}</select></label>
+        <label>Resource scope<input value={resourceRef} readOnly aria-label="Resource scope" placeholder="Set by the connected account" /></label>
+      </div>
+      {action && capability && <div className="grant-capability" data-testid="grant-capability"><Tag tone={capability.tone}>{capability.badge}</Tag><p>{capability.detail}{action.description ? <span> {action.description}</span> : null}</p></div>}
+      <dl className="contract-list grant-request-selection"><dt>Connector</dt><dd>{action?.pluginName ?? "—"}</dd><dt>Action</dt><dd>{action ? <code>{action.actionKey}</code> : "—"}</dd><dt>Access level</dt><dd>{capability?.badge ?? "—"}</dd><dt>Resource kind</dt><dd>{action?.resourceKind ?? "—"}</dd><dt>Workspace</dt><dd>{workspaceSlug}</dd></dl>
+    </>;
+  }
+
   return (
     <section className="grant-request-panel">
       <header className="section-heading">
         <div><p className="eyebrow">Portal handoff</p><h2>Request connector access</h2></div>
         <Tag tone="accent">{data.handoffContractVersion}</Tag>
       </header>
-      <p className="section-copy">Marketplace sends a bounded selection to its server-side Portal handoff. Portal owns the human approval; this browser never receives a Portal session, agent credential, or runtime lease.</p>
+      <p className="section-copy">Pick an action one of your connectors makes available to agents. Marketplace sends that bounded selection to Teal Brick Portal, where a person approves it; this browser never receives a Portal session, agent credential, or runtime lease.</p>
       <form className="grant-request-form" onSubmit={(event) => { event.preventDefault(); request.mutate(); }}>
         <div className="form-grid two">
           <label>Portal deployment ID<input value={deploymentId} onChange={(event) => setDeploymentId(event.target.value)} placeholder="From the Portal launch context" required /></label>
           <label>Agent selection<input value={agentId} onChange={(event) => setAgentId(event.target.value)} placeholder="Portal-attested agent" required /></label>
-          <label>Connected account ID<input value={accountId} onChange={(event) => setAccountId(event.target.value)} placeholder="e.g. ca_1" required /></label>
-          <label>Resource scope<input value={accountId ? `account:${accountId}` : ""} readOnly aria-label="Resource scope" /></label>
         </div>
-        <dl className="contract-list grant-request-selection"><dt>Plugin</dt><dd>{SUPPORTED_SELECTION.pluginId}</dd><dt>Action</dt><dd>{SUPPORTED_SELECTION.actionKey}</dd><dt>Resource kind</dt><dd>{SUPPORTED_SELECTION.resourceKind}</dd><dt>Workspace</dt><dd>{workspaceSlug}</dd></dl>
+        {picker}
         {request.error && <InlineError error={request.error} />}
         <div className="grant-request-form__footer"><span>Idempotency is retained for this request attempt: <code>{idempotencyKey}</code></span><Button tone="primary" type="submit" disabled={!valid || request.isPending}>{request.isPending ? <LoaderCircle className="spin" size={15} /> : <ShieldCheck size={15} />}Request Portal consent</Button></div>
       </form>
@@ -165,7 +223,7 @@ function RequestGrantForm({ data, workspaceSlug, onRequested }: { data: AgentGra
   );
 }
 
-export function AgentGrantsPage({ workspaceSlug, onRevoke }: { workspaceSlug: string; onRevoke: (grant: AgentGrantSummary) => void }) {
+export function AgentGrantsPage({ workspaceSlug, onRevoke, onNavigate }: { workspaceSlug: string; onRevoke: (grant: AgentGrantSummary) => void; onNavigate?: (section: "catalog" | "installed") => void }) {
   const queryClient = useQueryClient();
   const grants = useQuery({
     queryKey: ["agent-grants", workspaceSlug],
@@ -198,7 +256,7 @@ export function AgentGrantsPage({ workspaceSlug, onRevoke }: { workspaceSlug: st
         <Tag>{visibleGrants.length} grants</Tag>
       </header>
       <div className="contract-gap agent-grant-creation-gap"><ShieldCheck size={18} /><div><strong>Direct grant creation is disabled</strong><p>{data.grantCreation.detail} The supported path below requests Portal consent and waits for explicit approval.</p><small>{words(data.grantCreation.code)}</small></div></div>
-      <RequestGrantForm data={data} workspaceSlug={workspaceSlug} onRequested={(result) => { setRequestNotice(result); void queryClient.invalidateQueries({ queryKey: ["agent-grants", workspaceSlug] }); }} />
+      <RequestGrantForm data={data} workspaceSlug={workspaceSlug} onNavigate={onNavigate} onRequested={(result) => { setRequestNotice(result); void queryClient.invalidateQueries({ queryKey: ["agent-grants", workspaceSlug] }); }} />
       {requestNotice && <div className="request-result contract-gap" role="status"><ShieldCheck size={18} /><div><strong>Portal consent request created</strong><p>Open Portal review, approve explicitly, then return here to reconcile request <code>{requestNotice.request.requestId}</code>.</p><a href={requestNotice.request.approvalUrl} target="_blank" rel="noreferrer">Open Portal review <ExternalLink size={13} /></a></div></div>}
       {redeem.error && <div className="grant-redeem-error"><InlineError error={redeem.error} /></div>}
       {handoffRequests.length > 0 && <section className="grant-subsection"><div className="section-heading"><div><p className="eyebrow">Consent workflow</p><h2>Portal requests</h2></div><Tag>{handoffRequests.length}</Tag></div><div className="agent-grants-list">{handoffRequests.map((request) => <HandoffRequestRow key={request.requestId} request={request} onRedeem={(entry) => redeem.mutate(entry)} redeeming={redeem.isPending && redeem.variables?.requestId === request.requestId} />)}</div></section>}

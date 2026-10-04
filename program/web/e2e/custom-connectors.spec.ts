@@ -95,3 +95,43 @@ test("custom connector form stays contained on a phone", async ({ page }) => {
   await page.screenshot({ path: test.info().outputPath("phone-custom-connector-form.png") });
   await dialog.getByRole("button", { name: "Cancel" }).click();
 });
+
+test("agent grants picker offers a refreshed custom connector's tools from the live catalog", async ({ page }) => {
+  await page.setViewportSize({ width: 1152, height: 820 });
+  await unlockMarketplace(page);
+  // Create, refresh, and install through the operator session (same-origin + CSRF).
+  const pluginId = await page.evaluate(async (input) => {
+    const session = await (await fetch("/api/marketplace/auth/session")).json();
+    const headers = { "content-type": "application/json", "x-csrf-token": session.session.csrfToken };
+    const post = async (url: string, body: unknown) => {
+      const response = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+      if (!response.ok) throw new Error(`${url} -> ${response.status}`);
+      return response.json();
+    };
+    const created = await post("/api/marketplace/connectors/custom", { displayName: "E2E Picker", url: input.url, transport: "streamable-http", secretHeaders: { "X-Api-Key": input.secret } });
+    const id = created.connector.pluginId as string;
+    await post(`/api/marketplace/connectors/custom/${id}/refresh`, {});
+    await post(`/api/marketplace/plugins/${id}/install`, {});
+    return id;
+  }, { url: `http://127.0.0.1:${E2E_MCP_PORT}/mcp`, secret: E2E_MCP_SECRET });
+
+  await page.getByRole("navigation").getByRole("button", { name: "Agent grants" }).click();
+  await page.getByLabel("Connector").selectOption(pluginId);
+  await page.getByLabel("Action", { exact: true }).selectOption(`${pluginId}.create-issue`);
+  // Custom MCP connectors have one synthetic account: the connector itself.
+  await expect(page.getByLabel("Connected account")).toHaveValue("connector");
+  await expect(page.getByLabel("Connected account").locator("option:checked")).toHaveText("E2E Picker (connector)");
+  await expect(page.getByLabel("Resource scope")).toHaveValue("account:connector");
+  await expect(page.getByTestId("grant-capability")).toContainText("Can make changes");
+  await page.getByLabel("Action", { exact: true }).selectOption(`${pluginId}.echo`);
+  await expect(page.getByTestId("grant-capability")).toContainText("Read only");
+  await expect(page.locator("body")).not.toContainText(E2E_MCP_SECRET);
+
+  // Deleting the connector removes it from the picker.
+  await page.evaluate(async (id) => {
+    const session = await (await fetch("/api/marketplace/auth/session")).json();
+    await fetch(`/api/marketplace/connectors/custom/${id}`, { method: "DELETE", headers: { "x-csrf-token": session.session.csrfToken } });
+  }, pluginId);
+  await page.getByRole("button", { name: "Refresh" }).first().click();
+  await expect(page.getByRole("heading", { name: "Install and connect a connector first" })).toBeVisible();
+});

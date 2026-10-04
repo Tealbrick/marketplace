@@ -100,3 +100,13 @@ describe("custom connector copy", () => {
     expect(errorCopy(new ApiError("", 403, { error: "workspace_mismatch" })).title).toBe("This belongs to a different organization");
   });
 });
+
+describe("agent action catalog copy", () => {
+  it("explains catalog selection failures without exposing codes as titles", () => {
+    expect(errorCopy(new ApiError("", 404, { error: "agent_action_not_published" })).title).toBe("This action isn't available to agents right now");
+    expect(errorCopy(new ApiError("", 409, { error: "agent_action_account_mismatch" })).title).toBe("That account is no longer connected");
+    expect(errorCopy(new ApiError("", 409, { error: "agent_action_capability_mismatch" })).title).toBe("This action changed in the meantime");
+    expect(errorCopy(new ApiError("", 409, { error: "portal_consent_scope_unavailable" })).title).toBe("This access can't be granted anymore");
+    expect(errorCopy(new ApiError("", 403, { error: "agent_action_catalog_tenant_mismatch" })).title).toBe("This belongs to a different organization");
+  });
+});

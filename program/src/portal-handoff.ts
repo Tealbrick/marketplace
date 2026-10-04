@@ -3,12 +3,19 @@ import type { ConnectorCapability } from "./types.js";
 export const MARKETPLACE_PORTAL_HANDOFF_CONTRACT_VERSION =
   "tealbrick.marketplace.operator-handoff.v1.1" as const;
 
+/**
+ * Portal selection. v1.1 is the five identity keys (capability observe is
+ * implied); Portal Core contract v1.2 additionally accepts `capability`.
+ * Marketplace sends `capability` only for non-observe actions, so observe
+ * selections stay byte-identical for Portal deployments that predate v1.2.
+ */
 export type MarketplacePortalSelection = {
   pluginId: string;
   actionKey: string;
   accountId: string;
   resourceKind: string;
   resourceRef: string;
+  capability?: ConnectorCapability;
 };
 
 export type MarketplacePortalConsentEnvelope = {
@@ -129,13 +136,27 @@ function capabilities(value: unknown): ConnectorCapability[] {
 
 function selection(value: unknown): MarketplacePortalSelection {
   const input = object(value);
-  const result = {
+  const result: MarketplacePortalSelection = {
     pluginId: requiredString(input.pluginId, "selection.pluginId"),
     actionKey: requiredString(input.actionKey, "selection.actionKey"),
     accountId: requiredString(input.accountId, "selection.accountId"),
     resourceKind: requiredString(input.resourceKind, "selection.resourceKind"),
     resourceRef: requiredString(input.resourceRef, "selection.resourceRef"),
   };
+  if (input.capability !== undefined && input.capability !== null) {
+    if (
+      input.capability !== "connector.observe" &&
+      input.capability !== "connector.dispatch" &&
+      input.capability !== "connector.admin"
+    ) {
+      throw new PortalHandoffError(
+        "portal_handoff_invalid",
+        503,
+        "Portal handoff response has an invalid selection capability.",
+      );
+    }
+    result.capability = input.capability;
+  }
   if (result.resourceRef !== `account:${result.accountId}`) {
     throw new PortalHandoffError(
       "portal_handoff_invalid",

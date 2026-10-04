@@ -89,8 +89,22 @@ import {
 import {
   applyScopedResource,
   MARKETPLACE_AGENT_GRANT_CONTRACT_VERSION,
-  scopedResourceMapping,
 } from "./agent-grant-contract.js";
+import {
+  AGENT_SELECTION_ACCOUNT_ID_PATTERN,
+  AGENT_SELECTION_ACTION_KEY_MAX_LENGTH,
+  AGENT_SELECTION_ACTION_KEY_PATTERN,
+  AGENT_SELECTION_PLUGIN_ID_PATTERN,
+  AGENT_SELECTION_RESOURCE_KIND_PATTERN,
+  agentAccountIdForConnection,
+  connectedAccountIdFromConnection,
+  listingExecutableForAgents,
+  MARKETPLACE_AGENT_ACTION_CATALOG_CONTRACT_VERSION,
+  publishedAgentActionCatalog,
+  resolvePublishedAgentAction,
+  selectionCapability,
+  type AgentActionCatalogEntry,
+} from "./agent-action-catalog.js";
 import {
   createPortalAgentScopeVerifier,
   PortalScopeError,
@@ -380,15 +394,28 @@ const PortalIdentifierSchema = z
   .string()
   .regex(/^[A-Za-z0-9_:-]{1,128}$/u);
 
+const ConnectorCapabilitySchema = z.enum([
+  "connector.observe",
+  "connector.dispatch",
+  "connector.admin",
+]);
+
+// Selection v1.2: the v1.1 five identity keys plus an optional capability.
+// Which pluginId/actionKey/resourceKind values are usable is decided by the
+// published agent action catalog, not by this schema.
 const PortalSelectionSchema = z
   .strictObject({
-    pluginId: z.literal("github-composio"),
-    actionKey: z.literal("github.list.repositories"),
-    accountId: PortalIdentifierSchema,
-    resourceKind: z.literal("github.connected-account"),
+    pluginId: z.string().regex(AGENT_SELECTION_PLUGIN_ID_PATTERN),
+    actionKey: z
+      .string()
+      .max(AGENT_SELECTION_ACTION_KEY_MAX_LENGTH)
+      .regex(AGENT_SELECTION_ACTION_KEY_PATTERN),
+    accountId: z.string().regex(AGENT_SELECTION_ACCOUNT_ID_PATTERN),
+    resourceKind: z.string().regex(AGENT_SELECTION_RESOURCE_KIND_PATTERN),
     resourceRef: z
       .string()
       .regex(/^account:[A-Za-z0-9_:-]{1,128}$/u),
+    capability: ConnectorCapabilitySchema.optional(),
   })
   .superRefine((value, context) => {
     if (value.resourceRef !== `account:${value.accountId}`) {
@@ -880,14 +907,46 @@ function brokerGrantIsExpired(grant: { expiresAt: string }) {
   return Date.parse(grant.expiresAt) <= Date.now();
 }
 
-function connectedAccountIdFromConnection(
-  connection: { metadata: Record<string, unknown> } | null,
+/**
+ * Build the selection Marketplace sends to Portal for a published action.
+ *
+ * Capability-sending decision: `capability` is included only when the action
+ * needs more than observe. A selection without `capability` means observe in
+ * both Portal Core v1.1 and v1.2, so observe actions (including the legacy
+ * GitHub repository-list action) keep sending the exact five-key v1.1
+ * selection and continue to work against Portal deployments that predate
+ * v1.2. Dispatch/admin actions require v1.2; an older Portal rejects the
+ * extra key instead of silently minting an observe-only consent.
+ */
+function portalSelectionForPublishedAction(input: {
+  entry: AgentActionCatalogEntry;
+  accountId: string;
+}): MarketplacePortalSelection {
+  return {
+    pluginId: input.entry.pluginId,
+    actionKey: input.entry.actionKey,
+    accountId: input.accountId,
+    resourceKind: input.entry.resourceKind,
+    resourceRef: `account:${input.accountId}`,
+    ...(input.entry.capability === "connector.observe"
+      ? {}
+      : { capability: input.entry.capability }),
+  };
+}
+
+/** Compare selections, treating an absent capability as observe. */
+function portalSelectionsEquivalent(
+  left: MarketplacePortalSelection,
+  right: MarketplacePortalSelection,
 ) {
-  const value =
-    connection?.metadata.connectedAccountId ??
-    connection?.metadata.connected_account_id ??
-    connection?.metadata.connectionId;
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+  return (
+    left.pluginId === right.pluginId &&
+    left.actionKey === right.actionKey &&
+    left.accountId === right.accountId &&
+    left.resourceKind === right.resourceKind &&
+    left.resourceRef === right.resourceRef &&
+    selectionCapability(left) === selectionCapability(right)
+  );
 }
 
 function headerValue(request: { headers: Record<string, unknown> }, name: string) {
@@ -4802,12 +4861,45 @@ export async function buildMarketplaceApp(
         reply.code(401);
         return { ok: false, schema: 1, error: "portal_session_expired" };
       }
+      const published = resolvePublishedAgentAction({
+        store: options.store,
+        workspaceSlug: organizationId,
+        pluginId: input.selection.pluginId,
+        actionKey: input.selection.actionKey,
+      });
+      if (!published) {
+        reply.code(404);
+        return { ok: false, schema: 1, error: "agent_action_not_published" };
+      }
+      if (input.selection.resourceKind !== published.resourceKind) {
+        reply.code(409);
+        return { ok: false, schema: 1, error: "agent_action_resource_mismatch" };
+      }
+      if (
+        !published.accounts.some(
+          (account) => account.accountId === input.selection.accountId,
+        )
+      ) {
+        reply.code(409);
+        return { ok: false, schema: 1, error: "agent_action_account_mismatch" };
+      }
+      if (
+        input.selection.capability !== undefined &&
+        input.selection.capability !== published.capability
+      ) {
+        reply.code(409);
+        return { ok: false, schema: 1, error: "agent_action_capability_mismatch" };
+      }
+      const outboundSelection = portalSelectionForPublishedAction({
+        entry: published,
+        accountId: input.selection.accountId,
+      });
       try {
         const handoff = await portalHandoffClient.requestGrant({
           deploymentId: input.deploymentId,
           session: session.sessionToken,
           agentId: input.agentId,
-          selection: input.selection,
+          selection: outboundSelection,
           idempotencyKey: input.idempotencyKey,
         });
         const projection = options.store.upsertMarketplacePortalGrantRequest({
@@ -4821,7 +4913,7 @@ export async function buildMarketplaceApp(
           approvalUrl: handoff.approvalUrl,
           expiresAt: new Date(handoff.expiresAt).toISOString(),
           idempotencyKey: input.idempotencyKey,
-          selection: input.selection,
+          selection: outboundSelection,
         });
         return {
           ok: true,
@@ -4931,17 +5023,27 @@ export async function buildMarketplaceApp(
         reply.code(403);
         return { ok: false, schema: 1, traceId, error: "portal_consent_invalid" };
       }
-      const mapping = scopedResourceMapping(consent.selection);
-      const listing = options.store.getListing(consent.selection.pluginId);
+      if (
+        persistedRequest &&
+        !portalSelectionsEquivalent(persistedRequest.selection, consent.selection)
+      ) {
+        reply.code(403);
+        return { ok: false, schema: 1, traceId, error: "portal_consent_invalid" };
+      }
+      const listing = options.store.getListingForWorkspace(
+        consent.selection.pluginId,
+        organizationId,
+      );
       const connection = options.store.getConnection(
         organizationId,
         consent.selection.pluginId,
       );
-      const accountId = connectedAccountIdFromConnection(connection);
+      const accountId = listing
+        ? agentAccountIdForConnection({ listing, workspaceSlug: organizationId, connection })
+        : undefined;
       if (
-        !mapping ||
         !listing ||
-        listing.executionOwner !== "composio" ||
+        !listingExecutableForAgents(listing, organizationId) ||
         !listing.actions.includes(consent.selection.actionKey) ||
         !options.store.getInstall(organizationId, consent.selection.pluginId)?.enabled ||
         !options.store.isActionEnabled({
@@ -4956,12 +5058,13 @@ export async function buildMarketplaceApp(
         reply.code(409);
         return { ok: false, schema: 1, traceId, error: "portal_consent_scope_unavailable" };
       }
+      const consentCapability = selectionCapability(consent.selection);
       let binding;
       try {
         binding = options.store.requireCapabilityBinding(
           organizationId,
           consent.selection.pluginId,
-          mapping.capability,
+          consentCapability,
         );
       } catch {
         reply.code(403);
@@ -4971,11 +5074,27 @@ export async function buildMarketplaceApp(
         reply.code(403);
         return { ok: false, schema: 1, traceId, error: "connector_capability_denied" };
       }
+      const published = resolvePublishedAgentAction({
+        store: options.store,
+        workspaceSlug: organizationId,
+        pluginId: consent.selection.pluginId,
+        actionKey: consent.selection.actionKey,
+      });
+      if (
+        !published ||
+        published.capability !== consentCapability ||
+        published.resourceKind !== consent.selection.resourceKind ||
+        !published.accounts.some((account) => account.accountId === accountId) ||
+        !consent.capabilities.includes(published.capability)
+      ) {
+        reply.code(409);
+        return { ok: false, schema: 1, traceId, error: "portal_consent_scope_unavailable" };
+      }
       const rules = await enforceRules({
         reply,
         workspaceSlug: organizationId,
         operation: "execute",
-        capability: mapping.capability,
+        capability: published.capability,
         pluginId: consent.selection.pluginId,
         actorId: `agent:${consent.agentId}`,
         payload: {
@@ -5006,7 +5125,7 @@ export async function buildMarketplaceApp(
         consentRevision: consent.consentRevision,
         pluginId: consent.selection.pluginId,
         actionKey: consent.selection.actionKey,
-        capability: mapping.capability,
+        capability: published.capability,
         connectionId: connection.id,
         accountId: consent.selection.accountId,
         resourceKind: consent.selection.resourceKind,
@@ -5075,34 +5194,14 @@ export async function buildMarketplaceApp(
       }
       const input = AgentGrantInputSchema.parse(request.body);
       const traceId = traceIdFrom(request);
-      const mapping = scopedResourceMapping({
-        pluginId: input.pluginId,
-        actionKey: input.actionKey,
-      });
-      if (!mapping) {
-        reply.code(409);
-        return {
-          ok: false,
-          error: "agent_grant_action_not_supported",
-          detail:
-            "This stage supports only the published GitHub repository-list operation.",
-        };
-      }
-      if (
-        input.resourceKind !== mapping.resourceKind ||
-        !input.resourceRef.trim()
-      ) {
-        reply.code(400);
-        return { ok: false, error: "agent_grant_resource_invalid" };
-      }
       const service = requestPrincipals.get(request);
       const workspaceSlug = service?.organizationId ?? input.workspaceSlug;
-      const listing = options.store.getListing(input.pluginId);
+      const listing = options.store.getListingForWorkspace(input.pluginId, workspaceSlug);
       if (!listing) {
         reply.code(404);
         return { ok: false, error: "plugin_not_found" };
       }
-      if (listing.executionOwner !== "composio") {
+      if (!listingExecutableForAgents(listing, workspaceSlug)) {
         reply.code(409);
         return { ok: false, error: "plugin_not_composio_backed" };
       }
@@ -5111,7 +5210,7 @@ export async function buildMarketplaceApp(
         return { ok: false, error: "agent_grant_action_not_registered" };
       }
       const requirement = resolveActionRequirement(listing, input.actionKey);
-      if (!requirement || requirement.capability !== mapping.capability) {
+      if (!requirement) {
         reply.code(400);
         return { ok: false, error: "agent_grant_action_contract_mismatch" };
       }
@@ -5131,8 +5230,8 @@ export async function buildMarketplaceApp(
         return { ok: false, error: "connector_action_denied" };
       }
       const connection = options.store.getConnection(workspaceSlug, input.pluginId);
-      const accountId = connectedAccountIdFromConnection(connection);
-      if (connection?.state !== "connected" || accountId !== input.accountId) {
+      const accountId = agentAccountIdForConnection({ listing, workspaceSlug, connection });
+      if (!connection || !accountId || accountId !== input.accountId) {
         reply.code(409);
         return { ok: false, error: "agent_grant_account_mismatch" };
       }
@@ -5145,7 +5244,7 @@ export async function buildMarketplaceApp(
         binding = options.store.requireCapabilityBinding(
           workspaceSlug,
           input.pluginId,
-          mapping.capability,
+          requirement.capability,
         );
       } catch {
         reply.code(403);
@@ -5154,6 +5253,25 @@ export async function buildMarketplaceApp(
       if (!binding.enabled) {
         reply.code(403);
         return { ok: false, error: "connector_capability_denied" };
+      }
+      const mapping = resolvePublishedAgentAction({
+        store: options.store,
+        workspaceSlug,
+        pluginId: input.pluginId,
+        actionKey: input.actionKey,
+      });
+      if (!mapping) {
+        reply.code(409);
+        return {
+          ok: false,
+          error: "agent_grant_action_not_supported",
+          detail:
+            "This action is not published to agents in this workspace.",
+        };
+      }
+      if (input.resourceKind !== mapping.resourceKind) {
+        reply.code(400);
+        return { ok: false, error: "agent_grant_resource_invalid" };
       }
       const portal = await verifyPortalScope({
         request,
@@ -5289,15 +5407,6 @@ export async function buildMarketplaceApp(
           reply.code(403);
           return { ok: false, error: "resource_mismatch" };
         }
-        const scopedAction = applyScopedResource({
-          action: input.action,
-          grant: scopedGrant,
-        });
-        if (!scopedAction.ok) {
-          reply.code(403);
-          return { ok: false, error: scopedAction.error };
-        }
-        effectiveAction = { ...scopedAction.action, type: input.action.type };
         effectiveActorId = `agent:${verified.scope.agentId}`;
       }
       options.store.recordEvent({
@@ -5384,7 +5493,11 @@ export async function buildMarketplaceApp(
       if (
         scopedGrant &&
         (connection?.id !== scopedGrant.connectionId ||
-          connectedAccountIdFromConnection(connection) !== scopedGrant.accountId)
+          agentAccountIdForConnection({
+            listing,
+            workspaceSlug: input.workspaceSlug,
+            connection,
+          }) !== scopedGrant.accountId)
       ) {
         reply.code(403);
         return { ok: false, error: "agent_grant_connection_mismatch" };
@@ -5397,6 +5510,26 @@ export async function buildMarketplaceApp(
       if (!binding?.enabled) {
         reply.code(403);
         return { ok: false, error: "connector_capability_denied" };
+      }
+      if (scopedGrant) {
+        // Resolve against live workspace state after the specific install,
+        // action, connection and binding checks so their error codes stay
+        // stable; anything else that unpublished the action fails here.
+        const scopedAction = applyScopedResource({
+          action: input.action,
+          grant: scopedGrant,
+          entry: resolvePublishedAgentAction({
+            store: options.store,
+            workspaceSlug: input.workspaceSlug,
+            pluginId,
+            actionKey: input.action.type,
+          }),
+        });
+        if (!scopedAction.ok) {
+          reply.code(403);
+          return { ok: false, error: scopedAction.error };
+        }
+        effectiveAction = { ...scopedAction.action, type: input.action.type };
       }
       if (listing.executionOwner !== "composio" && !customMcp) {
         options.store.recordEvent({
@@ -5616,7 +5749,7 @@ export async function buildMarketplaceApp(
         scope = await portalRuntimeScopeVerifier({
           attachmentToken,
           selection: input.selection,
-          requiredCapability: "connector.observe",
+          requiredCapability: selectionCapability(input.selection),
         });
       } catch (error) {
         const status =
@@ -5678,7 +5811,8 @@ export async function buildMarketplaceApp(
         consent.actionKey !== input.selection.actionKey ||
         consent.accountId !== input.selection.accountId ||
         consent.resourceKind !== input.selection.resourceKind ||
-        consent.resourceRef !== input.selection.resourceRef
+        consent.resourceRef !== input.selection.resourceRef ||
+        consent.capability !== selectionCapability(input.selection)
       ) {
         reply.code(403);
         return runtimeResponse({
@@ -5687,16 +5821,17 @@ export async function buildMarketplaceApp(
           error: "runtime_scope_mismatch",
         });
       }
-      const listing = options.store.getListing(input.selection.pluginId);
-      const mapping = scopedResourceMapping(input.selection);
+      const listing = options.store.getListingForWorkspace(
+        input.selection.pluginId,
+        organizationId,
+      );
       const connection = options.store.getConnection(
         organizationId,
         input.selection.pluginId,
       );
       if (
         !listing ||
-        !mapping ||
-        listing.executionOwner !== "composio" ||
+        !listingExecutableForAgents(listing, organizationId) ||
         !listing.actions.includes(input.selection.actionKey) ||
         !options.store.getInstall(organizationId, input.selection.pluginId)?.enabled ||
         !options.store.isActionEnabled({
@@ -5704,8 +5839,9 @@ export async function buildMarketplaceApp(
           pluginId: input.selection.pluginId,
           actionKey: input.selection.actionKey,
         }) ||
-        connection?.state !== "connected" ||
-        connectedAccountIdFromConnection(connection) !== consent.accountId ||
+        !connection ||
+        agentAccountIdForConnection({ listing, workspaceSlug: organizationId, connection }) !==
+          consent.accountId ||
         connection.id !== consent.connectionId
       ) {
         reply.code(409);
@@ -5720,7 +5856,7 @@ export async function buildMarketplaceApp(
         binding = options.store.requireCapabilityBinding(
           organizationId,
           input.selection.pluginId,
-          mapping.capability,
+          consent.capability,
         );
       } catch {
         reply.code(403);
@@ -5738,27 +5874,25 @@ export async function buildMarketplaceApp(
           error: "connector_capability_denied",
         });
       }
+      const published = resolvePublishedAgentAction({
+        store: options.store,
+        workspaceSlug: organizationId,
+        pluginId: consent.pluginId,
+        actionKey: consent.actionKey,
+      });
+      if (!published || published.capability !== consent.capability) {
+        reply.code(409);
+        return runtimeResponse({
+          ok: false,
+          traceId,
+          error: "runtime_connection_unavailable",
+        });
+      }
       const action = { type: input.selection.actionKey, ...input.input };
       const scopedAction = applyScopedResource({
         action,
-        grant: {
-          id: consent.id,
-          workspaceSlug: organizationId,
-          agentId: consent.agentId,
-          pluginId: consent.pluginId,
-          actionKey: consent.actionKey,
-          capability: consent.capability,
-          connectionId: consent.connectionId,
-          accountId: consent.accountId,
-          resourceKind: consent.resourceKind,
-          resourceRef: consent.resourceRef,
-          attachmentId: scope.leaseId,
-          state: "active",
-          expiresAt: new Date(scope.expiresAt).toISOString(),
-          metadata: {},
-          createdAt: consent.createdAt,
-          updatedAt: consent.updatedAt,
-        },
+        grant: consent,
+        entry: published,
       });
       if (!scopedAction.ok) {
         reply.code(403);
@@ -5812,6 +5946,23 @@ export async function buildMarketplaceApp(
           error: rules.error,
         });
       }
+      // Custom MCP connectors run through the same runtime contract; build
+      // their outbound connection before reserving the idempotency key so a
+      // missing secret store never leaves an operation needing reconciliation.
+      let mcpConnection: ReturnType<typeof customMcpConnection> | null = null;
+      if (listingIsWorkspaceCustomMcp(listing, organizationId)) {
+        try {
+          mcpConnection = customMcpConnection(listing, organizationId);
+        } catch (error) {
+          if (!(error instanceof ConnectorSecretStoreUnavailableError)) throw error;
+          reply.code(503);
+          return runtimeResponse({
+            ok: false,
+            traceId,
+            error: "connector_secret_store_unavailable",
+          });
+        }
+      }
       const fingerprint = createHash("sha256")
         .update(
           stableJson({
@@ -5853,19 +6004,36 @@ export async function buildMarketplaceApp(
               : "runtime_operation_reconciliation_required",
         });
       }
-      const toolName = composioToolNameForAction(listing, input.selection.actionKey);
+      const toolName = mcpConnection
+        ? published.toolName
+        : composioToolNameForAction(listing, input.selection.actionKey);
       try {
-        const providerOutput = await executeComposioTool({
-          toolName,
-          arguments: { ...scopedAction.action, type: undefined },
-          connectedAccountId: connectedAccountIdFromConnection(connection),
-          userId:
-            typeof connection?.metadata.userId === "string"
-              ? connection.metadata.userId
-              : undefined,
-          env: providerEnvironment(),
-          fetchImpl: options.providerFetch,
-        });
+        let providerOutput: unknown;
+        if (mcpConnection) {
+          const { type: _type, ...args } = scopedAction.action;
+          const output = await callMcpTool(mcpConnection, toolName, args);
+          if (output.isError) {
+            throw new Error("mcp_tool_failed");
+          }
+          providerOutput = {
+            content: output.content,
+            ...(output.structuredContent === undefined
+              ? {}
+              : { structuredContent: output.structuredContent }),
+          };
+        } else {
+          providerOutput = await executeComposioTool({
+            toolName,
+            arguments: { ...scopedAction.action, type: undefined },
+            connectedAccountId: connectedAccountIdFromConnection(connection),
+            userId:
+              typeof connection?.metadata.userId === "string"
+                ? connection.metadata.userId
+                : undefined,
+            env: providerEnvironment(),
+            fetchImpl: options.providerFetch,
+          });
+        }
         const result = {
           pluginId: input.selection.pluginId,
           workspaceSlug: organizationId,
@@ -5874,7 +6042,9 @@ export async function buildMarketplaceApp(
           actionType: input.selection.actionKey,
           performedAt: new Date().toISOString(),
           simulated: false,
-          summary: `Executed ${toolName} through Composio.`,
+          summary: mcpConnection
+            ? `Ran ${toolName} on ${listing.displayName}.`
+            : `Executed ${toolName} through Composio.`,
           details: { toolName, result: runtimeSafeProviderResult(providerOutput) },
         };
         if (JSON.stringify(result).length > 65536) {
@@ -6096,6 +6266,36 @@ export async function buildMarketplaceApp(
         detail:
           "Agent grants require a Portal-attested server-side handoff; raw agent or attachment credentials are never accepted from browser code.",
       },
+    };
+  });
+
+  app.get("/api/marketplace/v1/agent/action-catalog", async (request, reply) => {
+    const principal = requireHandoffPrincipal(request, reply);
+    if (!principal) {
+      return { ok: false, error: "marketplace_operator_required" };
+    }
+    // The principal-scope hook rewrites `workspaceSlug` in the parsed query,
+    // so read what the caller actually sent from the raw URL.
+    const rawQuery = new URLSearchParams(request.url.split("?")[1] ?? "");
+    const requested = rawQuery.getAll("workspaceSlug");
+    if (requested.length > 1) {
+      reply.code(400);
+      return { ok: false, error: "validation_failed" };
+    }
+    const requestedSlug = requested[0]?.trim() || null;
+    if (principal.kind === "service" && !requestedSlug) {
+      reply.code(400);
+      return { ok: false, error: "workspace_slug_required" };
+    }
+    if (requestedSlug && requestedSlug !== principal.organizationId) {
+      reply.code(403);
+      return { ok: false, error: "agent_action_catalog_tenant_mismatch" };
+    }
+    const workspaceSlug = principal.organizationId;
+    return {
+      contractVersion: MARKETPLACE_AGENT_ACTION_CATALOG_CONTRACT_VERSION,
+      workspaceSlug,
+      actions: publishedAgentActionCatalog({ store: options.store, workspaceSlug }),
     };
   });
 

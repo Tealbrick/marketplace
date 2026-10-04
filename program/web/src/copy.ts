@@ -142,6 +142,15 @@ export function errorCopy(error: Error): ErrorCopy {
       return { title: "The MCP server's response was too large", detail: "Marketplace accepts responses up to 2 MB. Ask the server owner to reduce the response size.", reference };
     case "mcp_tool_failed":
       return { title: "The tool reported an error", detail: "The MCP server ran the tool but it failed. Check the arguments and try again.", reference };
+    case "agent_action_not_published":
+      return { title: "This action isn't available to agents right now", detail: "The connector may have been removed or disconnected, or the action was turned off. Refresh and choose an action from the list.", reference };
+    case "agent_action_account_mismatch":
+      return { title: "That account is no longer connected", detail: "The connector is now linked to a different account. Refresh and choose the connected account from the list.", reference };
+    case "agent_action_resource_mismatch":
+    case "agent_action_capability_mismatch":
+      return { title: "This action changed in the meantime", detail: "Its access level or scope was updated. Refresh and choose the action again.", reference };
+    case "portal_consent_scope_unavailable":
+      return { title: "This access can't be granted anymore", detail: "The action, account, or access level changed after the request was made, so nothing was granted. Refresh and request access again.", reference };
     case "portal_handoff_denied":
       return { title: "Access was declined in Teal Brick Portal", detail: "The request was denied, so no access was granted. Start a new request if this was a mistake.", reference };
     default:

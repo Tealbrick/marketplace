@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { buildMarketplaceApp } from "./app.js";
+import { buildComposioListingFromTools } from "./connectors.js";
 import { MarketplaceOperatorSessionManager } from "./operator-auth.js";
 import { SqliteMarketplaceStore } from "./store.js";
 
@@ -81,6 +82,19 @@ describe("Portal browser launch", () => {
         MARKETPLACE_ALLOWED_ORIGINS: "https://marketplace.fixture.invalid",
       },
     });
+
+    // Grant requests resolve against the published agent action catalog, so
+    // the selected GitHub action must be installed, connected and enabled.
+    const importedListing = buildComposioListingFromTools({
+      toolkit: "github",
+      pluginId: "github-composio",
+      tools: [{ name: "GITHUB_LIST_REPOSITORIES" }],
+    });
+    store.upsertListing(importedListing);
+    store.registerPlugin("github-composio");
+    store.install("tenant-1", "github-composio");
+    store.bindCapability({ workspaceSlug: "tenant-1", pluginId: "github-composio", capability: "connector.observe", enabled: true });
+    store.upsertConnection({ workspaceSlug: "tenant-1", pluginId: "github-composio", provider: "github", backend: "composio", state: "connected", detail: "Launch fixture connection", metadata: { connectedAccountId: "ca_1" } });
 
     const success = await app.inject({
       method: "POST",

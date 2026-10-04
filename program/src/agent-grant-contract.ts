@@ -1,86 +1,46 @@
+import {
+  AGENT_FORBIDDEN_ARGUMENTS,
+  type AgentActionCatalogEntry,
+} from "./agent-action-catalog.js";
 import type { AgentConnectorGrant } from "./types.js";
 
 export const MARKETPLACE_AGENT_GRANT_CONTRACT_VERSION =
   "doppelganger.marketplace.agent-connector-grant.v1" as const;
 
-export type ScopedResourceMapping = {
-  resourceKind: string;
-  providerArgument: string | null;
-  mode: "connected-account";
-  allowedArguments: readonly string[];
-};
-
-const SUPPORTED_RESOURCE_MAPPING: {
-  pluginId: string;
-  actionKey: string;
-  toolName: string;
-  capability: "connector.observe";
-  resourceKind: string;
-  providerArgument: string | null;
-  mode: "connected-account";
-  allowedArguments: readonly string[];
-} = {
-  pluginId: "github-composio",
-  actionKey: "github.list.repositories",
-  toolName: "GITHUB_LIST_REPOSITORIES",
-  capability: "connector.observe",
-  resourceKind: "github.connected-account",
-  providerArgument: null,
-  mode: "connected-account",
-  allowedArguments: [
-    "page",
-    "sort",
-    "type",
-    "since",
-    "before",
-    "per_page",
-    "direction",
-    "visibility",
-    "affiliation",
-  ],
-};
-
-export function scopedResourceMapping(input: {
-  pluginId: string;
-  actionKey: string;
-}) {
-  if (
-    input.pluginId !== SUPPORTED_RESOURCE_MAPPING.pluginId ||
-    input.actionKey !== SUPPORTED_RESOURCE_MAPPING.actionKey
-  ) {
-    return null;
-  }
-  return {
-    resourceKind: SUPPORTED_RESOURCE_MAPPING.resourceKind,
-    providerArgument: SUPPORTED_RESOURCE_MAPPING.providerArgument,
-    mode: SUPPORTED_RESOURCE_MAPPING.mode,
-    allowedArguments: SUPPORTED_RESOURCE_MAPPING.allowedArguments,
-    capability: SUPPORTED_RESOURCE_MAPPING.capability,
-    toolName: SUPPORTED_RESOURCE_MAPPING.toolName,
-  } satisfies ScopedResourceMapping & {
-    capability: "connector.observe";
-    toolName: string;
-  };
-}
-
+/**
+ * Bind a scoped grant's action to the live published catalog entry.
+ *
+ * `entry` must come from `resolvePublishedAgentAction` for the grant's
+ * workspace, plugin and action at call time; `null` means the action is no
+ * longer published (uninstalled, disconnected, disabled, or unknown).
+ */
 export function applyScopedResource(input: {
   action: Record<string, unknown>;
-  grant: AgentConnectorGrant;
+  grant: Pick<
+    AgentConnectorGrant,
+    "pluginId" | "actionKey" | "accountId" | "resourceKind" | "resourceRef"
+  >;
+  entry: AgentActionCatalogEntry | null;
 }) {
-  const mapping = scopedResourceMapping({
-    pluginId: input.grant.pluginId,
-    actionKey: input.grant.actionKey,
-  });
+  const { entry, grant } = input;
   if (
-    !mapping ||
-    input.grant.resourceKind !== mapping.resourceKind ||
-    input.grant.resourceRef !== `account:${input.grant.accountId}` ||
-    !input.grant.resourceRef.trim()
+    !entry ||
+    entry.pluginId !== grant.pluginId ||
+    entry.actionKey !== grant.actionKey ||
+    grant.resourceKind !== entry.resourceKind ||
+    !grant.accountId.trim() ||
+    grant.resourceRef !== `account:${grant.accountId}`
   ) {
     return { ok: false as const, error: "resource_mapping_unsupported" };
   }
+  if (!entry.accounts.some((account) => account.accountId === grant.accountId)) {
+    return { ok: false as const, error: "agent_grant_connection_mismatch" };
+  }
   const unsupportedArguments = Object.keys(input.action).filter(
-    (key) => key !== "type" && !mapping.allowedArguments.includes(key),
+    (key) =>
+      key !== "type" &&
+      (AGENT_FORBIDDEN_ARGUMENTS.has(key) ||
+        (entry.allowedArguments !== null && !entry.allowedArguments.includes(key))),
   );
   if (unsupportedArguments.length > 0) {
     return { ok: false as const, error: "provider_argument_invalid" };

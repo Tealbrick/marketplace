@@ -154,12 +154,37 @@ export interface CardDetailResponse {
   card: PluginCard;
 }
 
+export type ConnectorCapability = "connector.observe" | "connector.dispatch" | "connector.admin";
+
 export interface AgentGrantSelection {
   pluginId: string;
   actionKey: string;
   accountId: string;
   resourceKind: string;
   resourceRef: string;
+  /** Selection v1.2; absent means observe. */
+  capability?: ConnectorCapability;
+}
+
+export interface AgentActionCatalogEntry {
+  pluginId: string;
+  pluginName: string;
+  provider: string;
+  actionKey: string;
+  label: string;
+  description: string;
+  capability: ConnectorCapability;
+  resourceKind: string;
+  mode: "connected-account";
+  accounts: Array<{ accountId: string; label?: string }>;
+  allowedArguments: string[] | null;
+  toolName: string;
+}
+
+export interface AgentActionCatalogResponse {
+  contractVersion: string;
+  workspaceSlug: string;
+  actions: AgentActionCatalogEntry[];
 }
 
 export type AgentGrantState = "active" | "revoked";
