@@ -494,6 +494,10 @@ const ComposioCallbackQuerySchema = z.object({
   error: z.string().trim().min(1).optional(),
 });
 
+const PortalLaunchFormSchema = z.strictObject({
+  ticket: z.string().regex(/^[A-Za-z0-9_-]{43}$/u),
+});
+
 export type BuildMarketplaceAppOptions = {
   store: SqliteMarketplaceStore;
   internalAuthToken?: string | null;
@@ -1962,6 +1966,23 @@ export async function buildMarketplaceApp(
   options: BuildMarketplaceAppOptions,
 ): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
+  app.addContentTypeParser(
+    "application/x-www-form-urlencoded",
+    { parseAs: "string" },
+    (_request, body, done) => {
+      const entries = [
+        ...new URLSearchParams(
+          typeof body === "string" ? body : body.toString("utf8"),
+        ).entries(),
+      ];
+      done(
+        null,
+        entries.length === 1 && entries[0]?.[0] === "ticket"
+          ? { ticket: entries[0][1] }
+          : null,
+      );
+    },
+  );
   const runtimePath = options.store.describeRuntime().databasePath;
   const providerSettings =
     options.providerSettings ??
@@ -2283,15 +2304,16 @@ export async function buildMarketplaceApp(
     return htmlShell();
   });
 
-  app.get("/auth/launch", async (request, reply) => {
-    const query = z
-      .strictObject({
-        ticket: z.string().regex(/^[A-Za-z0-9_-]{43}$/u),
-        deploymentId: PortalIdentifierSchema,
-      })
-      .parse(request.query);
+  const completePortalLaunch = async (
+    ticket: string,
+    deploymentId: string,
+    reply: FastifyReply,
+  ) => {
     try {
-      const session = await portalHandoffClient.redeemLaunchTicket(query);
+      const session = await portalHandoffClient.redeemLaunchTicket({
+        deploymentId,
+        ticket,
+      });
       if (
         session.productTenantId !== organizationId ||
         !portalIdentityMatches(session)
@@ -2332,6 +2354,53 @@ export async function buildMarketplaceApp(
             : "Portal launch verification failed.",
       });
     }
+  };
+
+  app.get("/auth/launch", async (request, reply) => {
+    const query = z
+      .strictObject({
+        ticket: z.string().regex(/^[A-Za-z0-9_-]{43}$/u),
+        deploymentId: PortalIdentifierSchema,
+      })
+      .parse(request.query);
+    return completePortalLaunch(query.ticket, query.deploymentId, reply);
+  });
+
+  app.post("/auth/launch", { bodyLimit: 2_048 }, async (request, reply) => {
+    reply.header("cache-control", "no-store");
+    reply.header("referrer-policy", "no-referrer");
+    if (
+      !portalIssuerUrl ||
+      headerValue(request, "origin") !== portalIssuerUrl ||
+      headerValue(request, "authorization")
+    ) {
+      reply.code(403);
+      reply.type("text/html; charset=utf-8");
+      return htmlCloseout({
+        ok: false,
+        title: "Marketplace launch blocked",
+        detail: "Portal launch origin verification failed.",
+      });
+    }
+    const contentType = headerValue(request, "content-type");
+    const parsed =
+      contentType?.split(";", 1)[0]?.trim().toLowerCase() ===
+      "application/x-www-form-urlencoded"
+        ? PortalLaunchFormSchema.safeParse(request.body)
+        : null;
+    const deploymentId = portalConfiguration.deploymentId;
+    if (!parsed?.success || !deploymentId) {
+      reply.code(parsed?.success ? 503 : 401);
+      reply.type("text/html; charset=utf-8");
+      return htmlCloseout({
+        ok: false,
+        title: "Marketplace launch blocked",
+        detail: parsed?.success
+          ? "Marketplace Portal deployment identity is not configured."
+          : "Portal launch ticket is invalid.",
+      });
+    }
+    return completePortalLaunch(parsed.data.ticket, deploymentId, reply);
   });
 
   app.get("/healthz", async () => ({
