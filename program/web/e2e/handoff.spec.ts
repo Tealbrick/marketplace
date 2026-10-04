@@ -2,7 +2,8 @@ import { expect, test } from "@playwright/test";
 
 async function unlockMarketplace(page: import("@playwright/test").Page) {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Unlock Marketplace" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Open Marketplace from Teal Brick Portal" })).toBeVisible();
+  await page.getByText("Operator recovery").click();
   await page.getByLabel("Operator access token").fill("marketplace-e2e-operator-token");
   await page.getByRole("button", { name: "Unlock Marketplace" }).click();
   await expect(page.getByRole("heading", { name: "Discover" })).toBeVisible();

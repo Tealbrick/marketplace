@@ -346,3 +346,19 @@ code, .mono { font-family: var(--dg-font-mono); overflow-wrap: anywhere; }
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
   .spin { animation: none; }
 }
+
+/* Customer-ready copy surfaces */
+.error-reference { display: block; margin-top: 6px; color: var(--dg-text-subtle); font-size: 9px; }
+.error-reference code { font-family: var(--dg-font-mono); }
+.inline-error > span { min-width: 0; }
+.action-tooltip { display: inline-flex; }
+.auth-card__lede { margin: 12px 0 0; color: var(--dg-text-muted); font-size: 12px; line-height: 1.6; }
+.operator-recovery { margin-top: 26px; border-top: 1px solid var(--dg-line); padding-top: 16px; }
+.operator-recovery > summary, .technical-details > summary { color: var(--dg-text-muted); cursor: pointer; font-size: 10px; font-weight: 650; }
+.operator-recovery > summary:hover, .technical-details > summary:hover { color: var(--dg-text); }
+.technical-details { border-top: 1px solid var(--dg-line); padding-top: 12px; }
+.technical-details[open] > summary { margin-bottom: 12px; }
+.plain-list { margin: 4px 0 0; padding-left: 16px; color: var(--dg-text-muted); font-size: 9px; line-height: 1.6; }
+@media (max-width: 600px) {
+  .action-tooltip, .action-tooltip .dg-button { width: 100%; min-width: 0; }
+}

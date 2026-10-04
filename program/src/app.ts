@@ -1299,8 +1299,11 @@ function pluginSummaryForListing(input: {
     install?.enabled === true && install.lifecycle === "installed";
   const authRequired = listingRequiresConnectedAccount(listing);
   const connected = !authRequired || connection?.state === "connected";
-  const ready = registered && installed && connected;
-  const status = ready
+  const launchSupported = listing.executionOwner === "composio";
+  const ready = launchSupported && registered && installed && connected;
+  const status = !launchSupported
+    ? "catalogOnly"
+    : ready
     ? "ready"
     : installed && authRequired && !connected
       ? "authRequired"

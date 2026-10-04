@@ -20,7 +20,8 @@ async function assertContained(locator: import("@playwright/test").Locator, view
 
 async function unlockMarketplace(page: import("@playwright/test").Page, route = "/") {
   await page.goto(route);
-  await expect(page.getByRole("heading", { name: "Unlock Marketplace" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Open Marketplace from Teal Brick Portal" })).toBeVisible();
+  await page.getByText("Operator recovery").click();
   await page.getByLabel("Operator access token").fill("marketplace-e2e-operator-token");
   await page.getByRole("button", { name: "Unlock Marketplace" }).click();
   await expect(page.getByRole("heading", { name: "Discover" })).toBeVisible();
@@ -92,4 +93,31 @@ test("embed works inside a same-origin host iframe with the operator session", a
     viewport: element.clientWidth,
   }));
   expect(geometry.width - geometry.viewport).toBeLessThanOrEqual(1);
+});
+
+test("customer copy: Rules outage, catalog-only listing, and session expiry", async ({ page, context }) => {
+  await page.setViewportSize({ width: 1152, height: 820 });
+  await unlockMarketplace(page);
+
+  await page.locator(".catalog-row").filter({ hasText: "Composio" }).first().click();
+  await page.getByRole("button", { name: "Install", exact: true }).click();
+  const confirm = page.getByRole("dialog", { name: /Install .+\?/u });
+  await confirm.getByRole("button", { name: "Install", exact: true }).click();
+  await expect(confirm.getByRole("alert")).toContainText("Approvals are unavailable right now");
+  await expect(confirm).not.toContainText("Rules Approvals is required");
+  await confirm.getByRole("button", { name: "Cancel" }).click();
+
+  const listedOnly = page.locator(".catalog-row").filter({ hasText: "Listed — not yet installable" }).first();
+  await expect(listedOnly).toBeVisible();
+  await listedOnly.click();
+  await expect(page.getByRole("button", { name: "Install", exact: true })).toBeDisabled();
+  await expect(page.locator(".action-tooltip").first()).toHaveAttribute("title", /Only Composio connectors can be installed today/u);
+  await expect(page.locator("body")).not.toContainText("CatalogOnly");
+  await expect(page.locator("body")).not.toContainText("bearer");
+
+  await context.clearCookies();
+  await page.getByRole("button", { name: "Refresh" }).click();
+  await expect(page.getByRole("heading", { name: "Your session ended" })).toBeVisible();
+  await expect(page.getByText("Your session ended — relaunch Marketplace from Teal Brick Portal.")).toBeVisible();
+  await expect(page.getByText("Operator recovery")).toBeVisible();
 });

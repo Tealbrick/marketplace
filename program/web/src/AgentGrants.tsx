@@ -12,7 +12,7 @@ import type {
   AgentGrantsResponse,
   HandoffRequestSummary,
 } from "./types";
-import { errorCopy, formatWhen, StatePanel, statusTone, words } from "./ui";
+import { formatWhen, InlineError, StatePanel, statusLabel, statusTone, words } from "./ui";
 
 const SUPPORTED_SELECTION: AgentGrantSelection = {
   pluginId: "github-composio",
@@ -75,7 +75,7 @@ function AgentGrantRow({ grant, onRevoke }: { grant: AgentGrantSummary; onRevoke
             <code>{grant.actionKey}</code>
           </div>
         </div>
-        <Tag tone={statusTone(state)}>{words(state)}</Tag>
+        <Tag tone={statusTone(state)}>{statusLabel(state)}</Tag>
       </header>
       <div className="agent-grant-row__scope">
         <div><span>Agent</span><code>{grant.agentId}</code></div>
@@ -104,7 +104,7 @@ function HandoffRequestRow({ request, onRedeem, redeeming }: { request: HandoffR
             <code>{request.requestId}</code>
           </div>
         </div>
-        <Tag tone={statusTone(state)}>{words(state)}</Tag>
+        <Tag tone={statusTone(state)}>{statusLabel(state)}</Tag>
       </header>
       <div className="agent-grant-row__scope">
         <div><span>Agent</span><code>{request.agentId}</code></div>
@@ -158,7 +158,7 @@ function RequestGrantForm({ data, workspaceSlug, onRequested }: { data: AgentGra
           <label>Resource scope<input value={accountId ? `account:${accountId}` : ""} readOnly aria-label="Resource scope" /></label>
         </div>
         <dl className="contract-list grant-request-selection"><dt>Plugin</dt><dd>{SUPPORTED_SELECTION.pluginId}</dd><dt>Action</dt><dd>{SUPPORTED_SELECTION.actionKey}</dd><dt>Resource kind</dt><dd>{SUPPORTED_SELECTION.resourceKind}</dd><dt>Workspace</dt><dd>{workspaceSlug}</dd></dl>
-        {request.error && <p className="inline-error"><XCircle size={14} />{errorCopy(request.error).detail}</p>}
+        {request.error && <InlineError error={request.error} />}
         <div className="grant-request-form__footer"><span>Idempotency is retained for this request attempt: <code>{idempotencyKey}</code></span><Button tone="primary" type="submit" disabled={!valid || request.isPending}>{request.isPending ? <LoaderCircle className="spin" size={15} /> : <ShieldCheck size={15} />}Request Portal consent</Button></div>
       </form>
     </section>
@@ -200,7 +200,7 @@ export function AgentGrantsPage({ workspaceSlug, onRevoke }: { workspaceSlug: st
       <div className="contract-gap agent-grant-creation-gap"><ShieldCheck size={18} /><div><strong>Direct grant creation is disabled</strong><p>{data.grantCreation.detail} The supported path below requests Portal consent and waits for explicit approval.</p><small>{words(data.grantCreation.code)}</small></div></div>
       <RequestGrantForm data={data} workspaceSlug={workspaceSlug} onRequested={(result) => { setRequestNotice(result); void queryClient.invalidateQueries({ queryKey: ["agent-grants", workspaceSlug] }); }} />
       {requestNotice && <div className="request-result contract-gap" role="status"><ShieldCheck size={18} /><div><strong>Portal consent request created</strong><p>Open Portal review, approve explicitly, then return here to reconcile request <code>{requestNotice.request.requestId}</code>.</p><a href={requestNotice.request.approvalUrl} target="_blank" rel="noreferrer">Open Portal review <ExternalLink size={13} /></a></div></div>}
-      {redeem.error && <div className="inline-error grant-redeem-error"><XCircle size={14} />{errorCopy(redeem.error).detail}</div>}
+      {redeem.error && <div className="grant-redeem-error"><InlineError error={redeem.error} /></div>}
       {handoffRequests.length > 0 && <section className="grant-subsection"><div className="section-heading"><div><p className="eyebrow">Consent workflow</p><h2>Portal requests</h2></div><Tag>{handoffRequests.length}</Tag></div><div className="agent-grants-list">{handoffRequests.map((request) => <HandoffRequestRow key={request.requestId} request={request} onRedeem={(entry) => redeem.mutate(entry)} redeeming={redeem.isPending && redeem.variables?.requestId === request.requestId} />)}</div></section>}
       {visibleGrants.length ? <section className="grant-subsection"><div className="section-heading"><div><p className="eyebrow">Durable access</p><h2>Recorded grants</h2></div><Tag>{visibleGrants.length}</Tag></div><div className="agent-grants-list" aria-label="Agent grants">{visibleGrants.map((grant) => <AgentGrantRow key={grant.id} grant={grant} onRevoke={onRevoke} />)}</div></section> : <div className="collection-empty compact"><KeyRound /><h3>No active grants</h3><p>Approve a Portal request and reconcile it here before any durable consent appears.</p></div>}
     </section>

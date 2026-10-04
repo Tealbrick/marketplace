@@ -64,6 +64,10 @@ describe("Marketplace frontend API", () => {
       pluginId: "summary-secret-fixture",
       installed: true,
       connection: { state: "connected", backend: "native" },
+      // Native execution is not launch-supported: the summary must agree with
+      // the detail card instead of advertising an installable "ready" state.
+      status: "catalogOnly",
+      ready: false,
     });
     expect(body.connections).toEqual([
       expect.objectContaining({ pluginId: "summary-secret-fixture", state: "connected" }),

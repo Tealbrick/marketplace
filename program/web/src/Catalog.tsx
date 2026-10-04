@@ -31,7 +31,8 @@ import {
   unregisterPlugin,
 } from "./api";
 import type { PluginCard, PluginSummary } from "./types";
-import { errorCopy, formatWhen, statusTone, words } from "./ui";
+import { CATALOG_ONLY_HINT } from "./copy";
+import { formatWhen, InlineError, statusLabel, statusTone, words } from "./ui";
 
 export type ConfirmState = {
   title: string;
@@ -48,7 +49,7 @@ export function CatalogRow({ card, selected, onSelect }: { card: PluginSummary; 
       <span className="catalog-row__body">
         <span className="catalog-row__title"><strong>{card.displayName}</strong>{card.install && <span className="installed-mark"><Check size={11} /></span>}</span>
         <span>{card.description || card.sourceLabel}</span>
-        <span className="catalog-row__meta"><Tag>{card.source}</Tag><Tag tone={statusTone(card.status)}>{words(card.status)}</Tag></span>
+        <span className="catalog-row__meta"><Tag>{card.source}</Tag><Tag tone={statusTone(card.status)}>{statusLabel(card.status)}</Tag></span>
       </span>
       <ChevronRight size={15} />
     </button>
@@ -65,7 +66,7 @@ export function ConfirmDialog({ state, onClose, onSuccess }: { state: ConfirmSta
         <Dialog.Content className="confirm-dialog">
           <Dialog.Title>{state?.title}</Dialog.Title>
           <Dialog.Description>{state?.detail}</Dialog.Description>
-          {mutation.error && <p className="inline-error"><AlertTriangle size={14} />{errorCopy(mutation.error).detail}</p>}
+          {mutation.error && <InlineError error={mutation.error} />}
           <div className="dialog-actions"><Button onClick={onClose} disabled={mutation.isPending}>Cancel</Button><Button tone={state?.danger ? "danger" : "primary"} onClick={() => mutation.mutate()} disabled={mutation.isPending}>{mutation.isPending ? <LoaderCircle className="spin" size={15} /> : state?.danger ? <PackageMinus size={15} /> : <Check size={15} />}{state?.label}</Button></div>
         </Dialog.Content>
       </Dialog.Portal>
@@ -107,13 +108,13 @@ function ConnectDialog({ card, workspaceSlug, open, onOpenChange, onConnected }:
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal><Dialog.Overlay className="dialog-overlay" /><Dialog.Content className="form-dialog">
-        <header className="modal-header"><div><p className="eyebrow">Provider connection</p><Dialog.Title>Connect {card.addon.displayName}</Dialog.Title><Dialog.Description>{backend === "composio" ? "Marketplace will request a Composio authorization link. OAuth material remains with Composio; the Program stores only connection references." : "This native adapter records a local connection reference. No raw secret is collected in this dialog."}</Dialog.Description></div><Dialog.Close asChild><IconButton aria-label="Close connection dialog"><X size={17} /></IconButton></Dialog.Close></header>
+        <header className="modal-header"><div><p className="eyebrow">Provider connection</p><Dialog.Title>Connect {card.addon.displayName}</Dialog.Title><Dialog.Description>{backend === "composio" ? "A Composio window opens so you can sign in to the provider. Your sign-in details stay with Composio; Marketplace only keeps a reference to the connection." : "This records a connection for this workspace. No passwords or keys are collected here."}</Dialog.Description></div><Dialog.Close asChild><IconButton aria-label="Close connection dialog"><X size={17} /></IconButton></Dialog.Close></header>
         <div className="modal-body">
           <dl className="contract-list"><dt>Backend</dt><dd>{backend}</dd><dt>Provider</dt><dd>{card.listing.provider}</dd><dt>Current state</dt><dd>{card.connection?.state ?? "disconnected"}</dd><dt>External impact</dt><dd>{backend === "composio" ? "Opens provider authorization; no grant is completed until you approve there." : "Registers a native Program connection."}</dd></dl>
-          {mutation.error && <p className="inline-error"><AlertTriangle size={14} />{errorCopy(mutation.error).detail}</p>}
+          {mutation.error && <InlineError error={mutation.error} />}
           {popupBlocked && <p className="inline-error"><AlertTriangle size={14} />The authorization window was blocked. Allow popups for Marketplace, then retry the connection.</p>}
         </div>
-        <footer className="modal-footer"><span>Rules evaluates connector administration before the Program records it.</span><div className="dialog-actions"><Dialog.Close asChild><Button>Cancel</Button></Dialog.Close><Button tone="primary" disabled={mutation.isPending} onClick={startConnection}>{mutation.isPending ? <LoaderCircle className="spin" size={15} /> : <ExternalLink size={15} />}Start connection</Button></div></footer>
+        <footer className="modal-footer"><span>Your organization's approval rules are checked before the connection is saved.</span><div className="dialog-actions"><Dialog.Close asChild><Button>Cancel</Button></Dialog.Close><Button tone="primary" disabled={mutation.isPending} onClick={startConnection}>{mutation.isPending ? <LoaderCircle className="spin" size={15} /> : <ExternalLink size={15} />}Start connection</Button></div></footer>
       </Dialog.Content></Dialog.Portal>
     </Dialog.Root>
   );
@@ -132,18 +133,18 @@ function ExecuteDialog({ card, workspaceSlug, open, onOpenChange }: { card: Plug
   useEffect(() => { setActionKey(actions[0]?.actionKey ?? ""); setArgumentsJson("{}"); setReviewed(false); mutation.reset(); }, [card.listing.pluginId, open]);
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}><Dialog.Portal><Dialog.Overlay className="dialog-overlay" /><Dialog.Content className="form-dialog execution-dialog">
-      <header className="modal-header"><div><p className="eyebrow">Governed external action</p><Dialog.Title>Execute {card.addon.displayName}</Dialog.Title><Dialog.Description>Execution may read or change external provider data. Inspect the selected operation and arguments before confirming.</Dialog.Description></div><Dialog.Close asChild><IconButton aria-label="Close execution dialog"><X size={17} /></IconButton></Dialog.Close></header>
+      <header className="modal-header"><div><p className="eyebrow">Run an action</p><Dialog.Title>Execute {card.addon.displayName}</Dialog.Title><Dialog.Description>Running an action can read or change data in the connected service. Check the action and its inputs before you run it.</Dialog.Description></div><Dialog.Close asChild><IconButton aria-label="Close execution dialog"><X size={17} /></IconButton></Dialog.Close></header>
       <div className="modal-body execution-form">
-        {!actions.length ? <div className="contract-gap"><AlertTriangle /><div><strong>No enabled actions</strong><p>Install and connect the plugin, then enable at least one tool before execution.</p></div></div> : <>
+        {!actions.length ? <div className="contract-gap"><AlertTriangle /><div><strong>No actions switched on</strong><p>Install and connect this connector, then include at least one tool.</p></div></div> : <>
           <label>Action<select value={actionKey} onChange={(event) => { setActionKey(event.target.value); setReviewed(false); }}>{actions.map((action) => <option key={action.actionKey} value={action.actionKey}>{action.displayName}</option>)}</select></label>
           <label>Arguments JSON<textarea className="mono" rows={8} value={argumentsJson} onChange={(event) => { setArgumentsJson(event.target.value); setReviewed(false); }} spellCheck={false} /></label>
           <div className="execution-review"><ShieldCheck size={18} /><div><strong>{selected?.capability}</strong><p>{selected?.description || "The provider owns the action semantics and result."}</p></div></div>
           <label className="confirm-check"><input type="checkbox" checked={reviewed} onChange={(event) => setReviewed(event.target.checked)} />I reviewed this external action and its arguments.</label>
         </>}
-        {mutation.error && <p className="inline-error"><AlertTriangle size={14} />{mutation.error instanceof SyntaxError ? "Arguments must be valid JSON." : errorCopy(mutation.error).detail}</p>}
+        {mutation.error && <InlineError error={mutation.error} />}
         {mutation.data && <pre className="result-view">{JSON.stringify(mutation.data, null, 2)}</pre>}
       </div>
-      <footer className="modal-footer"><span>The Program verifies install, connection, bindings, and Rules before dispatch.</span><div className="dialog-actions"><Dialog.Close asChild><Button>Close</Button></Dialog.Close><Button tone="primary" disabled={!selected || !reviewed || mutation.isPending} onClick={() => mutation.mutate()}>{mutation.isPending ? <LoaderCircle className="spin" size={15} /> : <TerminalSquare size={15} />}Execute action</Button></div></footer>
+      <footer className="modal-footer"><span>Marketplace checks the install, connection, and approval rules before running it.</span><div className="dialog-actions"><Dialog.Close asChild><Button>Close</Button></Dialog.Close><Button tone="primary" disabled={!selected || !reviewed || mutation.isPending} onClick={() => mutation.mutate()}>{mutation.isPending ? <LoaderCircle className="spin" size={15} /> : <TerminalSquare size={15} />}Execute action</Button></div></footer>
     </Dialog.Content></Dialog.Portal></Dialog.Root>
   );
 }
@@ -153,43 +154,43 @@ export function PluginWorkspace({ card, loading, workspaceSlug, onConfirm, onRef
   const [executeOpen, setExecuteOpen] = useState(false);
   const queryClient = useQueryClient();
   const binding = useMutation({ mutationFn: ({ actionKey, enabled }: { actionKey: string; enabled: boolean }) => bindAction(card!.listing.pluginId, workspaceSlug, actionKey, enabled), onSuccess: onRefresh });
-  if (loading) return <div className="detail-empty"><LoaderCircle className="spin" size={28} /><h2>Loading capability detail</h2><p>The full manifest and tool contract are fetched only for this selection.</p></div>;
-  if (!card) return <div className="detail-empty"><Boxes size={28} /><h2>Select a capability</h2><p>Inspect its source, lifecycle plan, connection state, and Agent tool contract.</p></div>;
+  if (loading) return <div className="detail-empty"><LoaderCircle className="spin" size={28} /><h2>Loading details</h2><p>Fetching this connector's details and tools.</p></div>;
+  if (!card) return <div className="detail-empty"><Boxes size={28} /><h2>Select a connector</h2><p>See what it does, how to set it up, and which tools agents can use.</p></div>;
   const pluginId = card.listing.pluginId;
   const installed = card.install?.lifecycle === "installed";
   const launchSupported = card.listing.executionOwner === "composio";
   const required = Boolean((card.listing.manifest as { required?: boolean }).required);
   const confirmLifecycle = (action: "install" | "uninstall" | "register" | "unregister") => {
     const run = action === "install" ? () => installPlugin(pluginId, workspaceSlug) : action === "uninstall" ? () => uninstallPlugin(pluginId, workspaceSlug) : action === "register" ? () => registerPlugin(pluginId, workspaceSlug) : () => unregisterPlugin(pluginId, workspaceSlug);
-    onConfirm({ title: `${words(action)} ${card.addon.displayName}?`, detail: action === "install" ? "Rules will evaluate connector administration, then Marketplace will record the workspace install." : action === "uninstall" ? "This removes the workspace install and disconnects its Agent projection. Provider-owned external accounts are not deleted." : `${words(action)} changes the plugin runtime registry after Rules approval.`, label: words(action), danger: action === "uninstall" || action === "unregister", run });
+    onConfirm({ title: `${words(action)} ${card.addon.displayName}?`, detail: action === "install" ? "Your organization's approval rules are checked first, then this is installed for your workspace." : action === "uninstall" ? "This removes it from your workspace and agents can no longer use it. Accounts in the connected service are not deleted." : action === "register" ? "This makes the connector available to agents once it's installed and approved." : "Agents will no longer be able to use this connector.", label: words(action), danger: action === "uninstall" || action === "unregister", run });
   };
   return (
     <article className="plugin-workspace">
       <header className="plugin-header">
         <div className="plugin-identity"><span className="plugin-monogram">{card.addon.displayName.slice(0, 2).toUpperCase()}</span><div><p className="eyebrow">{card.marketplaceName} · {card.runtimeSource}</p><h1>{card.addon.displayName}</h1><code>{pluginId}</code></div></div>
-        <div className="plugin-status"><Tag tone={statusTone(card.state.status)}>{words(card.state.status)}</Tag><span>Refreshed {formatWhen(card.state.refreshedAt)}</span></div>
+        <div className="plugin-status"><Tag tone={statusTone(card.state.status)}>{statusLabel(card.state.status)}</Tag><span>Refreshed {formatWhen(card.state.refreshedAt)}</span></div>
       </header>
       <p className="plugin-lede">{card.description || "No catalog description was provided."}</p>
       <div className="action-bar">
-        {!installed ? <Button tone="primary" disabled={!launchSupported} onClick={() => confirmLifecycle("install")}><Download size={15} />Install</Button> : <Button tone="danger" disabled={required} onClick={() => confirmLifecycle("uninstall")}><PackageMinus size={15} />Uninstall</Button>}
+        {!installed ? <span className="action-tooltip" title={launchSupported ? undefined : CATALOG_ONLY_HINT}><Button tone="primary" disabled={!launchSupported} aria-describedby={launchSupported ? undefined : "catalog-only-note"} onClick={() => confirmLifecycle("install")}><Download size={15} />Install</Button></span> : <Button tone="danger" disabled={required} onClick={() => confirmLifecycle("uninstall")}><PackageMinus size={15} />Uninstall</Button>}
         {!card.state.registered ? <Button disabled={!launchSupported} onClick={() => confirmLifecycle("register")}><PackageCheck size={15} />Register</Button> : <Button disabled={required} onClick={() => confirmLifecycle("unregister")}><Unplug size={15} />Unregister</Button>}
         <Button disabled={!installed || !launchSupported} onClick={() => setConnectOpen(true)}><Link2 size={15} />{card.connection ? "Reconnect" : "Connect"}</Button>
         <Button disabled={!card.state.ready || !launchSupported} onClick={() => setExecuteOpen(true)}><TerminalSquare size={15} />Execute</Button>
       </div>
-      {!launchSupported && <div className="contract-gap"><AlertTriangle size={17} /><div><strong>Catalog-only in this launch profile</strong><p>Only Composio-backed connectors can be installed, connected, projected to Agents, or executed. {words(card.listing.executionOwner)} remains visible for roadmap inspection and is never simulated as success.</p></div></div>}
-      {!card.state.ready && <div className="readiness-note"><AlertTriangle size={17} /><div><strong>Not ready for Agent execution</strong><p>{card.connection?.detail || card.installPlan.steps.find((step) => step.status !== "complete")?.detail || "Complete the lifecycle and connection steps below."}</p></div></div>}
+      {!launchSupported && <div className="contract-gap" id="catalog-only-note"><AlertTriangle size={17} /><div><strong>Listed — not yet installable</strong><p>{CATALOG_ONLY_HINT} {words(card.listing.executionOwner)} support is on the way.</p></div></div>}
+      {!card.state.ready && launchSupported && <div className="readiness-note"><AlertTriangle size={17} /><div><strong>Not ready for agents yet</strong><p>{card.connection?.detail || card.installPlan.steps.find((step) => step.status !== "complete")?.detail || "Complete the lifecycle and connection steps below."}</p></div></div>}
       <div className="detail-grid">
-        <section><div className="section-heading"><div><p className="eyebrow">Lifecycle</p><h2>Activation plan</h2></div><span>{card.installPlan.steps.filter((step) => step.status === "complete").length}/{card.installPlan.steps.length}</span></div><ol className="install-plan">{card.installPlan.steps.map((step) => <li key={step.kind} className={step.status === "complete" ? "is-complete" : ""}><span>{step.status === "complete" ? <Check size={13} /> : <CircleDot size={13} />}</span><div><strong>{step.label}</strong><p>{step.detail}</p></div></li>)}</ol></section>
-        <section><div className="section-heading"><div><p className="eyebrow">Runtime</p><h2>Authority & source</h2></div><SlidersHorizontal size={18} /></div><dl className="fact-list"><dt>Source</dt><dd>{card.sourceLabel}</dd><dt>Execution owner</dt><dd>{card.listing.executionOwner}</dd><dt>Auth owner</dt><dd>{card.listing.authOwner}</dd><dt>Connection</dt><dd><Tag tone={statusTone(card.connection?.state ?? "disconnected")}>{words(card.connection?.state ?? "disconnected")}</Tag></dd><dt>Version</dt><dd className="mono">{card.addon.version}</dd></dl></section>
+        <section><div className="section-heading"><div><p className="eyebrow">Setup</p><h2>Getting ready</h2></div><span>{card.installPlan.steps.filter((step) => step.status === "complete").length}/{card.installPlan.steps.length}</span></div><ol className="install-plan">{card.installPlan.steps.map((step) => <li key={step.kind} className={step.status === "complete" ? "is-complete" : ""}><span>{step.status === "complete" ? <Check size={13} /> : <CircleDot size={13} />}</span><div><strong>{step.label}</strong><p>{step.detail}</p></div></li>)}</ol></section>
+        <section><div className="section-heading"><div><p className="eyebrow">Details</p><h2>Source & connection</h2></div><SlidersHorizontal size={18} /></div><dl className="fact-list"><dt>Source</dt><dd>{card.sourceLabel}</dd><dt>Runs on</dt><dd>{card.listing.executionOwner}</dd><dt>Sign-in handled by</dt><dd>{card.listing.authOwner}</dd><dt>Connection</dt><dd><Tag tone={statusTone(card.connection?.state ?? "disconnected")}>{statusLabel(card.connection?.state ?? "disconnected")}</Tag></dd><dt>Version</dt><dd className="mono">{card.addon.version}</dd></dl></section>
       </div>
       <section className="tool-contract">
-        <div className="section-heading"><div><p className="eyebrow">Agent projection</p><h2>Tools & bindings</h2></div><Tag>{card.toolSelection.enabled}/{card.toolSelection.total} enabled</Tag></div>
-        <p className="section-copy">{launchSupported ? "Tool selection is independent of provider authorization. Disabled actions remain absent from Agent capability discovery." : "These declared actions are catalog evidence only and remain absent from Agent capability discovery until a real execution backend is supported."}</p>
-        {card.toolSelection.actions.length ? <div className="tool-list">{card.toolSelection.actions.slice(0, 40).map((action) => <div key={action.actionKey}><div><strong>{action.displayName}</strong><code>{action.actionKey}</code><p>{action.description}</p></div><Tag>{action.capability.replace("connector.", "")}</Tag><Button size="small" disabled={!launchSupported || !installed || binding.isPending} onClick={() => binding.mutate({ actionKey: action.actionKey, enabled: !action.enabled })}>{action.enabled ? "Exclude" : "Include"}</Button></div>)}</div> : <div className="collection-empty compact"><SlidersHorizontal /><h3>No selectable tools</h3><p>This catalog record does not expose action-level bindings.</p></div>}
-        {card.toolSelection.actions.length > 40 && <p className="muted-row">Showing 40 of {card.toolSelection.actions.length} actions. Use the API contract for bulk inspection.</p>}
-        {binding.error && <p className="inline-error"><AlertTriangle size={14} />{errorCopy(binding.error).detail}</p>}
+        <div className="section-heading"><div><p className="eyebrow">Agent tools</p><h2>Tools</h2></div><Tag>{card.toolSelection.enabled}/{card.toolSelection.total} included</Tag></div>
+        <p className="section-copy">{launchSupported ? "Choose which tools agents can use. Excluded tools are hidden from agents." : "These tools are listed for reference. Agents can't use them until this connector can be installed."}</p>
+        {card.toolSelection.actions.length ? <div className="tool-list">{card.toolSelection.actions.slice(0, 40).map((action) => <div key={action.actionKey}><div><strong>{action.displayName}</strong><code>{action.actionKey}</code><p>{action.description}</p></div><Tag>{action.capability.replace("connector.", "")}</Tag><Button size="small" disabled={!launchSupported || !installed || binding.isPending} onClick={() => binding.mutate({ actionKey: action.actionKey, enabled: !action.enabled })}>{action.enabled ? "Exclude" : "Include"}</Button></div>)}</div> : <div className="collection-empty compact"><SlidersHorizontal /><h3>No tools to choose</h3><p>This connector doesn't list individual tools.</p></div>}
+        {card.toolSelection.actions.length > 40 && <p className="muted-row">Showing 40 of {card.toolSelection.actions.length} actions. The full list is available in the developer API.</p>}
+        {binding.error && <InlineError error={binding.error} />}
       </section>
-      <section className="contract-gap"><ShieldCheck size={18} /><div><strong>Hub-only lifecycle stays isolated</strong><p>Enable, disable, reload, and custom MCP configuration require the internal Host SDK bearer boundary. Marketplace does not expose that credential to this browser.</p></div></section>
+      <section className="contract-gap"><ShieldCheck size={18} /><div><strong>More settings in Teal Brick Portal</strong><p>Turning connectors on or off and setting up custom MCP servers are managed from Teal Brick Portal.</p></div></section>
       <ConnectDialog card={card} workspaceSlug={workspaceSlug} open={connectOpen} onOpenChange={setConnectOpen} onConnected={() => { void queryClient.invalidateQueries({ queryKey: ["cards"] }); }} />
       <ExecuteDialog card={card} workspaceSlug={workspaceSlug} open={executeOpen} onOpenChange={setExecuteOpen} />
     </article>
