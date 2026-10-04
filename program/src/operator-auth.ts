@@ -109,6 +109,8 @@ export class MarketplaceOperatorSessionManager {
   }
 
   status(cookieHeader?: string | string[]): MarketplaceOperatorSessionStatus {
+    const session = this.sessionForCookie(cookieHeader);
+    if (session) return this.statusForSession(session);
     if (this.allowUnauthenticated) {
       return {
         configured: true,
@@ -129,14 +131,13 @@ export class MarketplaceOperatorSessionManager {
         expiresAt: null,
       };
     }
-    const session = this.sessionForCookie(cookieHeader);
     return {
       configured: true,
-      authenticated: Boolean(session),
+      authenticated: false,
       mode: "session",
-      principal: session?.principal ?? null,
-      csrfToken: session?.csrfToken ?? null,
-      expiresAt: session ? new Date(session.expiresAtMs).toISOString() : null,
+      principal: null,
+      csrfToken: null,
+      expiresAt: null,
     };
   }
 
@@ -164,16 +165,16 @@ export class MarketplaceOperatorSessionManager {
       throw new MarketplaceAuthenticationError("operator_unauthorized", 401, "The operator access token is invalid.");
     }
     this.failedLogins.delete(clientKey);
-    this.pruneExpired();
-    const token = randomBytes(32).toString("base64url");
-    const session: MarketplaceOperatorSession = {
-      tokenDigest: digest(token),
-      csrfToken: randomBytes(24).toString("base64url"),
-      principal: this.principal,
-      expiresAtMs: now + this.ttlMs,
-    };
-    this.sessions.set(token.slice(0, 16), session);
-    return { token, status: this.statusForSession(session) };
+    return this.createSession(this.principal);
+  }
+
+  issuePortalSession(input: { readonly id: string; readonly organizationId: string }) {
+    const id = input.id.trim();
+    const organizationId = input.organizationId.trim();
+    if (!id || !organizationId) {
+      throw new Error("Portal launch identity must include an operator and organization.");
+    }
+    return this.createSession({ kind: "operator", id, organizationId });
   }
 
   authenticate(cookieHeader?: string | string[]) {
@@ -194,8 +195,8 @@ export class MarketplaceOperatorSessionManager {
     return this.sessions.delete(token.slice(0, 16));
   }
 
-  sessionCookie(token: string, secure: boolean) {
-    return `${MARKETPLACE_OPERATOR_SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${Math.floor(this.ttlMs / 1_000)}${secure ? "; Secure" : ""}`;
+  sessionCookie(token: string, secure: boolean, sameSite: "Strict" | "Lax" = "Strict") {
+    return `${MARKETPLACE_OPERATOR_SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=${sameSite}; Max-Age=${Math.floor(this.ttlMs / 1_000)}${secure ? "; Secure" : ""}`;
   }
 
   clearCookie(secure: boolean) {
@@ -211,6 +212,20 @@ export class MarketplaceOperatorSessionManager {
       csrfToken: session.csrfToken,
       expiresAt: new Date(session.expiresAtMs).toISOString(),
     };
+  }
+
+  private createSession(principal: MarketplacePrincipal) {
+    this.pruneExpired();
+    const now = this.now();
+    const token = randomBytes(32).toString("base64url");
+    const session: MarketplaceOperatorSession = {
+      tokenDigest: digest(token),
+      csrfToken: randomBytes(24).toString("base64url"),
+      principal,
+      expiresAtMs: now + this.ttlMs,
+    };
+    this.sessions.set(token.slice(0, 16), session);
+    return { token, status: this.statusForSession(session) };
   }
 
   private sessionForCookie(cookieHeader?: string | string[]) {

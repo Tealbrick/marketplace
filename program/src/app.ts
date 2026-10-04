@@ -2308,6 +2308,7 @@ export async function buildMarketplaceApp(
     ticket: string,
     deploymentId: string,
     reply: FastifyReply,
+    input: { readonly issueOperatorSession?: boolean; readonly secure?: boolean } = {},
   ) => {
     try {
       const session = await portalHandoffClient.redeemLaunchTicket({
@@ -2336,6 +2337,19 @@ export async function buildMarketplaceApp(
         sessionToken: session.session,
         expiresAt: new Date(session.expiresAt).toISOString(),
       });
+      if (input.issueOperatorSession) {
+        const operatorSession = operatorSessions.issuePortalSession({
+          id: session.userId,
+          organizationId: session.productTenantId,
+        });
+        reply.header(
+          "set-cookie",
+          operatorSessions.sessionCookie(operatorSession.token, input.secure === true, "Lax"),
+        );
+        reply.header("location", "/");
+        reply.code(303);
+        return "";
+      }
       reply.type("text/html; charset=utf-8");
       return htmlCloseout({
         ok: true,
@@ -2400,7 +2414,10 @@ export async function buildMarketplaceApp(
           : "Portal launch ticket is invalid.",
       });
     }
-    return completePortalLaunch(parsed.data.ticket, deploymentId, reply);
+    return completePortalLaunch(parsed.data.ticket, deploymentId, reply, {
+      issueOperatorSession: true,
+      secure: secureRequest(request),
+    });
   });
 
   app.get("/healthz", async () => ({
