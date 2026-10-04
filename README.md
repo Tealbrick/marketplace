@@ -55,6 +55,17 @@ store, reuse it across retries, restarts, upgrades, and restores, and never
 include it in a database backup or release artifact. A missing or wrong key
 fails closed without rewriting the database.
 
+The same key encrypts the secret headers of operator custom MCP connectors
+(Connections → Custom connectors). Without it, connectors that need secret
+headers cannot be saved (`connector_secret_store_unavailable`); connectors
+without secrets still work. Custom connectors reach remote MCP servers over
+`https://` only (streamable HTTP or legacy SSE). Loopback, private-network,
+link-local/metadata, and `.local`/`.internal` addresses are refused, both at
+save time and after a fresh DNS lookup before every connection; Tailscale
+(`*.ts.net`, 100.64.0.0/10) endpoints are allowed. Local stdio servers are not
+accepted from the browser. `MARKETPLACE_MCP_ALLOWED_ORIGINS` (comma-separated
+exact origins) exists for test fixtures only.
+
 ## Local development
 
 Requires Node `>=22.22.0` and pnpm `>=9.15.4`.

@@ -3471,48 +3471,68 @@ export async function buildMarketplaceApp(
       }
       throw error;
     }
-    const manifest = customMcpManifest(current);
+    const requested = customMcpManifest(current);
     const at = new Date().toISOString();
     let errorCode: string | null = null;
-    let listing = current;
+    let remoteTools: Awaited<ReturnType<typeof listMcpTools>> = [];
     try {
-      const remoteTools = await listMcpTools(connection);
-      const tools = toolRecordsFromRemote(current.provider, remoteTools);
-      listing = customMcpListing({
+      remoteTools = await listMcpTools(connection);
+    } catch (error) {
+      logCustomMcpFailure({ event: "marketplace.custom_mcp.refresh_failed", pluginId, workspaceSlug, error });
+      errorCode = error instanceof McpRemoteError ? error.code : "mcp_protocol_error";
+    }
+    // The connector may have been edited or deleted while the server was
+    // being contacted: never resurrect it or overwrite a newer address.
+    const latest = ownedCustomMcp(pluginId, workspaceSlug);
+    if (!latest) {
+      reply.code(404);
+      return { ok: false, error: "plugin_not_found" };
+    }
+    const manifest = customMcpManifest(latest);
+    if (manifest.url !== requested.url || manifest.transport !== requested.transport) {
+      reply.code(409);
+      return { ok: false, error: "custom_mcp_changed_during_refresh" };
+    }
+    const rebuild = (next: Partial<CustomMcpManifest>) =>
+      customMcpListing({
         pluginId,
         workspaceSlug,
-        displayName: current.displayName,
-        description: current.description,
-        version: typeof current.manifest.version === "string" ? current.manifest.version : undefined,
-        createdAt: current.createdAt,
-        manifest: { ...manifest, tools, lastRefresh: { at, ok: true, errorCode: null } },
+        displayName: latest.displayName,
+        description: latest.description,
+        version: typeof latest.manifest.version === "string" ? latest.manifest.version : undefined,
+        createdAt: latest.createdAt,
+        manifest: { ...manifest, ...next },
       });
-      options.store.upsertListing(listing);
+    let listing: MarketplaceListing;
+    if (errorCode === null) {
+      try {
+        const tools = toolRecordsFromRemote(latest.provider, remoteTools);
+        listing = rebuild({ tools, lastRefresh: { at, ok: true, errorCode: null } });
+      } catch (error) {
+        logCustomMcpFailure({ event: "marketplace.custom_mcp.refresh_failed", pluginId, workspaceSlug, error });
+        errorCode = "mcp_protocol_error";
+        listing = rebuild({ lastRefresh: { at, ok: false, errorCode } });
+      }
+    } else {
+      listing = rebuild({ lastRefresh: { at, ok: false, errorCode } });
+    }
+    options.store.upsertListing(listing);
+    if (errorCode === null) {
       options.store.upsertConnection({
         workspaceSlug,
         pluginId,
         provider: listing.provider,
         backend: "mcp",
         state: "connected",
-        detail: `Connected. ${tools.length} tool${tools.length === 1 ? "" : "s"} available.`,
-        metadata: { lastRefreshAt: at, toolCount: tools.length },
+        detail: `Connected. ${listing.actions.length} tool${listing.actions.length === 1 ? "" : "s"} available.`,
+        metadata: { lastRefreshAt: at, toolCount: listing.actions.length },
       });
       if (options.store.getInstall(workspaceSlug, pluginId)?.lifecycle === "installed") {
         bindCustomMcpForWorkspace(options.store, workspaceSlug, listing);
       }
-    } catch (error) {
-      logCustomMcpFailure({ event: "marketplace.custom_mcp.refresh_failed", pluginId, workspaceSlug, error });
-      errorCode = error instanceof McpRemoteError ? error.code : "mcp_protocol_error";
-      listing = customMcpListing({
-        pluginId,
-        workspaceSlug,
-        displayName: current.displayName,
-        description: current.description,
-        version: typeof current.manifest.version === "string" ? current.manifest.version : undefined,
-        createdAt: current.createdAt,
-        manifest: { ...manifest, lastRefresh: { at, ok: false, errorCode } },
-      });
-      options.store.upsertListing(listing);
+    } else {
+      // Keep previously discovered tools, but stop exposing them until a
+      // refresh succeeds again.
       options.store.upsertConnection({
         workspaceSlug,
         pluginId,

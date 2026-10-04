@@ -29,7 +29,7 @@ afterEach(async () => {
 
 type Rules = { decision: RulesDecision | "unavailable"; calls: Array<Record<string, unknown>> };
 
-async function fixture(input: { encryptionKey?: string | null } = {}) {
+async function fixture(input: { encryptionKey?: string | null; beforeMcpFetch?: () => void } = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), "marketplace-custom-mcp-"));
   roots.push(root);
   const dbPath = path.join(root, "data", "marketplace.sqlite");
@@ -48,6 +48,10 @@ async function fixture(input: { encryptionKey?: string | null } = {}) {
     providerSettings: new MarketplaceProviderSettingsStore(path.join(root, "ps.json"), path.join(root, "pss.json"), {}),
     env: {},
     environment: { NODE_ENV: "test", MARKETPLACE_MCP_ALLOWED_ORIGINS: server.origin },
+    mcpFetch: async (resource, init) => {
+      input.beforeMcpFetch?.();
+      return fetch(resource, init);
+    },
     rulesClient: async (request) => {
       rules.calls.push(request as unknown as Record<string, unknown>);
       if (rules.decision === "unavailable") throw new Error("unreachable in tests");
@@ -423,5 +427,28 @@ describe("custom MCP connector routes", () => {
     expect(listed.json()).toMatchObject({ secretStoreAvailable: false });
     const plain = await call("POST", "/api/marketplace/connectors/custom", a, createBody("https://mcp.example.com/mcp", { secretHeaders: undefined }));
     expect(plain.statusCode).toBe(201);
+  });
+
+  it("never resurrects or rewinds a connector edited or deleted during refresh", async () => {
+    let onFetch: (() => void) | null = null;
+    const { server, operator, call, store } = await fixture({ beforeMcpFetch: () => { const hook = onFetch; onFetch = null; hook?.(); } });
+    const a = operator("ws-a");
+    const pluginId = (await call("POST", "/api/marketplace/connectors/custom", a, createBody(server.streamableUrl))).json().connector.pluginId as string;
+
+    onFetch = () => {
+      const listing = store.getListing(pluginId)!;
+      const mcp = listing.manifest.mcp as Record<string, unknown>;
+      store.upsertListing({ ...listing, manifest: { ...listing.manifest, mcp: { ...mcp, url: "https://moved.example/mcp" } } });
+    };
+    const moved = await call("POST", `/api/marketplace/connectors/custom/${pluginId}/refresh`, a);
+    expect(moved.statusCode).toBe(409);
+    expect(moved.json()).toEqual({ ok: false, error: "custom_mcp_changed_during_refresh" });
+    expect((store.getListing(pluginId)!.manifest.mcp as { url: string }).url).toBe("https://moved.example/mcp");
+
+    const pluginTwo = (await call("POST", "/api/marketplace/connectors/custom", a, createBody(server.streamableUrl, { displayName: "Second" }))).json().connector.pluginId as string;
+    onFetch = () => store.deleteListing(pluginTwo);
+    const deleted = await call("POST", `/api/marketplace/connectors/custom/${pluginTwo}/refresh`, a);
+    expect(deleted.statusCode).toBe(404);
+    expect(store.getListing(pluginTwo)).toBeNull();
   });
 });
