@@ -2548,6 +2548,58 @@ export async function buildMarketplaceApp(
     };
   });
 
+  type RulesConnectionStatus = "connected" | "not-connected" | "unavailable";
+  let rulesStatusCache: { status: RulesConnectionStatus; expiresAt: number } | null = null;
+  const probeRulesConnection = async (): Promise<RulesConnectionStatus> => {
+    if (!options.rulesClient && !rulesConfiguration) return "not-connected";
+    if (!rulesConfiguration) {
+      // An injected Rules client without a probe configuration (embedded
+      // hosts and tests) is treated as connected; decisions still fail closed.
+      return options.rulesClient ? "connected" : "not-connected";
+    }
+    if (!options.rulesClient || !rulesConfiguration.internalAuthToken?.trim()) {
+      return "unavailable";
+    }
+    if (rulesStatusCache && Date.now() < rulesStatusCache.expiresAt) {
+      return rulesStatusCache.status;
+    }
+    let status: RulesConnectionStatus = "unavailable";
+    try {
+      const response = await (options.providerFetch ?? fetch)(
+        new URL(RULES_INTROSPECTION_PATH, rulesConfiguration.baseUrl),
+        {
+          method: "GET",
+          headers: {
+            accept: "application/json",
+            authorization: `Bearer ${rulesConfiguration.internalAuthToken}`,
+          },
+          signal: AbortSignal.timeout(5_000),
+        },
+      );
+      if (response.ok) {
+        parseRulesReadinessPrincipal({
+          response: await response.json(),
+          organizationId,
+          expectedCompanyId: rulesConfiguration.companyId,
+        });
+        status = "connected";
+      }
+    } catch {
+      status = "unavailable";
+    }
+    rulesStatusCache = { status, expiresAt: Date.now() + 15_000 };
+    return status;
+  };
+
+  // Authenticated (operator session or service bearer) runtime health for the
+  // browser status indicators. Returns states only, never configuration.
+  app.get("/api/marketplace/health", async () => ({
+    ok: true,
+    program: "ok" as const,
+    rules: await probeRulesConnection(),
+    checkedAt: new Date().toISOString(),
+  }));
+
   app.get("/api/marketplace/auth/session", async (request) => ({
     session: operatorSessions.status(request.headers.cookie),
   }));

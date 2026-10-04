@@ -121,3 +121,30 @@ test("customer copy: Rules outage, catalog-only listing, and session expiry", as
   await expect(page.getByText("Your session ended — relaunch Marketplace from Teal Brick Portal.")).toBeVisible();
   await expect(page.getByText("Operator recovery")).toBeVisible();
 });
+
+test("real health indicators and the Installed empty state", async ({ page }) => {
+  await page.setViewportSize({ width: 1152, height: 820 });
+  const healthRequests: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/healthz" || url.pathname === "/api/marketplace/health") healthRequests.push(url.pathname);
+  });
+  await unlockMarketplace(page);
+  const topbar = page.locator(".topbar");
+  await expect(topbar.getByText("Online", { exact: true })).toBeVisible();
+  await expect(topbar.getByText("Approvals not set up")).toBeVisible();
+  await expect(page.locator(".rules-status-row")).toContainText("not set up");
+  expect(healthRequests).toEqual(expect.arrayContaining(["/healthz", "/api/marketplace/health"]));
+  await expect(page.locator("body")).not.toContainText("Program online");
+
+  await page.getByRole("navigation").getByRole("button", { name: "Installed" }).click();
+  await expect(page.getByRole("heading", { name: "Nothing installed yet" })).toBeVisible();
+  await page.getByRole("button", { name: "Browse the catalog" }).click();
+  await expect(page.getByRole("heading", { name: "Discover" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Open settings" }).last().click();
+  const modal = page.getByRole("dialog", { name: "Settings" });
+  await modal.getByRole("tab", { name: "Authorization" }).click();
+  await expect(modal.getByLabel("Service status")).toContainText("Not set up");
+  await expect(modal.getByText("Technical details")).toBeVisible();
+});

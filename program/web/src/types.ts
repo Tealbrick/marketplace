@@ -300,3 +300,12 @@ export interface ProviderSettings {
   status: { composioApiKey: { configured: boolean; source: string | null; keyTail: string | null; fingerprint: string | null } };
   provider: ProviderHealth;
 }
+
+export type RulesConnectionStatus = "connected" | "not-connected" | "unavailable";
+
+export type RuntimeHealth = {
+  ok: boolean;
+  program: "ok";
+  rules: RulesConnectionStatus;
+  checkedAt: string;
+};

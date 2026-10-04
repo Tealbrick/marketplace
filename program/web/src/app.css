@@ -291,7 +291,9 @@ code, .mono { font-family: var(--dg-font-mono); overflow-wrap: anywhere; }
 
 @media (max-width: 600px) {
   .topbar { padding: 0 12px; }
-  .topbar .eyebrow, .program-state { display: none; }
+  .topbar .eyebrow { display: none; }
+  .program-state-group { gap: 8px; }
+  .program-state { gap: 0; font-size: 0; }
   .topbar form input { width: 112px; }
   .topbar > div .dg-button { font-size: 0; }
   .topbar > div .dg-button svg { margin: 0; }
@@ -362,3 +364,13 @@ code, .mono { font-family: var(--dg-font-mono); overflow-wrap: anywhere; }
 @media (max-width: 600px) {
   .action-tooltip, .action-tooltip .dg-button { width: 100%; min-width: 0; }
 }
+
+/* Runtime health indicators */
+.program-state-group { display: inline-flex; align-items: center; gap: 12px; }
+.program-state--danger > span { background: var(--dg-danger); }
+.program-state--warning > span { background: var(--dg-warning); }
+.program-state--unknown > span { background: var(--dg-text-subtle); }
+.program-state--danger { color: var(--dg-danger); }
+.provider-summary > .rules-status-row { border-bottom: 1px dashed var(--dg-line); margin-bottom: 4px; }
+.muted-detail { margin: 6px 0 0; color: var(--dg-text-muted); font-size: 9px; line-height: 1.5; }
+.collection-empty .dg-button { margin-top: 18px; }

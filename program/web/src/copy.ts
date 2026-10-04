@@ -128,3 +128,9 @@ export function errorCopy(error: Error): ErrorCopy {
   }
   return { title: "Something went wrong", detail: "Marketplace couldn't complete the request. Try again; if it keeps happening, contact your administrator.", reference };
 }
+
+export const RULES_STATUS_COPY: Record<"connected" | "not-connected" | "unavailable", { label: string; detail: string; tone: "success" | "warning" | "danger" }> = {
+  connected: { label: "Connected", detail: "Approvals are working. Changes are checked against your organization's rules.", tone: "success" },
+  "not-connected": { label: "Not set up", detail: "The approvals service isn't connected, so installs and connections can't be approved. Ask your administrator to connect it.", tone: "warning" },
+  unavailable: { label: "Unavailable", detail: "Marketplace can't reach the approvals service right now. Changes are paused until it's back.", tone: "danger" },
+};

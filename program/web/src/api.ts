@@ -1,4 +1,4 @@
-import type { AuditResponse, CardDetailResponse, CardsResponse, CardsSummaryResponse, FrontendBootstrap, OperatorSession, ProviderSettings } from "./types";
+import type { AuditResponse, CardDetailResponse, CardsResponse, CardsSummaryResponse, FrontendBootstrap, OperatorSession, ProviderSettings, RuntimeHealth } from "./types";
 
 let operatorCsrfToken: string | null = null;
 
@@ -94,6 +94,8 @@ export const getCardSummaries = (input: { workspaceSlug: string; search: string;
 export const getCardDetail = (pluginId: string, workspaceSlug: string) =>
   api<CardDetailResponse>(`/api/marketplace/cards/${encodeURIComponent(pluginId)}?${workspaceQuery(workspaceSlug)}`);
 export const getAudit = (workspaceSlug: string) => api<AuditResponse>(`/api/marketplace/audit?${workspaceQuery(workspaceSlug)}&limit=100`);
+export const getLiveness = () => api<{ ok: boolean; status: string }>("/healthz");
+export const getRuntimeHealth = () => api<RuntimeHealth>("/api/marketplace/health");
 export const getOpenApi = () => api<Record<string, unknown>>("/openapi.json");
 export const getProviderSettings = () => api<ProviderSettings>("/api/settings/providers/composio");
 export const getAgentCapabilities = (workspaceSlug: string) => api<{ workspaceSlug: string; capabilities: Array<Record<string, unknown>> }>(`/api/agent/capabilities?${workspaceQuery(workspaceSlug)}`);
