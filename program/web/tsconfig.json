@@ -4,11 +4,14 @@
     "jsx": "react-jsx",
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "baseUrl": ".",
     "paths": {
-      "@doppelganger/ui": ["../../.sdk/doppelganger-ui/src/index.tsx"],
-      "@doppelganger/ui/*": ["../../.sdk/doppelganger-ui/*"],
+      "@tealbrick/ui": ["../../.sdk/tealbrick-ui/src/index.tsx"],
+      "@tealbrick/ui/*": ["../../.sdk/tealbrick-ui/*"],
+      "@doppelganger/ui": ["../../.sdk/tealbrick-ui/src/index.tsx"],
+      "@doppelganger/ui/*": ["../../.sdk/tealbrick-ui/*"],
       "react": ["../node_modules/@types/react/index.d.ts"],
       "react/jsx-runtime": ["../node_modules/@types/react/jsx-runtime.d.ts"]
     },

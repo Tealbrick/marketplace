@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Dialog from "@radix-ui/react-dialog";
 import { AlertTriangle, Check, KeyRound, LoaderCircle, Pencil, Plus, RefreshCw, Server, ShieldCheck, Trash2, Undo2, X } from "lucide-react";
-import { Button, IconButton, Tag } from "@doppelganger/ui";
+import { Button, IconButton, Tag } from "@tealbrick/ui";
 
 import { createCustomConnector, deleteCustomConnector, getCustomConnectors, refreshCustomConnector, updateCustomConnector } from "./api";
 import { refreshErrorCopy } from "./copy";

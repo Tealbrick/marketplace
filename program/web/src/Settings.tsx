@@ -3,7 +3,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Tabs from "@radix-ui/react-tabs";
 import { AlertTriangle, Check, Code2, Copy, LoaderCircle, LogOut, Plug, PlugZap, ShieldCheck, TerminalSquare, Trash2, X } from "lucide-react";
-import { Button, IconButton, Tag } from "@doppelganger/ui";
+import { Button, IconButton, Tag } from "@tealbrick/ui";
 
 import { getAgentCapabilities, getOpenApi, getProviderSettings, logoutOperator, removeProviderKey, saveProviderSettings, testProviderKey } from "./api";
 import type { FrontendBootstrap, OperatorSession, ProviderSettings, RulesConnectionStatus } from "./types";

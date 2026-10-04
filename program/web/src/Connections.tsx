@@ -1,5 +1,5 @@
 import { Plug, Unplug } from "lucide-react";
-import { Tag } from "@doppelganger/ui";
+import { Tag } from "@tealbrick/ui";
 
 import { CustomConnectorsSection } from "./CustomConnectors";
 import type { BrowserProviderHealth, ConnectionSummary } from "./types";

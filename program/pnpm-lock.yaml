@@ -8,9 +8,6 @@ importers:
 
   .:
     dependencies:
-      '@doppelganger/ui':
-        specifier: file:../.sdk/doppelganger-ui
-        version: file:../.sdk/doppelganger-ui(react@19.2.8)
       '@fastify/static':
         specifier: ^8.3.0
         version: 8.3.0
@@ -23,6 +20,9 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.90.20
         version: 5.101.4(react@19.2.8)
+      '@tealbrick/ui':
+        specifier: file:../.sdk/tealbrick-ui
+        version: file:../.sdk/tealbrick-ui(react@19.2.8)
       fastify:
         specifier: ^5.6.1
         version: 5.8.5
@@ -227,11 +227,6 @@ packages:
   '@csstools/css-tokenizer@4.0.0':
     resolution: {integrity: sha512-QxULHAm7cNu72w97JUNCBFODFaXpbDg+dP8b/oWFAZ2MTRppA3U00Y2L1HqaS4J6yBqxwa/Y3nMBaxVKbB/NsA==}
     engines: {node: '>=20.19.0'}
-
-  '@doppelganger/ui@file:../.sdk/doppelganger-ui':
-    resolution: {directory: ../.sdk/doppelganger-ui, type: directory}
-    peerDependencies:
-      react: '>=19'
 
   '@esbuild/aix-ppc64@0.27.7':
     resolution: {integrity: sha512-EKX3Qwmhz1eMdEJokhALr0YiD0lhQNwDqkPYyPhiSwKrh7/4KRjQc04sZ8db+5DVVnZ1LmbNDI1uAMPEUBnQPg==}
@@ -967,6 +962,11 @@ packages:
     resolution: {integrity: sha512-yRg2pfOCxIs4ZJW3XYYHU/WgtD04FHSnfHlpRT7h7pR77hwkdRG4wxbKe4aq6P0RvXUTBSQpQeadS1SUYUe+KA==}
     peerDependencies:
       react: ^18 || ^19
+
+  '@tealbrick/ui@file:../.sdk/tealbrick-ui':
+    resolution: {directory: ../.sdk/tealbrick-ui, type: directory}
+    peerDependencies:
+      react: '>=19'
 
   '@testing-library/dom@10.4.1':
     resolution: {integrity: sha512-o4PXJQidqJl82ckFaXUeoAW+XysPLauYI43Abki5hABd853iMhitooc6znOnczgbTYmEP6U6/y1ZyKAIsvMKGg==}
@@ -2045,10 +2045,6 @@ snapshots:
 
   '@csstools/css-tokenizer@4.0.0': {}
 
-  '@doppelganger/ui@file:../.sdk/doppelganger-ui(react@19.2.8)':
-    dependencies:
-      react: 19.2.8
-
   '@esbuild/aix-ppc64@0.27.7':
     optional: true
 
@@ -2556,6 +2552,10 @@ snapshots:
   '@tanstack/react-query@5.101.4(react@19.2.8)':
     dependencies:
       '@tanstack/query-core': 5.101.4
+      react: 19.2.8
+
+  '@tealbrick/ui@file:../.sdk/tealbrick-ui(react@19.2.8)':
+    dependencies:
       react: 19.2.8
 
   '@testing-library/dom@10.4.1':

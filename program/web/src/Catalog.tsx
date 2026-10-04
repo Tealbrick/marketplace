@@ -19,7 +19,7 @@ import {
   Unplug,
   X,
 } from "lucide-react";
-import { Button, IconButton, Tag } from "@doppelganger/ui";
+import { Button, IconButton, Tag } from "@tealbrick/ui";
 
 import {
   bindAction,

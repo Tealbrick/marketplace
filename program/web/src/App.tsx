@@ -1,7 +1,7 @@
 import { useDeferredValue, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, AlertTriangle, Boxes, CheckCircle2, Filter, KeyRound, LoaderCircle, PackageCheck, Plug, RefreshCw, Search, Settings, ShieldCheck, X } from "lucide-react";
-import { BrandMark, Button, Field, IconButton, Tag } from "@doppelganger/ui";
+import { BrandMark, Button, Field, IconButton, Tag } from "@tealbrick/ui";
 
 import { ActivityPage } from "./Activity";
 import { AgentGrantsPage } from "./AgentGrants";

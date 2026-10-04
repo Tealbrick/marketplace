@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Bot, Boxes, Clock3, ExternalLink, KeyRound, LoaderCircle, PackageCheck, Plug, RefreshCw, ShieldCheck, XCircle } from "lucide-react";
-import { Button, Tag } from "@doppelganger/ui";
+import { Button, Tag } from "@tealbrick/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getAgentActionCatalog, getAgentGrants, redeemAgentGrant, requestAgentGrant } from "./agent-grants-api";
