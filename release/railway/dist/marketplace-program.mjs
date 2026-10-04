@@ -49788,7 +49788,7 @@ function buildMarketplaceOpenApi(baseUrl = "/") {
       "/healthz": { get: { security: [], tags: ["Runtime"], summary: "Program liveness", responses: { "200": { description: "Healthy" } } } },
       "/status": { get: { security: [], tags: ["Runtime"], summary: "Redacted frontend-safe status", responses: { "200": { description: "Status" } } } },
       "/bootstrap.json": { get: { security: [], tags: ["Runtime"], summary: "Redacted frontend bootstrap and authorization posture", responses: { "200": { description: "Bootstrap" } } } },
-      "/auth/launch": { post: { security: [], tags: ["Runtime"], summary: "Redeem a Portal one-use browser launch ticket", description: "Accepts the Portal form POST, redeems the ticket server-to-server with the configured deployment identity, and stores the attested Portal handoff session without echoing the ticket.", requestBody: { required: true, content: { "application/x-www-form-urlencoded": { schema: { type: "object", additionalProperties: false, required: ["ticket"], properties: { ticket: { type: "string", writeOnly: true, pattern: "^[A-Za-z0-9_-]{43}$" } } } } } }, responses: { "200": { description: "Portal handoff accepted" }, "401": { description: "Invalid, duplicate, or replayed ticket" }, "403": { description: "Portal Origin or deployment identity denied" }, "503": { description: "Portal handoff is not configured or unavailable" } } } },
+      "/auth/launch": { post: { security: [], tags: ["Runtime"], summary: "Redeem a Portal one-use browser launch ticket", description: "Accepts the Portal form POST, redeems the ticket server-to-server with the configured deployment identity, stores the attested Portal handoff session without echoing the ticket, issues the existing HttpOnly Marketplace operator session, and redirects to the UI.", requestBody: { required: true, content: { "application/x-www-form-urlencoded": { schema: { type: "object", additionalProperties: false, required: ["ticket"], properties: { ticket: { type: "string", writeOnly: true, pattern: "^[A-Za-z0-9_-]{43}$" } } } } } }, responses: { "303": { description: "Marketplace operator session created; redirect to the UI" }, "401": { description: "Invalid, duplicate, or replayed ticket" }, "403": { description: "Portal Origin or deployment identity denied" }, "503": { description: "Portal handoff is not configured or unavailable" } } } },
       "/api/marketplace/auth/session": {
         get: { security: [], tags: ["Runtime"], summary: "Read the redacted operator-session state", responses: { "200": { description: "Session status" } } },
         post: { security: [], tags: ["Runtime"], summary: "Exchange the provisioned operator access token for an HttpOnly session", requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["accessToken"], properties: { accessToken: { type: "string", writeOnly: true } } } } } }, responses: { "200": { description: "Session created" }, "401": { description: "Invalid token" }, "429": { description: "Rate limited" }, "503": { description: "Operator access is not configured" } } },
@@ -49959,6 +49959,8 @@ var MarketplaceOperatorSessionManager = class _MarketplaceOperatorSessionManager
     });
   }
   status(cookieHeader) {
+    const session = this.sessionForCookie(cookieHeader);
+    if (session) return this.statusForSession(session);
     if (this.allowUnauthenticated) {
       return {
         configured: true,
@@ -49979,14 +49981,13 @@ var MarketplaceOperatorSessionManager = class _MarketplaceOperatorSessionManager
         expiresAt: null
       };
     }
-    const session = this.sessionForCookie(cookieHeader);
     return {
       configured: true,
-      authenticated: Boolean(session),
+      authenticated: false,
       mode: "session",
-      principal: session?.principal ?? null,
-      csrfToken: session?.csrfToken ?? null,
-      expiresAt: session ? new Date(session.expiresAtMs).toISOString() : null
+      principal: null,
+      csrfToken: null,
+      expiresAt: null
     };
   }
   exchange(accessToken, clientKey) {
@@ -50013,16 +50014,15 @@ var MarketplaceOperatorSessionManager = class _MarketplaceOperatorSessionManager
       throw new MarketplaceAuthenticationError("operator_unauthorized", 401, "The operator access token is invalid.");
     }
     this.failedLogins.delete(clientKey);
-    this.pruneExpired();
-    const token = randomBytes(32).toString("base64url");
-    const session = {
-      tokenDigest: digest(token),
-      csrfToken: randomBytes(24).toString("base64url"),
-      principal: this.principal,
-      expiresAtMs: now + this.ttlMs
-    };
-    this.sessions.set(token.slice(0, 16), session);
-    return { token, status: this.statusForSession(session) };
+    return this.createSession(this.principal);
+  }
+  issuePortalSession(input) {
+    const id = input.id.trim();
+    const organizationId = input.organizationId.trim();
+    if (!id || !organizationId) {
+      throw new Error("Portal launch identity must include an operator and organization.");
+    }
+    return this.createSession({ kind: "operator", id, organizationId });
   }
   authenticate(cookieHeader) {
     if (this.allowUnauthenticated) return this.principal;
@@ -50039,8 +50039,8 @@ var MarketplaceOperatorSessionManager = class _MarketplaceOperatorSessionManager
     if (!token) return false;
     return this.sessions.delete(token.slice(0, 16));
   }
-  sessionCookie(token, secure) {
-    return `${MARKETPLACE_OPERATOR_SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${Math.floor(this.ttlMs / 1e3)}${secure ? "; Secure" : ""}`;
+  sessionCookie(token, secure, sameSite = "Strict") {
+    return `${MARKETPLACE_OPERATOR_SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=${sameSite}; Max-Age=${Math.floor(this.ttlMs / 1e3)}${secure ? "; Secure" : ""}`;
   }
   clearCookie(secure) {
     return `${MARKETPLACE_OPERATOR_SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT${secure ? "; Secure" : ""}`;
@@ -50054,6 +50054,19 @@ var MarketplaceOperatorSessionManager = class _MarketplaceOperatorSessionManager
       csrfToken: session.csrfToken,
       expiresAt: new Date(session.expiresAtMs).toISOString()
     };
+  }
+  createSession(principal) {
+    this.pruneExpired();
+    const now = this.now();
+    const token = randomBytes(32).toString("base64url");
+    const session = {
+      tokenDigest: digest(token),
+      csrfToken: randomBytes(24).toString("base64url"),
+      principal,
+      expiresAtMs: now + this.ttlMs
+    };
+    this.sessions.set(token.slice(0, 16), session);
+    return { token, status: this.statusForSession(session) };
   }
   sessionForCookie(cookieHeader) {
     const token = cookieValue(cookieHeader, MARKETPLACE_OPERATOR_SESSION_COOKIE);
@@ -52669,7 +52682,7 @@ async function buildMarketplaceApp(options) {
     reply.type("text/html; charset=utf-8");
     return htmlShell();
   });
-  const completePortalLaunch = async (ticket, deploymentId, reply) => {
+  const completePortalLaunch = async (ticket, deploymentId, reply, input = {}) => {
     try {
       const session = await portalHandoffClient.redeemLaunchTicket({
         deploymentId,
@@ -52694,6 +52707,19 @@ async function buildMarketplaceApp(options) {
         sessionToken: session.session,
         expiresAt: new Date(session.expiresAt).toISOString()
       });
+      if (input.issueOperatorSession) {
+        const operatorSession = operatorSessions.issuePortalSession({
+          id: session.userId,
+          organizationId: session.productTenantId
+        });
+        reply.header(
+          "set-cookie",
+          operatorSessions.sessionCookie(operatorSession.token, input.secure === true, "Lax")
+        );
+        reply.header("location", "/");
+        reply.code(303);
+        return "";
+      }
       reply.type("text/html; charset=utf-8");
       return htmlCloseout({
         ok: true,
@@ -52741,7 +52767,10 @@ async function buildMarketplaceApp(options) {
         detail: parsed?.success ? "Marketplace Portal deployment identity is not configured." : "Portal launch ticket is invalid."
       });
     }
-    return completePortalLaunch(parsed.data.ticket, deploymentId, reply);
+    return completePortalLaunch(parsed.data.ticket, deploymentId, reply, {
+      issueOperatorSession: true,
+      secure: secureRequest(request)
+    });
   });
   app2.get("/healthz", async () => ({
     ok: true,

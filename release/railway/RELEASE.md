@@ -1,14 +1,14 @@
-# Marketplace standalone 0.1.4 image
+# Marketplace standalone 0.1.5 image
 
-This bundle is the public Marketplace 0.1.4 release line and supersedes
-0.1.3 for Portal browser launch compatibility. The release image
+This bundle is the public Marketplace 0.1.5 release line and supersedes
+0.1.4 for Portal browser launch-to-UI compatibility. The release image
 contains the Fastify Program, the built browser application, the tracked
 entrypoint, and no provider credentials, operator sessions, tenant data, or
 runtime database.
 
-Source snapshot: `257aa5ca4b06031d41b0bc56c4c6f34077e419f3`
-Source archive SHA256: `e777ee5f27bac96db8aec74aab0b03ab478a08f0d35f49c8d3f77d1d8e7a3f7a`
-Image: `ghcr.io/tealbrick/marketplace:0.1.4`
+Source snapshot: `3a1c72c8c52cc91e9d1bdbb9087d5d29cbf15e3a`
+Source archive SHA256: `007860f0ec7885542f0ff0fe4e21c26512ff894b2f0048babcc3e8a3e41cef47`
+Image: `ghcr.io/tealbrick/marketplace:0.1.5`
 
 ## Runtime contract
 
@@ -26,26 +26,29 @@ Image: `ghcr.io/tealbrick/marketplace:0.1.4`
   into the image or returned to browser code.
 
 The source-backed Railway path uses the fixed public release branch
-`release/marketplace-v0.1.4`; its exact tag target, branch ruleset, and image
+`release/marketplace-v0.1.5`; its exact tag target, branch ruleset, and image
 digest are recorded in the successor receipt. Set the service root directory
 to `release/railway`, keep the Dockerfile entrypoint, and use the relay
 contract in `deploy/railway/recipe.json` and `deploy/railway/railway-blueprint.json`.
 GHCR is optional for the source-build path; no template ID or publication is
 implied by these files.
 
-## v0.1.4 launch-contract disposition
+## v0.1.5 launch-contract disposition
 
-This successor adds the Portal-compatible `POST /auth/launch` form adapter.
+This successor completes the Portal-compatible `POST /auth/launch` form adapter.
 The adapter accepts exactly one form field (`ticket`), requires the exact
 configured Portal Origin, rejects caller authorization headers, derives the
 Portal deployment identity from server configuration, and delegates one-use
 redemption to Portal with the server-held instance proof. It stores the
-attested session through the existing encrypted handoff path and never echoes
-the ticket or session token. The legacy GET handoff remains available for
-compatibility; this release does not claim that the existing HTML closeout
-creates a Marketplace operator session.
+attested session through the existing encrypted handoff path, mints the
+existing Marketplace HttpOnly operator session for the attested Portal user,
+and redirects to `/` without echoing the ticket or session token. The launch
+cookie uses `SameSite=Lax` for the cross-site form navigation; subsequent
+mutations remain protected by the existing exact-Origin plus CSRF checks. The
+legacy GET handoff remains available for compatibility.
 
-The focused contract test covers replay denial, duplicate fields, wrong
+The focused contract test covers launch-to-session, authenticated UI/status,
+CSRF denial, Portal grant request, replay denial, duplicate fields, wrong
 Origin, foreign deployment identity, response redaction, and encrypted
 persistence. The final local verification was 68 Program tests, 5 web tests,
 TypeScript typecheck, production miniapp build, and bundled Program syntax
