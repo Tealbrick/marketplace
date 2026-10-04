@@ -223,11 +223,18 @@ test("requests a bounded Portal consent and reconciles the approved projection",
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, schema: 1, contractVersion: "tealbrick.marketplace.operator-handoff.v1.1", authority: "marketplace_operator_session", traceId: "trace-redeem", reconciled: false, created: true, consent, projection: { ...pending, state: "redeemed", consentId } }) });
   });
 
+  await routeActionCatalog(page);
+
   await unlockMarketplace(page);
   await page.getByRole("button", { name: "Agent grants" }).click();
   await page.getByLabel("Portal deployment ID").fill("deployment-1");
   await page.getByLabel("Agent selection").fill("agent-1");
-  await page.getByLabel("Connected account ID").fill("ca_1");
+  await page.getByLabel("Connector").selectOption("github-composio");
+  await page.getByLabel("Action", { exact: true }).selectOption("github.list.repositories");
+  // Single connected account is auto-selected and fixes the resource scope.
+  await expect(page.getByLabel("Connected account")).toHaveValue("ca_1");
+  await expect(page.getByLabel("Resource scope")).toHaveValue("account:ca_1");
+  await expect(page.getByTestId("grant-capability")).toContainText("Read only");
   await page.getByRole("button", { name: "Request Portal consent" }).click();
   await expect(page.getByText("Portal consent request created")).toBeVisible();
   await expect(page.getByRole("link", { name: "Open Portal review" }).first()).toHaveAttribute("href", pending.approvalUrl);
@@ -268,6 +275,87 @@ test("keeps denied and expired Portal requests non-actionable", async ({ page })
   await expect(page.getByTestId(`handoff-request-${"e".repeat(43)}`)).toContainText("Expired");
   await expect(page.getByTestId(`handoff-request-${"d".repeat(43)}`).getByRole("button", { name: "Reconcile approval" })).toHaveCount(0);
   await expect(page.getByTestId(`handoff-request-${"e".repeat(43)}`).getByRole("button", { name: "Reconcile approval" })).toHaveCount(0);
+});
+
+const catalogFixture = {
+  contractVersion: "doppelganger.marketplace.agent-action-catalog.v1",
+  workspaceSlug: "default",
+  actions: [
+    { pluginId: "github-composio", pluginName: "GitHub", provider: "github", actionKey: "github.create.issue", label: "Create issue", description: "Open an issue in a repository.", capability: "connector.dispatch", resourceKind: "github.connected-account", mode: "connected-account", accounts: [{ accountId: "ca_1" }], allowedArguments: ["body", "owner", "repo", "title"], toolName: "GITHUB_CREATE_ISSUE" },
+    { pluginId: "github-composio", pluginName: "GitHub", provider: "github", actionKey: "github.list.repositories", label: "List repositories", description: "", capability: "connector.observe", resourceKind: "github.connected-account", mode: "connected-account", accounts: [{ accountId: "ca_1" }], allowedArguments: ["page", "per_page"], toolName: "GITHUB_LIST_REPOSITORIES" },
+    { pluginId: "slack-composio", pluginName: "Slack", provider: "slack", actionKey: "slack.list.channels", label: "List channels", description: "", capability: "connector.observe", resourceKind: "slack.connected-account", mode: "connected-account", accounts: [{ accountId: "ca_slack_a", label: "Acme" }, { accountId: "ca_slack_b", label: "Beta" }], allowedArguments: null, toolName: "SLACK_LIST_CHANNELS" },
+  ],
+};
+
+async function routeActionCatalog(page: import("@playwright/test").Page, body: unknown = catalogFixture) {
+  await page.route("**/api/marketplace/v1/agent/action-catalog?*", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  });
+}
+
+function emptyGrants() {
+  return {
+    contractVersion: "doppelganger.marketplace.agent-connector-grant.v1",
+    workspaceSlug: "default",
+    grants: [],
+    handoffRequests: [],
+    consents: [],
+    handoffContractVersion: "tealbrick.marketplace.operator-handoff.v1.1",
+    grantCreation: { available: false, code: "portal_handoff_required", detail: "Direct creation is disabled." },
+  };
+}
+
+test("picks a published dispatch action, explains its access level, and sends the catalog selection", async ({ page }) => {
+  let requestBody: Record<string, unknown> | null = null;
+  await page.route("**/api/marketplace/agent/grants?*", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(emptyGrants()) });
+  });
+  await routeActionCatalog(page);
+  await page.route("**/api/marketplace/v1/agent/grants/request", async (route) => {
+    requestBody = route.request().postDataJSON();
+    await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ ok: false, schema: 1, error: "agent_action_not_published" }) });
+  });
+
+  await unlockMarketplace(page);
+  await page.getByRole("button", { name: "Agent grants" }).click();
+  await expect(page.getByLabel("Action", { exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Request Portal consent" })).toBeDisabled();
+  await page.getByLabel("Portal deployment ID").fill("deployment-1");
+  await page.getByLabel("Agent selection").fill("agent-1");
+
+  // Two accounts: nothing is auto-selected until the operator picks one.
+  await page.getByLabel("Connector").selectOption("slack-composio");
+  await expect(page.getByLabel("Action", { exact: true })).toHaveValue("slack.list.channels");
+  await expect(page.getByLabel("Connected account")).toHaveValue("");
+  await expect(page.getByRole("button", { name: "Request Portal consent" })).toBeDisabled();
+  await page.getByLabel("Connected account").selectOption("ca_slack_b");
+  await expect(page.getByLabel("Resource scope")).toHaveValue("account:ca_slack_b");
+
+  await page.getByLabel("Connector").selectOption("github-composio");
+  await page.getByLabel("Action", { exact: true }).selectOption("github.create.issue");
+  await expect(page.getByLabel("Connected account")).toHaveValue("ca_1");
+  await expect(page.getByTestId("grant-capability")).toContainText("Can make changes");
+  await expect(page.getByTestId("grant-capability")).toContainText("create and update items");
+  await page.getByRole("button", { name: "Request Portal consent" }).click();
+  await expect(page.getByText("This action isn't available to agents right now")).toBeVisible();
+  expect(requestBody).toMatchObject({
+    deploymentId: "deployment-1",
+    agentId: "agent-1",
+    selection: { pluginId: "github-composio", actionKey: "github.create.issue", accountId: "ca_1", resourceKind: "github.connected-account", resourceRef: "account:ca_1" },
+  });
+});
+
+test("shows the empty state when no connector publishes agent actions", async ({ page }) => {
+  await page.route("**/api/marketplace/agent/grants?*", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(emptyGrants()) });
+  });
+  // No catalog route: the fixture server has nothing installed or connected.
+  await unlockMarketplace(page);
+  await page.getByRole("button", { name: "Agent grants" }).click();
+  await expect(page.getByRole("heading", { name: "Install and connect a connector first" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Request Portal consent" })).toBeDisabled();
+  await page.getByRole("button", { name: "Browse the catalog" }).click();
+  await expect(page.getByRole("heading", { name: "Discover" })).toBeVisible();
 });
 
 function selectionForFixture(accountId: string) {
