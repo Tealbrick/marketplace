@@ -1,6 +1,6 @@
 {
   "name": "marketplace-hub",
-  "label": "Doppelganger Plugins",
+  "label": "Teal Brick Marketplace",
   "description": "Authenticated Marketplace normalized-record provider for the HDDA Capabilities host.",
   "icon": "Blocks",
   "version": "0.2.0",

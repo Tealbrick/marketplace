@@ -1,6 +1,6 @@
 # Marketplace Agent Tools
 
-The compatibility adapter exposes Marketplace capabilities to the Doppelganger
+The compatibility adapter exposes Marketplace capabilities to the Teal Brick
 Agent after the Micro-app is installed, enabled, scoped, and allowed by policy.
 
 ## Read And Status

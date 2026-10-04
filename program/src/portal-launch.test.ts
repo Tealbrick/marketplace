@@ -132,9 +132,12 @@ describe("Portal browser launch", () => {
 
     const ui = await app.inject({ method: "GET", url: "/", headers: { cookie } });
     expect(ui.statusCode).toBe(200);
+    const health = await app.inject({ method: "GET", url: "/api/marketplace/health", headers: { cookie } });
+    expect(health.statusCode).toBe(200);
+    expect(health.json()).toMatchObject({ ok: true, program: "ok" });
+    // Detailed status (database paths, tables) is internal-bearer only.
     const status = await app.inject({ method: "GET", url: "/api/status", headers: { cookie } });
-    expect(status.statusCode).toBe(200);
-    expect(status.json()).toMatchObject({ ok: true, service: "marketplace" });
+    expect(status.statusCode).toBe(403);
 
     const missingCsrf = await app.inject({
       method: "POST",

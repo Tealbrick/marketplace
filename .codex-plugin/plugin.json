@@ -1,11 +1,11 @@
 {
   "name": "marketplace",
   "version": "0.1.0",
-  "description": "First-party Doppelganger Plugins Micro-app: plugin catalog, credentials, Composio/MCP runtime sources, installs, provider health, capability bindings, execution ledger, audit, and promotion candidates.",
+  "description": "First-party Teal Brick Marketplace mini-app: plugin catalog, credentials, Composio/MCP runtime sources, installs, provider health, capability bindings, execution ledger, audit, and promotion candidates.",
   "interface": {
-    "displayName": "Doppelganger Plugins",
+    "displayName": "Teal Brick Marketplace",
     "shortDescription": "Install, bind, run, and audit plugin capabilities",
-    "developerName": "Doppelganger",
+    "developerName": "Teal Brick",
     "category": "Plugins",
     "capabilities": [
       "Read",

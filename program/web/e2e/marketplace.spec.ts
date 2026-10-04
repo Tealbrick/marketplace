@@ -20,7 +20,8 @@ async function assertContained(locator: import("@playwright/test").Locator, view
 
 async function unlockMarketplace(page: import("@playwright/test").Page, route = "/") {
   await page.goto(route);
-  await expect(page.getByRole("heading", { name: "Unlock Marketplace" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Open Marketplace from Teal Brick Portal" })).toBeVisible();
+  await page.getByText("Operator recovery").click();
   await page.getByLabel("Operator access token").fill("marketplace-e2e-operator-token");
   await page.getByRole("button", { name: "Unlock Marketplace" }).click();
   await expect(page.getByRole("heading", { name: "Discover" })).toBeVisible();
@@ -37,6 +38,9 @@ for (const viewport of [
     await expect(page.locator(".catalog-row").first()).toBeVisible();
     await expect(page.locator(".plugin-workspace, .detail-empty")).toBeVisible();
     await assertNoViewportOverflow(page);
+    for (const name of ["Catalog", "Installed", "Connections", "Agent grants", "Activity"]) {
+      await assertContained(page.getByRole("navigation").getByRole("button", { name }), viewport);
+    }
 
     const supportedRow = page.locator(".catalog-row").filter({ hasText: "Composio" }).first();
     await expect(supportedRow).toBeVisible();
@@ -92,4 +96,85 @@ test("embed works inside a same-origin host iframe with the operator session", a
     viewport: element.clientWidth,
   }));
   expect(geometry.width - geometry.viewport).toBeLessThanOrEqual(1);
+});
+
+test("customer copy: Rules outage, catalog-only listing, and session expiry", async ({ page, context }) => {
+  await page.setViewportSize({ width: 1152, height: 820 });
+  await unlockMarketplace(page);
+
+  await page.locator(".catalog-row").filter({ hasText: "Composio" }).first().click();
+  await page.getByRole("button", { name: "Install", exact: true }).click();
+  const confirm = page.getByRole("dialog", { name: /Install .+\?/u });
+  await confirm.getByRole("button", { name: "Install", exact: true }).click();
+  await expect(confirm.getByRole("alert")).toContainText("Approvals are unavailable right now");
+  await expect(confirm).not.toContainText("Rules Approvals is required");
+  await confirm.getByRole("button", { name: "Cancel" }).click();
+
+  const listedOnly = page.locator(".catalog-row").filter({ hasText: "Listed — not yet installable" }).first();
+  await expect(listedOnly).toBeVisible();
+  await listedOnly.click();
+  await expect(page.getByRole("button", { name: "Install", exact: true })).toBeDisabled();
+  await expect(page.locator(".action-tooltip").first()).toHaveAttribute("title", /Only Composio connectors can be installed today/u);
+  await expect(page.locator("body")).not.toContainText("CatalogOnly");
+  await expect(page.locator("body")).not.toContainText("bearer");
+
+  await context.clearCookies();
+  await page.getByRole("button", { name: "Refresh" }).click();
+  await expect(page.getByRole("heading", { name: "Your session ended" })).toBeVisible();
+  await expect(page.getByText("Your session ended — relaunch Marketplace from Teal Brick Portal.")).toBeVisible();
+  await expect(page.getByText("Operator recovery")).toBeVisible();
+});
+
+test("real health indicators and the Installed empty state", async ({ page }) => {
+  await page.setViewportSize({ width: 1152, height: 820 });
+  const healthRequests: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/healthz" || url.pathname === "/api/marketplace/health") healthRequests.push(url.pathname);
+  });
+  await unlockMarketplace(page);
+  const topbar = page.locator(".topbar");
+  await expect(topbar.getByText("Online", { exact: true })).toBeVisible();
+  await expect(topbar.getByText("Approvals not set up")).toBeVisible();
+  await expect(page.locator(".rules-status-row")).toContainText("not set up");
+  expect(healthRequests).toEqual(expect.arrayContaining(["/healthz", "/api/marketplace/health"]));
+  await expect(page.locator("body")).not.toContainText("Program online");
+
+  await page.getByRole("navigation").getByRole("button", { name: "Installed" }).click();
+  await expect(page.getByRole("heading", { name: "Nothing installed yet" })).toBeVisible();
+  await page.getByRole("button", { name: "Browse the catalog" }).click();
+  await expect(page.getByRole("heading", { name: "Discover" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Open settings" }).last().click();
+  const modal = page.getByRole("dialog", { name: "Settings" });
+  await modal.getByRole("tab", { name: "Authorization" }).click();
+  await expect(modal.getByLabel("Service status")).toContainText("Not set up");
+  await expect(modal.getByText("Technical details")).toBeVisible();
+});
+
+test("Composio key settings: empty state copy, bad key, save, and remove", async ({ page }) => {
+  await page.setViewportSize({ width: 1152, height: 820 });
+  await unlockMarketplace(page);
+  await page.getByRole("button", { name: "Open settings" }).last().click();
+  const modal = page.getByRole("dialog", { name: "Settings" });
+  const status = modal.getByTestId("composio-key-status");
+  await expect(status).toContainText("No API key yet");
+  await expect(modal).not.toContainText("fingerprint —");
+  await expect(modal).not.toContainText("Source: none");
+  await expect(modal.getByRole("button", { name: "Test key" })).toBeDisabled();
+
+  const keyInput = modal.getByLabel("API key", { exact: true });
+  await keyInput.fill("not a valid key");
+  await modal.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(modal.getByRole("alert")).toContainText("That API key doesn't look right");
+
+  await keyInput.fill("e2e_fixture_key_9876");
+  await modal.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(status).toContainText("API key ending in …9876");
+  await expect(status).toContainText("saved in Marketplace");
+
+  await modal.getByRole("button", { name: "Remove key" }).click();
+  await modal.getByRole("button", { name: "Confirm removal" }).click();
+  await expect(modal.getByText("API key removed.")).toBeVisible();
+  await expect(status).toContainText("No API key yet");
 });

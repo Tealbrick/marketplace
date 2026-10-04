@@ -1,6 +1,6 @@
 {
   "id": "marketplace",
-  "name": "Doppelganger Plugins",
+  "name": "Teal Brick Marketplace",
   "version": "0.1.0",
   "description": "Mobile overview for active plugins, connectors, and agent capability bindings.",
   "slots": ["home-card", "settings-panel"],

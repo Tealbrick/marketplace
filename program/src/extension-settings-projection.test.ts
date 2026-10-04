@@ -54,7 +54,7 @@ describe("Extension settings projection", () => {
     expect(projection.extensionRecords).toEqual(expect.arrayContaining([
       expect.objectContaining({
         recordId: "extension:marketplace",
-        displayName: "Doppelganger Plugins",
+        displayName: "Teal Brick Marketplace",
         settingsPosture: "dynamic-provider",
         settingsSurfaceId: "marketplace.settings",
       }),
@@ -157,7 +157,7 @@ describe("Extension settings projection", () => {
         path.join(releaseRoot, "extension", "manifest.json"),
         JSON.stringify({
           id: "marketplace",
-          name: "Doppelganger Plugins",
+          name: "Teal Brick Marketplace",
           registryManifest: "../.codex-plugin/plugin.json",
           capabilitySettings: {
             schemaVersion: "doppelganger.capability-settings.v1",

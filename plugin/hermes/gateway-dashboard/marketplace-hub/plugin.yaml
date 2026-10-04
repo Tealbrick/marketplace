@@ -1,7 +1,7 @@
 name: marketplace-hub
 version: 0.2.0
 description: "Authenticated gateway adapter between the HDDA Capabilities host and the Marketplace Program."
-author: Doppelganger
+author: Teal Brick
 kind: standalone
 requires_env:
   - MARKETPLACE_BASE_URL

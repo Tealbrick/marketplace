@@ -6,8 +6,9 @@ import fastifyStatic from "@fastify/static";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import { buildMarketplaceOpenApi } from "./openapi.js";
+import { MARKETPLACE_VERSION } from "./version.js";
 
-const PROGRAM = { id: "marketplace", name: "Marketplace", version: "0.1.0" } as const;
+const PROGRAM = { id: "marketplace", name: "Marketplace", version: MARKETPLACE_VERSION } as const;
 
 export async function registerMarketplaceFrontend(app: FastifyInstance) {
   const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../web-dist");

@@ -107,7 +107,7 @@ async function readRegistry(registryPath: string): Promise<Registry> {
         name: "Doppelganger App Registry",
         interface: {
           displayName: "App Registry",
-          developerName: "Doppelganger",
+          developerName: "Teal Brick",
           category: "Installed Extensions",
         },
         plugins: [],

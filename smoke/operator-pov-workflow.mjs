@@ -223,7 +223,7 @@ async function main() {
     steps: [],
     nextHumanComputerUseChecks: [
       "Start or refresh the App backend so kernel.refreshRegistry sees the App-home registry.",
-      "Open the App URL with browser/computer use and verify Settings > Extensions/Plugins shows the Marketplace/Doppelganger Plugins package from the App-home registry.",
+      "Open the App URL with browser/computer use and verify Settings > Extensions/Plugins shows the Marketplace/Teal Brick Marketplace package from the App-home registry.",
       "Open the Marketplace/Plugins surface and verify catalog, provider health, Agent capabilities, audit, and action-binding panels render from marketplace-api.",
       "For Composio-backed Gmail/Notion, verify auth popup launch, callback completion, connection state, capability binding, /api/agent/capabilities projection, and governed execution.",
     ],

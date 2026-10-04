@@ -1414,7 +1414,7 @@ describe("Marketplace Program", () => {
       url: `/api/marketplace/plugins/composio-bootstrap/oauth/composio/callback?state=${encodeURIComponent(started.connection.metadata.state)}&connected_account_id=ca_linear&status=ACTIVE`,
     });
     expect(callbackResponse.statusCode).toBe(200);
-    expect(callbackResponse.body).toContain("Doppelganger plugin connected");
+    expect(callbackResponse.body).toContain("Teal Brick connection complete");
     expect(store.getConnection("atlas", "composio-bootstrap")).toMatchObject({
       state: "connected",
       metadata: {

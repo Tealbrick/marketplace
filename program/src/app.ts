@@ -28,7 +28,12 @@ import {
   type ProviderEnvironment,
 } from "./provider-health.js";
 import { SqliteMarketplaceStore } from "./store.js";
-import { MarketplaceProviderSettingsStore } from "./provider-settings.js";
+import {
+  assertComposioApiKeyFormat,
+  composioKeyFingerprint,
+  MarketplaceProviderSettingsStore,
+  ProviderSettingsError,
+} from "./provider-settings.js";
 import {
   listingIsCustomMcp,
   listingIsRequired,
@@ -43,6 +48,7 @@ import {
   type CapabilitiesHostProjection,
 } from "./extension-settings-projection.js";
 import { registerMarketplaceFrontend } from "./frontend.js";
+import { MARKETPLACE_VERSION } from "./version.js";
 import {
   MarketplaceAuthenticationError,
   MarketplaceOperatorSessionManager,
@@ -104,16 +110,34 @@ const CardsSummaryQuerySchema = WorkspaceQuerySchema.extend({
   limit: z.coerce.number().int().min(1).max(100).default(60),
 });
 
-function allowedComposioOrigin(value: string) {
-  const parsed = new URL(value);
+/**
+ * Composio API base URLs are restricted to HTTPS composio.dev hosts. A
+ * deployment may add exact extra origins through
+ * MARKETPLACE_COMPOSIO_ALLOWED_ORIGINS (for example a local fixture); nothing
+ * else is reachable with the provider key attached.
+ */
+export function allowedComposioOrigin(value: string, env: Record<string, string | undefined> = process.env) {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return false;
+  }
+  if (parsed.username || parsed.password) return false;
+  const hostname = parsed.hostname.toLowerCase();
+  if (
+    parsed.protocol === "https:" &&
+    (hostname === "composio.dev" || hostname.endsWith(".composio.dev"))
+  ) {
+    return true;
+  }
   const configured = new Set(
-    (process.env.MARKETPLACE_COMPOSIO_ALLOWED_ORIGINS ?? "https://backend.composio.dev")
+    (env.MARKETPLACE_COMPOSIO_ALLOWED_ORIGINS ?? "")
       .split(",")
       .map((entry) => entry.trim())
       .filter(Boolean),
   );
-  if (configured.has(parsed.origin)) return true;
-  return parsed.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(parsed.hostname);
+  return configured.has(parsed.origin);
 }
 
 const ComposioProviderSettingsSchema = z.object({
@@ -129,10 +153,9 @@ const ComposioProviderSettingsSchema = z.object({
   composioBaseUrl: z
     .string()
     .trim()
-    .url()
     .refine(
-      allowedComposioOrigin,
-      "Composio base URL must use an explicitly allowlisted provider origin or HTTP loopback.",
+      (value) => allowedComposioOrigin(value),
+      "Composio base URL must be an https://*.composio.dev address or an explicitly allowlisted origin.",
     ),
   composioDefaultUserId: z.string().trim().min(1),
   composioDefaultConnectedAccountId: z.string().trim().optional().default(""),
@@ -1203,9 +1226,9 @@ function pluginCardForListing(input: {
       refreshedAt: new Date().toISOString(),
     },
     description: listing.description,
-    developerName: "Doppelganger",
+    developerName: "Teal Brick",
     marketplaceName:
-      listing.source === "composio" ? "Composio" : "Doppelganger",
+      listing.source === "composio" ? "Composio" : "Teal Brick",
     capabilityLabels: listing.capabilities,
     primaryAction: ready ? "configure" : installed ? "connect" : "install",
     capabilityShape: listing.kind,
@@ -1299,8 +1322,11 @@ function pluginSummaryForListing(input: {
     install?.enabled === true && install.lifecycle === "installed";
   const authRequired = listingRequiresConnectedAccount(listing);
   const connected = !authRequired || connection?.state === "connected";
-  const ready = registered && installed && connected;
-  const status = ready
+  const launchSupported = listing.executionOwner === "composio";
+  const ready = launchSupported && registered && installed && connected;
+  const status = !launchSupported
+    ? "catalogOnly"
+    : ready
     ? "ready"
     : installed && authRequired && !connected
       ? "authRequired"
@@ -1812,7 +1838,7 @@ function htmlShell() {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Doppelganger Plugins</title>
+    <title>Teal Brick Marketplace</title>
     <style>
       body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f8faf8; color: #1d2524; }
       main { max-width: 1120px; margin: 0 auto; padding: 28px; }
@@ -1839,7 +1865,7 @@ function htmlShell() {
     <main>
       <header>
         <div>
-          <h1>Doppelganger Plugins</h1>
+          <h1>Teal Brick Marketplace</h1>
           <p>Plugin catalog, credentials, provider health, capability bindings, execution ledger, Composio/MCP runtime sources, and promotion candidates.</p>
         </div>
         <div class="chips">
@@ -2290,10 +2316,40 @@ export async function buildMarketplaceApp(
       });
       return;
     }
+    const statusCode =
+      typeof (error as { statusCode?: unknown }).statusCode === "number" &&
+      (error as { statusCode: number }).statusCode >= 400 &&
+      (error as { statusCode: number }).statusCode < 500
+        ? (error as { statusCode: number }).statusCode
+        : 500;
+    if (statusCode < 500) {
+      // Fastify client errors (malformed JSON, body too large, ...) carry
+      // their own safe codes; keep the status but not the raw message.
+      reply.code(statusCode).send({
+        ok: false,
+        error: "marketplace_request_invalid",
+        code: (error as { code?: unknown }).code ?? null,
+      });
+      return;
+    }
+    const errorId = `err_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
+    // Raw messages can include file paths, upstream provider responses, or
+    // configuration names: log them server-side only.
+    console.error(
+      JSON.stringify({
+        event: "marketplace.request.error",
+        errorId,
+        method: request.method,
+        route: request.routeOptions?.url ?? null,
+        name: error instanceof Error ? error.name : typeof error,
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      }),
+    );
     reply.code(500).send({
       ok: false,
       error: "marketplace_program_error",
-      detail: error instanceof Error ? error.message : String(error),
+      errorId,
     });
   });
 
@@ -2545,6 +2601,59 @@ export async function buildMarketplaceApp(
     };
   });
 
+  type RulesConnectionStatus = "connected" | "not-connected" | "unavailable";
+  let rulesStatusCache: { status: RulesConnectionStatus; expiresAt: number } | null = null;
+  const probeRulesConnection = async (): Promise<RulesConnectionStatus> => {
+    if (!options.rulesClient && !rulesConfiguration) return "not-connected";
+    if (!rulesConfiguration) {
+      // An injected Rules client without a probe configuration (embedded
+      // hosts and tests) is treated as connected; decisions still fail closed.
+      return options.rulesClient ? "connected" : "not-connected";
+    }
+    if (!options.rulesClient || !rulesConfiguration.internalAuthToken?.trim()) {
+      return "unavailable";
+    }
+    if (rulesStatusCache && Date.now() < rulesStatusCache.expiresAt) {
+      return rulesStatusCache.status;
+    }
+    let status: RulesConnectionStatus = "unavailable";
+    try {
+      const response = await (options.providerFetch ?? fetch)(
+        new URL(RULES_INTROSPECTION_PATH, rulesConfiguration.baseUrl),
+        {
+          method: "GET",
+          headers: {
+            accept: "application/json",
+            authorization: `Bearer ${rulesConfiguration.internalAuthToken}`,
+          },
+          signal: AbortSignal.timeout(5_000),
+        },
+      );
+      if (response.ok) {
+        parseRulesReadinessPrincipal({
+          response: await response.json(),
+          organizationId,
+          expectedCompanyId: rulesConfiguration.companyId,
+        });
+        status = "connected";
+      }
+    } catch {
+      status = "unavailable";
+    }
+    rulesStatusCache = { status, expiresAt: Date.now() + 15_000 };
+    return status;
+  };
+
+  // Authenticated (operator session or service bearer) runtime health for the
+  // browser status indicators. Returns states only, never configuration.
+  app.get("/api/marketplace/health", async () => ({
+    ok: true,
+    program: "ok" as const,
+    version: MARKETPLACE_VERSION,
+    rules: await probeRulesConnection(),
+    checkedAt: new Date().toISOString(),
+  }));
+
   app.get("/api/marketplace/auth/session", async (request) => ({
     session: operatorSessions.status(request.headers.cookie),
   }));
@@ -2587,7 +2696,12 @@ export async function buildMarketplaceApp(
     return { ok: true };
   });
 
-  app.get("/api/status", async () => ({
+  app.get("/api/status", async (request, reply) => {
+    if (!requireService(request, reply)) {
+      return { ok: false, error: "marketplace_service_bearer_required" };
+    }
+    return {
+    version: MARKETPLACE_VERSION,
     ok: true,
     service: "marketplace",
     database: {
@@ -2603,7 +2717,8 @@ export async function buildMarketplaceApp(
       providerEnvironment(),
       options.providerFetch,
     ),
-  }));
+    };
+  });
 
   app.get("/api/settings/providers/composio", async (request, reply) => {
     if (!requireOperator(request, reply)) return { ok: false, error: "marketplace_operator_required" };
@@ -2614,13 +2729,139 @@ export async function buildMarketplaceApp(
   });
 
   app.put("/api/settings/providers/composio", async (request, reply) => {
-    if (!requireOperator(request, reply)) return { ok: false, error: "marketplace_operator_required" };
+    const principal = requireOperator(request, reply);
+    if (!principal) return { ok: false, error: "marketplace_operator_required" };
     const input = ComposioProviderSettingsRequestSchema.parse(request.body);
-    const saved = await providerSettings.update(input.settings);
+    const before = providerSettings.safeView();
+    let saved: ReturnType<typeof providerSettings.safeView>;
+    try {
+      saved = await providerSettings.update(input.settings);
+    } catch (error) {
+      if (error instanceof ProviderSettingsError) {
+        reply.code(error.statusCode);
+        return { ok: false, error: error.code };
+      }
+      throw error;
+    }
+    options.store.recordAudit({
+      workspaceSlug: principal.organizationId,
+      pluginId: "composio",
+      eventType: "marketplace.provider.settings.updated",
+      actorId: principal.id,
+      metadata: {
+        provider: "composio",
+        keyReplaced: Boolean(input.settings.composioApiKey),
+        keyFingerprint: saved.status.composioApiKey.fingerprint,
+        baseUrlChanged: before.values.composioBaseUrl !== saved.values.composioBaseUrl,
+        defaultUserChanged: before.values.composioDefaultUserId !== saved.values.composioDefaultUserId,
+        connectedAccountChanged:
+          before.values.composioDefaultConnectedAccountId !== saved.values.composioDefaultConnectedAccountId,
+      },
+    });
     return {
       ...saved,
       provider: readProviderHealth(providerEnvironment()).composio,
     };
+  });
+
+  app.delete("/api/settings/providers/composio/key", async (request, reply) => {
+    const principal = requireOperator(request, reply);
+    if (!principal) return { ok: false, error: "marketplace_operator_required" };
+    const previousFingerprint = providerSettings.safeView().status.composioApiKey.fingerprint;
+    let result: Awaited<ReturnType<typeof providerSettings.removeApiKey>>;
+    try {
+      result = await providerSettings.removeApiKey();
+    } catch (error) {
+      if (error instanceof ProviderSettingsError) {
+        reply.code(error.statusCode);
+        return { ok: false, error: error.code };
+      }
+      throw error;
+    }
+    if (result.removed) {
+      composioCatalogSyncByWorkspace.clear();
+      options.store.recordAudit({
+        workspaceSlug: principal.organizationId,
+        pluginId: "composio",
+        eventType: "marketplace.provider.key.removed",
+        actorId: principal.id,
+        metadata: { provider: "composio", keyFingerprint: previousFingerprint },
+      });
+    }
+    return {
+      ...result.view,
+      removed: result.removed,
+      provider: readProviderHealth(providerEnvironment()).composio,
+    };
+  });
+
+  app.post("/api/settings/providers/composio/test", { bodyLimit: 4_096 }, async (request, reply) => {
+    const principal = requireOperator(request, reply);
+    if (!principal) return { ok: false, error: "marketplace_operator_required" };
+    const body = z
+      .object({ composioApiKey: z.string().trim().max(512).optional() })
+      .parse(request.body ?? {});
+    const candidate = body.composioApiKey || providerSettings.activeApiKey();
+    if (!candidate) {
+      reply.code(400);
+      return { ok: false, error: "composio_key_missing" };
+    }
+    try {
+      assertComposioApiKeyFormat(candidate);
+    } catch (error) {
+      if (error instanceof ProviderSettingsError) {
+        reply.code(error.statusCode);
+        return { ok: false, error: error.code };
+      }
+      throw error;
+    }
+    const baseUrl = providerSettings.safeView().values.composioBaseUrl;
+    if (!allowedComposioOrigin(baseUrl, environment)) {
+      reply.code(400);
+      return { ok: false, error: "composio_base_url_not_allowed" };
+    }
+    const probeUrl = new URL(`${baseUrl.replace(/\/+$/u, "")}/connected_accounts`);
+    probeUrl.searchParams.set("limit", "1");
+    let outcome: "valid" | "rejected" | "unreachable";
+    let providerStatus: number | null = null;
+    try {
+      const response = await (options.providerFetch ?? fetch)(probeUrl, {
+        method: "GET",
+        headers: { accept: "application/json", "x-api-key": candidate },
+        redirect: "error",
+        signal: AbortSignal.timeout(8_000),
+      });
+      providerStatus = response.status;
+      outcome = response.ok
+        ? "valid"
+        : response.status === 401 || response.status === 403
+          ? "rejected"
+          : "unreachable";
+    } catch {
+      outcome = "unreachable";
+    }
+    options.store.recordAudit({
+      workspaceSlug: principal.organizationId,
+      pluginId: "composio",
+      eventType: "marketplace.provider.key.tested",
+      actorId: principal.id,
+      metadata: {
+        provider: "composio",
+        outcome,
+        providerStatus,
+        draftKey: Boolean(body.composioApiKey),
+        keyFingerprint: composioKeyFingerprint(candidate),
+      },
+    });
+    if (outcome === "rejected") {
+      reply.code(422);
+      return { ok: false, error: "composio_key_rejected" };
+    }
+    if (outcome === "unreachable") {
+      reply.code(502);
+      return { ok: false, error: "composio_unreachable" };
+    }
+    return { ok: true, status: "valid" as const, checkedAt: new Date().toISOString() };
   });
 
   const capabilityProjectionHandler = async (request: { headers: Record<string, unknown>; query: unknown }, reply: FastifyReply) => {
@@ -3613,7 +3854,7 @@ export async function buildMarketplaceApp(
           ok: false,
           title: "Session not found",
           detail:
-            "Doppelganger could not match this Composio callback to a pending plugin connection.",
+            "Teal Brick could not match this Composio callback to a pending plugin connection.",
         });
       }
       const connectedAccountId =
@@ -3681,11 +3922,11 @@ export async function buildMarketplaceApp(
       return htmlCloseout({
         ok: connected,
         title: connected
-          ? "Doppelganger plugin connected"
-          : "Doppelganger plugin connection blocked",
+          ? "Teal Brick connection complete"
+          : "Teal Brick connection blocked",
         detail: connected
-          ? "The connected account is recorded. You can close this window and return to Doppelganger."
-          : "The Composio callback did not complete successfully. Return to Doppelganger and retry the connection.",
+          ? "The connected account is recorded. You can close this window and return to Teal Brick."
+          : "The Composio callback did not complete successfully. Return to Teal Brick and retry the connection.",
       });
     },
   );
@@ -5695,6 +5936,9 @@ export async function buildMarketplaceApp(
   });
 
   app.get("/api/debug/logs", async (request, reply) => {
+    if (!requireService(request, reply)) {
+      return { ok: false, error: "marketplace_service_bearer_required" };
+    }
     const query = z
       .object({
         tail: z.coerce.number().int().positive().max(500).default(100),

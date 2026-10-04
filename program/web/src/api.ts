@@ -1,4 +1,4 @@
-import type { AuditResponse, CardDetailResponse, CardsResponse, CardsSummaryResponse, FrontendBootstrap, OperatorSession, ProviderSettings } from "./types";
+import type { AuditResponse, CardDetailResponse, CardsResponse, CardsSummaryResponse, FrontendBootstrap, OperatorSession, ProviderSettings, RuntimeHealth } from "./types";
 
 let operatorCsrfToken: string | null = null;
 
@@ -62,7 +62,7 @@ export async function getBootstrap(): Promise<FrontendBootstrap> {
   } catch (error) {
     if (!(error instanceof ApiError) || error.status !== 404) throw error;
     return {
-      program: { id: "marketplace", name: "Marketplace", version: "0.1.0" },
+      program: { id: "marketplace", name: "Marketplace", version: "unknown" },
       authorization: {
         browserOperatorRoutes: "rules-governed-local-program",
         hubRoutesRequireBearer: true,
@@ -94,6 +94,8 @@ export const getCardSummaries = (input: { workspaceSlug: string; search: string;
 export const getCardDetail = (pluginId: string, workspaceSlug: string) =>
   api<CardDetailResponse>(`/api/marketplace/cards/${encodeURIComponent(pluginId)}?${workspaceQuery(workspaceSlug)}`);
 export const getAudit = (workspaceSlug: string) => api<AuditResponse>(`/api/marketplace/audit?${workspaceQuery(workspaceSlug)}&limit=100`);
+export const getLiveness = () => api<{ ok: boolean; status: string }>("/healthz");
+export const getRuntimeHealth = () => api<RuntimeHealth>("/api/marketplace/health");
 export const getOpenApi = () => api<Record<string, unknown>>("/openapi.json");
 export const getProviderSettings = () => api<ProviderSettings>("/api/settings/providers/composio");
 export const getAgentCapabilities = (workspaceSlug: string) => api<{ workspaceSlug: string; capabilities: Array<Record<string, unknown>> }>(`/api/agent/capabilities?${workspaceQuery(workspaceSlug)}`);
@@ -109,10 +111,12 @@ export const uninstallPlugin = (pluginId: string, workspaceSlug: string) => life
 export const registerPlugin = (pluginId: string, workspaceSlug: string) => lifecycle(pluginId, "register", workspaceSlug);
 export const unregisterPlugin = (pluginId: string, workspaceSlug: string) => lifecycle(pluginId, "unregister", workspaceSlug);
 
-export const connectPlugin = (pluginId: string, workspaceSlug: string, provider: string, backend: "composio" | "native") =>
+// Only Composio-backed connectors can be connected from the browser in this
+// launch profile; the Connect action is disabled for every other source.
+export const connectPlugin = (pluginId: string, workspaceSlug: string, provider: string) =>
   api<{ auth?: { redirectUrl?: string | null }; connection?: Record<string, unknown> }>(`/api/marketplace/plugins/${encodeURIComponent(pluginId)}/connection`, {
     method: "POST",
-    body: JSON.stringify({ workspaceSlug, actorId: "operator", provider, backend }),
+    body: JSON.stringify({ workspaceSlug, actorId: "operator", provider, backend: "composio" }),
   });
 
 export const bindAction = (pluginId: string, workspaceSlug: string, actionKey: string, enabled: boolean) =>
@@ -129,3 +133,12 @@ export const executeAction = (pluginId: string, workspaceSlug: string, capabilit
 
 export const saveProviderSettings = (settings: ProviderSettings["values"] & { composioApiKey?: string }) =>
   api<ProviderSettings>("/api/settings/providers/composio", { method: "PUT", body: JSON.stringify({ settings }) });
+
+export const testProviderKey = (composioApiKey?: string) =>
+  api<{ ok: true; status: "valid"; checkedAt: string }>("/api/settings/providers/composio/test", {
+    method: "POST",
+    body: JSON.stringify(composioApiKey ? { composioApiKey } : {}),
+  });
+
+export const removeProviderKey = () =>
+  api<ProviderSettings & { removed: boolean }>("/api/settings/providers/composio/key", { method: "DELETE" });
