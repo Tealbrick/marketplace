@@ -1,14 +1,14 @@
-# Marketplace standalone 0.1.6 image
+# Marketplace standalone 0.1.7 image
 
-This bundle is the public Marketplace 0.1.6 release line and supersedes
-0.1.5 for Portal browser launch-to-UI compatibility. The release image
+This bundle is the public Marketplace 0.1.7 release line and supersedes
+0.1.6 with the customer-ready UI and Teal Brick branding. The release image
 contains the Fastify Program, the built browser application, the tracked
 entrypoint, and no provider credentials, operator sessions, tenant data, or
 runtime database.
 
-Source snapshot: `3a1c72c135b4b5dcbaf1f126381796830e3a32e2`
-Source archive SHA256: `007860f0ec7885542f0ff0fe4e21c26512ff894b2f0048babcc3e8a3e41cef47`
-Image: `ghcr.io/tealbrick/marketplace:0.1.6`
+Source snapshot: `422c0de694003bfee63de678598115a1d39a3071`
+Source archive SHA256: `b122da75d35821c3f4c57bd3f96ce79f2e7ae600d19cefe7734b87dbbcb2df0f`
+Image: `ghcr.io/tealbrick/marketplace:0.1.7`
 
 ## Runtime contract
 
@@ -26,12 +26,31 @@ Image: `ghcr.io/tealbrick/marketplace:0.1.6`
   into the image or returned to browser code.
 
 The source-backed Railway path uses the fixed public release branch
-`release/marketplace-v0.1.6`; its exact tag target, branch ruleset, and image
+`release-marketplace-v0.1.7` (slash-free so the Railway template editor
+accepts it); its exact tag target, branch ruleset, and image
 digest are recorded in the successor receipt. Set the service root directory
 to `release/railway`, keep the Dockerfile entrypoint, and use the relay
 contract in `deploy/railway/recipe.json` and `deploy/railway/railway-blueprint.json`.
 GHCR is optional for the source-build path; no template ID or publication is
 implied by these files.
+
+## v0.1.7 customer UI disposition
+
+This successor merges the customer-readiness pass (Tealbrick/marketplace#1):
+customer-safe copy and error mapping, real Program and Rules health, an
+Installed empty state, Composio key test/remove with audit and an https
+allowlist, the real release version from `program/package.json` (enforced
+across `manifest.json` and `deploy/railway/recipe.json` by
+`hygiene.test.ts`), internal-only diagnostics, safe 500 responses, phone
+navigation, and Teal Brick branding in visible copy, manifests, plugin
+metadata and server pages. The v0.1.6 Portal launch contract below is
+unchanged. Store schema is unchanged from 0.1.6, so rollback to 0.1.6 is
+data-compatible with the same handoff key.
+
+Local verification at the source snapshot: 82 Program tests, 13 web tests,
+TypeScript typecheck, production miniapp build, and bundled Program syntax
+check. Source and packaged-artifact checks only; Portal rollout, provider
+consent and named human UAT remain separate acceptance gates.
 
 ## v0.1.6 launch-contract disposition
 

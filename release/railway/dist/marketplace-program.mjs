@@ -47792,7 +47792,7 @@ function buildComposioListingFromTools(input) {
     displayName: input.displayName?.trim() || `${titleCase(toolkit)} via Composio`,
     kind: "connector",
     provider: toolkit,
-    description: input.description?.trim() || `Composio-backed ${titleCase(toolkit)} connector imported into Doppelganger Plugins.`,
+    description: input.description?.trim() || `Composio-backed ${titleCase(toolkit)} connector imported into Teal Brick Marketplace.`,
     capabilities: capabilities2,
     actions,
     source: "composio",
@@ -47890,7 +47890,7 @@ function buildComposioCatalogListing(input) {
     upstreamToolkit: toolkit.slug,
     pluginId: `composio-${toolkit.connectorSlug}`,
     displayName: toolkit.name,
-    description: toolkit.description || `Connect ${toolkit.name} to Doppelganger through Composio.`,
+    description: toolkit.description || `Connect ${toolkit.name} to Teal Brick through Composio.`,
     tools: [],
     now: input.now
   });
@@ -47974,7 +47974,7 @@ function nativeConnectorListings(now = (/* @__PURE__ */ new Date()).toISOString(
     displayName: `${LABELS[kind]} Native Connector`,
     kind: "connector",
     provider: kind,
-    description: `Doppelganger native ${LABELS[kind]} connector candidate ported from the donor connector contract.`,
+    description: `Teal Brick native ${LABELS[kind]} connector candidate ported from the donor connector contract.`,
     capabilities: CONNECTOR_SUPPORTED_CAPABILITIES[kind],
     actions: ACTIONS_BY_KIND[kind],
     source: "native",
@@ -48133,7 +48133,7 @@ function providerBackedListings(now = (/* @__PURE__ */ new Date()).toISOString()
       displayName: "MCP Runtime",
       kind: "toolset",
       provider: "mcp",
-      description: "Consumes configured MCP servers and projects allowed MCP tools into governed Doppelganger plugin capabilities.",
+      description: "Consumes configured MCP servers and projects allowed MCP tools into governed Teal Brick plugin capabilities.",
       capabilities: ["connector.observe", "connector.dispatch"],
       actions: ["mcp.servers.list", "mcp.tools.list", "mcp.tools.call"],
       source: "mcp",
@@ -48669,6 +48669,27 @@ async function atomicPrivateJson(file, value) {
   await rename(temporary, file);
   await chmod(file, 384);
 }
+var ProviderSettingsError = class extends Error {
+  constructor(code, statusCode, message) {
+    super(message);
+    this.code = code;
+    this.statusCode = statusCode;
+  }
+  code;
+  statusCode;
+};
+function composioKeyFingerprint(secret) {
+  return createHash("sha256").update(secret).digest("hex").slice(0, 12);
+}
+function assertComposioApiKeyFormat(value) {
+  if (!value || value.length > 512 || !/^[\x21-\x7E]+$/u.test(value)) {
+    throw new ProviderSettingsError(
+      "composio_api_key_invalid",
+      400,
+      "Composio API key must be printable ASCII without spaces or line breaks."
+    );
+  }
+}
 function cleanString(value, fallback = "") {
   return typeof value === "string" ? value.trim() : fallback;
 }
@@ -48720,7 +48741,7 @@ var MarketplaceProviderSettingsStore = class {
           configured: Boolean(secret),
           source: persisted ? "program" : bootstrap ? "bootstrap-environment" : null,
           keyTail: secret ? secret.slice(-4) : null,
-          fingerprint: secret ? createHash("sha256").update(secret).digest("hex").slice(0, 12) : null
+          fingerprint: secret ? composioKeyFingerprint(secret) : null
         }
       }
     };
@@ -48738,9 +48759,7 @@ var MarketplaceProviderSettingsStore = class {
       )
     };
     const nextSecret = cleanString(input.composioApiKey);
-    if (nextSecret && (nextSecret.length > 512 || !/^[\x21-\x7E]+$/u.test(nextSecret))) {
-      throw new Error("Composio API key must be printable ASCII without spaces or line breaks.");
-    }
+    if (nextSecret) assertComposioApiKeyFormat(nextSecret);
     this.settings = nextSettings;
     if (nextSecret) {
       this.secrets = { composioApiKey: nextSecret };
@@ -48750,6 +48769,29 @@ var MarketplaceProviderSettingsStore = class {
       await atomicPrivateJson(this.secretsPath, this.secrets);
     }
     return this.safeView();
+  }
+  /** The key the Program would use right now (persisted first, then bootstrap). */
+  activeApiKey() {
+    return this.secrets.composioApiKey || cleanString(this.bootstrapEnv.COMPOSIO_API_KEY) || null;
+  }
+  /**
+   * Remove the Program-stored key. A key supplied by the deployment
+   * environment cannot be removed from the browser.
+   */
+  async removeApiKey() {
+    if (!this.secrets.composioApiKey) {
+      if (cleanString(this.bootstrapEnv.COMPOSIO_API_KEY)) {
+        throw new ProviderSettingsError(
+          "composio_key_managed_by_environment",
+          409,
+          "The Composio API key is supplied by the deployment environment."
+        );
+      }
+      return { removed: false, view: this.safeView() };
+    }
+    this.secrets = {};
+    await atomicPrivateJson(this.secretsPath, this.secrets);
+    return { removed: true, view: this.safeView() };
   }
 };
 
@@ -49743,6 +49785,64 @@ import fs from "node:fs";
 import path3 from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
+// package.json
+var package_default = {
+  name: "@doppelganger/marketplace-program",
+  version: "0.1.7",
+  private: true,
+  type: "module",
+  packageManager: "pnpm@9.15.4",
+  engines: {
+    node: ">=22.22.0",
+    pnpm: ">=9.15.4"
+  },
+  scripts: {
+    dev: "tsx watch src/index.ts",
+    "dev:web": "vite --config web/vite.config.ts",
+    build: "pnpm run build:web",
+    "build:web": "vite build --config web/vite.config.ts",
+    "build:miniapp": "pnpm run build:web && node scripts/build-miniapp.mjs",
+    "dev:miniapp": "node scripts/run-miniapp.mjs",
+    "start:miniapp": "node dist/marketplace-program.mjs",
+    "smoke:live-app-home": "tsx ../smoke/live-app-home-smoke.ts",
+    "smoke:operator-pov": "node ../smoke/operator-pov-workflow.mjs",
+    typecheck: "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
+    test: "vitest run && vitest run --config web/vitest.config.ts",
+    "test:e2e": "pnpm run build:web && playwright test --config web/playwright.config.ts",
+    lint: "tsc -p tsconfig.json --noEmit"
+  },
+  dependencies: {
+    "@doppelganger/ui": "file:../.sdk/doppelganger-ui",
+    "@fastify/static": "^8.3.0",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "@tanstack/react-query": "^5.90.20",
+    fastify: "^5.6.1",
+    "lucide-react": "^0.468.0",
+    react: "^19.2.3",
+    "react-dom": "^19.2.3",
+    zod: "^3.25.76"
+  },
+  devDependencies: {
+    "@playwright/test": "^1.58.2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^24.12.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.4",
+    esbuild: "^0.28.1",
+    jsdom: "^28.0.0",
+    tsx: "^4.20.6",
+    typescript: "^5.9.3",
+    vite: "^7.3.1",
+    vitest: "^3.2.4"
+  }
+};
+
+// src/version.ts
+var MARKETPLACE_VERSION = package_default.version;
+
 // src/openapi.ts
 var jsonObject = { type: "object", additionalProperties: true };
 var bearerSecurity = [{ bearerAuth: [] }];
@@ -49751,8 +49851,8 @@ function buildMarketplaceOpenApi(baseUrl = "/") {
   return {
     openapi: "3.1.0",
     info: {
-      title: "Doppelganger Marketplace API",
-      version: "0.2.0",
+      title: "Teal Brick Marketplace API",
+      version: MARKETPLACE_VERSION,
       description: "Program-owned catalog, Rules-governed plugin lifecycle, provider connections, capability bindings, Composio execution, and audit. The launch profile treats every non-Composio source as catalog-only. Hub and cross-app service routes require an internal bearer credential that is never exposed to the browser."
     },
     servers: [{ url: baseUrl }],
@@ -49794,7 +49894,8 @@ function buildMarketplaceOpenApi(baseUrl = "/") {
         post: { security: [], tags: ["Runtime"], summary: "Exchange the provisioned operator access token for an HttpOnly session", requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["accessToken"], properties: { accessToken: { type: "string", writeOnly: true } } } } } }, responses: { "200": { description: "Session created" }, "401": { description: "Invalid token" }, "429": { description: "Rate limited" }, "503": { description: "Operator access is not configured" } } },
         delete: { security: operatorSecurity, tags: ["Runtime"], summary: "Revoke the current operator session", responses: { "200": { description: "Session revoked" }, "401": { description: "Unauthorized" } } }
       },
-      "/api/status": { get: { security: operatorSecurity, tags: ["Runtime"], summary: "Detailed authenticated Program status", responses: { "200": { description: "Runtime status" } } } },
+      "/api/status": { get: { security: bearerSecurity, tags: ["Runtime"], summary: "Detailed Program status (internal service bearer only)", responses: { "200": { description: "Runtime status" } } } },
+      "/api/marketplace/health": { get: { security: [...operatorSecurity, ...bearerSecurity], tags: ["Runtime"], summary: "Authenticated runtime health: Program and Rules connection state", description: "Returns { program: 'ok', rules: 'connected' | 'not-connected' | 'unavailable' }. The Rules probe is cached briefly and never returns configuration or credentials.", responses: { "200": { description: "Runtime health" }, "401": { description: "Session or bearer required" } } } },
       "/api/marketplace/cards": { get: { tags: ["Catalog"], summary: "List operator-facing plugin cards", parameters: [{ name: "workspaceSlug", in: "query", schema: { type: "string", default: "default" } }], responses: { "200": { description: "Cards and provider state" } } } },
       "/api/marketplace/cards/summary": { get: { tags: ["Catalog"], summary: "List a bounded, searchable browser-safe catalog projection", description: "Returns exact catalog totals, redacted provider and connection status, and at most 100 lightweight records from the canonical Marketplace catalog. Arbitrary manifests and provider metadata are omitted.", parameters: [{ name: "workspaceSlug", in: "query", schema: { type: "string", default: "default" } }, { name: "search", in: "query", schema: { type: "string", maxLength: 200 } }, { name: "source", in: "query", schema: { type: "string", enum: ["all", "native", "activepieces", "composio", "nango", "mcp"], default: "all" } }, { name: "installed", in: "query", schema: { type: "boolean", default: false } }, { name: "offset", in: "query", schema: { type: "integer", minimum: 0, default: 0 } }, { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 60 } }], responses: { "200": { description: "Bounded browser-safe catalog projection" } } } },
       "/api/marketplace/cards/{pluginId}": { get: { tags: ["Catalog"], summary: "Read one browser-safe operator card", description: "Returns the selected card's UI contract without arbitrary manifest, connection metadata, credentials, environment, or runtime endpoint fields.", parameters: [{ name: "pluginId", in: "path", required: true, schema: { type: "string" } }, { name: "workspaceSlug", in: "query", schema: { type: "string", default: "default" } }], responses: { "200": { description: "Redacted operator card and provider status" }, "404": { description: "Not found" } } } },
@@ -49814,6 +49915,8 @@ function buildMarketplaceOpenApi(baseUrl = "/") {
         get: { security: operatorSecurity, tags: ["Provider settings"], summary: "Read redacted Composio settings", responses: { "200": { description: "Redacted settings" } } },
         put: { security: operatorSecurity, tags: ["Provider settings"], summary: "Persist allowlisted Composio settings and an optional API key", requestBody: { required: true, content: { "application/json": { schema: { type: "object", properties: { settings: { type: "object", properties: { composioApiKey: { type: "string", writeOnly: true }, composioBaseUrl: { type: "string", format: "uri" }, composioDefaultUserId: { type: "string" }, composioDefaultConnectedAccountId: { type: "string" } } } } } } } }, responses: { "200": { description: "Saved redacted settings" }, "400": { description: "Provider origin is not allowlisted" } } }
       },
+      "/api/settings/providers/composio/test": { post: { security: operatorSecurity, tags: ["Provider settings"], summary: "Check a Composio API key against the allowlisted Composio host", description: "Tests the saved key, or an unsaved key in the body, with one read-only request to an https://*.composio.dev base URL. The key is never returned. Records an audit event.", requestBody: { required: false, content: { "application/json": { schema: { type: "object", properties: { composioApiKey: { type: "string", writeOnly: true } } } } } }, responses: { "200": { description: "Key accepted" }, "400": { description: "No key, malformed key, or base URL not allowed" }, "422": { description: "Composio rejected the key" }, "502": { description: "Composio unreachable" } } } },
+      "/api/settings/providers/composio/key": { delete: { security: operatorSecurity, tags: ["Provider settings"], summary: "Remove the Program-stored Composio API key", description: "Records an audit event. A key supplied by the deployment environment cannot be removed here (409).", responses: { "200": { description: "Removed (or already absent)" }, "409": { description: "Key managed by the deployment environment" } } } },
       "/api/agent/capabilities": { get: { tags: ["Agent"], summary: "List enabled Composio tools currently projected to Agents", description: "Native, Activepieces, Nango, and MCP records are catalog-only and are not projected as executable Agent tools in this launch profile.", parameters: [{ name: "workspaceSlug", in: "query", schema: { type: "string", default: "default" } }], responses: { "200": { description: "Capabilities" } } } },
       "/api/marketplace/broker/grants": { post: { security: bearerSecurity, tags: ["Execution"], summary: "Issue a single-use scoped Composio broker grant", description: "Internal services only. Grants are stored as token hashes, expire within at most 900 seconds, and are consumed atomically before provider dispatch.", requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["requesterMiniappId", "pluginId", "actionKeys"], properties: { requesterMiniappId: { type: "string" }, pluginId: { type: "string" }, actionKeys: { type: "array", minItems: 1, items: { type: "string" } }, ttlSeconds: { type: "integer", minimum: 1, maximum: 900, default: 300 } } } } } }, responses: { "201": { description: "Single-use grant issued" }, "400": { description: "Invalid scope or TTL" }, "401": { description: "Unauthorized" }, "403": { description: "Rules denied" } } } },
       "/api/marketplace/hub/records": { get: { security: bearerSecurity, tags: ["Hub service"], summary: "Project normalized records to the HDDA Host SDK", responses: { "200": { description: "Projection" }, "401": { description: "Unauthorized" }, "503": { description: "Service auth unconfigured" } } } },
@@ -49838,7 +49941,7 @@ function buildMarketplaceOpenApi(baseUrl = "/") {
 }
 
 // src/frontend.ts
-var PROGRAM = { id: "marketplace", name: "Marketplace", version: "0.1.0" };
+var PROGRAM = { id: "marketplace", name: "Marketplace", version: MARKETPLACE_VERSION };
 async function registerMarketplaceFrontend(app2) {
   const webRoot = path3.resolve(path3.dirname(fileURLToPath2(import.meta.url)), "../web-dist");
   const webIndexPath = path3.join(webRoot, "index.html");
@@ -50983,22 +51086,31 @@ var CardsSummaryQuerySchema = WorkspaceQuerySchema.extend({
   offset: external_exports.coerce.number().int().min(0).default(0),
   limit: external_exports.coerce.number().int().min(1).max(100).default(60)
 });
-function allowedComposioOrigin(value) {
-  const parsed = new URL(value);
+function allowedComposioOrigin(value, env = process.env) {
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return false;
+  }
+  if (parsed.username || parsed.password) return false;
+  const hostname = parsed.hostname.toLowerCase();
+  if (parsed.protocol === "https:" && (hostname === "composio.dev" || hostname.endsWith(".composio.dev"))) {
+    return true;
+  }
   const configured = new Set(
-    (process.env.MARKETPLACE_COMPOSIO_ALLOWED_ORIGINS ?? "https://backend.composio.dev").split(",").map((entry) => entry.trim()).filter(Boolean)
+    (env.MARKETPLACE_COMPOSIO_ALLOWED_ORIGINS ?? "").split(",").map((entry) => entry.trim()).filter(Boolean)
   );
-  if (configured.has(parsed.origin)) return true;
-  return parsed.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(parsed.hostname);
+  return configured.has(parsed.origin);
 }
 var ComposioProviderSettingsSchema = external_exports.object({
   composioApiKey: external_exports.string().trim().max(512).refine(
     (value) => value === "" || /^[\x21-\x7E]+$/u.test(value),
     "Composio API key must contain printable ASCII without spaces or line breaks."
   ).optional(),
-  composioBaseUrl: external_exports.string().trim().url().refine(
-    allowedComposioOrigin,
-    "Composio base URL must use an explicitly allowlisted provider origin or HTTP loopback."
+  composioBaseUrl: external_exports.string().trim().refine(
+    (value) => allowedComposioOrigin(value),
+    "Composio base URL must be an https://*.composio.dev address or an explicitly allowlisted origin."
   ),
   composioDefaultUserId: external_exports.string().trim().min(1),
   composioDefaultConnectedAccountId: external_exports.string().trim().optional().default("")
@@ -51787,8 +51899,8 @@ function pluginCardForListing(input) {
       refreshedAt: (/* @__PURE__ */ new Date()).toISOString()
     },
     description: listing.description,
-    developerName: "Doppelganger",
-    marketplaceName: listing.source === "composio" ? "Composio" : "Doppelganger",
+    developerName: "Teal Brick",
+    marketplaceName: listing.source === "composio" ? "Composio" : "Teal Brick",
     capabilityLabels: listing.capabilities,
     primaryAction: ready ? "configure" : installed ? "connect" : "install",
     capabilityShape: listing.kind,
@@ -51860,8 +51972,9 @@ function pluginSummaryForListing(input) {
   const installed = install?.enabled === true && install.lifecycle === "installed";
   const authRequired = listingRequiresConnectedAccount(listing);
   const connected = !authRequired || connection?.state === "connected";
-  const ready = registered && installed && connected;
-  const status = ready ? "ready" : installed && authRequired && !connected ? "authRequired" : installed ? "installed" : install?.lifecycle === "uninstalled" ? "disabled" : "available";
+  const launchSupported = listing.executionOwner === "composio";
+  const ready = launchSupported && registered && installed && connected;
+  const status = !launchSupported ? "catalogOnly" : ready ? "ready" : installed && authRequired && !connected ? "authRequired" : installed ? "installed" : install?.lifecycle === "uninstalled" ? "disabled" : "available";
   const primaryRuntime = listing.runtimeSources?.find((source) => source.primary) ?? listing.runtimeSources?.[0];
   return {
     pluginId: listing.pluginId,
@@ -52251,7 +52364,7 @@ function htmlShell() {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Doppelganger Plugins</title>
+    <title>Teal Brick Marketplace</title>
     <style>
       body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f8faf8; color: #1d2524; }
       main { max-width: 1120px; margin: 0 auto; padding: 28px; }
@@ -52278,7 +52391,7 @@ function htmlShell() {
     <main>
       <header>
         <div>
-          <h1>Doppelganger Plugins</h1>
+          <h1>Teal Brick Marketplace</h1>
           <p>Plugin catalog, credentials, provider health, capability bindings, execution ledger, Composio/MCP runtime sources, and promotion candidates.</p>
         </div>
         <div class="chips">
@@ -52670,10 +52783,31 @@ async function buildMarketplaceApp(options) {
       });
       return;
     }
+    const statusCode = typeof error.statusCode === "number" && error.statusCode >= 400 && error.statusCode < 500 ? error.statusCode : 500;
+    if (statusCode < 500) {
+      reply.code(statusCode).send({
+        ok: false,
+        error: "marketplace_request_invalid",
+        code: error.code ?? null
+      });
+      return;
+    }
+    const errorId = `err_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
+    console.error(
+      JSON.stringify({
+        event: "marketplace.request.error",
+        errorId,
+        method: request.method,
+        route: request.routeOptions?.url ?? null,
+        name: error instanceof Error ? error.name : typeof error,
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : void 0
+      })
+    );
     reply.code(500).send({
       ok: false,
       error: "marketplace_program_error",
-      detail: error instanceof Error ? error.message : String(error)
+      errorId
     });
   });
   app2.get("/", async (_request, reply) => {
@@ -52880,6 +53014,52 @@ async function buildMarketplaceApp(options) {
       }
     };
   });
+  let rulesStatusCache = null;
+  const probeRulesConnection = async () => {
+    if (!options.rulesClient && !rulesConfiguration) return "not-connected";
+    if (!rulesConfiguration) {
+      return options.rulesClient ? "connected" : "not-connected";
+    }
+    if (!options.rulesClient || !rulesConfiguration.internalAuthToken?.trim()) {
+      return "unavailable";
+    }
+    if (rulesStatusCache && Date.now() < rulesStatusCache.expiresAt) {
+      return rulesStatusCache.status;
+    }
+    let status = "unavailable";
+    try {
+      const response = await (options.providerFetch ?? fetch)(
+        new URL(RULES_INTROSPECTION_PATH, rulesConfiguration.baseUrl),
+        {
+          method: "GET",
+          headers: {
+            accept: "application/json",
+            authorization: `Bearer ${rulesConfiguration.internalAuthToken}`
+          },
+          signal: AbortSignal.timeout(5e3)
+        }
+      );
+      if (response.ok) {
+        parseRulesReadinessPrincipal({
+          response: await response.json(),
+          organizationId,
+          expectedCompanyId: rulesConfiguration.companyId
+        });
+        status = "connected";
+      }
+    } catch {
+      status = "unavailable";
+    }
+    rulesStatusCache = { status, expiresAt: Date.now() + 15e3 };
+    return status;
+  };
+  app2.get("/api/marketplace/health", async () => ({
+    ok: true,
+    program: "ok",
+    version: MARKETPLACE_VERSION,
+    rules: await probeRulesConnection(),
+    checkedAt: (/* @__PURE__ */ new Date()).toISOString()
+  }));
   app2.get("/api/marketplace/auth/session", async (request) => ({
     session: operatorSessions.status(request.headers.cookie)
   }));
@@ -52919,23 +53099,29 @@ async function buildMarketplaceApp(options) {
     reply.header("set-cookie", operatorSessions.clearCookie(secureRequest(request)));
     return { ok: true };
   });
-  app2.get("/api/status", async () => ({
-    ok: true,
-    service: "marketplace",
-    database: {
-      kind: "sqlite",
-      tables: options.store.listTables(),
-      path: options.store.describeRuntime().databasePath
-    },
-    debug: {
-      enabled: options.debug ?? process.env.DOPPELGANGER_DEBUG === "1",
-      logPath: options.logPath ?? options.store.describeRuntime().logPath
-    },
-    providers: await readProviderHealthWithReachability(
-      providerEnvironment(),
-      options.providerFetch
-    )
-  }));
+  app2.get("/api/status", async (request, reply) => {
+    if (!requireService(request, reply)) {
+      return { ok: false, error: "marketplace_service_bearer_required" };
+    }
+    return {
+      version: MARKETPLACE_VERSION,
+      ok: true,
+      service: "marketplace",
+      database: {
+        kind: "sqlite",
+        tables: options.store.listTables(),
+        path: options.store.describeRuntime().databasePath
+      },
+      debug: {
+        enabled: options.debug ?? process.env.DOPPELGANGER_DEBUG === "1",
+        logPath: options.logPath ?? options.store.describeRuntime().logPath
+      },
+      providers: await readProviderHealthWithReachability(
+        providerEnvironment(),
+        options.providerFetch
+      )
+    };
+  });
   app2.get("/api/settings/providers/composio", async (request, reply) => {
     if (!requireOperator(request, reply)) return { ok: false, error: "marketplace_operator_required" };
     return {
@@ -52944,13 +53130,130 @@ async function buildMarketplaceApp(options) {
     };
   });
   app2.put("/api/settings/providers/composio", async (request, reply) => {
-    if (!requireOperator(request, reply)) return { ok: false, error: "marketplace_operator_required" };
+    const principal = requireOperator(request, reply);
+    if (!principal) return { ok: false, error: "marketplace_operator_required" };
     const input = ComposioProviderSettingsRequestSchema.parse(request.body);
-    const saved = await providerSettings2.update(input.settings);
+    const before = providerSettings2.safeView();
+    let saved;
+    try {
+      saved = await providerSettings2.update(input.settings);
+    } catch (error) {
+      if (error instanceof ProviderSettingsError) {
+        reply.code(error.statusCode);
+        return { ok: false, error: error.code };
+      }
+      throw error;
+    }
+    options.store.recordAudit({
+      workspaceSlug: principal.organizationId,
+      pluginId: "composio",
+      eventType: "marketplace.provider.settings.updated",
+      actorId: principal.id,
+      metadata: {
+        provider: "composio",
+        keyReplaced: Boolean(input.settings.composioApiKey),
+        keyFingerprint: saved.status.composioApiKey.fingerprint,
+        baseUrlChanged: before.values.composioBaseUrl !== saved.values.composioBaseUrl,
+        defaultUserChanged: before.values.composioDefaultUserId !== saved.values.composioDefaultUserId,
+        connectedAccountChanged: before.values.composioDefaultConnectedAccountId !== saved.values.composioDefaultConnectedAccountId
+      }
+    });
     return {
       ...saved,
       provider: readProviderHealth(providerEnvironment()).composio
     };
+  });
+  app2.delete("/api/settings/providers/composio/key", async (request, reply) => {
+    const principal = requireOperator(request, reply);
+    if (!principal) return { ok: false, error: "marketplace_operator_required" };
+    const previousFingerprint = providerSettings2.safeView().status.composioApiKey.fingerprint;
+    let result;
+    try {
+      result = await providerSettings2.removeApiKey();
+    } catch (error) {
+      if (error instanceof ProviderSettingsError) {
+        reply.code(error.statusCode);
+        return { ok: false, error: error.code };
+      }
+      throw error;
+    }
+    if (result.removed) {
+      composioCatalogSyncByWorkspace.clear();
+      options.store.recordAudit({
+        workspaceSlug: principal.organizationId,
+        pluginId: "composio",
+        eventType: "marketplace.provider.key.removed",
+        actorId: principal.id,
+        metadata: { provider: "composio", keyFingerprint: previousFingerprint }
+      });
+    }
+    return {
+      ...result.view,
+      removed: result.removed,
+      provider: readProviderHealth(providerEnvironment()).composio
+    };
+  });
+  app2.post("/api/settings/providers/composio/test", { bodyLimit: 4096 }, async (request, reply) => {
+    const principal = requireOperator(request, reply);
+    if (!principal) return { ok: false, error: "marketplace_operator_required" };
+    const body = external_exports.object({ composioApiKey: external_exports.string().trim().max(512).optional() }).parse(request.body ?? {});
+    const candidate = body.composioApiKey || providerSettings2.activeApiKey();
+    if (!candidate) {
+      reply.code(400);
+      return { ok: false, error: "composio_key_missing" };
+    }
+    try {
+      assertComposioApiKeyFormat(candidate);
+    } catch (error) {
+      if (error instanceof ProviderSettingsError) {
+        reply.code(error.statusCode);
+        return { ok: false, error: error.code };
+      }
+      throw error;
+    }
+    const baseUrl = providerSettings2.safeView().values.composioBaseUrl;
+    if (!allowedComposioOrigin(baseUrl, environment)) {
+      reply.code(400);
+      return { ok: false, error: "composio_base_url_not_allowed" };
+    }
+    const probeUrl = new URL(`${baseUrl.replace(/\/+$/u, "")}/connected_accounts`);
+    probeUrl.searchParams.set("limit", "1");
+    let outcome;
+    let providerStatus = null;
+    try {
+      const response = await (options.providerFetch ?? fetch)(probeUrl, {
+        method: "GET",
+        headers: { accept: "application/json", "x-api-key": candidate },
+        redirect: "error",
+        signal: AbortSignal.timeout(8e3)
+      });
+      providerStatus = response.status;
+      outcome = response.ok ? "valid" : response.status === 401 || response.status === 403 ? "rejected" : "unreachable";
+    } catch {
+      outcome = "unreachable";
+    }
+    options.store.recordAudit({
+      workspaceSlug: principal.organizationId,
+      pluginId: "composio",
+      eventType: "marketplace.provider.key.tested",
+      actorId: principal.id,
+      metadata: {
+        provider: "composio",
+        outcome,
+        providerStatus,
+        draftKey: Boolean(body.composioApiKey),
+        keyFingerprint: composioKeyFingerprint(candidate)
+      }
+    });
+    if (outcome === "rejected") {
+      reply.code(422);
+      return { ok: false, error: "composio_key_rejected" };
+    }
+    if (outcome === "unreachable") {
+      reply.code(502);
+      return { ok: false, error: "composio_unreachable" };
+    }
+    return { ok: true, status: "valid", checkedAt: (/* @__PURE__ */ new Date()).toISOString() };
   });
   const capabilityProjectionHandler = async (request, reply) => {
     const authError = requireHubBearerAuth({
@@ -53883,7 +54186,7 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
         return htmlCloseout({
           ok: false,
           title: "Session not found",
-          detail: "Doppelganger could not match this Composio callback to a pending plugin connection."
+          detail: "Teal Brick could not match this Composio callback to a pending plugin connection."
         });
       }
       const connectedAccountId = query.connected_account_id ?? query.connectedAccountId ?? query.connection_id ?? query.account_id ?? connectedAccountIdFromConnection(pending);
@@ -53936,8 +54239,8 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
       });
       return htmlCloseout({
         ok: connected,
-        title: connected ? "Doppelganger plugin connected" : "Doppelganger plugin connection blocked",
-        detail: connected ? "The connected account is recorded. You can close this window and return to Doppelganger." : "The Composio callback did not complete successfully. Return to Doppelganger and retry the connection."
+        title: connected ? "Teal Brick connection complete" : "Teal Brick connection blocked",
+        detail: connected ? "The connected account is recorded. You can close this window and return to Teal Brick." : "The Composio callback did not complete successfully. Return to Teal Brick and retry the connection."
       });
     }
   );
@@ -55743,6 +56046,9 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
     };
   });
   app2.get("/api/debug/logs", async (request, reply) => {
+    if (!requireService(request, reply)) {
+      return { ok: false, error: "marketplace_service_bearer_required" };
+    }
     const query = external_exports.object({
       tail: external_exports.coerce.number().int().positive().max(500).default(100)
     }).parse(request.query);
