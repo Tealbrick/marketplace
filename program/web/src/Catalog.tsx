@@ -31,7 +31,7 @@ import {
   unregisterPlugin,
 } from "./api";
 import type { PluginCard, PluginSummary } from "./types";
-import { CATALOG_ONLY_HINT } from "./copy";
+import { CATALOG_ONLY_HINT, CUSTOM_CONNECTOR_TOOLS_HINT } from "./copy";
 import { formatWhen, InlineError, statusLabel, statusTone, words } from "./ui";
 
 export type ConfirmState = {
@@ -157,7 +157,11 @@ export function PluginWorkspace({ card, loading, workspaceSlug, onConfirm, onRef
   if (!card) return <div className="detail-empty"><Boxes size={28} /><h2>Select a connector</h2><p>See what it does, how to set it up, and which tools agents can use.</p></div>;
   const pluginId = card.listing.pluginId;
   const installed = card.install?.lifecycle === "installed";
-  const launchSupported = card.listing.executionOwner === "composio";
+  // The server decides what can run: Composio connectors and this
+  // workspace's custom MCP connectors once their tools are loaded.
+  const launchSupported = card.state.status !== "catalogOnly";
+  const customConnector = card.listing.manifest.operatorManaged === true;
+  const connectSupported = launchSupported && card.listing.executionOwner === "composio";
   const required = Boolean((card.listing.manifest as { required?: boolean }).required);
   const confirmLifecycle = (action: "install" | "uninstall" | "register" | "unregister") => {
     const run = action === "install" ? () => installPlugin(pluginId, workspaceSlug) : action === "uninstall" ? () => uninstallPlugin(pluginId, workspaceSlug) : action === "register" ? () => registerPlugin(pluginId, workspaceSlug) : () => unregisterPlugin(pluginId, workspaceSlug);
@@ -171,12 +175,12 @@ export function PluginWorkspace({ card, loading, workspaceSlug, onConfirm, onRef
       </header>
       <p className="plugin-lede">{card.description || "No catalog description was provided."}</p>
       <div className="action-bar">
-        {!installed ? <span className="action-tooltip" title={launchSupported ? undefined : CATALOG_ONLY_HINT}><Button tone="primary" disabled={!launchSupported} aria-describedby={launchSupported ? undefined : "catalog-only-note"} onClick={() => confirmLifecycle("install")}><Download size={15} />Install</Button></span> : <Button tone="danger" disabled={required} onClick={() => confirmLifecycle("uninstall")}><PackageMinus size={15} />Uninstall</Button>}
+        {!installed ? <span className="action-tooltip" title={launchSupported ? undefined : customConnector ? CUSTOM_CONNECTOR_TOOLS_HINT : CATALOG_ONLY_HINT}><Button tone="primary" disabled={!launchSupported} aria-describedby={launchSupported ? undefined : "catalog-only-note"} onClick={() => confirmLifecycle("install")}><Download size={15} />Install</Button></span> : <Button tone="danger" disabled={required} onClick={() => confirmLifecycle("uninstall")}><PackageMinus size={15} />Uninstall</Button>}
         {!card.state.registered ? <Button disabled={!launchSupported} onClick={() => confirmLifecycle("register")}><PackageCheck size={15} />Register</Button> : <Button disabled={required} onClick={() => confirmLifecycle("unregister")}><Unplug size={15} />Unregister</Button>}
-        <Button disabled={!installed || !launchSupported} onClick={() => setConnectOpen(true)}><Link2 size={15} />{card.connection ? "Reconnect" : "Connect"}</Button>
+        <Button disabled={!installed || !connectSupported} title={customConnector ? "Custom connectors connect when you refresh their tools under Connections." : undefined} onClick={() => setConnectOpen(true)}><Link2 size={15} />{card.connection ? "Reconnect" : "Connect"}</Button>
         <Button disabled={!card.state.ready || !launchSupported} onClick={() => setExecuteOpen(true)}><TerminalSquare size={15} />Execute</Button>
       </div>
-      {!launchSupported && <div className="contract-gap" id="catalog-only-note"><AlertTriangle size={17} /><div><strong>Listed — not yet installable</strong><p>{CATALOG_ONLY_HINT} {words(card.listing.executionOwner)} support is on the way.</p></div></div>}
+      {!launchSupported && <div className="contract-gap" id="catalog-only-note"><AlertTriangle size={17} /><div><strong>Listed — not yet installable</strong><p>{customConnector ? CUSTOM_CONNECTOR_TOOLS_HINT : `${CATALOG_ONLY_HINT} ${words(card.listing.executionOwner)} support is on the way.`}</p></div></div>}
       {!card.state.ready && launchSupported && <div className="readiness-note"><AlertTriangle size={17} /><div><strong>Not ready for agents yet</strong><p>{card.connection?.detail || card.installPlan.steps.find((step) => step.status !== "complete")?.detail || "Complete the lifecycle and connection steps below."}</p></div></div>}
       <div className="detail-grid">
         <section><div className="section-heading"><div><p className="eyebrow">Setup</p><h2>Getting ready</h2></div><span>{card.installPlan.steps.filter((step) => step.status === "complete").length}/{card.installPlan.steps.length}</span></div><ol className="install-plan">{card.installPlan.steps.map((step) => <li key={step.kind} className={step.status === "complete" ? "is-complete" : ""}><span>{step.status === "complete" ? <Check size={13} /> : <CircleDot size={13} />}</span><div><strong>{step.label}</strong><p>{step.detail}</p></div></li>)}</ol></section>
@@ -189,7 +193,7 @@ export function PluginWorkspace({ card, loading, workspaceSlug, onConfirm, onRef
         {card.toolSelection.actions.length > 40 && <p className="muted-row">Showing 40 of {card.toolSelection.actions.length} actions. The full list is available in the developer API.</p>}
         {binding.error && <InlineError error={binding.error} />}
       </section>
-      <section className="contract-gap"><ShieldCheck size={18} /><div><strong>More settings in Teal Brick Portal</strong><p>Turning connectors on or off and setting up custom MCP servers are managed from Teal Brick Portal.</p></div></section>
+      <section className="contract-gap"><ShieldCheck size={18} /><div><strong>More settings</strong><p>Turning connectors on or off is managed from Teal Brick Portal. Add your own MCP servers under Connections → Custom connectors.</p></div></section>
       <ConnectDialog card={card} workspaceSlug={workspaceSlug} open={connectOpen} onOpenChange={setConnectOpen} onConnected={() => { void queryClient.invalidateQueries({ queryKey: ["cards"] }); }} />
       <ExecuteDialog card={card} workspaceSlug={workspaceSlug} open={executeOpen} onOpenChange={setExecuteOpen} />
     </article>

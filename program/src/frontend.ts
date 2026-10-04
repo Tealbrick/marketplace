@@ -54,8 +54,8 @@ export async function registerMarketplaceFrontend(app: FastifyInstance) {
     surfaces: { standalone: "/", embed: "/embed", openapi: "/openapi.json" },
     contractGaps: {
       browserEnableDisable: "hub-auth-required",
-      browserMcpCrud: "hub-auth-required",
-      runtimeAdapterExecution: "not-wired",
+      browserMcpCrud: "remote-only",
+      runtimeAdapterExecution: "composio-and-custom-mcp",
     },
   }));
   app.get("/openapi.json", async (request) => buildMarketplaceOpenApi(`${request.protocol}://${request.host}`));

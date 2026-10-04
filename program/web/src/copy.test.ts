@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ApiError } from "./api";
-import { errorCopy, SESSION_ENDED_COPY, statusLabel, words } from "./copy";
+import { errorCopy, refreshErrorCopy, SESSION_ENDED_COPY, statusLabel, words } from "./copy";
 
 const apiError = (status: number, body: unknown, message = "raw server detail with MARKETPLACE_INTERNAL_AUTH_TOKEN") => new ApiError(message, status, body);
 
@@ -66,5 +66,37 @@ describe("Composio key copy", () => {
     expect(errorCopy(new ApiError("", 422, { error: "composio_key_rejected" })).title).toBe("Composio didn't accept this key");
     expect(errorCopy(new ApiError("", 502, { error: "composio_unreachable" })).title).toBe("Couldn't reach Composio");
     expect(errorCopy(new ApiError("", 409, { error: "composio_key_managed_by_environment" })).title).toBe("This key is managed by your deployment");
+  });
+});
+
+describe("custom connector copy", () => {
+  it("maps every custom MCP code to specific, secret-free copy", () => {
+    const codes = [
+      "custom_mcp_transport_not_allowed",
+      "custom_mcp_url_not_allowed",
+      "custom_mcp_header_invalid",
+      "custom_mcp_header_conflict",
+      "custom_mcp_header_limit",
+      "custom_mcp_already_exists",
+      "custom_mcp_refresh_required",
+      "connector_secret_store_unavailable",
+      "mcp_unreachable",
+      "mcp_timeout",
+      "mcp_auth_rejected",
+      "mcp_http_error",
+      "mcp_protocol_error",
+      "mcp_rpc_error",
+      "mcp_response_too_large",
+      "mcp_tool_failed",
+    ];
+    const generic = new Set(["Check the details and try again", "A required service is unavailable", "Something went wrong", "Something changed in the meantime"]);
+    for (const code of codes) {
+      const copy = errorCopy(new ApiError("raw detail", 502, { error: code, detail: "x-api-key: sk-123" }));
+      expect(generic.has(copy.title), code).toBe(false);
+      expect(copy.reference).toBe(code);
+      expect(`${copy.title} ${copy.detail}`).not.toContain("sk-123");
+    }
+    expect(refreshErrorCopy("mcp_auth_rejected").title).toBe("The MCP server didn't accept the credentials");
+    expect(errorCopy(new ApiError("", 403, { error: "workspace_mismatch" })).title).toBe("This belongs to a different organization");
   });
 });

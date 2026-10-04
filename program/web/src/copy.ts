@@ -46,7 +46,9 @@ export function statusLabel(value: string) {
   return STATUS_LABELS[key] ?? words(value);
 }
 
-export const CATALOG_ONLY_HINT = "Only Composio connectors can be installed today. This listing is shown for reference.";
+export const CATALOG_ONLY_HINT = "Only Composio connectors and your own custom connectors can be installed today. This listing is shown for reference.";
+
+export const CUSTOM_CONNECTOR_TOOLS_HINT = "Load this connector's tools first: open Connections, find it under Custom connectors, and choose Refresh tools.";
 
 export function errorCodeOf(error: unknown): string | null {
   if (!(error instanceof ApiError)) return null;
@@ -109,6 +111,37 @@ export function errorCopy(error: Error): ErrorCopy {
       return { title: "That API address isn't allowed", detail: "Use a Composio address such as https://backend.composio.dev/api/v3.1.", reference };
     case "composio_key_managed_by_environment":
       return { title: "This key is managed by your deployment", detail: "The key was provided when Marketplace was deployed, so it can't be removed here. Ask your administrator to change it.", reference };
+    case "custom_mcp_transport_not_allowed":
+      return { title: "Local command servers aren't supported here", detail: "Add an MCP server by its https:// address. Servers that run as a local command (stdio) can't be added from the browser.", reference };
+    case "custom_mcp_url_not_allowed":
+      return { title: "That server address isn't allowed", detail: "Use an https:// address on the public internet or your Tailscale network (*.ts.net). Local, private-network, and cloud metadata addresses are blocked. Put API keys in a secret header, not in the address.", reference };
+    case "custom_mcp_header_invalid":
+      return { title: "A header isn't valid", detail: "Header names can use letters, numbers, and dashes, and values can't contain line breaks. Headers such as Host or Content-Type are set by Marketplace and can't be changed.", reference };
+    case "custom_mcp_header_conflict":
+      return { title: "A header is listed twice", detail: "Each header can be either a regular header or a secret, not both.", reference };
+    case "custom_mcp_header_limit":
+      return { title: "Too many headers", detail: "Use at most 20 regular headers and 10 secret headers.", reference };
+    case "custom_mcp_already_exists":
+      return { title: "You already have a connector with this name", detail: "Pick a different name, or edit the existing connector.", reference };
+    case "custom_mcp_refresh_required":
+      return { title: "Use Refresh tools to connect", detail: "Custom connectors connect when Marketplace loads their tools. Open Connections and choose Refresh tools.", reference };
+    case "connector_secret_store_unavailable":
+      return { title: "Secrets can't be saved right now", detail: "This Marketplace isn't set up to store secrets securely, so nothing was saved. Ask your administrator to configure secret storage, or add the connector without secret headers.", reference };
+    case "mcp_unreachable":
+      return { title: "Couldn't reach the MCP server", detail: "Check the server address and that the server is running, then try again.", reference };
+    case "mcp_timeout":
+      return { title: "The MCP server took too long to respond", detail: "The server may be busy or unreachable. Try again in a moment.", reference };
+    case "mcp_auth_rejected":
+      return { title: "The MCP server didn't accept the credentials", detail: "Check the secret headers (for example the API key), replace them if needed, and refresh again.", reference };
+    case "mcp_http_error":
+      return { title: "The MCP server returned an error", detail: "Check that the address points to the server's MCP endpoint, then try again.", reference };
+    case "mcp_protocol_error":
+    case "mcp_rpc_error":
+      return { title: "The server's response wasn't understood", detail: "Make sure the address points to an MCP endpoint and the transport matches what the server supports.", reference };
+    case "mcp_response_too_large":
+      return { title: "The MCP server's response was too large", detail: "Marketplace accepts responses up to 2 MB. Ask the server owner to reduce the response size.", reference };
+    case "mcp_tool_failed":
+      return { title: "The tool reported an error", detail: "The MCP server ran the tool but it failed. Check the arguments and try again.", reference };
     case "portal_handoff_denied":
       return { title: "Access was declined in Teal Brick Portal", detail: "The request was denied, so no access was granted. Start a new request if this was a mistake.", reference };
     default:
@@ -149,6 +182,11 @@ export function errorCopy(error: Error): ErrorCopy {
     return { title: "Arguments must be valid JSON", detail: "Fix the arguments and try again.", reference: null };
   }
   return { title: "Something went wrong", detail: "Marketplace couldn't complete the request. Try again; if it keeps happening, contact your administrator.", reference };
+}
+
+/** Copy for a stored custom connector refresh error code. */
+export function refreshErrorCopy(code: string): ErrorCopy {
+  return errorCopy(new ApiError(code, 502, { error: code }));
 }
 
 export const RULES_STATUS_COPY: Record<"connected" | "not-connected" | "unavailable", { label: string; detail: string; tone: "success" | "warning" | "danger" }> = {

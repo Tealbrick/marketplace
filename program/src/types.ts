@@ -81,6 +81,11 @@ export type MarketplaceListing = {
   runtimeSources?: PluginRuntimeSourceDescriptor[];
   enabledByDefault: boolean;
   manifest: Record<string, unknown>;
+  /**
+   * Set only for listings owned by one workspace (operator custom MCP
+   * connectors). Absent for global catalog and Hub-registered listings.
+   */
+  ownerWorkspaceSlug?: string;
   createdAt: string;
   updatedAt: string;
 };

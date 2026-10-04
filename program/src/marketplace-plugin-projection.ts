@@ -236,7 +236,7 @@ export function projectMarketplacePlugins(
   const pluginRecords: MarketplacePluginProjectionRecord[] = [];
   const actions: MarketplacePluginActionDescriptor[] = [];
 
-  for (const listing of store.listListings()) {
+  for (const listing of store.listListingsForWorkspace(workspaceSlug)) {
     const install = store.getInstall(workspaceSlug, listing.pluginId);
     const installed =
       install?.enabled === true && install.lifecycle === "installed";
