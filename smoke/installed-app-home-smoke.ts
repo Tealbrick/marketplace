@@ -181,7 +181,7 @@ async function main() {
       providerFetch: async (input: unknown, init?: { body?: unknown }) => {
         if (String(input).includes("/tools/execute/GITHUB_LIST_REPOSITORIES")) {
           providerCalls.push(JSON.parse(String(init?.body ?? "{}")));
-          return new Response(JSON.stringify({ data: [{ name: "Doppelganger/installed-app-home-provider" }] }), { status: 200 });
+          return new Response(JSON.stringify({ data: [{ name: "Tealbrick/installed-app-home-provider" }] }), { status: 200 });
         }
         return new Response(JSON.stringify({ items: [] }), { status: 200 });
       },
@@ -234,7 +234,7 @@ async function main() {
         workspaceSlug: "installed-smoke",
         actorId: "installed-agent",
         pluginId: "github-composio",
-        input: { owner: "Doppelganger" },
+        input: { owner: "Tealbrick" },
       }),
     });
     if (denied.response.status !== 403) {
@@ -248,7 +248,7 @@ async function main() {
         workspaceSlug: "installed-smoke",
         actorId: "installed-agent",
         pluginId: "github-composio",
-        input: { owner: "Doppelganger" },
+        input: { owner: "Tealbrick" },
       }),
     });
     if (allowed.response.status !== 200) {

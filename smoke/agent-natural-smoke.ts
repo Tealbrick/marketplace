@@ -28,7 +28,7 @@ async function main() {
     providerFetch: async (input, init) => {
       if (String(input).includes("/tools/execute/GITHUB_LIST_REPOSITORIES")) {
         providerCalls.push(JSON.parse(String(init?.body ?? "{}")));
-        return new Response(JSON.stringify({ data: [{ name: "Doppelganger/agent-smoke-provider" }] }), { status: 200 });
+        return new Response(JSON.stringify({ data: [{ name: "Tealbrick/agent-smoke-provider" }] }), { status: 200 });
       }
       return new Response(JSON.stringify({ items: [] }), { status: 200 });
     },
@@ -89,7 +89,7 @@ async function main() {
       workspaceSlug: "agent-smoke",
       actorId: "agent-smoke",
       pluginId: "github-composio",
-      input: { owner: "Doppelganger" },
+      input: { owner: "Tealbrick" },
     }),
   });
   if (denied.response.status !== 403) {
@@ -103,7 +103,7 @@ async function main() {
       workspaceSlug: "agent-smoke",
       actorId: "agent-smoke",
       pluginId: "github-composio",
-      input: { owner: "Doppelganger" },
+      input: { owner: "Tealbrick" },
     }),
   });
   if (allowed.response.status !== 200) {

@@ -2135,7 +2135,7 @@ describe("Marketplace Program", () => {
         capability: "connector.observe",
         action: {
           type: "github.repositories.list",
-          owner: "Doppelganger",
+          owner: "Tealbrick",
         },
         runId: "run-unsupported",
         sessionId: "session-test",
@@ -2219,7 +2219,7 @@ describe("Marketplace Program", () => {
         workspaceSlug: "atlas",
         actorId: "agent-smoke",
         pluginId: "github-native",
-        input: { owner: "Doppelganger" },
+        input: { owner: "Tealbrick" },
       },
     });
     expect(deniedResponse.statusCode).toBe(404);
@@ -2236,7 +2236,7 @@ describe("Marketplace Program", () => {
         workspaceSlug: "atlas",
         actorId: "agent-smoke",
         pluginId: "github-native",
-        input: { owner: "Doppelganger" },
+        input: { owner: "Tealbrick" },
       },
     });
     expect(allowedResponse.statusCode).toBe(404);

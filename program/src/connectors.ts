@@ -823,11 +823,11 @@ export function buildNativeActionResult(input: {
     case "github.repositories.list":
       return {
         ...base,
-        summary: `Listed GitHub repositories for ${String(input.action.owner ?? "Doppelganger")}`,
+        summary: `Listed GitHub repositories for ${String(input.action.owner ?? "Tealbrick")}`,
         details: {
           repositories: [
-            `${String(input.action.owner ?? "Doppelganger")}/runtime-control`,
-            `${String(input.action.owner ?? "Doppelganger")}/connector-observer`,
+            `${String(input.action.owner ?? "Tealbrick")}/runtime-control`,
+            `${String(input.action.owner ?? "Tealbrick")}/connector-observer`,
           ],
         },
       };

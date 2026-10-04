@@ -115,7 +115,7 @@ async function readRegistry(registryPath: string): Promise<Registry> {
   } catch (error: unknown) {
     if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
       return {
-        name: "Doppelganger App Registry",
+        name: "Teal Brick App Registry",
         interface: {
           displayName: "App Registry",
           developerName: "Teal Brick",
@@ -152,7 +152,7 @@ async function upsertMarketplaceRegistry(registryPath: string) {
     registryPath,
     `${JSON.stringify({
       ...registry,
-      name: typeof registry.name === "string" ? registry.name : "Doppelganger App Registry",
+      name: typeof registry.name === "string" ? registry.name : "Teal Brick App Registry",
       plugins,
     })}\n`,
   );
