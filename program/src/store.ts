@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   createCipheriv,
   createDecipheriv,
+  createHmac,
   randomBytes,
   randomUUID,
 } from "node:crypto";
@@ -46,6 +47,7 @@ export const MARKETPLACE_TABLES = [
   "marketplace_agent_consent",
   "marketplace_runtime_operation",
   "credential_ref",
+  "connector_secret",
   "activepieces_pack_binding",
   "composio_import",
   "connector_usage_ledger",
@@ -64,9 +66,14 @@ type StoreOptions = {
   handoffEncryptionKey?: string;
 };
 
-const PORTAL_HANDOFF_CIPHERTEXT_PREFIX = "v1:";
+const SECRET_CIPHERTEXT_PREFIX = "v1:";
 
-function handoffEncryptionKeyFromSecret(secret?: string): Buffer | null {
+/**
+ * AES-256-GCM key shared by every encrypted-at-rest Marketplace value (Portal
+ * handoff session tokens and operator connector secrets). Accepts a 32-byte
+ * base64url value or a 64-character hex value.
+ */
+function encryptionKeyFromSecret(secret?: string): Buffer | null {
   const value = secret?.trim();
   if (!value) return null;
   if (/^[0-9a-f]{64}$/iu.test(value)) {
@@ -81,30 +88,30 @@ function handoffEncryptionKeyFromSecret(secret?: string): Buffer | null {
   return decoded;
 }
 
-function encryptPortalHandoffToken(token: string, key: Buffer) {
+function encryptSecretValue(plaintext: string, key: Buffer) {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", key, iv);
   const ciphertext = Buffer.concat([
-    cipher.update(token, "utf8"),
+    cipher.update(plaintext, "utf8"),
     cipher.final(),
   ]);
   return [
-    PORTAL_HANDOFF_CIPHERTEXT_PREFIX.slice(0, -1),
+    SECRET_CIPHERTEXT_PREFIX.slice(0, -1),
     iv.toString("base64url"),
     cipher.getAuthTag().toString("base64url"),
     ciphertext.toString("base64url"),
   ].join(":");
 }
 
-function decryptPortalHandoffToken(value: string, key: Buffer) {
+function decryptSecretValue(value: string, key: Buffer, label: string) {
   const [version, ivValue, authTagValue, ciphertextValue] = value.split(":");
   if (
-    `${version}:` !== PORTAL_HANDOFF_CIPHERTEXT_PREFIX ||
+    `${version}:` !== SECRET_CIPHERTEXT_PREFIX ||
     !ivValue ||
     !authTagValue ||
     !ciphertextValue
   ) {
-    throw new Error("Stored Portal handoff session token has an invalid format.");
+    throw new Error(`${label} has an invalid format.`);
   }
   const decipher = createDecipheriv(
     "aes-256-gcm",
@@ -118,8 +125,54 @@ function decryptPortalHandoffToken(value: string, key: Buffer) {
   ]).toString("utf8");
 }
 
+function isEncryptedSecretValue(value: string) {
+  return value.startsWith(SECRET_CIPHERTEXT_PREFIX);
+}
+
+function encryptPortalHandoffToken(token: string, key: Buffer) {
+  return encryptSecretValue(token, key);
+}
+
+function decryptPortalHandoffToken(value: string, key: Buffer) {
+  return decryptSecretValue(value, key, "Stored Portal handoff session token");
+}
+
 function isEncryptedPortalHandoffToken(value: string) {
-  return value.startsWith(PORTAL_HANDOFF_CIPHERTEXT_PREFIX);
+  return isEncryptedSecretValue(value);
+}
+
+/** Raised when a connector secret is written or read without the encryption key. */
+export class ConnectorSecretStoreUnavailableError extends Error {
+  readonly code = "connector_secret_store_unavailable";
+  constructor() {
+    super(
+      "MARKETPLACE_HANDOFF_ENCRYPTION_KEY is required to store connector secrets.",
+    );
+  }
+}
+
+export type ConnectorSecretMetadata = {
+  id: string;
+  workspaceSlug: string;
+  pluginId: string;
+  name: string;
+  fingerprint: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+function connectorSecretMetadataFromRow(
+  row: Record<string, unknown>,
+): ConnectorSecretMetadata {
+  return {
+    id: String(row.id),
+    workspaceSlug: String(row.workspace_slug),
+    pluginId: String(row.plugin_id),
+    name: String(row.name),
+    fingerprint: String(row.fingerprint),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  };
 }
 
 function nowIso() {
@@ -158,6 +211,9 @@ function listingFromRow(row: Record<string, unknown>): MarketplaceListing {
     ),
     enabledByDefault: Number(row.enabled_by_default) === 1,
     manifest: jsonParse<JsonRecord>(String(row.manifest_json), {}),
+    ...(row.workspace_slug === null || row.workspace_slug === undefined
+      ? {}
+      : { ownerWorkspaceSlug: String(row.workspace_slug) }),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   };
@@ -470,7 +526,7 @@ export class SqliteMarketplaceStore {
         "marketplace-debug.jsonl",
       );
     this.debug = options.debug ?? process.env.DOPPELGANGER_DEBUG === "1";
-    this.handoffEncryptionKey = handoffEncryptionKeyFromSecret(
+    this.handoffEncryptionKey = encryptionKeyFromSecret(
       options.handoffEncryptionKey ?? process.env.MARKETPLACE_HANDOFF_ENCRYPTION_KEY,
     );
     fs.mkdirSync(path.dirname(this.logPath), { recursive: true });
@@ -505,6 +561,18 @@ export class SqliteMarketplaceStore {
         manifest_json TEXT NOT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS connector_secret (
+        id TEXT PRIMARY KEY,
+        workspace_slug TEXT NOT NULL,
+        plugin_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        ciphertext TEXT NOT NULL,
+        fingerprint TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(workspace_slug, plugin_id, name)
       );
 
       CREATE TABLE IF NOT EXISTS plugin_registry (
@@ -802,10 +870,20 @@ export class SqliteMarketplaceStore {
       );
     `);
 
+    this.addColumnIfMissing(
+      "ALTER TABLE marketplace_listing ADD COLUMN runtime_sources_json TEXT NOT NULL DEFAULT '[]'",
+    );
+    // Operator-created custom connectors are owned by one workspace; seeded
+    // and Hub-registered listings stay global (NULL).
+    this.addColumnIfMissing(
+      "ALTER TABLE marketplace_listing ADD COLUMN workspace_slug TEXT",
+    );
+    this.migratePortalHandoffSessions();
+  }
+
+  private addColumnIfMissing(statement: string) {
     try {
-      this.db.exec(
-        "ALTER TABLE marketplace_listing ADD COLUMN runtime_sources_json TEXT NOT NULL DEFAULT '[]'",
-      );
+      this.db.exec(statement);
     } catch (error) {
       if (
         !(error instanceof Error) ||
@@ -814,7 +892,6 @@ export class SqliteMarketplaceStore {
         throw error;
       }
     }
-    this.migratePortalHandoffSessions();
   }
 
   private migratePortalHandoffSessions() {
@@ -889,9 +966,11 @@ export class SqliteMarketplaceStore {
       .prepare(
         `INSERT INTO marketplace_listing (
           plugin_id, display_name, kind, provider, description, capabilities, actions, source,
-          auth_owner, execution_owner, runtime_sources_json, enabled_by_default, manifest_json, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          auth_owner, execution_owner, runtime_sources_json, enabled_by_default, manifest_json, created_at, updated_at,
+          workspace_slug
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(plugin_id) DO UPDATE SET
+          workspace_slug = COALESCE(marketplace_listing.workspace_slug, excluded.workspace_slug),
           display_name = excluded.display_name,
           kind = excluded.kind,
           provider = excluded.provider,
@@ -922,6 +1001,7 @@ export class SqliteMarketplaceStore {
         JSON.stringify(listing.manifest),
         listing.createdAt,
         listing.updatedAt,
+        listing.ownerWorkspaceSlug ?? null,
       );
   }
 
@@ -946,6 +1026,49 @@ export class SqliteMarketplaceStore {
     const row = this.db
       .prepare("SELECT * FROM marketplace_listing WHERE plugin_id = ?")
       .get(pluginId) as Record<string, unknown> | undefined;
+    return row ? listingFromRow(row) : null;
+  }
+
+  /** Global listings plus the listings owned by `workspaceSlug`. */
+  listListingsForWorkspace(workspaceSlug: string): MarketplaceListing[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT * FROM marketplace_listing
+           WHERE workspace_slug IS NULL OR workspace_slug = ?
+           ORDER BY display_name ASC`,
+        )
+        .all(workspaceSlug) as Record<string, unknown>[]
+    ).map(listingFromRow);
+  }
+
+  /** Listings owned by `workspaceSlug` only (operator custom connectors). */
+  listOwnedListings(workspaceSlug: string): MarketplaceListing[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT * FROM marketplace_listing
+           WHERE workspace_slug = ?
+           ORDER BY display_name ASC`,
+        )
+        .all(workspaceSlug) as Record<string, unknown>[]
+    ).map(listingFromRow);
+  }
+
+  /**
+   * Workspace-aware lookup: a listing owned by another workspace is reported
+   * as absent so callers answer 404 rather than leaking its existence.
+   */
+  getListingForWorkspace(
+    pluginId: string,
+    workspaceSlug: string,
+  ): MarketplaceListing | null {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM marketplace_listing
+         WHERE plugin_id = ? AND (workspace_slug IS NULL OR workspace_slug = ?)`,
+      )
+      .get(pluginId, workspaceSlug) as Record<string, unknown> | undefined;
     return row ? listingFromRow(row) : null;
   }
 
@@ -1066,6 +1189,7 @@ export class SqliteMarketplaceStore {
         "plugin_action_binding",
         "connector_connection",
         "credential_ref",
+        "connector_secret",
         "composio_import",
         "workspace_plugin_install",
         "plugin_registry",
@@ -2276,6 +2400,252 @@ export class SqliteMarketplaceStore {
         timestamp,
       );
     return this.requireCredentialRefById(id);
+  }
+
+  listCredentialRefs(input: {
+    workspaceSlug: string;
+    pluginId?: string;
+  }): CredentialRef[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT * FROM credential_ref
+           WHERE workspace_slug = ? AND (? IS NULL OR plugin_id = ?)
+           ORDER BY created_at ASC`,
+        )
+        .all(
+          input.workspaceSlug,
+          input.pluginId ?? null,
+          input.pluginId ?? null,
+        ) as Record<string, unknown>[]
+    ).map(credentialRefFromRow);
+  }
+
+  /** True when connector secrets can be encrypted at rest. */
+  connectorSecretStoreAvailable(): boolean {
+    return this.handoffEncryptionKey !== null;
+  }
+
+  private requireSecretKey(): Buffer {
+    if (!this.handoffEncryptionKey) {
+      throw new ConnectorSecretStoreUnavailableError();
+    }
+    return this.handoffEncryptionKey;
+  }
+
+  /**
+   * Keyed fingerprint (12 hex) for display and audit. HMAC with the at-rest
+   * key so a low-entropy secret cannot be confirmed from the fingerprint.
+   */
+  connectorSecretFingerprint(value: string): string {
+    return createHmac("sha256", this.requireSecretKey())
+      .update(`marketplace-connector-secret:${value}`)
+      .digest("hex")
+      .slice(0, 12);
+  }
+
+  /**
+   * Encrypt and upsert one connector secret plus its credential_ref row.
+   * Returns metadata only; the plaintext never leaves this method.
+   */
+  putConnectorSecret(input: {
+    workspaceSlug: string;
+    pluginId: string;
+    name: string;
+    value: string;
+  }): ConnectorSecretMetadata {
+    const key = this.requireSecretKey();
+    const ciphertext = encryptSecretValue(input.value, key);
+    const fingerprint = this.connectorSecretFingerprint(input.value);
+    const timestamp = nowIso();
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO connector_secret (
+            id, workspace_slug, plugin_id, name, ciphertext, fingerprint, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(workspace_slug, plugin_id, name) DO UPDATE SET
+            ciphertext = excluded.ciphertext,
+            fingerprint = excluded.fingerprint,
+            updated_at = excluded.updated_at`,
+        )
+        .run(
+          createId("connector_secret"),
+          input.workspaceSlug,
+          input.pluginId,
+          input.name,
+          ciphertext,
+          fingerprint,
+          timestamp,
+          timestamp,
+        );
+      const secret = this.requireConnectorSecretMetadata(
+        input.workspaceSlug,
+        input.pluginId,
+        input.name,
+      );
+      const secretRefKey = `marketplace-secret:${secret.id}`;
+      const existingRef = this.db
+        .prepare("SELECT id FROM credential_ref WHERE secret_ref_key = ?")
+        .get(secretRefKey) as { id?: string } | undefined;
+      const metadata = JSON.stringify({ secretName: input.name, fingerprint });
+      if (existingRef?.id) {
+        this.db
+          .prepare(
+            `UPDATE credential_ref
+             SET state = 'active', detail = ?, metadata = ?, configured_at = ?, updated_at = ?
+             WHERE id = ?`,
+          )
+          .run(
+            "Connector secret is encrypted at rest in Marketplace.",
+            metadata,
+            timestamp,
+            timestamp,
+            existingRef.id,
+          );
+      } else {
+        this.db
+          .prepare(
+            `INSERT INTO credential_ref (
+              id, workspace_slug, plugin_id, provider_hint, secret_ref_key, external_ref,
+              state, detail, metadata, configured_at, created_at, updated_at
+            ) VALUES (?, ?, ?, 'mcp', ?, NULL, 'active', ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            createId("credential"),
+            input.workspaceSlug,
+            input.pluginId,
+            secretRefKey,
+            "Connector secret is encrypted at rest in Marketplace.",
+            metadata,
+            timestamp,
+            timestamp,
+            timestamp,
+          );
+      }
+      this.db.exec("COMMIT");
+      return secret;
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  private requireConnectorSecretMetadata(
+    workspaceSlug: string,
+    pluginId: string,
+    name: string,
+  ): ConnectorSecretMetadata {
+    const row = this.db
+      .prepare(
+        `SELECT id, workspace_slug, plugin_id, name, fingerprint, created_at, updated_at
+         FROM connector_secret WHERE workspace_slug = ? AND plugin_id = ? AND name = ?`,
+      )
+      .get(workspaceSlug, pluginId, name) as Record<string, unknown> | undefined;
+    if (!row) {
+      throw new Error(`Connector secret ${name} was not found`);
+    }
+    return connectorSecretMetadataFromRow(row);
+  }
+
+  listConnectorSecrets(input: {
+    workspaceSlug: string;
+    pluginId: string;
+  }): ConnectorSecretMetadata[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT id, workspace_slug, plugin_id, name, fingerprint, created_at, updated_at
+           FROM connector_secret WHERE workspace_slug = ? AND plugin_id = ?
+           ORDER BY name ASC`,
+        )
+        .all(input.workspaceSlug, input.pluginId) as Record<string, unknown>[]
+    ).map(connectorSecretMetadataFromRow);
+  }
+
+  /**
+   * Decrypt every secret for one connector. Server-side use only (attaching
+   * headers to outbound MCP requests); never serialize the result.
+   */
+  readConnectorSecretValues(input: {
+    workspaceSlug: string;
+    pluginId: string;
+  }): Record<string, string> {
+    const rows = this.db
+      .prepare(
+        `SELECT name, ciphertext FROM connector_secret
+         WHERE workspace_slug = ? AND plugin_id = ?`,
+      )
+      .all(input.workspaceSlug, input.pluginId) as Array<{
+      name: string;
+      ciphertext: string;
+    }>;
+    if (rows.length === 0) return {};
+    const key = this.requireSecretKey();
+    return Object.fromEntries(
+      rows.map((row) => [
+        row.name,
+        decryptSecretValue(row.ciphertext, key, "Stored connector secret"),
+      ]),
+    );
+  }
+
+  deleteConnectorSecret(input: {
+    workspaceSlug: string;
+    pluginId: string;
+    name: string;
+  }): boolean {
+    const row = this.db
+      .prepare(
+        `SELECT id FROM connector_secret
+         WHERE workspace_slug = ? AND plugin_id = ? AND name = ?`,
+      )
+      .get(input.workspaceSlug, input.pluginId, input.name) as
+      | { id?: string }
+      | undefined;
+    if (!row?.id) return false;
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db.prepare("DELETE FROM connector_secret WHERE id = ?").run(row.id);
+      this.db
+        .prepare("DELETE FROM credential_ref WHERE secret_ref_key = ?")
+        .run(`marketplace-secret:${row.id}`);
+      this.db.exec("COMMIT");
+      return true;
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  /**
+   * Revoke every active agent connector grant and Portal agent consent that
+   * targets `pluginId` in `workspaceSlug`. Used when a connector is deleted.
+   */
+  revokeAgentAccessForPlugin(input: {
+    workspaceSlug: string;
+    pluginId: string;
+  }): { grants: number; consents: number } {
+    const timestamp = nowIso();
+    const grants = this.db
+      .prepare(
+        `UPDATE agent_connector_grant
+         SET state = 'revoked', updated_at = ?
+         WHERE workspace_slug = ? AND plugin_id = ? AND state = 'active'`,
+      )
+      .run(timestamp, input.workspaceSlug, input.pluginId);
+    const consents = this.db
+      .prepare(
+        `UPDATE marketplace_agent_consent
+         SET state = 'revoked', updated_at = ?
+         WHERE product_tenant_id = ? AND plugin_id = ? AND state = 'active'`,
+      )
+      .run(timestamp, input.workspaceSlug, input.pluginId);
+    return {
+      grants: Number(grants.changes),
+      consents: Number(consents.changes),
+    };
   }
 
   upsertComposioImport(input: {
