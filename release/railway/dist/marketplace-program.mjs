@@ -49788,6 +49788,7 @@ function buildMarketplaceOpenApi(baseUrl = "/") {
       "/healthz": { get: { security: [], tags: ["Runtime"], summary: "Program liveness", responses: { "200": { description: "Healthy" } } } },
       "/status": { get: { security: [], tags: ["Runtime"], summary: "Redacted frontend-safe status", responses: { "200": { description: "Status" } } } },
       "/bootstrap.json": { get: { security: [], tags: ["Runtime"], summary: "Redacted frontend bootstrap and authorization posture", responses: { "200": { description: "Bootstrap" } } } },
+      "/auth/launch": { post: { security: [], tags: ["Runtime"], summary: "Redeem a Portal one-use browser launch ticket", description: "Accepts the Portal form POST, redeems the ticket server-to-server with the configured deployment identity, and stores the attested Portal handoff session without echoing the ticket.", requestBody: { required: true, content: { "application/x-www-form-urlencoded": { schema: { type: "object", additionalProperties: false, required: ["ticket"], properties: { ticket: { type: "string", writeOnly: true, pattern: "^[A-Za-z0-9_-]{43}$" } } } } } }, responses: { "200": { description: "Portal handoff accepted" }, "401": { description: "Invalid, duplicate, or replayed ticket" }, "403": { description: "Portal Origin or deployment identity denied" }, "503": { description: "Portal handoff is not configured or unavailable" } } } },
       "/api/marketplace/auth/session": {
         get: { security: [], tags: ["Runtime"], summary: "Read the redacted operator-session state", responses: { "200": { description: "Session status" } } },
         post: { security: [], tags: ["Runtime"], summary: "Exchange the provisioned operator access token for an HttpOnly session", requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["accessToken"], properties: { accessToken: { type: "string", writeOnly: true } } } } } }, responses: { "200": { description: "Session created" }, "401": { description: "Invalid token" }, "429": { description: "Rate limited" }, "503": { description: "Operator access is not configured" } } },
@@ -51292,6 +51293,9 @@ var ComposioCallbackQuerySchema = external_exports.object({
   account_id: external_exports.string().trim().min(1).optional(),
   error: external_exports.string().trim().min(1).optional()
 });
+var PortalLaunchFormSchema = external_exports.strictObject({
+  ticket: external_exports.string().regex(/^[A-Za-z0-9_-]{43}$/u)
+});
 function configuredAllowedOrigins(env = process.env) {
   return new Set(
     (env.MARKETPLACE_ALLOWED_ORIGINS ?? "").split(",").map((origin) => origin.trim()).filter(Boolean)
@@ -52385,6 +52389,21 @@ function htmlShell() {
 }
 async function buildMarketplaceApp(options) {
   const app2 = (0, import_fastify.default)({ logger: false });
+  app2.addContentTypeParser(
+    "application/x-www-form-urlencoded",
+    { parseAs: "string" },
+    (_request, body, done) => {
+      const entries = [
+        ...new URLSearchParams(
+          typeof body === "string" ? body : body.toString("utf8")
+        ).entries()
+      ];
+      done(
+        null,
+        entries.length === 1 && entries[0]?.[0] === "ticket" ? { ticket: entries[0][1] } : null
+      );
+    }
+  );
   const runtimePath = options.store.describeRuntime().databasePath;
   const providerSettings2 = options.providerSettings ?? new MarketplaceProviderSettingsStore(
     path4.join(path4.dirname(runtimePath), "provider-settings.json"),
@@ -52650,13 +52669,12 @@ async function buildMarketplaceApp(options) {
     reply.type("text/html; charset=utf-8");
     return htmlShell();
   });
-  app2.get("/auth/launch", async (request, reply) => {
-    const query = external_exports.strictObject({
-      ticket: external_exports.string().regex(/^[A-Za-z0-9_-]{43}$/u),
-      deploymentId: PortalIdentifierSchema
-    }).parse(request.query);
+  const completePortalLaunch = async (ticket, deploymentId, reply) => {
     try {
-      const session = await portalHandoffClient.redeemLaunchTicket(query);
+      const session = await portalHandoffClient.redeemLaunchTicket({
+        deploymentId,
+        ticket
+      });
       if (session.productTenantId !== organizationId || !portalIdentityMatches(session)) {
         reply.code(403);
         reply.type("text/html; charset=utf-8");
@@ -52691,6 +52709,39 @@ async function buildMarketplaceApp(options) {
         detail: error instanceof PortalHandoffError ? "Portal could not authorize this Marketplace launch." : "Portal launch verification failed."
       });
     }
+  };
+  app2.get("/auth/launch", async (request, reply) => {
+    const query = external_exports.strictObject({
+      ticket: external_exports.string().regex(/^[A-Za-z0-9_-]{43}$/u),
+      deploymentId: PortalIdentifierSchema
+    }).parse(request.query);
+    return completePortalLaunch(query.ticket, query.deploymentId, reply);
+  });
+  app2.post("/auth/launch", { bodyLimit: 2048 }, async (request, reply) => {
+    reply.header("cache-control", "no-store");
+    reply.header("referrer-policy", "no-referrer");
+    if (!portalIssuerUrl || headerValue(request, "origin") !== portalIssuerUrl || headerValue(request, "authorization")) {
+      reply.code(403);
+      reply.type("text/html; charset=utf-8");
+      return htmlCloseout({
+        ok: false,
+        title: "Marketplace launch blocked",
+        detail: "Portal launch origin verification failed."
+      });
+    }
+    const contentType = headerValue(request, "content-type");
+    const parsed = contentType?.split(";", 1)[0]?.trim().toLowerCase() === "application/x-www-form-urlencoded" ? PortalLaunchFormSchema.safeParse(request.body) : null;
+    const deploymentId = portalConfiguration.deploymentId;
+    if (!parsed?.success || !deploymentId) {
+      reply.code(parsed?.success ? 503 : 401);
+      reply.type("text/html; charset=utf-8");
+      return htmlCloseout({
+        ok: false,
+        title: "Marketplace launch blocked",
+        detail: parsed?.success ? "Marketplace Portal deployment identity is not configured." : "Portal launch ticket is invalid."
+      });
+    }
+    return completePortalLaunch(parsed.data.ticket, deploymentId, reply);
   });
   app2.get("/healthz", async () => ({
     ok: true,

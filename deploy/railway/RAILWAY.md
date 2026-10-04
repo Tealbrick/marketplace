@@ -9,18 +9,19 @@ creation, customer-project writes, deployment identity, and acceptance.
 
 Use the public repository
 `https://github.com/Tealbrick/marketplace` at branch
-`release/marketplace-v0.1.3`, resolved and recorded as commit
-`28552dcf4917c8d3bb449b13473b8645c780e9a4`. Do not connect `main`, the
+`release/marketplace-v0.1.4`, resolved and recorded in the successor receipt.
+The source snapshot used for the release is commit
+`257aa5ca4b06031d41b0bc56c4c6f34077e419f3`. Do not connect `main`, the
 rejected tag source, or another mutable branch. Set the service root directory
 to `release/railway`; Railway then builds the tracked `Dockerfile` in that
 directory.
 
 Portal's actual `templateDeployV2` probe showed that `source.branch=v0.1.3`
 fails with Branch not found and `source.commitSha` is ignored. Use
-`source.branch=release/marketplace-v0.1.3`; the branch is fixed to the reviewed
-runtime commit by repository ruleset `24444361`:
+`source.branch=release/marketplace-v0.1.4`; the branch is fixed to the reviewed
+runtime by the successor repository ruleset recorded in the receipt:
 
-- target: `refs/heads/release/marketplace-v0.1.3`
+- target: `refs/heads/release/marketplace-v0.1.4`
 - enforcement: `active`
 - rules: `update`, `non_fast_forward`, `deletion`
 - bypass actors: none; GitHub reports `current_user_can_bypass=never`
@@ -37,12 +38,12 @@ resolve the tag to the exact commit and verify the release manifests:
 ```sh
 shasum -a 256 -c release/railway/build-input-manifest.sha256
 shasum -a 256 -c release/railway/bundle-manifest.sha256
-git archive --format=tar 4bb86a70621171cc546c2639a1c9675ed53a353e \
+git archive --format=tar 257aa5ca4b06031d41b0bc56c4c6f34077e419f3 \
   | shasum -a 256
 ```
 
 The archived source snapshot must hash to
-`9f14b79272625a4ae66aab1582683163a7765d6b44ed3173cb9a27a9b0910fa9`. Record
+`e777ee5f27bac96db8aec74aab0b03ab478a08f0d35f49c8d3f77d1d8e7a3f7a`. Record
 the Railway-resolved commit and deployment ID separately from these local
 checks; a health response is not source identity proof.
 
