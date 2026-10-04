@@ -83,21 +83,25 @@ async function discoverInstalledMarketplace(input: { appHome: string; registryPa
   }
 
   const root = path.resolve(input.appHome, entry.source.path);
+  type ManifestNamespace = {
+    dataTransports?: unknown[];
+    surfaces?: unknown[];
+    settingsPanels?: unknown[];
+  };
   const pluginManifest = JSON.parse(await readFile(path.join(root, ".codex-plugin", "plugin.json"), "utf8")) as {
     name?: string;
-    doppelganger?: {
-      dataTransports?: unknown[];
-      surfaces?: unknown[];
-      settingsPanels?: unknown[];
-    };
+    tealbrick?: ManifestNamespace;
+    doppelganger?: ManifestNamespace;
   };
   if (pluginManifest.name !== "marketplace") {
     throw new Error("Installed loader manifest did not identify marketplace.");
   }
-  if (!pluginManifest.doppelganger?.dataTransports?.length) {
+  // Namespace key `tealbrick`, legacy `doppelganger` (see program/src/legacy-ids.ts).
+  const namespace = pluginManifest.tealbrick ?? pluginManifest.doppelganger;
+  if (!namespace?.dataTransports?.length) {
     throw new Error("Installed Marketplace manifest did not expose data transports.");
   }
-  if (!pluginManifest.doppelganger.surfaces?.length || !pluginManifest.doppelganger.settingsPanels?.length) {
+  if (!namespace.surfaces?.length || !namespace.settingsPanels?.length) {
     throw new Error("Installed Marketplace manifest did not expose extension surfaces/settings.");
   }
 
@@ -130,7 +134,7 @@ async function requestJson(baseUrl: string, pathname: string, init?: RequestInit
 }
 
 async function main() {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "doppelganger-marketplace-installed-home-"));
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "tealbrick-marketplace-installed-home-"));
   const appHome = path.join(tempRoot, "app-home");
   const installedRoot = path.join(appHome, "microapps", "marketplace");
   const registryPath = path.join(appHome, ".agents", "plugins", "marketplace.json");
@@ -177,7 +181,7 @@ async function main() {
       providerFetch: async (input: unknown, init?: { body?: unknown }) => {
         if (String(input).includes("/tools/execute/GITHUB_LIST_REPOSITORIES")) {
           providerCalls.push(JSON.parse(String(init?.body ?? "{}")));
-          return new Response(JSON.stringify({ data: [{ name: "Doppelganger/installed-app-home-provider" }] }), { status: 200 });
+          return new Response(JSON.stringify({ data: [{ name: "Tealbrick/installed-app-home-provider" }] }), { status: 200 });
         }
         return new Response(JSON.stringify({ items: [] }), { status: 200 });
       },
@@ -230,7 +234,7 @@ async function main() {
         workspaceSlug: "installed-smoke",
         actorId: "installed-agent",
         pluginId: "github-composio",
-        input: { owner: "Doppelganger" },
+        input: { owner: "Tealbrick" },
       }),
     });
     if (denied.response.status !== 403) {
@@ -244,7 +248,7 @@ async function main() {
         workspaceSlug: "installed-smoke",
         actorId: "installed-agent",
         pluginId: "github-composio",
-        input: { owner: "Doppelganger" },
+        input: { owner: "Tealbrick" },
       }),
     });
     if (allowed.response.status !== 200) {

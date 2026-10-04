@@ -2,10 +2,10 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-import "@doppelganger/ui/tokens.css";
-import "@doppelganger/ui/components.css";
+import "@tealbrick/ui/tokens.css";
+import "@tealbrick/ui/components.css";
 import "./app.css";
-import "@doppelganger/ui/fleet.css";
+import "@tealbrick/ui/fleet.css";
 import { App } from "./App";
 
 const queryClient = new QueryClient({

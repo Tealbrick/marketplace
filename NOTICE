@@ -6,13 +6,13 @@ LICENSE.
 
 Bundled font assets are third-party assets and retain their upstream terms:
 
-* Cormorant Garamond (`.sdk/doppelganger-ui/assets/fonts/CormorantGaramond.ttf`)
+* Cormorant Garamond (`.sdk/tealbrick-ui/assets/fonts/CormorantGaramond.ttf`)
   is Copyright 2015 The Cormorant Project Authors and is distributed under
   the SIL Open Font License 1.1. Source: https://github.com/CatharsisFonts/Cormorant
-* JetBrains Mono (`.sdk/doppelganger-ui/assets/fonts/JetBrainsMono-Regular.woff2`)
+* JetBrains Mono (`.sdk/tealbrick-ui/assets/fonts/JetBrainsMono-Regular.woff2`)
   is distributed under the SIL Open Font License 1.1. Source:
   https://github.com/JetBrains/JetBrainsMono
-* Switzer (`.sdk/doppelganger-ui/assets/fonts/Switzer-Variable.woff2`) is an
+* Switzer (`.sdk/tealbrick-ui/assets/fonts/Switzer-Variable.woff2`) is an
   Indian Type Foundry / Fontshare font distributed under the ITF Free Font
   License. Current terms: https://fontshare.com/terms
 

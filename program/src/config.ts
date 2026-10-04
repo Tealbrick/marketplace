@@ -1,6 +1,6 @@
-import os from "node:os";
 import path from "node:path";
 
+import { readCompatEnv, resolveDefaultStateRoot, type Warn } from "./legacy-ids.js";
 import type { RulesReadinessConfiguration } from "./rules-readiness.js";
 
 export type MarketplaceConfig = {
@@ -22,13 +22,39 @@ function numberFromEnv(value: string | undefined, fallback: number) {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
-export function loadConfig(env: Record<string, string | undefined> = process.env): MarketplaceConfig {
+export type LoadConfigOptions = {
+  /** Home directory for the default state root (tests pass a temp dir). */
+  homeDir?: string;
+  /**
+   * Move a legacy `~/.doppelganger/programs/marketplace` state root to
+   * `~/.tealbrick/programs/marketplace` when only the legacy one exists.
+   * Only the server entrypoint opts in; other callers resolve read-only.
+   */
+  migrateLegacyStateDir?: boolean;
+  warn?: Warn;
+};
+
+export function loadConfig(
+  env: Record<string, string | undefined> = process.env,
+  options: LoadConfigOptions = {},
+): MarketplaceConfig {
   const productWorkspaceDir =
-    env.DOPPELGANGER_PRODUCT_WORKSPACE_DIR?.trim() || env.PRODUCT_WORKSPACE_DIR?.trim();
+    readCompatEnv(env, "PRODUCT_WORKSPACE_DIR", options.warn) ||
+    env.PRODUCT_WORKSPACE_DIR?.trim();
   const dataDir =
     env.MARKETPLACE_DATA_DIR?.trim() ||
     (productWorkspaceDir ? path.join(productWorkspaceDir, "data") : undefined) ||
-    path.join(os.homedir(), ".doppelganger", "programs", "marketplace", "data");
+    path.join(
+      resolveDefaultStateRoot({
+        homeDir: options.homeDir,
+        migrate: options.migrateLegacyStateDir === true,
+        warn: options.warn,
+      }).root,
+      "data",
+    );
+  const internalAuthToken =
+    env.MARKETPLACE_INTERNAL_AUTH_TOKEN?.trim() ||
+    readCompatEnv(env, "MARKETPLACE_INTERNAL_AUTH_TOKEN", options.warn);
   const dbPath =
     env.MARKETPLACE_DATABASE_PATH?.trim() ||
     path.join(dataDir, "marketplace.sqlite");
@@ -45,14 +71,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     secretsPath:
       env.MARKETPLACE_SECRETS_PATH?.trim() ||
       path.join(path.dirname(dbPath), "provider-secrets.json"),
-    ...(env.MARKETPLACE_INTERNAL_AUTH_TOKEN?.trim()
-      ? { internalAuthToken: env.MARKETPLACE_INTERNAL_AUTH_TOKEN.trim() }
-      : env.DOPPELGANGER_MARKETPLACE_INTERNAL_AUTH_TOKEN?.trim()
-        ? {
-            internalAuthToken:
-              env.DOPPELGANGER_MARKETPLACE_INTERNAL_AUTH_TOKEN.trim(),
-          }
-        : {}),
+    ...(internalAuthToken ? { internalAuthToken } : {}),
     ...(env.RULES_BASE_URL?.trim()
       ? {
           rules: {

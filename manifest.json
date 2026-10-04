@@ -26,7 +26,7 @@
     "path": "program",
     "workspace": "pnpm",
     "runtime": "node",
-    "servicePackage": "@doppelganger/marketplace-program",
+    "servicePackage": "@tealbrick/marketplace-program",
     "health": "/healthz",
     "status": "/api/status",
     "events": "/events",
@@ -64,6 +64,7 @@
       "MARKETPLACE_DATABASE_PATH",
       "MARKETPLACE_SETTINGS_PATH",
       "MARKETPLACE_SECRETS_PATH",
+      "TEALBRICK_DEBUG",
       "DOPPELGANGER_DEBUG",
       "MARKETPLACE_DEBUG",
       "MARKETPLACE_INTERNAL_AUTH_TOKEN",
@@ -83,6 +84,7 @@
       "ACTIVEPIECES_API_KEY",
       "COMPOSIO_API_KEY",
       "COMPOSIO_BASE_URL",
+      "TEALBRICK_MCP_CONFIG_PATH",
       "DOPPELGANGER_MCP_CONFIG_PATH"
     ],
     "settings": {
@@ -95,7 +97,8 @@
       "update": "/api/settings/providers/composio"
     },
     "debug": {
-      "enabledByEnv": "DOPPELGANGER_DEBUG=1",
+      "enabledByEnv": "TEALBRICK_DEBUG=1",
+      "legacyEnabledByEnv": "DOPPELGANGER_DEBUG=1",
       "events": "/api/debug/events",
       "logs": "/api/debug/logs",
       "traceHeader": "x-trace-id"
@@ -203,7 +206,7 @@
         "id": "mcp",
         "kind": "plugin-tool-transport",
         "mode": "configured-local-or-external",
-        "env": ["DOPPELGANGER_MCP_CONFIG_PATH"]
+        "env": ["TEALBRICK_MCP_CONFIG_PATH", "DOPPELGANGER_MCP_CONFIG_PATH"]
       }
     ]
   },

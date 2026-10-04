@@ -1,4 +1,4 @@
-# Doppelganger Web Brand Specification
+# Teal Brick Web Brand Specification
 
 Status: canonical miniapp web baseline
 Source: `dg/brand/README.md` and assembled desktop brand assets
@@ -6,7 +6,7 @@ Established: 2026-08-12
 
 ## Identity
 
-- Product: Doppelganger
+- Product: Teal Brick
 - Product mark: mirrored-D monogram only
 - Interface face: Switzer Variable
 - Editorial face: Cormorant Garamond
@@ -14,7 +14,7 @@ Established: 2026-08-12
 
 ## Assets
 
-- Mark: `assets/doppelganger-mark.svg`
+- Mark: `assets/tealbrick-mark.svg`
 - Interface font: `assets/fonts/Switzer-Variable.woff2`
 - Editorial font: `assets/fonts/CormorantGaramond.ttf`
 - Technical font: `assets/fonts/JetBrainsMono-Regular.woff2`

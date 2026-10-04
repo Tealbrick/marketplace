@@ -95,7 +95,7 @@ export default async function globalSetup(config: FullConfig) {
   assert.ok(portalAddress && typeof portalAddress === "object");
   const portalOrigin = `http://127.0.0.1:${portalAddress.port}`;
 
-  const dataDir = await mkdtemp(path.join(tmpdir(), "doppelganger-marketplace-handoff-e2e-"));
+  const dataDir = await mkdtemp(path.join(tmpdir(), "tealbrick-marketplace-handoff-e2e-"));
   const store = new SqliteMarketplaceStore(path.join(dataDir, "marketplace.sqlite"), { debug: false, logPath: path.join(dataDir, "logs", "marketplace-debug.jsonl") });
   const providerSettings = new MarketplaceProviderSettingsStore(path.join(dataDir, "provider-settings.json"), path.join(dataDir, "provider-secrets.json"), {});
   const listing: MarketplaceListing = store.getListing("github-composio") ?? {

@@ -6,7 +6,12 @@ import path from "node:path";
 
 const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..", "..");
 const marketplaceProgramDir = path.join(repoRoot, "extra", "microapps", "marketplace", "program");
+// TEALBRICK_APP_HOME; DOPPELGANGER_APP_HOME is a deprecated alias.
+if (!process.env.TEALBRICK_APP_HOME && process.env.DOPPELGANGER_APP_HOME) {
+  console.warn("[marketplace] DOPPELGANGER_APP_HOME is deprecated; set TEALBRICK_APP_HOME instead.");
+}
 const defaultAppHome =
+  process.env.TEALBRICK_APP_HOME ||
   process.env.DOPPELGANGER_APP_HOME ||
   process.env.T3CODE_HOME ||
   path.join(os.homedir(), ".t3");
@@ -19,7 +24,7 @@ function parseArgs(argv) {
   const options = {
     appHome: defaultAppHome,
     continueOnFailure: false,
-    evidenceDir: path.join(os.tmpdir(), `doppelganger-plugin-pov-${timestamp()}`),
+    evidenceDir: path.join(os.tmpdir(), `tealbrick-plugin-pov-${timestamp()}`),
     skipLiveAppHome: false,
     skipProgramTests: false,
   };
@@ -45,7 +50,7 @@ Runs the Product plugin operator POV proof ladder and writes command evidence.
 
 Options:
   --app-home <path>          Real App home for the live install rung. Default: ${defaultAppHome}
-  --evidence-dir <path>      Directory for logs and summary JSON. Default: /tmp/doppelganger-plugin-pov-*
+  --evidence-dir <path>      Directory for logs and summary JSON. Default: /tmp/tealbrick-plugin-pov-*
   --skip-live-app-home       Do not mutate/prove the real App-home marketplace install.
   --skip-program-tests       Skip Marketplace Program unit/typecheck rungs.
   --continue-on-failure      Keep running independent later rungs after a failure.
@@ -89,6 +94,8 @@ async function runStep(step, evidenceDir) {
       cwd: step.cwd,
       env: {
         ...process.env,
+        // Steps may run other Micro-apps that only read the legacy name.
+        TEALBRICK_DEBUG: "1",
         DOPPELGANGER_DEBUG: "1",
         ...step.env,
       },

@@ -17,7 +17,7 @@ const tempRoots: string[] = [];
 
 async function tempDbPath() {
   const root = await mkdtemp(
-    path.join(os.tmpdir(), "doppelganger-marketplace-"),
+    path.join(os.tmpdir(), "tealbrick-marketplace-"),
   );
   tempRoots.push(root);
   return path.join(root, "marketplace.sqlite");
@@ -25,7 +25,7 @@ async function tempDbPath() {
 
 async function tempRuntimePaths() {
   const root = await mkdtemp(
-    path.join(os.tmpdir(), "doppelganger-marketplace-runtime-"),
+    path.join(os.tmpdir(), "tealbrick-marketplace-runtime-"),
   );
   tempRoots.push(root);
   return {
@@ -2135,7 +2135,7 @@ describe("Marketplace Program", () => {
         capability: "connector.observe",
         action: {
           type: "github.repositories.list",
-          owner: "Doppelganger",
+          owner: "Tealbrick",
         },
         runId: "run-unsupported",
         sessionId: "session-test",
@@ -2219,7 +2219,7 @@ describe("Marketplace Program", () => {
         workspaceSlug: "atlas",
         actorId: "agent-smoke",
         pluginId: "github-native",
-        input: { owner: "Doppelganger" },
+        input: { owner: "Tealbrick" },
       },
     });
     expect(deniedResponse.statusCode).toBe(404);
@@ -2236,7 +2236,7 @@ describe("Marketplace Program", () => {
         workspaceSlug: "atlas",
         actorId: "agent-smoke",
         pluginId: "github-native",
-        input: { owner: "Doppelganger" },
+        input: { owner: "Tealbrick" },
       },
     });
     expect(allowedResponse.statusCode).toBe(404);

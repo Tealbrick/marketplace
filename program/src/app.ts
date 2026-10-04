@@ -123,6 +123,7 @@ import {
   type PortalRuntimeScopeVerifier,
 } from "./portal-runtime-scope.js";
 import { resolvePortalRuntimeConfiguration } from "./portal-config.js";
+import { acceptedIds, compatDebugEnabled, LEGACY_IDS } from "./legacy-ids.js";
 import {
   parseRulesReadinessPrincipal,
   RULES_INTROSPECTION_PATH,
@@ -480,13 +481,15 @@ const BrokerExecuteInputSchema = z.object({
   sessionId: z.string().trim().min(1).optional().nullable(),
 });
 
+// Emitted (and stored/forwarded) id stays the legacy one during the
+// Tealbrick transition; requests may use either spelling. See legacy-ids.ts.
 const CROSS_APP_MARKETPLACE_BROKER_EXECUTE_CONTRACT_VERSION =
-  "doppelganger.cross-app.marketplace.broker-execute.v1" as const;
+  LEGACY_IDS["tealbrick.cross-app.marketplace.broker-execute.v1"];
 
 const CrossAppBrokerExecuteInputSchema = z.object({
-  contractVersion: z.literal(
-    CROSS_APP_MARKETPLACE_BROKER_EXECUTE_CONTRACT_VERSION,
-  ),
+  contractVersion: z
+    .enum(acceptedIds("tealbrick.cross-app.marketplace.broker-execute.v1"))
+    .transform(() => CROSS_APP_MARKETPLACE_BROKER_EXECUTE_CONTRACT_VERSION),
   sourceMiniappId: z.string().trim().min(1),
   requesterMiniappId: z.string().trim().min(1).optional(),
   sourceId: z.string().trim().min(1),
@@ -3036,7 +3039,7 @@ export async function buildMarketplaceApp(
       path: options.store.describeRuntime().databasePath,
     },
     debug: {
-      enabled: options.debug ?? process.env.DOPPELGANGER_DEBUG === "1",
+      enabled: options.debug ?? compatDebugEnabled(),
       logPath: options.logPath ?? options.store.describeRuntime().logPath,
     },
     providers: await readProviderHealthWithReachability(
@@ -6917,7 +6920,7 @@ export async function buildMarketplaceApp(
     const query = AuditQuerySchema.parse(request.query);
     return {
       debug: {
-        enabled: options.debug ?? process.env.DOPPELGANGER_DEBUG === "1",
+        enabled: options.debug ?? compatDebugEnabled(),
         logPath: options.logPath ?? options.store.describeRuntime().logPath,
       },
       storage: options.store.describeRuntime(),

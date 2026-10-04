@@ -9,7 +9,7 @@
 
 /*
  * Fleet-level geometry. Product views keep their own information architecture;
- * this layer only aligns the frame that makes each view recognisably Doppelganger.
+ * this layer only aligns the frame that makes each view recognisably Teal Brick.
  */
 @media (min-width: 841px) {
   .app-shell:has(> .navigation-rail),

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Activity, LoaderCircle } from "lucide-react";
-import { Tag } from "@doppelganger/ui";
+import { Tag } from "@tealbrick/ui";
 
 import { getAudit } from "./api";
 import { formatWhen, StatePanel, words } from "./ui";

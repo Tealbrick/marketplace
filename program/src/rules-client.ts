@@ -1,4 +1,5 @@
 import type { MarketplaceConfig } from "./config.js";
+import { isAcceptedId, LEGACY_IDS } from "./legacy-ids.js";
 import type { RulesClient, RulesDecision } from "./types.js";
 
 const OPERATOR_CONFIRMED_CONNECTOR_OPERATIONS = new Set([
@@ -29,7 +30,7 @@ const AGENT_ENABLED_CONNECTOR_CAPABILITIES = new Set([
 function roleForActor(actorId: string): "agent" | "operator" {
   const normalized = actorId.trim().toLowerCase();
   return normalized === "agent" ||
-    normalized === "doppelganger-agent" ||
+    isAcceptedId("tealbrick-agent", normalized) ||
     normalized.startsWith("agent-") ||
     normalized.startsWith("agent:")
     ? "agent"
@@ -58,7 +59,7 @@ function isAgentGrantPolicyPath(input: {
   return (
     input.operation === "execute" &&
     (typeof input.payload.agentGrantId === "string" ||
-      contractVersion === "doppelganger.marketplace.agent-connector-grant.v1" ||
+      isAcceptedId("tealbrick.marketplace.agent-connector-grant.v1", contractVersion) ||
       (typeof contractVersion === "string" &&
         contractVersion.startsWith("tealbrick.marketplace.operator-handoff.v1.")))
   );
@@ -87,7 +88,9 @@ export function makeRulesClient(
             : {}),
         },
         body: JSON.stringify({
-          method: "doppelganger.rules.evaluate",
+          // Rules only dispatches the legacy method today; flip once it
+          // accepts "tealbrick.rules.evaluate" (see legacy-ids.ts).
+          method: LEGACY_IDS["tealbrick.rules.evaluate"],
           params: {
             companyId,
             ruleKey: "marketplace.plugin",

@@ -3,11 +3,12 @@ import path from "node:path";
 
 import { buildMarketplaceApp } from "./app.js";
 import { loadConfig } from "./config.js";
+import { readCompatEnv } from "./legacy-ids.js";
 import { makeRulesClient } from "./rules-client.js";
 import { MarketplaceProviderSettingsStore } from "./provider-settings.js";
 import { SqliteMarketplaceStore } from "./store.js";
 
-const config = loadConfig();
+const config = loadConfig(process.env, { migrateLegacyStateDir: true });
 const store = new SqliteMarketplaceStore(config.dbPath, {
   handoffEncryptionKey: config.handoffEncryptionKey,
 });
@@ -31,7 +32,7 @@ const readyPayload = {
   sidecarId: "marketplace-program",
 };
 
-const runtimeFilePath = process.env.DOPPELGANGER_RUNTIME_FILE?.trim();
+const runtimeFilePath = readCompatEnv(process.env, "RUNTIME_FILE");
 
 if (runtimeFilePath) {
   await mkdir(path.dirname(runtimeFilePath), { recursive: true });

@@ -1,3 +1,4 @@
+import { manifestNamespace } from "./legacy-ids.js";
 import type { SqliteMarketplaceStore } from "./store.js";
 import type {
   ConnectorCapability,
@@ -80,12 +81,13 @@ function skillsHubMetadata(listing: MarketplaceListing): JsonRecord {
 export function listingIsRequired(listing: MarketplaceListing): boolean {
   const hub = skillsHubMetadata(listing);
   const directSystem = recordValue(listing.manifest.system);
-  const doppelganger = recordValue(listing.manifest.doppelganger);
-  const doppelgangerSystem = recordValue(doppelganger?.system);
+  const namespacedSystem = recordValue(
+    manifestNamespace(recordValue(listing.manifest))?.system,
+  );
   return (
     hub.required === true ||
     directSystem?.required === true ||
-    doppelgangerSystem?.required === true
+    namespacedSystem?.required === true
   );
 }
 

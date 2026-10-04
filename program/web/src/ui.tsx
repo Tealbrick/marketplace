@@ -1,5 +1,5 @@
 import { AlertTriangle, RefreshCw } from "lucide-react";
-import { Button } from "@doppelganger/ui";
+import { Button } from "@tealbrick/ui";
 
 import { errorCopy } from "./copy";
 import type { BrowserProviderHealth } from "./types";

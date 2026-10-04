@@ -1,6 +1,6 @@
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from "react";
 
-import markUrl from "../assets/doppelganger-mark.svg";
+import markUrl from "../assets/tealbrick-mark.svg";
 
 export type ButtonTone = "default" | "primary" | "danger" | "ghost";
 
