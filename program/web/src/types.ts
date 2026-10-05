@@ -328,10 +328,14 @@ export interface ProviderSettings {
 
 export type RulesConnectionStatus = "connected" | "not-connected" | "unavailable";
 
+/** "owner" when no Rules service is configured: the owner approves changes. */
+export type GovernanceMode = "rules" | "owner";
+
 export type RuntimeHealth = {
   ok: boolean;
   program: "ok";
   rules: RulesConnectionStatus;
+  governance?: GovernanceMode;
   checkedAt: string;
 };
 

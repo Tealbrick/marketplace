@@ -113,7 +113,7 @@ function ConnectDialog({ card, workspaceSlug, open, onOpenChange, onConnected }:
           {mutation.error && <InlineError error={mutation.error} />}
           {popupBlocked && <p className="inline-error"><AlertTriangle size={14} />The authorization window was blocked. Allow popups for Marketplace, then retry the connection.</p>}
         </div>
-        <footer className="modal-footer"><span>Your organization's approval rules are checked before the connection is saved.</span><div className="dialog-actions"><Dialog.Close asChild><Button>Cancel</Button></Dialog.Close><Button tone="primary" disabled={mutation.isPending} onClick={startConnection}>{mutation.isPending ? <LoaderCircle className="spin" size={15} /> : <ExternalLink size={15} />}Start connection</Button></div></footer>
+        <footer className="modal-footer"><span>Approval is checked before the connection is saved.</span><div className="dialog-actions"><Dialog.Close asChild><Button>Cancel</Button></Dialog.Close><Button tone="primary" disabled={mutation.isPending} onClick={startConnection}>{mutation.isPending ? <LoaderCircle className="spin" size={15} /> : <ExternalLink size={15} />}Start connection</Button></div></footer>
       </Dialog.Content></Dialog.Portal>
     </Dialog.Root>
   );
@@ -143,7 +143,7 @@ function ExecuteDialog({ card, workspaceSlug, open, onOpenChange }: { card: Plug
         {mutation.error && <InlineError error={mutation.error} />}
         {mutation.data && <pre className="result-view">{JSON.stringify(mutation.data, null, 2)}</pre>}
       </div>
-      <footer className="modal-footer"><span>Marketplace checks the install, connection, and approval rules before running it.</span><div className="dialog-actions"><Dialog.Close asChild><Button>Close</Button></Dialog.Close><Button tone="primary" disabled={!selected || !reviewed || mutation.isPending} onClick={() => mutation.mutate()}>{mutation.isPending ? <LoaderCircle className="spin" size={15} /> : <TerminalSquare size={15} />}Execute action</Button></div></footer>
+      <footer className="modal-footer"><span>Marketplace checks the install, connection, and approval before running it.</span><div className="dialog-actions"><Dialog.Close asChild><Button>Close</Button></Dialog.Close><Button tone="primary" disabled={!selected || !reviewed || mutation.isPending} onClick={() => mutation.mutate()}>{mutation.isPending ? <LoaderCircle className="spin" size={15} /> : <TerminalSquare size={15} />}Execute action</Button></div></footer>
     </Dialog.Content></Dialog.Portal></Dialog.Root>
   );
 }
@@ -165,7 +165,7 @@ export function PluginWorkspace({ card, loading, workspaceSlug, onConfirm, onRef
   const required = Boolean((card.listing.manifest as { required?: boolean }).required);
   const confirmLifecycle = (action: "install" | "uninstall" | "register" | "unregister") => {
     const run = action === "install" ? () => installPlugin(pluginId, workspaceSlug) : action === "uninstall" ? () => uninstallPlugin(pluginId, workspaceSlug) : action === "register" ? () => registerPlugin(pluginId, workspaceSlug) : () => unregisterPlugin(pluginId, workspaceSlug);
-    onConfirm({ title: `${words(action)} ${card.addon.displayName}?`, detail: action === "install" ? "Your organization's approval rules are checked first, then this is installed for your workspace." : action === "uninstall" ? "This removes it from your workspace and agents can no longer use it. Accounts in the connected service are not deleted." : action === "register" ? "This makes the connector available to agents once it's installed and approved." : "Agents will no longer be able to use this connector.", label: words(action), danger: action === "uninstall" || action === "unregister", run });
+    onConfirm({ title: `${words(action)} ${card.addon.displayName}?`, detail: action === "install" ? "Approval is checked first, then this is installed for your workspace." : action === "uninstall" ? "This removes it from your workspace and agents can no longer use it. Accounts in the connected service are not deleted." : action === "register" ? "This makes the connector available to agents once it's installed and approved." : "Agents will no longer be able to use this connector.", label: words(action), danger: action === "uninstall" || action === "unregister", run });
   };
   return (
     <article className="plugin-workspace">

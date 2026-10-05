@@ -79,6 +79,12 @@ import {
   type CapabilitiesHostProjection,
 } from "./extension-settings-projection.js";
 import { registerMarketplaceFrontend } from "./frontend.js";
+import {
+  governanceModeFor,
+  ownerGovernedDecision,
+  type GovernanceActor,
+  type GovernanceMode,
+} from "./governance.js";
 import { MARKETPLACE_VERSION } from "./version.js";
 import {
   MarketplaceAuthenticationError,
@@ -615,9 +621,14 @@ type RulesGateInput = {
   operation: string;
   capability: ConnectorCapability;
   pluginId: string;
+  /** Sent to Rules unchanged; never used for owner-mode decisions. */
   actorId: string;
   payload: Record<string, unknown>;
+  /** Authenticated actor resolved from the request principal or Portal attestation. */
+  actor: GovernanceActor | null;
+  governance: GovernanceMode;
   rulesClient?: RulesClient;
+  store: SqliteMarketplaceStore;
 };
 
 function configuredAllowedOrigins(
@@ -677,6 +688,50 @@ function corsHeadersForOrigin(
 }
 
 async function enforceRules(input: RulesGateInput) {
+  if (input.governance === "owner") {
+    const owner = ownerGovernedDecision({
+      operation: input.operation,
+      capability: input.capability,
+      pluginId: input.pluginId,
+      actor: input.actor,
+    });
+    // Audit the decision basis only: never the action payload or secrets.
+    input.store.recordAudit({
+      workspaceSlug: input.workspaceSlug,
+      pluginId: input.pluginId,
+      eventType:
+        owner.effect === "allow"
+          ? "marketplace.governance.owner_approved"
+          : "marketplace.governance.owner_denied",
+      actorId: input.actor?.id ?? null,
+      rulesDecisionId: owner.effect === "allow" ? owner.decisionId : null,
+      metadata: {
+        governance: "owner",
+        operation: input.operation,
+        capability: input.capability,
+        actorKind: input.actor?.kind ?? null,
+        ...(input.actor?.kind === "agent"
+          ? { attestation: input.actor.attestation }
+          : {}),
+        ...(owner.effect === "allow" ? { basis: owner.basis } : {}),
+      },
+    });
+    if (owner.effect === "allow") {
+      return {
+        effect: "allow" as const,
+        decisionId: owner.decisionId,
+        reason: owner.reason,
+      };
+    }
+    input.reply.code(403);
+    return {
+      ok: false,
+      error: owner.error,
+      governance: "owner" as const,
+      governedCapability: input.capability,
+      detail: owner.reason,
+    };
+  }
   if (!input.rulesClient) {
     input.reply.code(503);
     return {
@@ -2217,6 +2272,23 @@ export async function buildMarketplaceApp(
     );
   }
   const requestPrincipals = new WeakMap<FastifyRequest, MarketplacePrincipal>();
+  const governanceMode = governanceModeFor({
+    rulesClient: options.rulesClient,
+    rulesConfigured: Boolean(rulesConfiguration),
+  });
+  const governed = {
+    governance: governanceMode,
+    rulesClient: options.rulesClient,
+    store: options.store,
+  };
+  /** Governance actor from the authenticated request principal only. */
+  const principalActor = (request: FastifyRequest): GovernanceActor | null => {
+    const principal = requestPrincipals.get(request);
+    if (principal?.kind === "operator" || principal?.kind === "service") {
+      return { kind: principal.kind, id: principal.id };
+    }
+    return null;
+  };
   const servicePrincipal: MarketplacePrincipal = {
     kind: "service",
     id: "marketplace-service",
@@ -3001,6 +3073,7 @@ export async function buildMarketplaceApp(
     program: "ok" as const,
     version: MARKETPLACE_VERSION,
     rules: await probeRulesConnection(),
+    governance: governanceMode,
     checkedAt: new Date().toISOString(),
   }));
 
@@ -3317,7 +3390,8 @@ export async function buildMarketplaceApp(
         headerNames: Object.keys(headers),
         secretHeaderNames: [...secretHeaders.keys()],
       },
-      rulesClient: options.rulesClient,
+      actor: principalActor(request),
+        ...governed,
     });
     if (!("effect" in rules)) return rules;
     const manifest: CustomMcpManifest = {
@@ -3422,7 +3496,8 @@ export async function buildMarketplaceApp(
           change: value === null ? "remove" : "set",
         })),
       },
-      rulesClient: options.rulesClient,
+      actor: principalActor(request),
+        ...governed,
     });
     if (!("effect" in rules)) return rules;
     const listing = customMcpListing({
@@ -3499,7 +3574,8 @@ export async function buildMarketplaceApp(
       pluginId,
       actorId: principal.id,
       payload: {},
-      rulesClient: options.rulesClient,
+      actor: principalActor(request),
+        ...governed,
     });
     if (!("effect" in rules)) return rules;
     const secretHeaders = secretAuditView(workspaceSlug, pluginId);
@@ -3541,7 +3617,8 @@ export async function buildMarketplaceApp(
       pluginId,
       actorId: principal.id,
       payload: { transport: customMcpManifest(current).transport },
-      rulesClient: options.rulesClient,
+      actor: principalActor(request),
+        ...governed,
     });
     if (!("effect" in rules)) return rules;
     let connection: ReturnType<typeof customMcpConnection>;
@@ -3742,7 +3819,8 @@ export async function buildMarketplaceApp(
       pluginId: input.pluginId,
       actorId: input.actorId,
       payload: { transport: input.transport },
-      rulesClient: options.rulesClient,
+      actor: principalActor(request),
+        ...governed,
     });
     if (!("effect" in rules)) return rules;
     const listing = mcpListingFromInput(input);
@@ -3827,7 +3905,8 @@ export async function buildMarketplaceApp(
         pluginId,
         actorId: "operator",
         payload: { transport: merged.transport },
-        rulesClient: options.rulesClient,
+        actor: principalActor(request),
+        ...governed,
       });
       if (!("effect" in rules)) return rules;
       const listing = mcpListingFromInput(merged, current);
@@ -3912,7 +3991,8 @@ export async function buildMarketplaceApp(
         pluginId,
         actorId: "operator",
         payload: {},
-        rulesClient: options.rulesClient,
+        actor: principalActor(request),
+        ...governed,
       });
       if (!("effect" in rules)) return rules;
       options.store.revokeBrokerGrantsForPlugin({
@@ -3966,7 +4046,8 @@ export async function buildMarketplaceApp(
         pluginId,
         actorId: input.actorId,
         payload: { action: input.action },
-        rulesClient: options.rulesClient,
+        actor: principalActor(request),
+        ...governed,
       });
       if (!("effect" in rules)) return rules;
 
@@ -4295,7 +4376,8 @@ export async function buildMarketplaceApp(
         pluginId,
         actorId: input.actorId,
         payload: { ...(request.body as Record<string, unknown>), traceId },
-        rulesClient: options.rulesClient,
+        actor: principalActor(request),
+        ...governed,
       });
       if ("ok" in rules && rules.ok === false) {
         return rules;
@@ -4348,7 +4430,8 @@ export async function buildMarketplaceApp(
         pluginId,
         actorId: input.actorId,
         payload: { ...(request.body as Record<string, unknown>), traceId },
-        rulesClient: options.rulesClient,
+        actor: principalActor(request),
+        ...governed,
       });
       if ("ok" in rules && rules.ok === false) {
         return { ...rules, traceId };
@@ -4389,7 +4472,8 @@ export async function buildMarketplaceApp(
         pluginId,
         actorId: input.actorId,
         payload: { ...(request.body as Record<string, unknown>), traceId },
-        rulesClient: options.rulesClient,
+        actor: principalActor(request),
+        ...governed,
       });
       if ("ok" in rules && rules.ok === false) {
         return { ...rules, traceId };
@@ -4435,7 +4519,8 @@ export async function buildMarketplaceApp(
         pluginId,
         actorId: input.actorId,
         payload: { ...(request.body as Record<string, unknown>), traceId },
-        rulesClient: options.rulesClient,
+        actor: principalActor(request),
+        ...governed,
       });
       if ("ok" in rules && rules.ok === false) {
         return { ...rules, traceId };
@@ -4484,7 +4569,8 @@ export async function buildMarketplaceApp(
         pluginId,
         actorId: input.actorId,
         payload: { ...(request.body as Record<string, unknown>), traceId },
-        rulesClient: options.rulesClient,
+        actor: principalActor(request),
+        ...governed,
       });
       if ("ok" in rules && rules.ok === false) {
         return { ...rules, traceId };
@@ -4793,7 +4879,8 @@ export async function buildMarketplaceApp(
         pluginId,
         actorId: input.actorId,
         payload: { ...(request.body as Record<string, unknown>), traceId },
-        rulesClient: options.rulesClient,
+        actor: principalActor(request),
+        ...governed,
       });
       if ("ok" in rules && rules.ok === false) {
         return { ...rules, traceId };
@@ -4843,7 +4930,8 @@ export async function buildMarketplaceApp(
         pluginId,
         actorId: input.actorId,
         payload: { ...(request.body as Record<string, unknown>), traceId },
-        rulesClient: options.rulesClient,
+        actor: principalActor(request),
+        ...governed,
       });
       if ("ok" in rules && rules.ok === false) {
         return { ...rules, traceId };
@@ -5132,7 +5220,8 @@ export async function buildMarketplaceApp(
           selection: consent.selection,
           traceId,
         },
-        rulesClient: options.rulesClient,
+        actor: { kind: "agent", id: `agent:${consent.agentId}`, attestation: "portal-consent" },
+        ...governed,
       });
       if ("ok" in rules && rules.ok === false) {
         return { ...rules, traceId };
@@ -5327,7 +5416,8 @@ export async function buildMarketplaceApp(
           resourceRef: input.resourceRef,
           traceId,
         },
-        rulesClient: options.rulesClient,
+        actor: { kind: "agent", id: `agent:${portal.scope.agentId}`, attestation: "portal-scope" },
+        ...governed,
       });
       if ("ok" in rules && rules.ok === false) {
         return { ...rules, traceId };
@@ -5600,7 +5690,10 @@ export async function buildMarketplaceApp(
             : {}),
           traceId,
         },
-        rulesClient: options.rulesClient,
+        actor: scopedGrant
+          ? { kind: "agent", id: effectiveActorId, attestation: "agent-grant" }
+          : principalActor(request),
+        ...governed,
       });
       if ("ok" in rules && rules.ok === false) {
         options.store.recordEvent({
@@ -5947,7 +6040,8 @@ export async function buildMarketplaceApp(
           selection: input.selection,
           traceId,
         },
-        rulesClient: options.rulesClient,
+        actor: { kind: "agent", id: `agent:${consent.agentId}`, attestation: "runtime-lease" },
+        ...governed,
       });
       if ("ok" in rules && rules.ok === false) {
         options.store.recordEvent({
@@ -6582,7 +6676,8 @@ export async function buildMarketplaceApp(
           : {}),
         traceId,
       },
-      rulesClient: options.rulesClient,
+      actor: principalActor(request),
+        ...governed,
     });
     if ("ok" in rules && rules.ok === false) {
       return { ...rules, traceId };
@@ -7024,7 +7119,8 @@ export async function buildMarketplaceApp(
         pluginId: "activepieces-pack-generator",
         actorId: String(payload.actorId ?? "operator"),
         payload,
-        rulesClient: options.rulesClient,
+        actor: principalActor(request),
+        ...governed,
       });
       if ("ok" in rules && rules.ok === false) {
         return rules;
@@ -7134,7 +7230,8 @@ export async function buildMarketplaceApp(
         pluginId: "composio-bootstrap",
         actorId: input.actorId,
         payload: { ...(request.body as Record<string, unknown>), traceId },
-        rulesClient: options.rulesClient,
+        actor: principalActor(request),
+        ...governed,
       });
       if ("ok" in rules && rules.ok === false) {
         return { ...rules, traceId };

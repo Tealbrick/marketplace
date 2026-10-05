@@ -19,8 +19,21 @@ private repository history.
   service-bearer routes, and typed cross-app broker routes.
 - React operator UI for catalog, connections, settings, audit, and Agent grant
   review. Browser code never receives service or provider credentials.
-- Rules-gated connector administration and execution. Marketplace fails closed
-  when Rules is unavailable, denies a request, or returns an invalid response.
+- Governed connector administration and execution in one of two modes:
+  - **Rules mode** (`RULES_BASE_URL` set): every governed action is evaluated by
+    the Rules service. Marketplace fails closed when a configured Rules service
+    is unreachable, denies a request, or returns an invalid response.
+  - **Owner approval mode** (no `RULES_*` configured): Rules is optional. The
+    authenticated operator session approves its own installs, connections,
+    bindings, custom MCP changes, and actions; agents act only through consent
+    attested by Teal Brick Portal (verified agent grant, Portal-scoped grant
+    creation, redeemed Portal consent, or runtime consent + lease). The
+    internal service bearer may administer connectors (Hub lifecycle) but
+    cannot execute without Portal consent
+    (`owner_approval_requires_portal_consent`). Every owner decision is audited
+    as `marketplace.governance.owner_approved|owner_denied`. Owner mode is
+    chosen from configuration only, never from a Rules outage.
+    `GET /api/marketplace/health` reports `governance: "rules" | "owner"`.
 - Portal v1.1 operator-consent handoff for bounded Agent connector grants.
   Portal owns human approval; Marketplace stores the attested projection and
   reconciles exact retries idempotently.

@@ -399,7 +399,34 @@ describe("custom MCP connector routes", () => {
     expect(server.requests.filter((request) => request.rpcMethod === "tools/call")).toHaveLength(before);
   });
 
-  it("returns rules_unavailable without a Rules client and fails closed on secrets without a key", async () => {
+  it("lets the operator create and delete custom MCP connectors in owner approval mode", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "marketplace-custom-mcp-owner-"));
+    roots.push(root);
+    const store = new SqliteMarketplaceStore(path.join(root, "marketplace.sqlite"));
+    const sessions = new MarketplaceOperatorSessionManager({ accessToken: "marketplace-operator-token-1234" });
+    const app = await buildMarketplaceApp({
+      store,
+      operatorSessionManager: sessions,
+      providerSettings: new MarketplaceProviderSettingsStore(path.join(root, "ps.json"), path.join(root, "pss.json"), {}),
+      env: {},
+      environment: { NODE_ENV: "test" },
+    });
+    closers.push(async () => { await app.close(); store.close(); });
+    const { token, status } = sessions.issuePortalSession({ id: "op", organizationId: "ws-a" });
+    const headers = { cookie: `${MARKETPLACE_OPERATOR_SESSION_COOKIE}=${token}`, origin: ORIGIN, "x-csrf-token": status.csrfToken! };
+    const created = await app.inject({ method: "POST", url: "/api/marketplace/connectors/custom", headers, payload: { displayName: "X", url: "https://mcp.example.com/mcp" } });
+    expect(created.statusCode).toBe(201);
+    const pluginId = created.json<{ connector: { pluginId: string } }>().connector.pluginId;
+    const deleted = await app.inject({ method: "DELETE", url: `/api/marketplace/connectors/custom/${pluginId}`, headers });
+    expect(deleted.statusCode).toBe(200);
+    const decisions = (store.listAudit({ workspaceSlug: "ws-a" }) as Array<{ event_type: string; rules_decision_id: string | null }>)
+      .filter((row) => row.event_type === "marketplace.governance.owner_approved")
+      .map((row) => row.rules_decision_id)
+      .sort();
+    expect(decisions).toEqual([`owner-governed:custom-mcp.create:${pluginId}`, `owner-governed:custom-mcp.delete:${pluginId}`]);
+  });
+
+  it("returns rules_unavailable when Rules is configured without a client and fails closed on secrets without a key", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "marketplace-custom-mcp-norules-"));
     roots.push(root);
     const store = new SqliteMarketplaceStore(path.join(root, "marketplace.sqlite"));
@@ -410,6 +437,7 @@ describe("custom MCP connector routes", () => {
       providerSettings: new MarketplaceProviderSettingsStore(path.join(root, "ps.json"), path.join(root, "pss.json"), {}),
       env: {},
       environment: { NODE_ENV: "test" },
+      rules: { baseUrl: "http://127.0.0.1:9", internalAuthToken: "rules-token" },
     });
     closers.push(async () => { await app.close(); store.close(); });
     const { token, status } = sessions.issuePortalSession({ id: "op", organizationId: "ws-a" });

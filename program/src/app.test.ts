@@ -207,6 +207,11 @@ describe("Marketplace Program", () => {
     const app = await buildMarketplaceApp({
       store,
       env: { COMPOSIO_API_KEY: "test-composio-key" },
+      // Configured Rules that is down: the client fails closed.
+      rulesClient: async () => ({
+        effect: "deny",
+        reason: "Rules request failed closed: connect ECONNREFUSED",
+      }),
       providerFetch: async () => {
         providerCalls += 1;
         return new Response(JSON.stringify({ items: [] }), { status: 200 });
@@ -225,8 +230,8 @@ describe("Marketplace Program", () => {
       },
     });
 
-    expect(denied.statusCode).toBe(503);
-    expect(denied.json()).toMatchObject({ error: "rules_unavailable" });
+    expect(denied.statusCode).toBe(403);
+    expect(denied.json()).toMatchObject({ error: "rules_denied" });
     expect(providerCalls).toBe(0);
     expect(store.getInstall("default", "composio-gmail")).toBeNull();
     expect(store.getListing("composio-gmail")?.actions).toEqual([]);
@@ -702,9 +707,12 @@ describe("Marketplace Program", () => {
     store.close();
   });
 
-  it("fails closed for governed actions when Rules is unavailable", async () => {
+  it("fails closed for governed actions when Rules is configured but has no client", async () => {
     const store = new SqliteMarketplaceStore(await tempDbPath());
-    const app = await buildMarketplaceApp({ store });
+    const app = await buildMarketplaceApp({
+      store,
+      rules: { baseUrl: "http://127.0.0.1:9", internalAuthToken: "rules-token" },
+    });
 
     const response = await app.inject({
       method: "POST",
@@ -726,10 +734,13 @@ describe("Marketplace Program", () => {
     store.close();
   });
 
-  it("fails closed for governed lifecycle and exposure mutations when Rules is unavailable", async () => {
+  it("fails closed for governed lifecycle and exposure mutations when Rules is configured but has no client", async () => {
     const store = new SqliteMarketplaceStore(await tempDbPath());
     store.install("atlas", "github-native");
-    const app = await buildMarketplaceApp({ store });
+    const app = await buildMarketplaceApp({
+      store,
+      rules: { baseUrl: "http://127.0.0.1:9", internalAuthToken: "rules-token" },
+    });
 
     const bindCapabilityResponse = await app.inject({
       method: "POST",
