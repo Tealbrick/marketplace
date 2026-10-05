@@ -1,17 +1,15 @@
 Marketplace public release notices
 
-Original Marketplace source and the Teal Brick UI source (`.sdk/tealbrick-ui`)
-are Copyright (c) 2026 Tealbrick and are licensed under the MIT License in
-LICENSE. The Teal Brick mark and app icons (`.sdk/tealbrick-ui/assets/`
-`tealbrick-mark.*`, `tealbrick-tile.svg` and `icons/`) are Tealbrick brand
-artwork.
+Original Marketplace source is Copyright (c) 2026 Tealbrick and is licensed
+under the MIT License in LICENSE.
 
-Bundled font assets are third-party assets and retain their upstream terms:
+The web UI depends on the `@tealbrick/ui` npm package (MIT), which supplies the
+Teal Brick mark and app icons (Tealbrick brand artwork) and these bundled font
+assets, which retain their upstream terms:
 
-* Geist and Geist Mono (`.sdk/tealbrick-ui/assets/fonts/Geist-Variable.woff2`,
-  `GeistMono-Variable.woff2`) are Copyright (c) 2023 Vercel, in collaboration with basement.studio, and
-  are distributed under the SIL Open Font License 1.1
-  (`.sdk/tealbrick-ui/assets/fonts/licenses/Geist-OFL.txt`).
+* Geist and Geist Mono are Copyright (c) 2023 Vercel, in collaboration with
+  basement.studio, and are distributed under the SIL Open Font License 1.1
+  (`assets/fonts/licenses/Geist-OFL.txt` in the package).
   Source: https://github.com/vercel/geist-font
 
 The font files are bundled unmodified as web assets. The upstream licenses and

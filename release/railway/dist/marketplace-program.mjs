@@ -52068,7 +52068,7 @@ async function assertMcpUrlAllowed(value, options = {}) {
 // package.json
 var package_default = {
   name: "@tealbrick/marketplace-program",
-  version: "0.1.10",
+  version: "0.1.11",
   private: true,
   type: "module",
   packageManager: "pnpm@9.15.4",
@@ -52096,7 +52096,7 @@ var package_default = {
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-tabs": "^1.1.13",
     "@tanstack/react-query": "^5.90.20",
-    "@tealbrick/ui": "file:../.sdk/tealbrick-ui",
+    "@tealbrick/ui": "0.2.2",
     fastify: "^5.6.1",
     "lucide-react": "^0.468.0",
     react: "^19.2.3",

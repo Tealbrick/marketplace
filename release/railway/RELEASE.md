@@ -1,11 +1,11 @@
-# Marketplace standalone 0.1.10 image
+# Marketplace standalone 0.1.11 image
 
-This bundle is the public Marketplace 0.1.10 release line and supersedes
-0.1.9 with the tealbrick.com site language (@tealbrick/ui 0.2.2).
+This bundle is the public Marketplace 0.1.11 release line and supersedes
+0.1.10 with the published @tealbrick/ui 0.2.2 package and the phone header fix.
 
-Source snapshot: `5d31fa5f2fca2ec8f05878ffd399e74d078dc99e`
-Source archive SHA256: `5eece3b46df484c1789746d76514cac1df8746e9252fef111225a39ad1198dfa`
-Image: `ghcr.io/tealbrick/marketplace:0.1.10`
+Source snapshot: `557224cd87aa970183d2449bda31f0e99dece2f4`
+Source archive SHA256: `e811b4081d42d7a81e2c7e9c623b2909ed5ba87d8b52f1fe9455f7f88f2f62ca`
+Image: `ghcr.io/tealbrick/marketplace:0.1.11`
 
 ## Runtime contract
 
@@ -23,13 +23,28 @@ Image: `ghcr.io/tealbrick/marketplace:0.1.10`
   into the image or returned to browser code.
 
 The source-backed Railway path uses the fixed public release branch
-`release-marketplace-v0.1.10` (slash-free so the Railway template editor
+`release-marketplace-v0.1.11` (slash-free so the Railway template editor
 accepts it); its exact tag target, branch ruleset, and image
 digest are recorded in the successor receipt. Set the service root directory
 to `release/railway`, keep the Dockerfile entrypoint, and use the relay
 contract in `deploy/railway/recipe.json` and `deploy/railway/railway-blueprint.json`.
 GHCR is optional for the source-build path; no template ID or publication is
 implied by these files.
+
+## v0.1.11 published UI package disposition
+
+This successor merges Tealbrick/marketplace#10 (the Program depends on the
+published `@tealbrick/ui` 0.2.2 from npm instead of the vendored
+`.sdk/tealbrick-ui` copy; the build-input manifest now covers the remaining
+`.sdk` sources and the lockfile pins the registry integrity) and
+Tealbrick/marketplace#11 (the phone-width header Refresh control renders its
+label instead of an empty box, with a Playwright assertion). Presentation and
+build provenance only: no schema, configuration, route or contract change;
+rollback to 0.1.10 is data-compatible.
+
+Local verification at the source snapshot: Program and web unit tests,
+Playwright e2e, handoff e2e, TypeScript typecheck, production miniapp build,
+and bundled Program syntax check.
 
 ## v0.1.10 tealbrick.com site language disposition
 

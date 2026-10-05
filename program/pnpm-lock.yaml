@@ -21,8 +21,8 @@ importers:
         specifier: ^5.90.20
         version: 5.101.4(react@19.2.8)
       '@tealbrick/ui':
-        specifier: file:../.sdk/tealbrick-ui
-        version: file:../.sdk/tealbrick-ui(react@19.2.8)
+        specifier: 0.2.2
+        version: 0.2.2(react@19.2.8)
       fastify:
         specifier: ^5.6.1
         version: 5.8.5
@@ -963,8 +963,8 @@ packages:
     peerDependencies:
       react: ^18 || ^19
 
-  '@tealbrick/ui@file:../.sdk/tealbrick-ui':
-    resolution: {directory: ../.sdk/tealbrick-ui, type: directory}
+  '@tealbrick/ui@0.2.2':
+    resolution: {integrity: sha512-wb8x1OdpDL/EJfaE/gHs2WXNijtrdzOkxtjaqGxsD7NjPdntFeAWe67/2nkJSYGXEr+xpuilEgarlHAP/1uxNw==}
     peerDependencies:
       react: '>=19'
 
@@ -2554,7 +2554,7 @@ snapshots:
       '@tanstack/query-core': 5.101.4
       react: 19.2.8
 
-  '@tealbrick/ui@file:../.sdk/tealbrick-ui(react@19.2.8)':
+  '@tealbrick/ui@0.2.2(react@19.2.8)':
     dependencies:
       react: 19.2.8
 
