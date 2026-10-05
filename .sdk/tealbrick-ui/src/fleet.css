@@ -128,8 +128,8 @@
 .rail-button.is-active,
 .rail-nav button.active {
   border-color: transparent;
-  background: var(--dg-burgundy-wash);
-  color: var(--dg-burgundy);
+  background: var(--dg-primary-wash);
+  color: var(--dg-primary);
   box-shadow: none;
 }
 
@@ -146,8 +146,8 @@
 .global-rail .rail-nav button:hover,
 .global-rail .rail-settings:hover,
 .global-rail .rail-nav button.active {
-  background: var(--dg-burgundy-wash);
-  color: var(--dg-burgundy);
+  background: var(--dg-primary-wash);
+  color: var(--dg-primary);
 }
 
 .navigation-rail footer,
@@ -173,7 +173,7 @@
 
 .dialog-overlay,
 .modal-overlay {
-  background: rgb(28 25 23 / 42%);
+  background: rgb(15 31 29 / 42%);
   backdrop-filter: blur(3px);
 }
 
@@ -201,7 +201,7 @@
   margin-block: 4px 0;
   font-family: var(--dg-font-editorial);
   font-size: 30px;
-  font-weight: 520;
+  font-weight: 400;
   letter-spacing: -0.02em;
   line-height: 1;
 }
@@ -233,8 +233,8 @@
 .settings-tabs [role="tab"][data-state="active"],
 .settings-tabs__list button[data-state="active"] {
   background: var(--dg-paper);
-  color: var(--dg-burgundy);
-  box-shadow: inset 2px 0 var(--dg-burgundy);
+  color: var(--dg-primary);
+  box-shadow: inset 2px 0 var(--dg-primary);
 }
 
 @media (max-width: 840px) {

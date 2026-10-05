@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
+import { tealbrickAppIcons } from "../../.sdk/tealbrick-ui/vite/app-icons.mjs";
 import { readCompatEnv } from "../src/legacy-ids.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -17,7 +18,7 @@ const programOrigin = process.env.MARKETPLACE_PROGRAM_ORIGIN ?? "http://127.0.0.
 
 export default defineConfig({
   root: here,
-  plugins: [react()],
+  plugins: [react(), tealbrickAppIcons({ name: "Teal Brick Marketplace", shortName: "Marketplace" })],
   resolve: {
     dedupe: ["react", "react-dom"],
     // `@doppelganger/ui` is the legacy spelling; keep it resolving until every

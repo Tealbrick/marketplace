@@ -11,12 +11,17 @@ export function BrandMark(props: Omit<HTMLAttributes<HTMLImageElement>, "src" | 
 export function Button({
   tone = "default",
   size = "default",
+  pending = false,
+  disabled,
   className,
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { readonly tone?: ButtonTone; readonly size?: "default" | "small" }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & { readonly tone?: ButtonTone; readonly size?: "default" | "small"; readonly pending?: boolean }) {
   return (
     <button
       {...props}
+      disabled={disabled || pending}
+      aria-busy={pending || props["aria-busy"]}
+      data-dg-autofocus={props.autoFocus || undefined}
       className={[
         "dg-button",
         `dg-button--${tone}`,
@@ -26,6 +31,9 @@ export function Button({
     />
   );
 }
+
+export { CheckboxField, Dialog, Feedback, PageHeader, SelectField, SettingsPage, Sidebar, TextField, TextareaField, SectionNavigation } from "./primitives";
+export type { DialogProps, FeedbackState, NavigationItem, SectionNavigationItem } from "./primitives";
 
 export function IconButton({ className, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
   return <Button {...props} tone="ghost" className={["dg-icon-button", className].filter(Boolean).join(" ")} />;
