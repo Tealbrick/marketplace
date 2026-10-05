@@ -916,6 +916,26 @@ describe("Marketplace Program", () => {
       effect: "allow",
       decisionId: "operator-confirmed:composio.connect:composio-linear",
     });
+    // Operator sessions bind actorId to the principal id, not "operator".
+    for (const actorId of ["martin", "portal-user:3f32db87", "marketplace-service"]) {
+      await expect(
+        client!({ ...base, operation: "install", actorId }),
+      ).resolves.toMatchObject({
+        effect: "allow",
+        decisionId: "operator-confirmed:install:composio-linear",
+      });
+    }
+    await expect(
+      client!({ ...base, operation: "custom-mcp.create", actorId: "martin" }),
+    ).resolves.toMatchObject({ effect: "allow" });
+    await expect(
+      client!({ ...base, operation: "install", actorId: "martin", pluginId: "composio-explicit-deny" }),
+    ).resolves.toMatchObject({ effect: "deny", reason: "Denied by the workspace connector policy." });
+    for (const actorId of ["agent", "agent:henry", "agent-smoke"]) {
+      await expect(
+        client!({ ...base, operation: "install", actorId }),
+      ).resolves.toMatchObject({ effect: "deny" });
+    }
     await expect(client!({ ...base, actorId: "agent" })).resolves.toMatchObject(
       { effect: "deny" },
     );

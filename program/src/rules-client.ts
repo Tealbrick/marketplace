@@ -20,6 +20,10 @@ const OPERATOR_CONFIRMED_CONNECTOR_OPERATIONS = new Set([
   "hub.lifecycle.disable",
   "hub.lifecycle.reload",
   "hub.lifecycle.uninstall",
+  "custom-mcp.create",
+  "custom-mcp.update",
+  "custom-mcp.delete",
+  "custom-mcp.refresh",
 ]);
 
 const AGENT_ENABLED_CONNECTOR_CAPABILITIES = new Set([
@@ -152,7 +156,10 @@ export function makeRulesClient(
 
       if (
         effect === "deny" &&
-        input.actorId === "operator" &&
+        // Operator sessions and the service bearer bind actorId to their
+        // principal id (MARKETPLACE_OPERATOR_ID, Portal user, ...), so match on
+        // the role rather than the literal "operator". Agents never qualify.
+        actorRole === "operator" &&
         input.capability === "connector.admin" &&
         OPERATOR_CONFIRMED_CONNECTOR_OPERATIONS.has(input.operation) &&
         isMissingPolicyDenial(parsed.reason)
