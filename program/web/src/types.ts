@@ -305,7 +305,7 @@ export interface OperatorSession {
   configured: boolean;
   authenticated: boolean;
   mode: "session" | "test_bypass" | "unconfigured";
-  principal: { kind: "operator"; id: string; organizationId: string } | null;
+  principal: { kind: "operator"; id: string; organizationId: string; organizationName?: string } | null;
   csrfToken: string | null;
   expiresAt: string | null;
 }

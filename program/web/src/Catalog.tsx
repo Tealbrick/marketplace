@@ -31,7 +31,7 @@ import {
   unregisterPlugin,
 } from "./api";
 import type { PluginCard, PluginSummary } from "./types";
-import { CATALOG_ONLY_HINT, CUSTOM_CONNECTOR_TOOLS_HINT } from "./copy";
+import { CATALOG_ONLY_HINT, CUSTOM_CONNECTOR_TOOLS_HINT, knownVersion } from "./copy";
 import { formatWhen, InlineError, statusLabel, statusTone, words } from "./ui";
 
 export type ConfirmState = {
@@ -184,7 +184,7 @@ export function PluginWorkspace({ card, loading, workspaceSlug, onConfirm, onRef
       {!card.state.ready && launchSupported && <div className="readiness-note"><AlertTriangle size={17} /><div><strong>Not ready for agents yet</strong><p>{card.connection?.detail || card.installPlan.steps.find((step) => step.status !== "complete")?.detail || "Complete the lifecycle and connection steps below."}</p></div></div>}
       <div className="detail-grid">
         <section><div className="section-heading"><div><p className="eyebrow">Setup</p><h2>Getting ready</h2></div><span>{card.installPlan.steps.filter((step) => step.status === "complete").length}/{card.installPlan.steps.length}</span></div><ol className="install-plan">{card.installPlan.steps.map((step) => <li key={step.kind} className={step.status === "complete" ? "is-complete" : ""}><span>{step.status === "complete" ? <Check size={13} /> : <CircleDot size={13} />}</span><div><strong>{step.label}</strong><p>{step.detail}</p></div></li>)}</ol></section>
-        <section><div className="section-heading"><div><p className="eyebrow">Details</p><h2>Source & connection</h2></div><SlidersHorizontal size={18} /></div><dl className="fact-list"><dt>Source</dt><dd>{card.sourceLabel}</dd><dt>Runs on</dt><dd>{card.listing.executionOwner}</dd><dt>Sign-in handled by</dt><dd>{card.listing.authOwner}</dd><dt>Connection</dt><dd><Tag tone={statusTone(card.connection?.state ?? "disconnected")}>{statusLabel(card.connection?.state ?? "disconnected")}</Tag></dd><dt>Version</dt><dd className="mono">{card.addon.version}</dd></dl></section>
+        <section><div className="section-heading"><div><p className="eyebrow">Details</p><h2>Source & connection</h2></div><SlidersHorizontal size={18} /></div><dl className="fact-list"><dt>Source</dt><dd>{card.sourceLabel}</dd><dt>Runs on</dt><dd>{card.listing.executionOwner}</dd><dt>Sign-in handled by</dt><dd>{card.listing.authOwner}</dd><dt>Connection</dt><dd><Tag tone={statusTone(card.connection?.state ?? "disconnected")}>{statusLabel(card.connection?.state ?? "disconnected")}</Tag></dd>{knownVersion(card.addon.version) && <><dt>Version</dt><dd className="mono">{card.addon.version}</dd></>}</dl></section>
       </div>
       <section className="tool-contract">
         <div className="section-heading"><div><p className="eyebrow">Agent tools</p><h2>Tools</h2></div><Tag>{card.toolSelection.enabled}/{card.toolSelection.total} included</Tag></div>

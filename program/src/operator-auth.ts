@@ -6,6 +6,8 @@ export interface MarketplacePrincipal {
   readonly kind: "operator" | "service";
   readonly id: string;
   readonly organizationId: string;
+  /** Display-only workspace label from the Portal launch; never used for scoping. */
+  readonly organizationName?: string;
 }
 
 interface MarketplaceOperatorSession {
@@ -168,13 +170,14 @@ export class MarketplaceOperatorSessionManager {
     return this.createSession(this.principal);
   }
 
-  issuePortalSession(input: { readonly id: string; readonly organizationId: string }) {
+  issuePortalSession(input: { readonly id: string; readonly organizationId: string; readonly organizationName?: string | null }) {
     const id = input.id.trim();
     const organizationId = input.organizationId.trim();
     if (!id || !organizationId) {
       throw new Error("Portal launch identity must include an operator and organization.");
     }
-    return this.createSession({ kind: "operator", id, organizationId });
+    const organizationName = input.organizationName?.trim();
+    return this.createSession({ kind: "operator", id, organizationId, ...(organizationName ? { organizationName } : {}) });
   }
 
   authenticate(cookieHeader?: string | string[]) {

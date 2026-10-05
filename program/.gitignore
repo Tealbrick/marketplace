@@ -1,3 +1,5 @@
 web-dist/
 web/test-results/
 web/playwright-report/
+web/test-results-handoff/
+web/playwright-report-handoff/

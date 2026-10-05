@@ -2746,6 +2746,7 @@ export async function buildMarketplaceApp(
         const operatorSession = operatorSessions.issuePortalSession({
           id: session.userId,
           organizationId: session.productTenantId,
+          organizationName: session.workspaceName ?? null,
         });
         reply.header(
           "set-cookie",

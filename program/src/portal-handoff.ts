@@ -48,6 +48,8 @@ export type MarketplacePortalLaunchSession = {
   endpoint: string;
   session: string;
   expiresAt: number;
+  /** Display-only workspace label (Portal >= deployment-browser workspaceName). */
+  workspaceName?: string;
 };
 
 export type MarketplacePortalGrantRequest = {
@@ -331,6 +333,7 @@ export function createPortalHandoffClient(input: {
         endpoint: requiredString(payload.endpoint, "endpoint"),
         session: payload.session as string,
         expiresAt: numberValue(payload.expiresAt, "expiresAt"),
+        ...displayLabel(payload.workspaceName, "workspaceName"),
       };
     },
     async requestGrant(request) {
@@ -407,4 +410,11 @@ export function createPortalHandoffClient(input: {
       };
     },
   };
+}
+
+/** Optional human label: trimmed, control characters removed, at most 120 characters. */
+function displayLabel(value: unknown, key: "workspaceName"): { workspaceName?: string } {
+  if (typeof value !== "string") return {};
+  const label = value.replace(/[\u0000-\u001f\u007f]/gu, "").trim().slice(0, 120);
+  return label ? { [key]: label } : {};
 }
