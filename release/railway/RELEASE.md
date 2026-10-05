@@ -1,11 +1,11 @@
-# Marketplace standalone 0.1.12 image
+# Marketplace standalone 0.1.13 image
 
-This bundle is the public Marketplace 0.1.12 release line and supersedes
-0.1.11 with the operator install fallback fix and the customer UI pass.
+This bundle is the public Marketplace 0.1.13 release line and supersedes
+0.1.12 with owner approval mode when Rules is not wired.
 
-Source snapshot: `b0f681cb8e816c58f3ce9276bf6ac3d351b3662f`
-Source archive SHA256: `559b2de91910dfa3c8431aba93d7c80520d2f02070742071ae5202d7ed17f598`
-Image: `ghcr.io/tealbrick/marketplace:0.1.12`
+Source snapshot: `02685ac79cbd51c688e0b1799a058d873294ab82`
+Source archive SHA256: `6a40514efcc626fd1e375b1b1c1c1d7a934e115e5e17697ae7655e935e493079`
+Image: `ghcr.io/tealbrick/marketplace:0.1.13`
 
 ## Runtime contract
 
@@ -23,13 +23,29 @@ Image: `ghcr.io/tealbrick/marketplace:0.1.12`
   into the image or returned to browser code.
 
 The source-backed Railway path uses the fixed public release branch
-`release-marketplace-v0.1.12` (slash-free so the Railway template editor
+`release-marketplace-v0.1.13` (slash-free so the Railway template editor
 accepts it); its exact tag target, branch ruleset, and image
 digest are recorded in the successor receipt. Set the service root directory
 to `release/railway`, keep the Dockerfile entrypoint, and use the relay
 contract in `deploy/railway/recipe.json` and `deploy/railway/railway-blueprint.json`.
 GHCR is optional for the source-build path; no template ID or publication is
 implied by these files.
+
+## v0.1.13 owner approval mode disposition
+
+This successor merges Tealbrick/marketplace#15. When no `RULES_*` settings are
+configured, Marketplace runs in owner approval mode: operator-session actions
+are allowed and audited, agents act only with Portal-attested consent, an
+unattested service-bearer execute is refused with 403, and the UI states
+"Rules not connected — owner approval mode". With Rules configured, behaviour
+is unchanged. Pair the upgrade with a Portal Core that removes the Rules
+settings when no Rules miniapp is wired (Tealbrick/portal-core#25); 0.1.12
+without Rules refuses operator installs. No schema change; rollback to 0.1.12
+requires the Rules settings to be restored.
+
+Local verification at the source snapshot: Program and web unit tests,
+Playwright e2e, handoff e2e, TypeScript typecheck, production miniapp build,
+and bundled Program syntax check.
 
 ## v0.1.12 operator fallback and customer UI disposition
 

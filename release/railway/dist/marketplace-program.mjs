@@ -52068,7 +52068,7 @@ async function assertMcpUrlAllowed(value, options = {}) {
 // package.json
 var package_default = {
   name: "@tealbrick/marketplace-program",
-  version: "0.1.12",
+  version: "0.1.13",
   private: true,
   type: "module",
   packageManager: "pnpm@9.15.4",
@@ -53434,6 +53434,44 @@ async function registerMarketplaceFrontend(app2) {
   app2.get("/openapi.json", async (request) => buildMarketplaceOpenApi(`${request.protocol}://${request.host}`));
   app2.get("/swagger.json", async (request) => buildMarketplaceOpenApi(`${request.protocol}://${request.host}`));
   return { sendIndex };
+}
+
+// src/governance.ts
+function governanceModeFor(input) {
+  return input.rulesClient || input.rulesConfigured ? "rules" : "owner";
+}
+var OWNER_APPROVAL_REQUIRES_PORTAL_CONSENT = "owner_approval_requires_portal_consent";
+function ownerGovernedDecision(input) {
+  const { actor, operation, pluginId } = input;
+  if (actor?.kind === "operator") {
+    return {
+      effect: "allow",
+      decisionId: `owner-governed:${operation}:${pluginId}`,
+      reason: "Approved by the workspace owner's operator session (owner approval mode).",
+      basis: "operator"
+    };
+  }
+  if (actor?.kind === "agent") {
+    return {
+      effect: "allow",
+      decisionId: `owner-governed:portal-consent:${operation}:${pluginId}`,
+      reason: "Agent action covered by consent granted in Teal Brick Portal (owner approval mode).",
+      basis: "portal-consent"
+    };
+  }
+  if (actor?.kind === "service" && input.capability === "connector.admin" && operation !== "execute") {
+    return {
+      effect: "allow",
+      decisionId: `owner-governed:${operation}:${pluginId}`,
+      reason: "Owner-provisioned service administration (owner approval mode).",
+      basis: "service-admin"
+    };
+  }
+  return {
+    effect: "deny",
+    error: OWNER_APPROVAL_REQUIRES_PORTAL_CONSENT,
+    reason: "Without a Rules service, agents and services can act only with consent granted in Teal Brick Portal."
+  };
 }
 
 // src/operator-auth.ts
@@ -55089,6 +55127,44 @@ function corsHeadersForOrigin(origin, env = process.env) {
   };
 }
 async function enforceRules(input) {
+  if (input.governance === "owner") {
+    const owner = ownerGovernedDecision({
+      operation: input.operation,
+      capability: input.capability,
+      pluginId: input.pluginId,
+      actor: input.actor
+    });
+    input.store.recordAudit({
+      workspaceSlug: input.workspaceSlug,
+      pluginId: input.pluginId,
+      eventType: owner.effect === "allow" ? "marketplace.governance.owner_approved" : "marketplace.governance.owner_denied",
+      actorId: input.actor?.id ?? null,
+      rulesDecisionId: owner.effect === "allow" ? owner.decisionId : null,
+      metadata: {
+        governance: "owner",
+        operation: input.operation,
+        capability: input.capability,
+        actorKind: input.actor?.kind ?? null,
+        ...input.actor?.kind === "agent" ? { attestation: input.actor.attestation } : {},
+        ...owner.effect === "allow" ? { basis: owner.basis } : {}
+      }
+    });
+    if (owner.effect === "allow") {
+      return {
+        effect: "allow",
+        decisionId: owner.decisionId,
+        reason: owner.reason
+      };
+    }
+    input.reply.code(403);
+    return {
+      ok: false,
+      error: owner.error,
+      governance: "owner",
+      governedCapability: input.capability,
+      detail: owner.reason
+    };
+  }
   if (!input.rulesClient) {
     input.reply.code(503);
     return {
@@ -56235,6 +56311,22 @@ async function buildMarketplaceApp(options) {
     );
   }
   const requestPrincipals = /* @__PURE__ */ new WeakMap();
+  const governanceMode = governanceModeFor({
+    rulesClient: options.rulesClient,
+    rulesConfigured: Boolean(rulesConfiguration)
+  });
+  const governed = {
+    governance: governanceMode,
+    rulesClient: options.rulesClient,
+    store: options.store
+  };
+  const principalActor = (request) => {
+    const principal = requestPrincipals.get(request);
+    if (principal?.kind === "operator" || principal?.kind === "service") {
+      return { kind: principal.kind, id: principal.id };
+    }
+    return null;
+  };
   const servicePrincipal = {
     kind: "service",
     id: "marketplace-service",
@@ -56885,6 +56977,7 @@ async function buildMarketplaceApp(options) {
     program: "ok",
     version: MARKETPLACE_VERSION,
     rules: await probeRulesConnection(),
+    governance: governanceMode,
     checkedAt: (/* @__PURE__ */ new Date()).toISOString()
   }));
   app2.get("/api/marketplace/auth/session", async (request) => ({
@@ -57170,7 +57263,8 @@ async function buildMarketplaceApp(options) {
         headerNames: Object.keys(headers),
         secretHeaderNames: [...secretHeaders.keys()]
       },
-      rulesClient: options.rulesClient
+      actor: principalActor(request),
+      ...governed
     });
     if (!("effect" in rules)) return rules;
     const manifest = {
@@ -57272,7 +57366,8 @@ async function buildMarketplaceApp(options) {
           change: value === null ? "remove" : "set"
         }))
       },
-      rulesClient: options.rulesClient
+      actor: principalActor(request),
+      ...governed
     });
     if (!("effect" in rules)) return rules;
     const listing = customMcpListing({
@@ -57348,7 +57443,8 @@ async function buildMarketplaceApp(options) {
       pluginId,
       actorId: principal.id,
       payload: {},
-      rulesClient: options.rulesClient
+      actor: principalActor(request),
+      ...governed
     });
     if (!("effect" in rules)) return rules;
     const secretHeaders = secretAuditView(workspaceSlug, pluginId);
@@ -57389,7 +57485,8 @@ async function buildMarketplaceApp(options) {
       pluginId,
       actorId: principal.id,
       payload: { transport: customMcpManifest(current).transport },
-      rulesClient: options.rulesClient
+      actor: principalActor(request),
+      ...governed
     });
     if (!("effect" in rules)) return rules;
     let connection;
@@ -57581,7 +57678,8 @@ async function buildMarketplaceApp(options) {
       pluginId: input.pluginId,
       actorId: input.actorId,
       payload: { transport: input.transport },
-      rulesClient: options.rulesClient
+      actor: principalActor(request),
+      ...governed
     });
     if (!("effect" in rules)) return rules;
     const listing = mcpListingFromInput(input);
@@ -57665,7 +57763,8 @@ async function buildMarketplaceApp(options) {
         pluginId,
         actorId: "operator",
         payload: { transport: merged.transport },
-        rulesClient: options.rulesClient
+        actor: principalActor(request),
+        ...governed
       });
       if (!("effect" in rules)) return rules;
       const listing = mcpListingFromInput(merged, current);
@@ -57746,7 +57845,8 @@ async function buildMarketplaceApp(options) {
         pluginId,
         actorId: "operator",
         payload: {},
-        rulesClient: options.rulesClient
+        actor: principalActor(request),
+        ...governed
       });
       if (!("effect" in rules)) return rules;
       options.store.revokeBrokerGrantsForPlugin({
@@ -57793,7 +57893,8 @@ async function buildMarketplaceApp(options) {
         pluginId,
         actorId: input.actorId,
         payload: { action: input.action },
-        rulesClient: options.rulesClient
+        actor: principalActor(request),
+        ...governed
       });
       if (!("effect" in rules)) return rules;
       if (input.action === "install") {
@@ -58097,7 +58198,8 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
         pluginId,
         actorId: input.actorId,
         payload: { ...request.body, traceId },
-        rulesClient: options.rulesClient
+        actor: principalActor(request),
+        ...governed
       });
       if ("ok" in rules && rules.ok === false) {
         return rules;
@@ -58149,7 +58251,8 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
         pluginId,
         actorId: input.actorId,
         payload: { ...request.body, traceId },
-        rulesClient: options.rulesClient
+        actor: principalActor(request),
+        ...governed
       });
       if ("ok" in rules && rules.ok === false) {
         return { ...rules, traceId };
@@ -58189,7 +58292,8 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
         pluginId,
         actorId: input.actorId,
         payload: { ...request.body, traceId },
-        rulesClient: options.rulesClient
+        actor: principalActor(request),
+        ...governed
       });
       if ("ok" in rules && rules.ok === false) {
         return { ...rules, traceId };
@@ -58234,7 +58338,8 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
         pluginId,
         actorId: input.actorId,
         payload: { ...request.body, traceId },
-        rulesClient: options.rulesClient
+        actor: principalActor(request),
+        ...governed
       });
       if ("ok" in rules && rules.ok === false) {
         return { ...rules, traceId };
@@ -58278,7 +58383,8 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
         pluginId,
         actorId: input.actorId,
         payload: { ...request.body, traceId },
-        rulesClient: options.rulesClient
+        actor: principalActor(request),
+        ...governed
       });
       if ("ok" in rules && rules.ok === false) {
         return { ...rules, traceId };
@@ -58548,7 +58654,8 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
         pluginId,
         actorId: input.actorId,
         payload: { ...request.body, traceId },
-        rulesClient: options.rulesClient
+        actor: principalActor(request),
+        ...governed
       });
       if ("ok" in rules && rules.ok === false) {
         return { ...rules, traceId };
@@ -58597,7 +58704,8 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
         pluginId,
         actorId: input.actorId,
         payload: { ...request.body, traceId },
-        rulesClient: options.rulesClient
+        actor: principalActor(request),
+        ...governed
       });
       if ("ok" in rules && rules.ok === false) {
         return { ...rules, traceId };
@@ -58835,7 +58943,8 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
           selection: consent.selection,
           traceId
         },
-        rulesClient: options.rulesClient
+        actor: { kind: "agent", id: `agent:${consent.agentId}`, attestation: "portal-consent" },
+        ...governed
       });
       if ("ok" in rules && rules.ok === false) {
         return { ...rules, traceId };
@@ -59019,7 +59128,8 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
           resourceRef: input.resourceRef,
           traceId
         },
-        rulesClient: options.rulesClient
+        actor: { kind: "agent", id: `agent:${portal.scope.agentId}`, attestation: "portal-scope" },
+        ...governed
       });
       if ("ok" in rules && rules.ok === false) {
         return { ...rules, traceId };
@@ -59265,7 +59375,8 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
           } : {},
           traceId
         },
-        rulesClient: options.rulesClient
+        actor: scopedGrant ? { kind: "agent", id: effectiveActorId, attestation: "agent-grant" } : principalActor(request),
+        ...governed
       });
       if ("ok" in rules && rules.ok === false) {
         options.store.recordEvent({
@@ -59580,7 +59691,8 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
           selection: input.selection,
           traceId
         },
-        rulesClient: options.rulesClient
+        actor: { kind: "agent", id: `agent:${consent.agentId}`, attestation: "runtime-lease" },
+        ...governed
       });
       if ("ok" in rules && rules.ok === false) {
         options.store.recordEvent({
@@ -60145,7 +60257,8 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
         } : {},
         traceId
       },
-      rulesClient: options.rulesClient
+      actor: principalActor(request),
+      ...governed
     });
     if ("ok" in rules && rules.ok === false) {
       return { ...rules, traceId };
@@ -60544,7 +60657,8 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
         pluginId: "activepieces-pack-generator",
         actorId: String(payload.actorId ?? "operator"),
         payload,
-        rulesClient: options.rulesClient
+        actor: principalActor(request),
+        ...governed
       });
       if ("ok" in rules && rules.ok === false) {
         return rules;
@@ -60651,7 +60765,8 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
         pluginId: "composio-bootstrap",
         actorId: input.actorId,
         payload: { ...request.body, traceId },
-        rulesClient: options.rulesClient
+        actor: principalActor(request),
+        ...governed
       });
       if ("ok" in rules && rules.ok === false) {
         return { ...rules, traceId };

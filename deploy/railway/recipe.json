@@ -6,17 +6,17 @@
   "distribution": "public-source",
   "source": {
     "repository": "https://github.com/Tealbrick/marketplace",
-    "ref": "release-marketplace-v0.1.12",
-    "branch": "release-marketplace-v0.1.12",
-    "commit": "b0f681cb8e816c58f3ce9276bf6ac3d351b3662f",
-    "sourceUrl": "https://github.com/Tealbrick/marketplace/tree/release-marketplace-v0.1.12",
+    "ref": "release-marketplace-v0.1.13",
+    "branch": "release-marketplace-v0.1.13",
+    "commit": "02685ac79cbd51c688e0b1799a058d873294ab82",
+    "sourceUrl": "https://github.com/Tealbrick/marketplace/tree/release-marketplace-v0.1.13",
     "rootDirectory": "release/railway",
     "mutableRefsForbidden": true,
     "portalMustResolveAndRecordCommit": true,
-    "providerSemanticsGate": "Portal's templateDeployV2 source.branch must be release-marketplace-v0.1.12; source.commitSha is not relied on because the provider ignores it. The repository ruleset for the fixed release branch must remain active before deployment.",
+    "providerSemanticsGate": "Portal's templateDeployV2 source.branch must be release-marketplace-v0.1.13; source.commitSha is not relied on because the provider ignores it. The repository ruleset for the fixed release branch must remain active before deployment.",
     "branchImmutability": {
       "enforcement": "required",
-      "target": "refs/heads/release-marketplace-v0.1.12",
+      "target": "refs/heads/release-marketplace-v0.1.13",
       "rules": ["deletion", "non_fast_forward", "update"],
       "bypassActors": [],
       "currentUserCanBypass": "never",
@@ -43,12 +43,12 @@
       "bundle-manifest.sha256"
     ],
     "verification": {
-      "sourceSnapshotCommit": "b0f681cb8e816c58f3ce9276bf6ac3d351b3662f",
-      "sourceArchiveSha256": "559b2de91910dfa3c8431aba93d7c80520d2f02070742071ae5202d7ed17f598",
+      "sourceSnapshotCommit": "02685ac79cbd51c688e0b1799a058d873294ab82",
+      "sourceArchiveSha256": "6a40514efcc626fd1e375b1b1c1c1d7a934e115e5e17697ae7655e935e493079",
       "requiredChecks": [
         "shasum -a 256 -c release/railway/build-input-manifest.sha256",
         "shasum -a 256 -c release/railway/bundle-manifest.sha256",
-        "git archive --format=tar b0f681cb8e816c58f3ce9276bf6ac3d351b3662f | shasum -a 256"
+        "git archive --format=tar 02685ac79cbd51c688e0b1799a058d873294ab82 | shasum -a 256"
       ],
       "runtimeSourceIdentity": "Record the Railway-resolved commit and deployment ID; Railway health alone is not source or acceptance proof."
     }
@@ -239,8 +239,8 @@
     "publicationClaim": false,
     "requiredPortalEvidence": [
       "Railway-resolved source commit equals the pinned source commit.",
-      "Railway templateDeployV2 uses branch release-marketplace-v0.1.12 and does not silently fall back to main or rely on ignored source.commitSha.",
-      "The v0.1.12 repository ruleset remains active with update, non-fast-forward and deletion restrictions and no bypass actor.",
+      "Railway templateDeployV2 uses branch release-marketplace-v0.1.13 and does not silently fall back to main or rely on ignored source.commitSha.",
+      "The v0.1.13 repository ruleset remains active with update, non-fast-forward and deletion restrictions and no bypass actor.",
       "Customer project builds the public source without GHCR or private registry credentials.",
       "Persistent volume ownership/bootstrap, health, protected readiness and exact source identity are recorded.",
       "Portal-owned deployment binding and consented provider read-canary are separately accepted."
