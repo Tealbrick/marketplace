@@ -13,7 +13,7 @@ for (const [i, tokens] of blocks.entries()) {
   }
 }
 test("both theme blocks were checked", () => assert.equal(blocks.length, 2));
-test("shared geometry remains centralized", () => { for (const [name, value] of [["control", 4], ["surface", 6], ["modal", 8]]) assert.match(source, new RegExp(`--dg-radius-${name}: ${value}px;`)); });
+test("site geometry is square and centralized", () => { for (const name of ["control", "surface", "modal"]) assert.match(source, new RegExp(`--dg-radius-${name}: 0;`)); });
 const tokenMap = body => Object.fromEntries([...body.matchAll(/(--dg-[\w-]+):\s*([^;]+);/g)].map(token => [token[1], token[2].trim()]));
 test("OS dark mode applies exactly the data-theme dark tokens", () => {
   const media = source.match(/@media \(prefers-color-scheme: dark\) \{\s*:root:not\(\[data-theme="light"\]\) \{([^}]+)\}/);

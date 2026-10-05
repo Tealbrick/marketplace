@@ -68,9 +68,9 @@
 .runtime-rail > .rail-brand strong,
 .queue-rail > .rail-header strong {
   font-family: var(--dg-font-interface);
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: -0.015em;
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
   line-height: 1.1;
 }
 
@@ -79,11 +79,12 @@
 .global-rail > .brand-lockup small,
 .runtime-rail > .rail-brand span,
 .queue-rail > .rail-header small {
-  margin-top: 3px;
-  color: var(--dg-faint);
-  font-size: 8px;
-  font-weight: 650;
-  letter-spacing: 0.13em;
+  margin-top: 4px;
+  color: var(--dg-muted);
+  font-family: var(--dg-font-technical);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: var(--dg-label-tracking);
   line-height: 1.2;
   text-transform: uppercase;
 }
@@ -93,7 +94,7 @@
 .global-rail nav,
 .runtime-rail nav,
 .global-rail__links {
-  gap: 3px;
+  gap: 2px;
   padding: 16px 10px;
 }
 
@@ -103,12 +104,13 @@
 .runtime-rail nav button,
 .rail-button,
 .rail-nav button {
-  min-height: 38px;
+  min-height: 40px;
   border-color: transparent;
-  border-radius: var(--dg-radius-control);
+  border-radius: 0;
   color: var(--dg-muted);
-  font-size: 12px;
-  font-weight: 620;
+  font-size: 13px;
+  font-weight: 400;
+  transition: background-color var(--dg-transition), color var(--dg-transition);
 }
 
 .navigation-rail nav button:hover,
@@ -117,7 +119,7 @@
 .runtime-rail nav button:hover,
 .rail-button:hover,
 .rail-nav button:hover {
-  background: var(--dg-canvas);
+  background: var(--dg-canvas-sunken);
   color: var(--dg-ink);
 }
 
@@ -128,8 +130,8 @@
 .rail-button.is-active,
 .rail-nav button.active {
   border-color: transparent;
-  background: var(--dg-primary-wash);
-  color: var(--dg-primary);
+  background: var(--dg-ink);
+  color: var(--dg-canvas);
   box-shadow: none;
 }
 
@@ -146,8 +148,8 @@
 .global-rail .rail-nav button:hover,
 .global-rail .rail-settings:hover,
 .global-rail .rail-nav button.active {
-  background: var(--dg-primary-wash);
-  color: var(--dg-primary);
+  background: var(--dg-ink);
+  color: var(--dg-canvas);
 }
 
 .navigation-rail footer,
@@ -173,8 +175,8 @@
 
 .dialog-overlay,
 .modal-overlay {
-  background: rgb(15 31 29 / 42%);
-  backdrop-filter: blur(3px);
+  background: rgb(15 31 29 / 55%);
+  backdrop-filter: none;
 }
 
 .settings-dialog,
@@ -202,8 +204,8 @@
   font-family: var(--dg-font-editorial);
   font-size: 30px;
   font-weight: 400;
-  letter-spacing: -0.02em;
-  line-height: 1;
+  letter-spacing: -0.035em;
+  line-height: var(--dg-headline-leading);
 }
 
 .settings-tabs {
@@ -220,21 +222,21 @@
 
 .settings-tabs [role="tab"],
 .settings-tabs__list button {
-  min-height: 38px;
-  padding: 10px;
+  min-height: 40px;
+  padding: 10px 12px;
   border: 0;
-  border-radius: var(--dg-radius-control);
+  border-radius: 0;
   background: transparent;
   color: var(--dg-muted);
-  font-size: 11px;
+  font-size: 13px;
   text-align: left;
 }
 
 .settings-tabs [role="tab"][data-state="active"],
 .settings-tabs__list button[data-state="active"] {
-  background: var(--dg-paper);
-  color: var(--dg-primary);
-  box-shadow: inset 2px 0 var(--dg-primary);
+  background: var(--dg-ink);
+  color: var(--dg-canvas);
+  box-shadow: none;
 }
 
 @media (max-width: 840px) {
