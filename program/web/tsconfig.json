@@ -8,10 +8,6 @@
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "baseUrl": ".",
     "paths": {
-      "@tealbrick/ui": ["../../.sdk/tealbrick-ui/src/index.tsx"],
-      "@tealbrick/ui/*": ["../../.sdk/tealbrick-ui/*"],
-      "@doppelganger/ui": ["../../.sdk/tealbrick-ui/src/index.tsx"],
-      "@doppelganger/ui/*": ["../../.sdk/tealbrick-ui/*"],
       "react": ["../node_modules/@types/react/index.d.ts"],
       "react/jsx-runtime": ["../node_modules/@types/react/jsx-runtime.d.ts"]
     },
