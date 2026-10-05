@@ -80,7 +80,7 @@ pnpm --dir program build:miniapp
 Tealbrick environment variables use the `TEALBRICK_` prefix
 (`TEALBRICK_MICROAPPS_ROOT`, `TEALBRICK_DEBUG`, `TEALBRICK_RUNTIME_FILE`,
 `TEALBRICK_PRODUCT_WORKSPACE_DIR`, `TEALBRICK_MARKETPLACE_INTERNAL_AUTH_TOKEN`,
-`TEALBRICK_UI_SDK_ROOT`, `TEALBRICK_APP_HOME`). The old `DOPPELGANGER_*` names
+`TEALBRICK_APP_HOME`). The old `DOPPELGANGER_*` names
 are deprecated aliases that still work and log a one-time warning. Without an
 explicit data directory, state defaults to `~/.tealbrick/programs/marketplace`;
 an existing `~/.doppelganger/programs/marketplace` is moved there once on
