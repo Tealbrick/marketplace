@@ -1,14 +1,11 @@
-# Marketplace standalone 0.1.9 image
+# Marketplace standalone 0.1.10 image
 
-This bundle is the public Marketplace 0.1.9 release line and supersedes
-0.1.8 with the Teal Brick brand restyle and canonical runtime selections. The release image
-contains the Fastify Program, the built browser application, the tracked
-entrypoint, and no provider credentials, operator sessions, tenant data, or
-runtime database.
+This bundle is the public Marketplace 0.1.10 release line and supersedes
+0.1.9 with the tealbrick.com site language (@tealbrick/ui 0.2.2).
 
-Source snapshot: `1d4061e24a63e6896a34206e6b9b72daa404784f`
-Source archive SHA256: `137a593e585e239beaa1416439d62e9489bcb9a15001b227cdb6d48525bc6c88`
-Image: `ghcr.io/tealbrick/marketplace:0.1.9`
+Source snapshot: `5d31fa5f2fca2ec8f05878ffd399e74d078dc99e`
+Source archive SHA256: `5eece3b46df484c1789746d76514cac1df8746e9252fef111225a39ad1198dfa`
+Image: `ghcr.io/tealbrick/marketplace:0.1.10`
 
 ## Runtime contract
 
@@ -26,13 +23,25 @@ Image: `ghcr.io/tealbrick/marketplace:0.1.9`
   into the image or returned to browser code.
 
 The source-backed Railway path uses the fixed public release branch
-`release-marketplace-v0.1.9` (slash-free so the Railway template editor
+`release-marketplace-v0.1.10` (slash-free so the Railway template editor
 accepts it); its exact tag target, branch ruleset, and image
 digest are recorded in the successor receipt. Set the service root directory
 to `release/railway`, keep the Dockerfile entrypoint, and use the relay
 contract in `deploy/railway/recipe.json` and `deploy/railway/railway-blueprint.json`.
 GHCR is optional for the source-build path; no template ID or publication is
 implied by these files.
+
+## v0.1.10 tealbrick.com site language disposition
+
+This successor merges Tealbrick/marketplace#9: the vendored `@tealbrick/ui`
+moves to 0.2.2, which carries the tealbrick.com site language (type scale,
+hairline rules and button treatment) in light and dark. Presentation only:
+no schema, configuration, route or contract change; rollback to 0.1.9 is
+data-compatible.
+
+Local verification at the source snapshot: Program and web unit tests,
+Playwright e2e, handoff e2e, TypeScript typecheck, production miniapp build,
+and bundled Program syntax check.
 
 ## v0.1.9 brand and runtime selection disposition
 
