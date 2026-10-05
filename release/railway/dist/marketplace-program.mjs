@@ -52068,7 +52068,7 @@ async function assertMcpUrlAllowed(value, options = {}) {
 // package.json
 var package_default = {
   name: "@tealbrick/marketplace-program",
-  version: "0.1.8",
+  version: "0.1.9",
   private: true,
   type: "module",
   packageManager: "pnpm@9.15.4",
@@ -55258,6 +55258,17 @@ function portalSelectionForPublishedAction(input) {
     resourceKind: input.entry.resourceKind,
     resourceRef: `account:${input.accountId}`,
     ...input.entry.capability === "connector.observe" ? {} : { capability: input.entry.capability }
+  };
+}
+function canonicalPortalSelection(selection2) {
+  const capability = selectionCapability(selection2);
+  return {
+    pluginId: selection2.pluginId,
+    actionKey: selection2.actionKey,
+    accountId: selection2.accountId,
+    resourceKind: selection2.resourceKind,
+    resourceRef: selection2.resourceRef,
+    ...capability === "connector.observe" ? {} : { capability }
   };
 }
 function portalSelectionsEquivalent(left, right) {
@@ -59412,7 +59423,7 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
       try {
         scope = await portalRuntimeScopeVerifier({
           attachmentToken,
-          selection: input.selection,
+          selection: canonicalPortalSelection(input.selection),
           requiredCapability: selectionCapability(input.selection)
         });
       } catch (error) {

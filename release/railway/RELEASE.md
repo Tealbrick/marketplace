@@ -1,15 +1,14 @@
-# Marketplace standalone 0.1.8 image
+# Marketplace standalone 0.1.9 image
 
-This bundle is the public Marketplace 0.1.8 release line and supersedes
-0.1.7 with operator custom MCP connectors, the agent action catalog, and
-Teal Brick identifiers. The release image
+This bundle is the public Marketplace 0.1.9 release line and supersedes
+0.1.8 with the Teal Brick brand restyle and canonical runtime selections. The release image
 contains the Fastify Program, the built browser application, the tracked
 entrypoint, and no provider credentials, operator sessions, tenant data, or
 runtime database.
 
-Source snapshot: `2affb91eae6234facb438164f3bfd79d81b3552a`
-Source archive SHA256: `f7d851d50fe930fba7f06db22e410d4f23c4fb5a14c208848107e086804b519a`
-Image: `ghcr.io/tealbrick/marketplace:0.1.8`
+Source snapshot: `1d4061e24a63e6896a34206e6b9b72daa404784f`
+Source archive SHA256: `137a593e585e239beaa1416439d62e9489bcb9a15001b227cdb6d48525bc6c88`
+Image: `ghcr.io/tealbrick/marketplace:0.1.9`
 
 ## Runtime contract
 
@@ -27,13 +26,28 @@ Image: `ghcr.io/tealbrick/marketplace:0.1.8`
   into the image or returned to browser code.
 
 The source-backed Railway path uses the fixed public release branch
-`release-marketplace-v0.1.8` (slash-free so the Railway template editor
+`release-marketplace-v0.1.9` (slash-free so the Railway template editor
 accepts it); its exact tag target, branch ruleset, and image
 digest are recorded in the successor receipt. Set the service root directory
 to `release/railway`, keep the Dockerfile entrypoint, and use the relay
 contract in `deploy/railway/recipe.json` and `deploy/railway/railway-blueprint.json`.
 GHCR is optional for the source-build path; no template ID or publication is
 implied by these files.
+
+## v0.1.9 brand and runtime selection disposition
+
+This successor merges Tealbrick/marketplace#6 (the runtime receiver
+introspects with the canonical Portal selection shape: observe omits
+`capability`, other capabilities carry it, so an agent that spells observe
+out is no longer denied by the exact Portal scope comparison) and
+Tealbrick/marketplace#7 (real Teal Brick logo, icons, web manifest and
+light/dark tokens replacing the interim mark and theme; the Program serves
+PNG and web manifest assets). No schema, configuration or contract change;
+rollback to 0.1.8 is data-compatible.
+
+Local verification at the source snapshot: 165 Program tests, 15 web tests,
+17 Playwright e2e, 4 handoff e2e, TypeScript typecheck, production miniapp
+build, and bundled Program syntax check.
 
 ## v0.1.8 connectors and action catalog disposition
 
