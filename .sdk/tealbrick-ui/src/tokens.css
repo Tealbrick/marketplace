@@ -19,12 +19,12 @@
   --dg-canvas: #f3f1e9;
   --dg-paper: #fbfaf5;
   --dg-ink: #173f3c;
-  --dg-muted: #596b62;
+  --dg-muted: #526560;
   --dg-faint: #7f8f86;
-  --dg-line: #d9ddd3;
-  --dg-line-strong: #b7c5bb;
+  --dg-line: #c9d0c5;
+  --dg-line-strong: #aebdae;
   --dg-burgundy: #173f3c;
-  --dg-burgundy-deep: #2a5850;
+  --dg-burgundy-deep: #28716a;
   --dg-burgundy-wash: #e4eadd;
   --dg-danger: #a3322a;
   --dg-danger-wash: #f6e6e1;
@@ -51,11 +51,14 @@
   --dg-space-8: 32px;
   --dg-space-10: 40px;
   --dg-space-12: 48px;
-  --dg-radius-control: 4px;
-  --dg-radius-surface: 6px;
-  --dg-radius-modal: 8px;
-  --dg-shadow-modal: 0 28px 80px -34px rgb(16 44 41 / 42%);
-  --dg-transition: 140ms ease-out;
+  --dg-radius-control: 0;
+  --dg-radius-surface: 0;
+  --dg-radius-modal: 0;
+  --dg-shadow-modal: 0 30px 80px -40px rgb(16 44 41 / 45%);
+  --dg-transition: 200ms ease;
+  --dg-headline-tracking: -0.045em;
+  --dg-headline-leading: 1.06;
+  --dg-label-tracking: 0.11em;
   /* `--dg-burgundy*` is the historical name of the primary-action role; it now
      carries Teal Brick teal. Names stay stable so app stylesheets keep working. */
   --dg-primary: var(--dg-burgundy);
@@ -74,7 +77,7 @@
   --dg-radius-sm: var(--dg-radius-control);
   --dg-radius-md: var(--dg-radius-surface);
   --dg-radius-lg: var(--dg-radius-modal);
-  --dg-shadow-sm: 0 1px 3px rgb(16 44 41 / 9%);
+  --dg-shadow-sm: none;
   --dg-shadow-lg: var(--dg-shadow-modal);
   /* Teal Brick names for new code. */
   --tb-paper: var(--dg-canvas);
@@ -98,10 +101,10 @@
     --dg-ink: #eef0e6;
     --dg-muted: #a9b9b0;
     --dg-faint: #7f9189;
-    --dg-line: #29403c;
-    --dg-line-strong: #45605a;
+    --dg-line: #2f4844;
+    --dg-line-strong: #4d6a63;
     --dg-burgundy: #9fcbbf;
-    --dg-burgundy-deep: #bcdcd2;
+    --dg-burgundy-deep: #c8e3da;
     --dg-burgundy-wash: #1d3632;
     --dg-danger: #ef8a7e;
     --dg-danger-wash: #3a221f;
@@ -126,10 +129,10 @@
   --dg-ink: #eef0e6;
   --dg-muted: #a9b9b0;
   --dg-faint: #7f9189;
-  --dg-line: #29403c;
-  --dg-line-strong: #45605a;
+  --dg-line: #2f4844;
+  --dg-line-strong: #4d6a63;
   --dg-burgundy: #9fcbbf;
-  --dg-burgundy-deep: #bcdcd2;
+  --dg-burgundy-deep: #c8e3da;
   --dg-burgundy-wash: #1d3632;
   --dg-danger: #ef8a7e;
   --dg-danger-wash: #3a221f;
@@ -163,7 +166,7 @@ body {
   color: var(--dg-ink);
   font-family: var(--dg-font-interface);
   font-size: 14px;
-  line-height: 1.45;
+  line-height: 1.55;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
 }
@@ -185,7 +188,15 @@ select {
 }
 
 :focus-visible {
-  box-shadow: 0 0 0 3px var(--dg-focus);
+  outline: 2px solid var(--dg-brick);
+  outline-offset: 3px;
+}
+
+/* Site headline voice: Georgia, regular weight, tight tracking; <em> is the
+   brick-red italic used across tealbrick.com. */
+h1 em, h2 em, h3 em {
+  color: var(--dg-brick);
+  font-style: italic;
 }
 
 ::selection {
