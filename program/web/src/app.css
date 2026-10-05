@@ -308,8 +308,9 @@ code, .mono { font-family: var(--dg-font-mono); overflow-wrap: anywhere; }
   .program-state-group { gap: 8px; }
   .program-state { gap: 0; font-size: 0; }
   .topbar form input { width: 112px; }
-  .topbar > div .dg-button { font-size: 0; }
-  .topbar > div .dg-button svg { margin: 0; }
+  /* Icon-only Refresh: a square control with the label kept for assistive tech. */
+  .topbar-refresh { width: 36px; min-width: 36px; min-height: 36px; gap: 0; padding: 0; }
+  .topbar-refresh__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .catalog-index { height: 410px; }
   .plugin-workspace, .collection-page { padding: 29px 16px 48px; }
   .plugin-header { align-items: flex-start; flex-direction: column; }
