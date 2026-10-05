@@ -178,3 +178,25 @@ test("Composio key settings: empty state copy, bad key, save, and remove", async
   await expect(modal.getByText("API key removed.")).toBeVisible();
   await expect(status).toContainText("No API key yet");
 });
+
+test("phone header Refresh is a visible, centred icon control", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await unlockMarketplace(page);
+  const refresh = page.locator("header.topbar").getByRole("button", { name: "Refresh" });
+  await expect(refresh).toBeVisible();
+  const button = await refresh.boundingBox();
+  const icon = await refresh.locator("svg").boundingBox();
+  expect(button).not.toBeNull();
+  expect(icon).not.toBeNull();
+  // Square icon control, not an empty or text-width box.
+  expect(Math.abs(button!.width - button!.height)).toBeLessThanOrEqual(2);
+  expect(icon!.width).toBeGreaterThanOrEqual(12);
+  expect(Math.abs(icon!.x + icon!.width / 2 - (button!.x + button!.width / 2))).toBeLessThanOrEqual(1.5);
+  expect(Math.abs(icon!.y + icon!.height / 2 - (button!.y + button!.height / 2))).toBeLessThanOrEqual(1.5);
+  // The icon is drawn in a colour that differs from the button background.
+  const colours = await refresh.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { color: getComputedStyle(element.querySelector("svg")!).color, background: style.backgroundColor };
+  });
+  expect(colours.color).not.toBe(colours.background);
+});
