@@ -1,20 +1,18 @@
 Marketplace public release notices
 
-Original Marketplace source and the original Doppelganger UI source and mark
+Original Marketplace source and the Teal Brick UI source (`.sdk/tealbrick-ui`)
 are Copyright (c) 2026 Tealbrick and are licensed under the MIT License in
-LICENSE.
+LICENSE. The Teal Brick mark and app icons (`.sdk/tealbrick-ui/assets/`
+`tealbrick-mark.*`, `tealbrick-tile.svg` and `icons/`) are Tealbrick brand
+artwork.
 
 Bundled font assets are third-party assets and retain their upstream terms:
 
-* Cormorant Garamond (`.sdk/tealbrick-ui/assets/fonts/CormorantGaramond.ttf`)
-  is Copyright 2015 The Cormorant Project Authors and is distributed under
-  the SIL Open Font License 1.1. Source: https://github.com/CatharsisFonts/Cormorant
-* JetBrains Mono (`.sdk/tealbrick-ui/assets/fonts/JetBrainsMono-Regular.woff2`)
-  is distributed under the SIL Open Font License 1.1. Source:
-  https://github.com/JetBrains/JetBrainsMono
-* Switzer (`.sdk/tealbrick-ui/assets/fonts/Switzer-Variable.woff2`) is an
-  Indian Type Foundry / Fontshare font distributed under the ITF Free Font
-  License. Current terms: https://fontshare.com/terms
+* Geist and Geist Mono (`.sdk/tealbrick-ui/assets/fonts/Geist-Variable.woff2`,
+  `GeistMono-Variable.woff2`) are Copyright (c) 2023 Vercel, in collaboration with basement.studio, and
+  are distributed under the SIL Open Font License 1.1
+  (`.sdk/tealbrick-ui/assets/fonts/licenses/Geist-OFL.txt`).
+  Source: https://github.com/vercel/geist-font
 
 The font files are bundled unmodified as web assets. The upstream licenses and
 terms control those assets; this repository's MIT grant does not relicense

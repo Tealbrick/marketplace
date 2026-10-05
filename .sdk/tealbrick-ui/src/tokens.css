@@ -1,51 +1,47 @@
 @font-face {
-  font-family: "DG Switzer";
-  src: url("../assets/fonts/Switzer-Variable.woff2") format("woff2");
+  font-family: "TB Geist";
+  src: url("../assets/fonts/Geist-Variable.woff2") format("woff2");
   font-style: normal;
   font-weight: 100 900;
   font-display: swap;
 }
 
 @font-face {
-  font-family: "DG Cormorant";
-  src: url("../assets/fonts/CormorantGaramond.ttf") format("truetype");
+  font-family: "TB Geist Mono";
+  src: url("../assets/fonts/GeistMono-Variable.woff2") format("woff2");
   font-style: normal;
-  font-weight: 400 700;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "DG JetBrains Mono";
-  src: url("../assets/fonts/JetBrainsMono-Regular.woff2") format("woff2");
-  font-style: normal;
-  font-weight: 400;
+  font-weight: 100 900;
   font-display: swap;
 }
 
 :root {
   color-scheme: light;
-  --dg-canvas: #faf8f4;
-  --dg-paper: #fffdf9;
-  --dg-ink: #1c1917;
-  --dg-muted: #655f59;
-  --dg-faint: #938980;
-  --dg-line: #ddd5ca;
-  --dg-line-strong: #b9aca0;
-  --dg-burgundy: #7c2d36;
-  --dg-burgundy-deep: #5f2029;
-  --dg-burgundy-wash: #f4e9e9;
-  --dg-danger: #a73242;
-  --dg-danger-wash: #f8e9eb;
-  --dg-warning: #9a641d;
-  --dg-warning-wash: #f7efe0;
-  --dg-success: #39755a;
-  --dg-success-wash: #eaf3ed;
-  --dg-info: #536777;
-  --dg-info-wash: #eaf0f3;
-  --dg-focus: rgb(124 45 54 / 22%);
-  --dg-font-interface: "DG Switzer", "Helvetica Neue", sans-serif;
-  --dg-font-editorial: "DG Cormorant", Georgia, serif;
-  --dg-font-technical: "DG JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  --dg-canvas: #f3f1e9;
+  --dg-paper: #fbfaf5;
+  --dg-ink: #173f3c;
+  --dg-muted: #596b62;
+  --dg-faint: #7f8f86;
+  --dg-line: #d9ddd3;
+  --dg-line-strong: #b7c5bb;
+  --dg-burgundy: #173f3c;
+  --dg-burgundy-deep: #2a5850;
+  --dg-burgundy-wash: #e4eadd;
+  --dg-danger: #a3322a;
+  --dg-danger-wash: #f6e6e1;
+  --dg-warning: #94621c;
+  --dg-warning-wash: #f4ecda;
+  --dg-success: #2f6b4f;
+  --dg-success-wash: #e3eee5;
+  --dg-info: #4d6670;
+  --dg-info-wash: #e5ecec;
+  --dg-brick: #a8442f;
+  --dg-brick-wash: #f3e3da;
+  --dg-on-primary: #fffef9;
+  --dg-on-accent: var(--dg-on-primary);
+  --dg-focus: rgb(168 68 47 / 30%);
+  --dg-font-interface: "TB Geist", "Helvetica Neue", Arial, sans-serif;
+  --dg-font-editorial: Georgia, "Times New Roman", serif;
+  --dg-font-technical: "TB Geist Mono", "SFMono-Regular", Consolas, monospace;
   --dg-space-1: 4px;
   --dg-space-2: 8px;
   --dg-space-3: 12px;
@@ -58,11 +54,16 @@
   --dg-radius-control: 4px;
   --dg-radius-surface: 6px;
   --dg-radius-modal: 8px;
-  --dg-shadow-modal: 0 28px 80px -34px rgb(47 32 25 / 46%);
+  --dg-shadow-modal: 0 28px 80px -34px rgb(16 44 41 / 42%);
   --dg-transition: 140ms ease-out;
+  /* `--dg-burgundy*` is the historical name of the primary-action role; it now
+     carries Teal Brick teal. Names stay stable so app stylesheets keep working. */
+  --dg-primary: var(--dg-burgundy);
+  --dg-primary-deep: var(--dg-burgundy-deep);
+  --dg-primary-wash: var(--dg-burgundy-wash);
   /* Stable semantic aliases used by application layouts. */
   --dg-panel: var(--dg-paper);
-  --dg-canvas-sunken: #f1ede7;
+  --dg-canvas-sunken: #e9ece3;
   --dg-text: var(--dg-ink);
   --dg-text-muted: var(--dg-muted);
   --dg-text-subtle: var(--dg-faint);
@@ -73,32 +74,76 @@
   --dg-radius-sm: var(--dg-radius-control);
   --dg-radius-md: var(--dg-radius-surface);
   --dg-radius-lg: var(--dg-radius-modal);
-  --dg-shadow-sm: 0 1px 3px rgb(47 32 25 / 9%);
+  --dg-shadow-sm: 0 1px 3px rgb(16 44 41 / 9%);
   --dg-shadow-lg: var(--dg-shadow-modal);
+  /* Teal Brick names for new code. */
+  --tb-paper: var(--dg-canvas);
+  --tb-surface: var(--dg-paper);
+  --tb-ink: var(--dg-ink);
+  --tb-muted: var(--dg-muted);
+  --tb-line: var(--dg-line);
+  --tb-teal: var(--dg-primary);
+  --tb-brick: var(--dg-brick);
+  --tb-font-sans: var(--dg-font-interface);
+  --tb-font-serif: var(--dg-font-editorial);
+  --tb-font-mono: var(--dg-font-technical);
+}
+
+/* Follow the operating system unless the app pins a theme with data-theme. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --dg-canvas: #0f1f1d;
+    --dg-paper: #152a27;
+    --dg-ink: #eef0e6;
+    --dg-muted: #a9b9b0;
+    --dg-faint: #7f9189;
+    --dg-line: #29403c;
+    --dg-line-strong: #45605a;
+    --dg-burgundy: #9fcbbf;
+    --dg-burgundy-deep: #bcdcd2;
+    --dg-burgundy-wash: #1d3632;
+    --dg-danger: #ef8a7e;
+    --dg-danger-wash: #3a221f;
+    --dg-warning: #d9a75a;
+    --dg-warning-wash: #33291a;
+    --dg-success: #7dbf98;
+    --dg-success-wash: #1d3327;
+    --dg-info: #9db4bf;
+    --dg-info-wash: #20313a;
+    --dg-brick: #e08a6f;
+    --dg-brick-wash: #3a2620;
+    --dg-on-primary: #0f1f1d;
+    --dg-focus: rgb(224 138 111 / 34%);
+    --dg-canvas-sunken: #0b1715;
+  }
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --dg-canvas: #171513;
-  --dg-paper: #201d1a;
-  --dg-ink: #f5f0e9;
-  --dg-muted: #b9b0a7;
-  --dg-faint: #8e847b;
-  --dg-line: #3d3731;
-  --dg-line-strong: #665b52;
-  --dg-burgundy: #c87a84;
-  --dg-burgundy-deep: #dc929b;
-  --dg-burgundy-wash: #352326;
-  --dg-danger: #e17c88;
-  --dg-danger-wash: #392326;
-  --dg-warning: #d8a356;
-  --dg-warning-wash: #352b1d;
-  --dg-success: #73b18f;
-  --dg-success-wash: #203128;
-  --dg-info: #91a9ba;
-  --dg-info-wash: #243039;
-  --dg-focus: rgb(200 122 132 / 28%);
-  --dg-canvas-sunken: #12100f;
+  --dg-canvas: #0f1f1d;
+  --dg-paper: #152a27;
+  --dg-ink: #eef0e6;
+  --dg-muted: #a9b9b0;
+  --dg-faint: #7f9189;
+  --dg-line: #29403c;
+  --dg-line-strong: #45605a;
+  --dg-burgundy: #9fcbbf;
+  --dg-burgundy-deep: #bcdcd2;
+  --dg-burgundy-wash: #1d3632;
+  --dg-danger: #ef8a7e;
+  --dg-danger-wash: #3a221f;
+  --dg-warning: #d9a75a;
+  --dg-warning-wash: #33291a;
+  --dg-success: #7dbf98;
+  --dg-success-wash: #1d3327;
+  --dg-info: #9db4bf;
+  --dg-info-wash: #20313a;
+  --dg-brick: #e08a6f;
+  --dg-brick-wash: #3a2620;
+  --dg-on-primary: #0f1f1d;
+  --dg-focus: rgb(224 138 111 / 34%);
+  --dg-canvas-sunken: #0b1715;
 }
 
 * {
@@ -144,7 +189,7 @@ select {
 }
 
 ::selection {
-  background: var(--dg-burgundy);
+  background: var(--dg-primary);
   color: var(--dg-paper);
 }
 
