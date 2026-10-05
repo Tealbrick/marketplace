@@ -60,11 +60,11 @@ describe("authenticated runtime health", () => {
     await close();
   });
 
-  it("reports not-connected when no Rules client is configured", async () => {
+  it("reports not-connected and owner governance when no Rules client is configured", async () => {
     const { app, close } = await build();
     const response = await app.inject({ method: "GET", url: "/api/marketplace/health", headers: { authorization: `Bearer ${SERVICE}` } });
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({ ok: true, program: "ok", rules: "not-connected" });
+    expect(response.json()).toMatchObject({ ok: true, program: "ok", rules: "not-connected", governance: "owner" });
     await close();
   });
 
@@ -82,7 +82,7 @@ describe("authenticated runtime health", () => {
       },
     });
     const first = await app.inject({ method: "GET", url: "/api/marketplace/health", headers: { authorization: `Bearer ${SERVICE}` } });
-    expect(first.json()).toMatchObject({ rules: "connected" });
+    expect(first.json()).toMatchObject({ rules: "connected", governance: "rules" });
     expect(calls).toEqual([RULES_INTROSPECTION_PATH]);
     expect(first.body).not.toContain("rules-token");
     expect(first.body).not.toContain("rules.fixture.invalid");
@@ -95,7 +95,8 @@ describe("authenticated runtime health", () => {
       providerFetch: async () => new Response("down", { status: 502 }),
     });
     const response = await down.app.inject({ method: "GET", url: "/api/marketplace/health", headers: { authorization: `Bearer ${SERVICE}` } });
-    expect(response.json()).toMatchObject({ rules: "unavailable" });
+    // A configured Rules that is down stays in rules mode (fails closed).
+    expect(response.json()).toMatchObject({ rules: "unavailable", governance: "rules" });
     await down.close();
   });
 });

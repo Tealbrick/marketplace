@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ApiError } from "./api";
-import { errorCopy, knownVersion, refreshErrorCopy, SESSION_ENDED_COPY, shortScope, statusLabel, words } from "./copy";
+import { APPROVAL_STATUS_COPY, approvalStatus, errorCopy, knownVersion, refreshErrorCopy, SESSION_ENDED_COPY, shortScope, statusLabel, words } from "./copy";
 
 const apiError = (status: number, body: unknown, message = "raw server detail with MARKETPLACE_INTERNAL_AUTH_TOKEN") => new ApiError(message, status, body);
 
@@ -25,6 +25,19 @@ describe("customer-safe copy", () => {
     expect(errorCopy(apiError(503, { error: "rules_unavailable" })).title).toBe("Approvals are unavailable right now");
     expect(errorCopy(apiError(403, { error: "rules_denied" })).title).toBe("Your organization's rules don't allow this");
     expect(errorCopy(apiError(409, { error: "rules_review_required" })).title).toBe("This change needs approval");
+  });
+
+  it("explains owner approval mode and Portal consent without blaming unavailable approvals", () => {
+    expect(approvalStatus({ rules: "not-connected", governance: "owner" })).toBe("owner");
+    expect(approvalStatus({ rules: "unavailable", governance: "rules" })).toBe("unavailable");
+    expect(approvalStatus({ rules: "connected" })).toBe("connected");
+    expect(approvalStatus(undefined)).toBeUndefined();
+    expect(APPROVAL_STATUS_COPY.owner.label).toBe("Rules not connected — owner approval mode");
+    expect(APPROVAL_STATUS_COPY.owner.detail).toBe("You approve installs and actions yourself. Agents can only act with consent you grant in Teal Brick Portal.");
+    expect(APPROVAL_STATUS_COPY.owner.detail).not.toMatch(/can't|unavailable|blocked/iu);
+    const consent = errorCopy(apiError(403, { error: "owner_approval_requires_portal_consent" }));
+    expect(consent.title).toBe("This needs consent from Teal Brick Portal");
+    expect(consent.reference).toBe("owner_approval_requires_portal_consent");
   });
 
   it("does not report CSRF, Origin, or tenant failures as Rules denials", () => {

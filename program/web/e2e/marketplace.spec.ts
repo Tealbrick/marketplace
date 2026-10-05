@@ -101,6 +101,13 @@ test("embed works inside a same-origin host iframe with the operator session", a
 test("customer copy: Rules outage, catalog-only listing, and session expiry", async ({ page, context }) => {
   await page.setViewportSize({ width: 1152, height: 820 });
   await unlockMarketplace(page);
+  // This fixture runs in owner approval mode (no Rules). Simulate the
+  // rules-mode outage response (configured Rules unreachable) for the copy check.
+  await page.route("**/api/marketplace/plugins/*/install", (route) => route.fulfill({
+    status: 503,
+    contentType: "application/json",
+    body: JSON.stringify({ ok: false, error: "rules_unavailable", governedCapability: "connector.admin", detail: "Rules Approvals is required for connector admin, dispatch, generation, and execution." }),
+  }));
 
   await page.locator(".catalog-row").filter({ hasText: "Composio" }).first().click();
   await page.getByRole("button", { name: "Install", exact: true }).click();
@@ -135,8 +142,10 @@ test("real health indicators and the Installed empty state", async ({ page }) =>
   await unlockMarketplace(page);
   const topbar = page.locator(".topbar");
   await expect(topbar.getByText("Online", { exact: true })).toBeVisible();
-  await expect(topbar.getByText("Approvals not set up")).toBeVisible();
-  await expect(page.locator(".rules-status-row")).toContainText("not set up");
+  // No Rules client in this fixture: owner approval mode, not a blocked state.
+  await expect(topbar.getByText("Rules not connected — owner approval mode")).toBeVisible();
+  await expect(page.locator(".rules-status-row")).toContainText("owner approval mode");
+  await expect(page.locator("body")).not.toContainText("can't be approved");
   expect(healthRequests).toEqual(expect.arrayContaining(["/healthz", "/api/marketplace/health"]));
   await expect(page.locator("body")).not.toContainText("Program online");
 
@@ -148,7 +157,8 @@ test("real health indicators and the Installed empty state", async ({ page }) =>
   await page.getByRole("button", { name: "Open settings" }).last().click();
   const modal = page.getByRole("dialog", { name: "Settings" });
   await modal.getByRole("tab", { name: "Authorization" }).click();
-  await expect(modal.getByLabel("Service status")).toContainText("Not set up");
+  await expect(modal.getByLabel("Service status")).toContainText("Rules not connected — owner approval mode");
+  await expect(modal.getByLabel("Service status")).toContainText("You approve installs and actions yourself. Agents can only act with consent you grant in Teal Brick Portal.");
   await expect(modal.getByText("Technical details")).toBeVisible();
 });
 

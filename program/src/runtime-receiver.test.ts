@@ -26,7 +26,8 @@ afterEach(async () => {
 });
 
 async function fixture(input: {
-  rulesEffect?: "allow" | "deny" | "no-match";
+  /** "none" builds without a Rules client (owner approval mode). */
+  rulesEffect?: "allow" | "deny" | "no-match" | "none";
   runtimeVerifier?: PortalRuntimeScopeVerifier;
 }) {
   const store = new SqliteMarketplaceStore(await tempDbPath());
@@ -73,7 +74,7 @@ async function fixture(input: {
       }
       return new Response(JSON.stringify({ items: [] }), { status: 200 });
     },
-    rulesClient: async (rulesInput) => {
+    rulesClient: input.rulesEffect === "none" ? undefined : async (rulesInput) => {
       rulesCalls.push(rulesInput as unknown as Record<string, unknown>);
       return (input.rulesEffect === "deny" || input.rulesEffect === "no-match") &&
         (rulesInput.payload as Record<string, unknown> | undefined)?.phase === "execute"
@@ -221,6 +222,36 @@ describe("Marketplace v1.1 runtime receiver", () => {
     expect(replay.statusCode).toBe(200);
     expect(replay.json()).toMatchObject({ ok: true, replayed: true });
     expect(f.providerCalls).toBe(1);
+    await f.close();
+  });
+
+  it("executes a Portal consent + lease in owner approval mode, audited", async () => {
+    const f = await fixture({ rulesEffect: "none" });
+    const allowed = await f.app.inject({
+      method: "POST",
+      url: "/api/marketplace/v1/runtime/composio/execute",
+      headers: { authorization: "Bearer portal-lease" },
+      payload: requestBody,
+    });
+    expect(allowed.statusCode).toBe(200);
+    expect(allowed.json()).toMatchObject({ ok: true, schema: 1 });
+    expect(f.providerCalls).toBe(1);
+    const audit = (f.store.listAudit({ workspaceSlug: "tenant-community" }) as Array<{
+      event_type: string;
+      actor_id: string | null;
+      rules_decision_id: string | null;
+      metadata: string;
+    }>).find((row) => row.event_type === "marketplace.governance.owner_approved" && row.actor_id === "agent:agent-1");
+    expect(audit).toMatchObject({
+      rules_decision_id: "owner-governed:portal-consent:execute:github-composio",
+    });
+    expect(JSON.parse(audit!.metadata)).toMatchObject({
+      governance: "owner",
+      actorKind: "agent",
+      attestation: "runtime-lease",
+      capability: "connector.observe",
+    });
+    expect(audit!.metadata).not.toContain("lease-1");
     await f.close();
   });
 

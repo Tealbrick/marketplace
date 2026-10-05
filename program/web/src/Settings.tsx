@@ -6,8 +6,8 @@ import { AlertTriangle, Check, Code2, Copy, LoaderCircle, LogOut, Plug, PlugZap,
 import { Button, IconButton, Tag } from "@tealbrick/ui";
 
 import { getAgentCapabilities, getOpenApi, getProviderSettings, logoutOperator, removeProviderKey, saveProviderSettings, testProviderKey } from "./api";
-import type { FrontendBootstrap, OperatorSession, ProviderSettings, RulesConnectionStatus } from "./types";
-import { RULES_STATUS_COPY } from "./copy";
+import type { FrontendBootstrap, OperatorSession, ProviderSettings } from "./types";
+import { APPROVAL_STATUS_COPY, type ApprovalStatus, OWNER_APPROVAL_DETAIL } from "./copy";
 import { InlineError, StatePanel, words } from "./ui";
 
 function keySourceCopy(source: string | null) {
@@ -65,14 +65,17 @@ const LIMITATION_COPY: Record<string, string> = {
   runtimeAdapterExecution: "Composio connectors and your custom MCP connectors can run actions. Other sources are listed for reference.",
 };
 
-export type HealthSnapshot = { online: boolean | null; rules?: RulesConnectionStatus };
+export type HealthSnapshot = { online: boolean | null; approval?: ApprovalStatus };
+
+const TAG_FOR_TONE = { success: "success", warning: "warning", danger: "danger", neutral: "default" } as const;
 
 function AuthorizationPanel({ bootstrap, health }: { bootstrap: FrontendBootstrap; health: HealthSnapshot }) {
   const gaps = Object.entries(bootstrap.contractGaps);
+  const owner = health.approval === "owner";
   return <div className="settings-stack">
-    <div className="settings-intro"><div><h3>Who can change what</h3><p>Every change made here is checked against your organization's approval rules before it takes effect.</p></div><ShieldCheck /></div>
-    <dl className="contract-list" aria-label="Service status"><dt>Marketplace</dt><dd><Tag tone={health.online === false ? "danger" : health.online ? "success" : "default"}>{health.online === false ? "Offline" : health.online ? "Online" : "Checking…"}</Tag></dd><dt>Approvals (Rules)</dt><dd><Tag tone={health.rules ? RULES_STATUS_COPY[health.rules].tone : "default"}>{health.rules ? RULES_STATUS_COPY[health.rules].label : "Checking…"}</Tag>{health.rules && <p className="muted-detail">{RULES_STATUS_COPY[health.rules].detail}</p>}</dd></dl>
-    <dl className="contract-list"><dt>Your browser session</dt><dd>Browse the catalog and request installs, connections, and agent access</dd><dt>Approvals</dt><dd>Your organization's rules approve or block each change. If approvals can't be checked, nothing is changed.</dd><dt>Agents and other apps</dt><dd>Use a separate service credential that is never shared with this browser</dd><dt>Provider keys</dt><dd>Kept on the server and never sent to your browser</dd></dl>
+    <div className="settings-intro"><div><h3>Who can change what</h3><p>{owner ? OWNER_APPROVAL_DETAIL : "Every change made here is checked against your organization's approval rules before it takes effect."}</p></div><ShieldCheck /></div>
+    <dl className="contract-list" aria-label="Service status"><dt>Marketplace</dt><dd><Tag tone={health.online === false ? "danger" : health.online ? "success" : "default"}>{health.online === false ? "Offline" : health.online ? "Online" : "Checking…"}</Tag></dd><dt>Approvals (Rules)</dt><dd><Tag tone={health.approval ? TAG_FOR_TONE[APPROVAL_STATUS_COPY[health.approval].tone] : "default"}>{health.approval ? APPROVAL_STATUS_COPY[health.approval].label : "Checking…"}</Tag>{health.approval && <p className="muted-detail">{APPROVAL_STATUS_COPY[health.approval].detail}</p>}</dd></dl>
+    <dl className="contract-list"><dt>Your browser session</dt><dd>Browse the catalog and request installs, connections, and agent access</dd><dt>Approvals</dt><dd>{owner ? "You approve each change yourself while signed in. Agents and other apps can only act with consent you grant in Teal Brick Portal." : "Your organization's rules approve or block each change. If approvals can't be checked, nothing is changed."}</dd><dt>Agents and other apps</dt><dd>Use a separate service credential that is never shared with this browser</dd><dt>Provider keys</dt><dd>Kept on the server and never sent to your browser</dd></dl>
     {gaps.length > 0 && <div className="contract-gap"><AlertTriangle size={17} /><div><strong>Not available in this browser yet</strong><ul className="plain-list">{gaps.map(([name]) => <li key={name}>{LIMITATION_COPY[name] ?? "Some management actions are only available from Teal Brick Portal."}</li>)}</ul></div></div>}
     <details className="technical-details"><summary>Technical details</summary><dl className="contract-list"><dt>Browser routes</dt><dd><code>{bootstrap.authorization.browserOperatorRoutes}</code></dd><dt>Hub service</dt><dd>Internal bearer required</dd><dt>Cross-app broker v1</dt><dd>Internal bearer required</dd><dt>Credential in browser</dt><dd>{bootstrap.authorization.credentialExposedToBrowser ? "Yes" : "No"}</dd>{gaps.map(([name, state]) => <Fragment key={name}><dt>{name}</dt><dd><code>{state}</code></dd></Fragment>)}</dl></details>
   </div>;

@@ -130,7 +130,7 @@ function ConnectorDialog({ connector, open, onOpenChange, secretStoreAvailable, 
         {addingSecret && !secretStoreAvailable && <p className="inline-error"><AlertTriangle size={14} /><span>Secret storage isn't set up on this Marketplace, so secret headers can't be saved.</span></p>}
         {mutation.error && <InlineError error={mutation.error} />}
       </form>
-      <footer className="modal-footer"><span>Your organization's approval rules are checked before anything is saved.</span><div className="dialog-actions"><Dialog.Close asChild><Button type="button" disabled={mutation.isPending}>Cancel</Button></Dialog.Close><Button tone="primary" type="submit" form="custom-connector-form" disabled={mutation.isPending}>{mutation.isPending ? <LoaderCircle className="spin" size={15} /> : <Check size={15} />}{editing ? "Save changes" : "Add connector"}</Button></div></footer>
+      <footer className="modal-footer"><span>Approval is checked before anything is saved.</span><div className="dialog-actions"><Dialog.Close asChild><Button type="button" disabled={mutation.isPending}>Cancel</Button></Dialog.Close><Button tone="primary" type="submit" form="custom-connector-form" disabled={mutation.isPending}>{mutation.isPending ? <LoaderCircle className="spin" size={15} /> : <Check size={15} />}{editing ? "Save changes" : "Add connector"}</Button></div></footer>
     </Dialog.Content></Dialog.Portal>
   </Dialog.Root>;
 }

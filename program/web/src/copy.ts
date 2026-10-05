@@ -1,4 +1,5 @@
 import { ApiError } from "./api";
+import type { GovernanceMode, RulesConnectionStatus } from "./types";
 
 export type ErrorCopy = {
   title: string;
@@ -90,6 +91,8 @@ export function errorCopy(error: Error): ErrorCopy {
       return { title: "Approvals are unavailable right now", detail: "Marketplace couldn't reach your organization's approval service, so nothing was changed. Try again in a few minutes. If this keeps happening, contact your administrator.", reference };
     case "rules_denied":
       return { title: "Your organization's rules don't allow this", detail: "This change was not approved, so nothing was changed. Ask your administrator if you need access.", reference };
+    case "owner_approval_requires_portal_consent":
+      return { title: "This needs consent from Teal Brick Portal", detail: "Agents and connected apps can only act with consent you grant in Teal Brick Portal. Nothing was changed.", reference };
     case "rules_review_required":
       return { title: "This change needs approval", detail: "An administrator has to approve this change before it can go ahead. Nothing has been changed yet.", reference };
     case "operator_unauthorized":
@@ -198,10 +201,21 @@ export function refreshErrorCopy(code: string): ErrorCopy {
   return errorCopy(new ApiError(code, 502, { error: code }));
 }
 
-export const RULES_STATUS_COPY: Record<"connected" | "not-connected" | "unavailable", { label: string; detail: string; tone: "success" | "warning" | "danger" }> = {
-  connected: { label: "Connected", detail: "Approvals are working. Changes are checked against your organization's rules.", tone: "success" },
-  "not-connected": { label: "Not set up", detail: "The approvals service isn't connected, so installs and connections can't be approved. Ask your administrator to connect it.", tone: "warning" },
-  unavailable: { label: "Unavailable", detail: "Marketplace can't reach the approvals service right now. Changes are paused until it's back.", tone: "danger" },
+/** Approval status shown in the topbar, navigation, and Settings. */
+export type ApprovalStatus = RulesConnectionStatus | "owner";
+
+export function approvalStatus(health: { rules?: RulesConnectionStatus; governance?: GovernanceMode } | undefined): ApprovalStatus | undefined {
+  if (!health) return undefined;
+  return health.governance === "owner" ? "owner" : health.rules;
+}
+
+export const OWNER_APPROVAL_DETAIL = "You approve installs and actions yourself. Agents can only act with consent you grant in Teal Brick Portal.";
+
+export const APPROVAL_STATUS_COPY: Record<ApprovalStatus, { label: string; short: string; topbar: string; detail: string; tone: "success" | "warning" | "danger" | "neutral" }> = {
+  connected: { label: "Connected", short: "connected", topbar: "Approvals connected", detail: "Approvals are working. Changes are checked against your organization's rules.", tone: "success" },
+  owner: { label: "Rules not connected — owner approval mode", short: "owner approval mode", topbar: "Rules not connected — owner approval mode", detail: OWNER_APPROVAL_DETAIL, tone: "neutral" },
+  "not-connected": { label: "Not set up", short: "not set up", topbar: "Approvals not set up", detail: "The approvals service isn't connected yet.", tone: "warning" },
+  unavailable: { label: "Unavailable", short: "unavailable", topbar: "Approvals unavailable", detail: "Marketplace can't reach the approvals service right now. Changes are paused until it's back.", tone: "danger" },
 };
 
 /** Long opaque scopes (Portal workspace UUIDs) are shortened; the full id stays in the tooltip. */
