@@ -52068,7 +52068,7 @@ async function assertMcpUrlAllowed(value, options = {}) {
 // package.json
 var package_default = {
   name: "@tealbrick/marketplace-program",
-  version: "0.1.9",
+  version: "0.1.10",
   private: true,
   type: "module",
   packageManager: "pnpm@9.15.4",
