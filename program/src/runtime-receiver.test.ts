@@ -255,6 +255,55 @@ describe("Marketplace v1.1 runtime receiver", () => {
     await f.close();
   });
 
+  it("introspects with Portal's canonical selection shape whatever the agent spelled", async () => {
+    const seen: Array<Record<string, unknown>> = [];
+    const scope = {
+      portalOrgId: "portal-org-1",
+      productTenantId: "tenant-community",
+      workspaceId: "tenant-community",
+      deploymentId: "deployment-1",
+      agentId: "agent-1",
+      consentId: "consent-1",
+      leaseId: "lease-1",
+      capabilities: ["connector.observe"],
+      expiresAt: Date.now() + 300_000,
+    };
+    const f = await fixture({
+      rulesEffect: "allow",
+      runtimeVerifier: async (input) => {
+        seen.push({ ...input.selection });
+        return scope;
+      },
+    });
+    // Explicit observe introspects as the v1.1 shape Portal stored on the consent.
+    const explicitObserve = await f.app.inject({
+      method: "POST",
+      url: "/api/marketplace/v1/runtime/composio/execute",
+      headers: { authorization: "Bearer portal-lease" },
+      payload: {
+        ...requestBody,
+        idempotencyKey: "runtime-op-explicit-observe",
+        selection: { ...requestBody.selection, capability: "connector.observe" },
+      },
+    });
+    expect(explicitObserve.statusCode).toBe(200);
+    expect(seen.at(-1)).toEqual(requestBody.selection);
+    expect(Object.hasOwn(seen.at(-1)!, "capability")).toBe(false);
+    // Non-observe capabilities keep the v1.2 key so Portal can match them exactly.
+    await f.app.inject({
+      method: "POST",
+      url: "/api/marketplace/v1/runtime/composio/execute",
+      headers: { authorization: "Bearer portal-lease" },
+      payload: {
+        ...requestBody,
+        idempotencyKey: "runtime-op-dispatch",
+        selection: { ...requestBody.selection, capability: "connector.dispatch" },
+      },
+    });
+    expect(seen.at(-1)).toEqual({ ...requestBody.selection, capability: "connector.dispatch" });
+    await f.close();
+  });
+
   it("fails closed on Rules denial, local revoke, and Portal outage", async () => {
     const denied = await fixture({ rulesEffect: "deny" });
     const rulesResponse = await denied.app.inject({
