@@ -7,12 +7,12 @@
   "projectPolicy": "One Marketplace service and one private persistent volume per customer workspace environment.",
   "source": {
     "repository": "https://github.com/Tealbrick/marketplace",
-    "ref": "release-marketplace-v0.1.11",
-    "branch": "release-marketplace-v0.1.11",
-    "commit": "557224cd87aa970183d2449bda31f0e99dece2f4",
+    "ref": "release-marketplace-v0.1.12",
+    "branch": "release-marketplace-v0.1.12",
+    "commit": "b0f681cb8e816c58f3ce9276bf6ac3d351b3662f",
     "rootDirectory": "release/railway",
     "build": "Railway builds the Dockerfile from the public repository; no GHCR pull is required.",
-    "sourcePinGate": "Portal templateDeployV2 must use source.branch=release-marketplace-v0.1.11. The branch must be fixed by a repository ruleset enforcing update, non-fast-forward and deletion restrictions with no bypass actor; the exact ruleset and resolved release SHA are recorded in the successor receipt. source.commitSha is not treated as effective because the provider ignores it."
+    "sourcePinGate": "Portal templateDeployV2 must use source.branch=release-marketplace-v0.1.12. The branch must be fixed by a repository ruleset enforcing update, non-fast-forward and deletion restrictions with no bypass actor; the exact ruleset and resolved release SHA are recorded in the successor receipt. source.commitSha is not treated as effective because the provider ignores it."
   },
   "requiredInputs": {
     "MARKETPLACE_INTERNAL_AUTH_TOKEN": "Portal-generated server-only service bearer; never a browser or agent credential.",
@@ -37,9 +37,9 @@
       "name": "Marketplace",
       "source": {
         "repository": "https://github.com/Tealbrick/marketplace",
-        "ref": "release-marketplace-v0.1.11",
-        "branch": "release-marketplace-v0.1.11",
-        "commit": "557224cd87aa970183d2449bda31f0e99dece2f4",
+        "ref": "release-marketplace-v0.1.12",
+        "branch": "release-marketplace-v0.1.12",
+        "commit": "b0f681cb8e816c58f3ce9276bf6ac3d351b3662f",
         "rootDirectory": "release/railway"
       },
       "publicNetworking": true,
@@ -96,8 +96,8 @@
   "templateUrl": null,
   "remainingGates": [
     "Portal creates and verifies the actual Railway template",
-    "Railway templateDeployV2 uses the fixed v0.1.11 release branch rather than the rejected tag or ignored source.commitSha",
-    "The v0.1.11 repository ruleset remains active and reports no bypass actor",
+    "Railway templateDeployV2 uses the fixed v0.1.12 release branch rather than the rejected tag or ignored source.commitSha",
+    "The v0.1.12 repository ruleset remains active and reports no bypass actor",
     "Railway-resolved source identity and customer endpoint",
     "Persistent volume restart/restore acceptance",
     "Portal deployment binding and human operator acceptance",

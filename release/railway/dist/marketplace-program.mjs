@@ -52068,7 +52068,7 @@ async function assertMcpUrlAllowed(value, options = {}) {
 // package.json
 var package_default = {
   name: "@tealbrick/marketplace-program",
-  version: "0.1.11",
+  version: "0.1.12",
   private: true,
   type: "module",
   packageManager: "pnpm@9.15.4",
@@ -53569,7 +53569,8 @@ var MarketplaceOperatorSessionManager = class _MarketplaceOperatorSessionManager
     if (!id || !organizationId) {
       throw new Error("Portal launch identity must include an operator and organization.");
     }
-    return this.createSession({ kind: "operator", id, organizationId });
+    const organizationName = input.organizationName?.trim();
+    return this.createSession({ kind: "operator", id, organizationId, ...organizationName ? { organizationName } : {} });
   }
   authenticate(cookieHeader) {
     if (this.allowUnauthenticated) return this.principal;
@@ -54302,7 +54303,8 @@ function createPortalHandoffClient(input) {
         userId: requiredString2(payload.userId, "userId"),
         endpoint: requiredString2(payload.endpoint, "endpoint"),
         session: payload.session,
-        expiresAt: numberValue(payload.expiresAt, "expiresAt")
+        expiresAt: numberValue(payload.expiresAt, "expiresAt"),
+        ...displayLabel(payload.workspaceName, "workspaceName")
       };
     },
     async requestGrant(request) {
@@ -54379,6 +54381,11 @@ function createPortalHandoffClient(input) {
       };
     }
   };
+}
+function displayLabel(value, key) {
+  if (typeof value !== "string") return {};
+  const label = value.replace(/[\u0000-\u001f\u007f]/gu, "").trim().slice(0, 120);
+  return label ? { [key]: label } : {};
 }
 
 // src/portal-runtime-scope.ts
@@ -56663,7 +56670,8 @@ async function buildMarketplaceApp(options) {
       if (input.issueOperatorSession) {
         const operatorSession = operatorSessions.issuePortalSession({
           id: session.userId,
-          organizationId: session.productTenantId
+          organizationId: session.productTenantId,
+          organizationName: session.workspaceName ?? null
         });
         reply.header(
           "set-cookie",
@@ -60831,7 +60839,11 @@ var OPERATOR_CONFIRMED_CONNECTOR_OPERATIONS = /* @__PURE__ */ new Set([
   "hub.lifecycle.enable",
   "hub.lifecycle.disable",
   "hub.lifecycle.reload",
-  "hub.lifecycle.uninstall"
+  "hub.lifecycle.uninstall",
+  "custom-mcp.create",
+  "custom-mcp.update",
+  "custom-mcp.delete",
+  "custom-mcp.refresh"
 ]);
 var AGENT_ENABLED_CONNECTOR_CAPABILITIES = /* @__PURE__ */ new Set([
   "connector.observe",
@@ -60920,7 +60932,10 @@ function makeRulesClient(config2) {
           "Rules response was invalid; failed closed."
         );
       }
-      if (effect === "deny" && input.actorId === "operator" && input.capability === "connector.admin" && OPERATOR_CONFIRMED_CONNECTOR_OPERATIONS.has(input.operation) && isMissingPolicyDenial(parsed.reason)) {
+      if (effect === "deny" && // Operator sessions and the service bearer bind actorId to their
+      // principal id (MARKETPLACE_OPERATOR_ID, Portal user, ...), so match on
+      // the role rather than the literal "operator". Agents never qualify.
+      actorRole === "operator" && input.capability === "connector.admin" && OPERATOR_CONFIRMED_CONNECTOR_OPERATIONS.has(input.operation) && isMissingPolicyDenial(parsed.reason)) {
         return {
           effect: "allow",
           decisionId: `operator-confirmed:${input.operation}:${input.pluginId}`,
