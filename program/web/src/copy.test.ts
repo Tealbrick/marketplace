@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ApiError } from "./api";
-import { errorCopy, refreshErrorCopy, SESSION_ENDED_COPY, statusLabel, words } from "./copy";
+import { errorCopy, knownVersion, refreshErrorCopy, SESSION_ENDED_COPY, shortScope, statusLabel, words } from "./copy";
 
 const apiError = (status: number, body: unknown, message = "raw server detail with MARKETPLACE_INTERNAL_AUTH_TOKEN") => new ApiError(message, status, body);
 
@@ -110,3 +110,21 @@ describe("agent action catalog copy", () => {
     expect(errorCopy(new ApiError("", 403, { error: "agent_action_catalog_tenant_mismatch" })).title).toBe("This belongs to a different organization");
   });
 });
+
+describe("customer-safe identifiers", () => {
+  it("hides all-zero placeholder versions", () => {
+    expect(knownVersion("00000000_00")).toBe(false);
+    expect(knownVersion("0.0.0")).toBe(false);
+    expect(knownVersion("")).toBe(false);
+    expect(knownVersion(null)).toBe(false);
+    expect(knownVersion("0.1.0")).toBe(true);
+    expect(knownVersion("20260105_01")).toBe(true);
+  });
+
+  it("shortens opaque workspace UUIDs but keeps readable scopes", () => {
+    expect(shortScope("3f32db87-6f74-4ecf-b7b8-8c72c54f30a3")).toBe("3f32db87…");
+    expect(shortScope("default")).toBe("default");
+    expect(shortScope("polygonface-studio-workspace")).toBe("polygonface-studio-workspace");
+  });
+});
+

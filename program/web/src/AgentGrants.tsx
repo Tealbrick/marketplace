@@ -199,25 +199,29 @@ function RequestGrantForm({ data, workspaceSlug, onRequested, onNavigate }: { da
         <label>Resource scope<input value={resourceRef} readOnly aria-label="Resource scope" placeholder="Set by the connected account" /></label>
       </div>
       {action && capability && <div className="grant-capability" data-testid="grant-capability"><Tag tone={capability.tone}>{capability.badge}</Tag><p>{capability.detail}{action.description ? <span> {action.description}</span> : null}</p></div>}
-      <dl className="contract-list grant-request-selection"><dt>Connector</dt><dd>{action?.pluginName ?? "—"}</dd><dt>Action</dt><dd>{action ? <code>{action.actionKey}</code> : "—"}</dd><dt>Access level</dt><dd>{capability?.badge ?? "—"}</dd><dt>Resource kind</dt><dd>{action?.resourceKind ?? "—"}</dd><dt>Workspace</dt><dd>{workspaceSlug}</dd></dl>
+      <dl className="contract-list grant-request-selection"><dt>Connector</dt><dd>{action?.pluginName ?? "—"}</dd><dt>Action</dt><dd>{action ? <code>{action.actionKey}</code> : "—"}</dd><dt>Access level</dt><dd>{capability?.badge ?? "—"}</dd><dt>Resource kind</dt><dd>{action?.resourceKind ?? "—"}</dd></dl>
     </>;
   }
 
   return (
     <section className="grant-request-panel">
       <header className="section-heading">
-        <div><p className="eyebrow">Portal handoff</p><h2>Request connector access</h2></div>
-        <Tag tone="accent">{data.handoffContractVersion}</Tag>
+        <div><p className="eyebrow">Request access</p><h2>Give an agent a connector action</h2></div>
       </header>
-      <p className="section-copy">Pick an action one of your connectors makes available to agents. Marketplace sends that bounded selection to Teal Brick Portal, where a person approves it; this browser never receives a Portal session, agent credential, or runtime lease.</p>
+      <p className="section-copy">Pick an action one of your connectors makes available to agents. A person approves the request in Teal Brick Portal before any agent can use it.</p>
       <form className="grant-request-form" onSubmit={(event) => { event.preventDefault(); request.mutate(); }}>
-        <div className="form-grid two">
-          <label>Portal deployment ID<input value={deploymentId} onChange={(event) => setDeploymentId(event.target.value)} placeholder="From the Portal launch context" required /></label>
-          <label>Agent selection<input value={agentId} onChange={(event) => setAgentId(event.target.value)} placeholder="Portal-attested agent" required /></label>
-        </div>
         {picker}
+        {!(deploymentId.trim() && agentId.trim()) && <p className="muted-detail grant-request-origin">Start from an agent's connection in Teal Brick Portal to request access; Portal fills in the deployment and agent for you.</p>}
+        <details className="technical-details grant-developer-details">
+          <summary>Developer details</summary>
+          <div className="form-grid two">
+            <label>Portal deployment ID<input value={deploymentId} onChange={(event) => setDeploymentId(event.target.value)} placeholder="From the Portal launch context" required /></label>
+            <label>Agent selection<input value={agentId} onChange={(event) => setAgentId(event.target.value)} placeholder="Portal-attested agent" required /></label>
+          </div>
+          <dl className="contract-list"><dt>Handoff contract</dt><dd><code>{data.handoffContractVersion}</code></dd><dt>Request key</dt><dd><code>{idempotencyKey}</code></dd><dt>Direct grants</dt><dd><code>{data.grantCreation.code}</code></dd></dl>
+        </details>
         {request.error && <InlineError error={request.error} />}
-        <div className="grant-request-form__footer"><span>Idempotency is retained for this request attempt: <code>{idempotencyKey}</code></span><Button tone="primary" type="submit" disabled={!valid || request.isPending}>{request.isPending ? <LoaderCircle className="spin" size={15} /> : <ShieldCheck size={15} />}Request Portal consent</Button></div>
+        <div className="grant-request-form__footer"><span>Nothing is granted until it is approved in Portal.</span><Button tone="primary" type="submit" disabled={!valid || request.isPending}>{request.isPending ? <LoaderCircle className="spin" size={15} /> : <ShieldCheck size={15} />}Request approval in Portal</Button></div>
       </form>
     </section>
   );
@@ -245,19 +249,19 @@ export function AgentGrantsPage({ workspaceSlug, onRevoke, onNavigate }: { works
     return [...durableConsents.map(consentAsGrant), ...data.grants.filter((grant) => !durableGrantIds.has(grant.id))];
   }, [data, durableConsents]);
 
-  if (grants.isLoading) return <section className="collection-page"><div className="collection-empty"><LoaderCircle className="spin" size={28} /><h2>Loading agent grants</h2><p>Reading the operator-safe grant and Portal handoff projection.</p></div></section>;
+  if (grants.isLoading) return <section className="collection-page"><div className="collection-empty"><LoaderCircle className="spin" size={28} /><h2>Loading agent grants</h2><p>Checking which agents can use your connectors.</p></div></section>;
   if (grants.error) return <section className="collection-page"><StatePanel error={grants.error} onRetry={() => void grants.refetch()} /></section>;
 
   if (!data) return null;
   return (
     <section className="collection-page">
       <header>
-        <div><p className="eyebrow">Scoped Agent access</p><h1>Agent grants</h1><p>Review the account, resource, capability, and consent scope recorded by Marketplace. Portal remains the human approval authority.</p></div>
+        <div><p className="eyebrow">Scoped Agent access</p><h1>Agent grants</h1><p>See which agents can use which connector actions, and request new access. Every grant is approved by a person in Teal Brick Portal.</p></div>
         <Tag>{visibleGrants.length} grants</Tag>
       </header>
-      <div className="contract-gap agent-grant-creation-gap"><ShieldCheck size={18} /><div><strong>Direct grant creation is disabled</strong><p>{data.grantCreation.detail} The supported path below requests Portal consent and waits for explicit approval.</p><small>{words(data.grantCreation.code)}</small></div></div>
+      <div className="credential-proof agent-grant-creation-gap"><ShieldCheck size={18} /><div><strong>Agents get access only through Portal approval</strong><p>Marketplace never accepts agent credentials from the browser. Request access below and approve it in Teal Brick Portal.</p></div></div>
       <RequestGrantForm data={data} workspaceSlug={workspaceSlug} onNavigate={onNavigate} onRequested={(result) => { setRequestNotice(result); void queryClient.invalidateQueries({ queryKey: ["agent-grants", workspaceSlug] }); }} />
-      {requestNotice && <div className="request-result contract-gap" role="status"><ShieldCheck size={18} /><div><strong>Portal consent request created</strong><p>Open Portal review, approve explicitly, then return here to reconcile request <code>{requestNotice.request.requestId}</code>.</p><a href={requestNotice.request.approvalUrl} target="_blank" rel="noreferrer">Open Portal review <ExternalLink size={13} /></a></div></div>}
+      {requestNotice && <div className="request-result contract-gap" role="status"><ShieldCheck size={18} /><div><strong>Approval requested</strong><p>Open the request in Teal Brick Portal and approve it, then come back here to finish.</p><a href={requestNotice.request.approvalUrl} target="_blank" rel="noreferrer">Open Portal review <ExternalLink size={13} /></a></div></div>}
       {redeem.error && <div className="grant-redeem-error"><InlineError error={redeem.error} /></div>}
       {handoffRequests.length > 0 && <section className="grant-subsection"><div className="section-heading"><div><p className="eyebrow">Consent workflow</p><h2>Portal requests</h2></div><Tag>{handoffRequests.length}</Tag></div><div className="agent-grants-list">{handoffRequests.map((request) => <HandoffRequestRow key={request.requestId} request={request} onRedeem={(entry) => redeem.mutate(entry)} redeeming={redeem.isPending && redeem.variables?.requestId === request.requestId} />)}</div></section>}
       {visibleGrants.length ? <section className="grant-subsection"><div className="section-heading"><div><p className="eyebrow">Durable access</p><h2>Recorded grants</h2></div><Tag>{visibleGrants.length}</Tag></div><div className="agent-grants-list" aria-label="Agent grants">{visibleGrants.map((grant) => <AgentGrantRow key={grant.id} grant={grant} onRevoke={onRevoke} />)}</div></section> : <div className="collection-empty compact"><KeyRound /><h3>No active grants</h3><p>Approve a Portal request and reconcile it here before any durable consent appears.</p></div>}

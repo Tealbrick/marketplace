@@ -34,5 +34,7 @@ export function StatePanel({ error, onRetry }: { error: Error; onRetry: () => vo
 }
 
 export function ProviderDot({ provider }: { provider: BrowserProviderHealth }) {
-  return <span className={`provider-dot provider-dot--${provider.state}`} title={provider.detail} />;
+  // A provider that was never set up is optional, not failing: show it neutral.
+  const tone = provider.configured ? provider.state : "unset";
+  return <span className={`provider-dot provider-dot--${tone}`} title={provider.detail} />;
 }

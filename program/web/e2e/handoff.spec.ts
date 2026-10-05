@@ -12,10 +12,11 @@ async function unlockMarketplace(page: import("@playwright/test").Page) {
 test("runs request, explicit Portal approval, return, and reconcile through the paired backend", async ({ page, context }) => {
   await unlockMarketplace(page);
   await page.getByRole("button", { name: "Agent grants" }).click();
+  await page.getByText("Developer details").click();
   await page.getByLabel("Portal deployment ID").fill("deployment-1");
   await page.getByLabel("Agent selection").fill("agent-1");
   await expect(page.getByLabel("Connected account")).toHaveValue("ca_1");
-  await page.getByRole("button", { name: "Request Portal consent" }).click();
+  await page.getByRole("button", { name: "Request approval in Portal" }).click();
 
   const request = page.getByTestId(/^handoff-request-/u).first();
   await expect(request).toContainText("Pending");
@@ -72,10 +73,11 @@ test("paired backend rejects missing CSRF and wrong tenant scope in the browser"
 test("paired backend exposes expired handoff state without a reconcile action", async ({ page }) => {
   await unlockMarketplace(page);
   await page.getByRole("button", { name: "Agent grants" }).click();
+  await page.getByText("Developer details").click();
   await page.getByLabel("Portal deployment ID").fill("deployment-1");
   await page.getByLabel("Agent selection").fill("agent-expired");
   await expect(page.getByLabel("Connected account")).toHaveValue("ca_1");
-  await page.getByRole("button", { name: "Request Portal consent" }).click();
+  await page.getByRole("button", { name: "Request approval in Portal" }).click();
   const request = page.getByTestId(/^handoff-request-/u).first();
   await expect(request).toContainText("Expired");
   await expect(request.getByRole("button", { name: "Reconcile approval" })).toHaveCount(0);
@@ -84,10 +86,11 @@ test("paired backend exposes expired handoff state without a reconcile action", 
 test("paired Portal denial fails reconciliation without creating a grant", async ({ page, context }) => {
   await unlockMarketplace(page);
   await page.getByRole("button", { name: "Agent grants" }).click();
+  await page.getByText("Developer details").click();
   await page.getByLabel("Portal deployment ID").fill("deployment-1");
   await page.getByLabel("Agent selection").fill("agent-denied");
   await expect(page.getByLabel("Connected account")).toHaveValue("ca_1");
-  await page.getByRole("button", { name: "Request Portal consent" }).click();
+  await page.getByRole("button", { name: "Request approval in Portal" }).click();
   const request = page.getByTestId(/^handoff-request-/u).first();
   const approvalUrl = await request.getByRole("link", { name: "Open Portal review" }).getAttribute("href");
   const portalPage = await context.newPage();

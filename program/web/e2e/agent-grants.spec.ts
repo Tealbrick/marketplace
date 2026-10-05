@@ -82,7 +82,7 @@ test("renders positive, denied, and expired grant scope from the browser fixture
   await unlockMarketplace(page);
   await page.getByRole("button", { name: "Agent grants" }).click();
   await expect(page.getByRole("heading", { name: "Agent grants" })).toBeVisible();
-  await expect(page.getByText("Direct grant creation is disabled")).toBeVisible();
+  await expect(page.getByText("Agents get access only through Portal approval")).toBeVisible();
   await expect(page.getByTestId("agent-grant-grant-allowed")).toContainText("Active");
   await expect(page.getByTestId("agent-grant-grant-denied")).toContainText("Revoked");
   await expect(page.getByTestId("agent-grant-grant-expired")).toContainText("Expired");
@@ -227,6 +227,7 @@ test("requests a bounded Portal consent and reconciles the approved projection",
 
   await unlockMarketplace(page);
   await page.getByRole("button", { name: "Agent grants" }).click();
+  await page.getByText("Developer details").click();
   await page.getByLabel("Portal deployment ID").fill("deployment-1");
   await page.getByLabel("Agent selection").fill("agent-1");
   await page.getByLabel("Connector").selectOption("github-composio");
@@ -235,8 +236,8 @@ test("requests a bounded Portal consent and reconciles the approved projection",
   await expect(page.getByLabel("Connected account")).toHaveValue("ca_1");
   await expect(page.getByLabel("Resource scope")).toHaveValue("account:ca_1");
   await expect(page.getByTestId("grant-capability")).toContainText("Read only");
-  await page.getByRole("button", { name: "Request Portal consent" }).click();
-  await expect(page.getByText("Portal consent request created")).toBeVisible();
+  await page.getByRole("button", { name: "Request approval in Portal" }).click();
+  await expect(page.getByText("Approval requested")).toBeVisible();
   await expect(page.getByRole("link", { name: "Open Portal review" }).first()).toHaveAttribute("href", pending.approvalUrl);
   await expect(page.getByTestId(`handoff-request-${requestId}`)).toContainText("Pending");
   await page.getByTestId(`handoff-request-${requestId}`).getByRole("button", { name: "Reconcile approval" }).click();
@@ -319,7 +320,8 @@ test("picks a published dispatch action, explains its access level, and sends th
   await unlockMarketplace(page);
   await page.getByRole("button", { name: "Agent grants" }).click();
   await expect(page.getByLabel("Action", { exact: true })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Request Portal consent" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Request approval in Portal" })).toBeDisabled();
+  await page.getByText("Developer details").click();
   await page.getByLabel("Portal deployment ID").fill("deployment-1");
   await page.getByLabel("Agent selection").fill("agent-1");
 
@@ -327,7 +329,7 @@ test("picks a published dispatch action, explains its access level, and sends th
   await page.getByLabel("Connector").selectOption("slack-composio");
   await expect(page.getByLabel("Action", { exact: true })).toHaveValue("slack.list.channels");
   await expect(page.getByLabel("Connected account")).toHaveValue("");
-  await expect(page.getByRole("button", { name: "Request Portal consent" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Request approval in Portal" })).toBeDisabled();
   await page.getByLabel("Connected account").selectOption("ca_slack_b");
   await expect(page.getByLabel("Resource scope")).toHaveValue("account:ca_slack_b");
 
@@ -336,7 +338,7 @@ test("picks a published dispatch action, explains its access level, and sends th
   await expect(page.getByLabel("Connected account")).toHaveValue("ca_1");
   await expect(page.getByTestId("grant-capability")).toContainText("Can make changes");
   await expect(page.getByTestId("grant-capability")).toContainText("create and update items");
-  await page.getByRole("button", { name: "Request Portal consent" }).click();
+  await page.getByRole("button", { name: "Request approval in Portal" }).click();
   await expect(page.getByText("This action isn't available to agents right now")).toBeVisible();
   expect(requestBody).toMatchObject({
     deploymentId: "deployment-1",
@@ -353,7 +355,7 @@ test("shows the empty state when no connector publishes agent actions", async ({
   await unlockMarketplace(page);
   await page.getByRole("button", { name: "Agent grants" }).click();
   await expect(page.getByRole("heading", { name: "Install and connect a connector first" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Request Portal consent" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Request approval in Portal" })).toBeDisabled();
   await page.getByRole("button", { name: "Browse the catalog" }).click();
   await expect(page.getByRole("heading", { name: "Discover" })).toBeVisible();
 });
