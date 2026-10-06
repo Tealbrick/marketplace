@@ -9,7 +9,7 @@ Status: **pass** — 6 entries, 948/984 operations exposed, 36 excluded with a r
 | Easy!Appointments (`easyappointments`) | openapi | 1.6.0 | 51/59 | 8 | direct | 5 | 10 | pass |
 | Formbricks (`formbricks`) | openapi | 6.0.2 | 108/113 | 5 | discovery | 25 | 15 | pass |
 | Listmonk (`listmonk`) | openapi | 6.2.0 | 104/107 | 3 | discovery | 9 | 31 | pass |
-| Nextcloud (`nextcloud`) | openapi | 31.0.14 | 284/304 | 20 | discovery | 33 | 37 | pass |
+| Nextcloud (`nextcloud`) | openapi | 31.0.14 | 284/304 | 20 | discovery | 33 | 40 | pass |
 | Postiz (`postiz`) | openapi | 2.24.x (inferred) | 31/31 | 0 | direct | 13 | 3 | pass |
 | Pretix (`pretix`) | openapi | 2026.8.0 | 370/370 | 0 | discovery | 53 | 55 | pass |
 
@@ -338,7 +338,7 @@ Pinned spec sha256 `a60f2ccff80a50b73bf9e2c139b62e1e24d9131c2ce000ed53a1ccfa416e
 
 ## Nextcloud (`nextcloud`)
 
-Pinned spec sha256 `dcf907e846db27b9e174ce6ac2ddd7ca41a2527ff076c27fe81a11b5a3c97836`.
+Pinned spec sha256 `fefdc71dbe0fba439d8f6877af9965eb43912ad670153d36059e13bb6767fae6`.
 
 | Operation | Status | Reason |
 | --- | --- | --- |
@@ -626,7 +626,7 @@ Pinned spec sha256 `dcf907e846db27b9e174ce6ac2ddd7ca41a2527ff076c27fe81a11b5a3c9
 | PROPFIND /remote.php/dav/files/{user}/{path} (`webdav-files-propfind`) | `company-box-nextcloud.webdav-files-propfind` | connector.observe |  |
 | PROPPATCH /remote.php/dav/files/{user}/{path} (`webdav-files-proppatch`) | `company-box-nextcloud.webdav-files-proppatch` | connector.dispatch |  |
 | MKCOL /remote.php/dav/files/{user}/{path} (`webdav-files-mkcol`) | `company-box-nextcloud.webdav-files-mkcol` | connector.dispatch |  |
-| MOVE /remote.php/dav/files/{user}/{path} (`webdav-files-move`) | `company-box-nextcloud.webdav-files-move` | connector.dispatch |  |
+| MOVE /remote.php/dav/files/{user}/{path} (`webdav-files-move`) | `company-box-nextcloud.webdav-files-move` | connector.admin | destructive |
 | COPY /remote.php/dav/files/{user}/{path} (`webdav-files-copy`) | `company-box-nextcloud.webdav-files-copy` | connector.dispatch |  |
 | POST /remote.php/dav/systemtags (`webdav-systemtags-create`) | `company-box-nextcloud.webdav-systemtags-create` | connector.dispatch |  |
 | PROPFIND /remote.php/dav/systemtags (`webdav-systemtags-list`) | `company-box-nextcloud.webdav-systemtags-list` | connector.observe |  |
@@ -641,11 +641,11 @@ Pinned spec sha256 `dcf907e846db27b9e174ce6ac2ddd7ca41a2527ff076c27fe81a11b5a3c9
 | GET /remote.php/dav/trashbin/{user}/trash/{item} (`webdav-trashbin-download`) | `company-box-nextcloud.webdav-trashbin-download` | connector.observe |  |
 | DELETE /remote.php/dav/trashbin/{user}/trash/{item} (`webdav-trashbin-delete`) | `company-box-nextcloud.webdav-trashbin-delete` | connector.admin | destructive |
 | PROPFIND /remote.php/dav/trashbin/{user}/trash/{item} (`webdav-trashbin-item-propfind`) | `company-box-nextcloud.webdav-trashbin-item-propfind` | connector.observe |  |
-| MOVE /remote.php/dav/trashbin/{user}/trash/{item} (`webdav-trashbin-restore`) | `company-box-nextcloud.webdav-trashbin-restore` | connector.dispatch |  |
+| MOVE /remote.php/dav/trashbin/{user}/trash/{item} (`webdav-trashbin-restore`) | `company-box-nextcloud.webdav-trashbin-restore` | connector.admin | destructive |
 | DELETE /remote.php/dav/uploads/{user}/{uploadId} (`webdav-uploads-abort`) | `company-box-nextcloud.webdav-uploads-abort` | connector.admin | destructive |
 | PROPFIND /remote.php/dav/uploads/{user}/{uploadId} (`webdav-uploads-list-chunks`) | `company-box-nextcloud.webdav-uploads-list-chunks` | connector.observe |  |
 | MKCOL /remote.php/dav/uploads/{user}/{uploadId} (`webdav-uploads-start`) | `company-box-nextcloud.webdav-uploads-start` | connector.dispatch |  |
-| MOVE /remote.php/dav/uploads/{user}/{uploadId}/.file (`webdav-uploads-finish`) | `company-box-nextcloud.webdav-uploads-finish` | connector.dispatch |  |
+| MOVE /remote.php/dav/uploads/{user}/{uploadId}/.file (`webdav-uploads-finish`) | `company-box-nextcloud.webdav-uploads-finish` | connector.admin | destructive |
 | PUT /remote.php/dav/uploads/{user}/{uploadId}/{chunkId} (`webdav-uploads-put-chunk`) | `company-box-nextcloud.webdav-uploads-put-chunk` | connector.dispatch |  |
 | PROPFIND /remote.php/dav/versions/{user}/versions/{fileId} (`webdav-versions-list`) | `company-box-nextcloud.webdav-versions-list` | connector.observe |  |
 | GET /remote.php/dav/versions/{user}/versions/{fileId}/{versionId} (`webdav-versions-download`) | `company-box-nextcloud.webdav-versions-download` | connector.observe |  |

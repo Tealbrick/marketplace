@@ -335,7 +335,11 @@ describe("shipped Company Box catalog", () => {
     expect(byId("webdav-versions-restore")).toMatchObject({ destructive: true, capability: "connector.admin" });
     expect(byId("webdav-trashbin-empty")).toMatchObject({ destructive: true, capability: "connector.admin" });
     expect(byId("webdav-files-propfind")).toMatchObject({ method: "propfind", capability: "connector.observe", write: false, outward: false });
-    expect(byId("webdav-files-move")).toMatchObject({ method: "move", capability: "connector.dispatch", write: true });
+    // MOVE is always destructive (it can replace the target and removes the source); COPY has Overwrite fixed to F.
+    expect(byId("webdav-files-move")).toMatchObject({ method: "move", capability: "connector.admin", destructive: true, write: true });
+    expect(byId("webdav-files-copy")).toMatchObject({ method: "copy", capability: "connector.dispatch", destructive: false, write: true });
+    expect(byId("webdav-trashbin-restore")).toMatchObject({ method: "move", destructive: true });
+    expect(byId("webdav-uploads-finish")).toMatchObject({ method: "move", destructive: true });
     // Hand-authored operations are marked as such; upstream ones are not.
     const handAuthored: Record<string, number> = {};
     for (const item of Object.values(spec.paths)) {
@@ -824,9 +828,11 @@ describe("agent path: nextcloud WebDAV files", () => {
     expect(move.request.headers.destination).toBe(`${f.rest.origin}${base}/Archive/2026/notes%20final.md`);
     expect(move.request.headers.overwrite).toBe("F");
 
-    const copy = await run("webdav-files-copy", { path: { user: USER, path: "a.md" }, header: { Destination: "b/a.md", Overwrite: "T" } });
+    const copy = await run("webdav-files-copy", { path: { user: USER, path: "a.md" }, header: { Destination: "b/a.md" } });
     expect(copy.request).toMatchObject({ method: "COPY", path: `${base}/a.md` });
-    expect(copy.request.headers.overwrite).toBe("T");
+    expect(copy.request.headers.overwrite).toBe("F");
+    const overwrite = await run("webdav-files-copy", { path: { user: USER, path: "a.md" }, header: { Destination: "b/a.md", Overwrite: "T" } });
+    expect(overwrite.response.statusCode).toBe(400);
 
     for (const [operationId, method] of [["webdav-files-mkcol", "MKCOL"], ["webdav-files-download", "GET"], ["webdav-files-delete", "DELETE"]] as const) {
       const result = await run(operationId, { path: { user: USER, path: "Documents/new folder" } });

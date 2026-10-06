@@ -30229,7 +30229,7 @@
       ],
       "x-report": {
         "operationId": "webdav-comments-list",
-        "summary": "List the comments on a file (REPORT oc:filter-comments)",
+        "summary": "List the comments on a file (REPORT)",
         "tags": [
           "webdav",
           "webdav/comments"
@@ -30240,7 +30240,7 @@
         },
         "requestBody": {
           "required": true,
-          "description": "`<oc:filter-comments>` with `<oc:limit>`, `<oc:offset>` and optional `<oc:datetime>`.",
+          "description": "Report body with `<oc:limit>`, `<oc:offset>` and optional `<oc:datetime>` (see the docs example).",
           "content": {
             "application/xml": {
               "schema": {
@@ -30458,7 +30458,7 @@
         ],
         "externalDocs": {
           "description": "Nextcloud developer manual",
-          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/search.html"
+          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/basic.html#listing-favorites"
         },
         "requestBody": {
           "required": true,
@@ -30764,7 +30764,7 @@
       },
       "x-copy": {
         "operationId": "webdav-files-copy",
-        "summary": "Copy a file or folder",
+        "summary": "Copy a file or folder (fails if the target exists)",
         "tags": [
           "webdav",
           "webdav/files"
@@ -30781,7 +30781,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Target path below the user's root.",
+            "description": "Target path below the user's root; it must not exist yet.",
             "x-destination-template": "/remote.php/dav/files/{user}/{Destination}"
           },
           {
@@ -30790,17 +30790,17 @@
             "required": false,
             "schema": {
               "type": "string",
-              "default": "F"
+              "const": "F"
             },
-            "description": "T replaces an existing target, F (default) fails if it exists."
+            "description": "Fixed to F: a copy never replaces an existing file. Delete the target first, or use MOVE with Overwrite T, to replace it."
           }
         ],
         "responses": {
           "201": {
             "description": "Copied"
           },
-          "204": {
-            "description": "Copied over an existing target"
+          "412": {
+            "description": "The target exists"
           }
         },
         "x-source": "hand-authored",
@@ -30816,8 +30816,8 @@
           "webdav/systemtags"
         ],
         "externalDocs": {
-          "description": "Nextcloud developer manual",
-          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/tags.html"
+          "description": "Server source of the system tags DAV endpoints (no developer-manual page)",
+          "url": "https://github.com/nextcloud/server/tree/v31.0.14/apps/dav/lib/SystemTag"
         },
         "parameters": [
           {
@@ -30865,8 +30865,8 @@
           "webdav/systemtags"
         ],
         "externalDocs": {
-          "description": "Nextcloud developer manual",
-          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/tags.html"
+          "description": "Server source of the system tags DAV endpoints (no developer-manual page)",
+          "url": "https://github.com/nextcloud/server/tree/v31.0.14/apps/dav/lib/SystemTag"
         },
         "requestBody": {
           "required": true,
@@ -30927,8 +30927,8 @@
           "webdav/systemtags"
         ],
         "externalDocs": {
-          "description": "Nextcloud developer manual",
-          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/tags.html"
+          "description": "Server source of the system tags DAV endpoints (no developer-manual page)",
+          "url": "https://github.com/nextcloud/server/tree/v31.0.14/apps/dav/lib/SystemTag"
         },
         "parameters": [
           {
@@ -30996,8 +30996,8 @@
           "webdav/systemtags"
         ],
         "externalDocs": {
-          "description": "Nextcloud developer manual",
-          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/tags.html"
+          "description": "Server source of the system tags DAV endpoints (no developer-manual page)",
+          "url": "https://github.com/nextcloud/server/tree/v31.0.14/apps/dav/lib/SystemTag"
         },
         "responses": {
           "201": {
@@ -31015,8 +31015,8 @@
           "webdav/systemtags"
         ],
         "externalDocs": {
-          "description": "Nextcloud developer manual",
-          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/tags.html"
+          "description": "Server source of the system tags DAV endpoints (no developer-manual page)",
+          "url": "https://github.com/nextcloud/server/tree/v31.0.14/apps/dav/lib/SystemTag"
         },
         "responses": {
           "204": {
@@ -31047,8 +31047,8 @@
           "webdav/systemtags"
         ],
         "externalDocs": {
-          "description": "Nextcloud developer manual",
-          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/tags.html"
+          "description": "Server source of the system tags DAV endpoints (no developer-manual page)",
+          "url": "https://github.com/nextcloud/server/tree/v31.0.14/apps/dav/lib/SystemTag"
         },
         "parameters": [
           {
@@ -31096,8 +31096,8 @@
           "webdav/systemtags"
         ],
         "externalDocs": {
-          "description": "Nextcloud developer manual",
-          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/tags.html"
+          "description": "Server source of the system tags DAV endpoints (no developer-manual page)",
+          "url": "https://github.com/nextcloud/server/tree/v31.0.14/apps/dav/lib/SystemTag"
         },
         "requestBody": {
           "required": true,
@@ -31133,8 +31133,8 @@
           "webdav/systemtags"
         ],
         "externalDocs": {
-          "description": "Nextcloud developer manual",
-          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/tags.html"
+          "description": "Server source of the system tags DAV endpoints (no developer-manual page)",
+          "url": "https://github.com/nextcloud/server/tree/v31.0.14/apps/dav/lib/SystemTag"
         },
         "responses": {
           "204": {

@@ -2815,14 +2815,14 @@
       "displayName": "Nextcloud",
       "source": "openapi",
       "appVersion": "31.0.14",
-      "pinnedSha256": "dcf907e846db27b9e174ce6ac2ddd7ca41a2527ff076c27fe81a11b5a3c97836",
+      "pinnedSha256": "fefdc71dbe0fba439d8f6877af9965eb43912ad670153d36059e13bb6767fae6",
       "exposure": "discovery",
       "total": 304,
       "exposed": 284,
       "excluded": 20,
       "failed": 0,
       "outward": 33,
-      "destructive": 37,
+      "destructive": 40,
       "ok": true,
       "errors": [],
       "warnings": [],
@@ -5563,9 +5563,9 @@
           "path": "/remote.php/dav/files/{user}/{path}",
           "status": "exposed",
           "key": "company-box-nextcloud.webdav-files-move",
-          "capability": "connector.dispatch",
+          "capability": "connector.admin",
           "outward": false,
-          "destructive": false
+          "destructive": true
         },
         {
           "ref": "webdav-files-copy",
@@ -5713,9 +5713,9 @@
           "path": "/remote.php/dav/trashbin/{user}/trash/{item}",
           "status": "exposed",
           "key": "company-box-nextcloud.webdav-trashbin-restore",
-          "capability": "connector.dispatch",
+          "capability": "connector.admin",
           "outward": false,
-          "destructive": false
+          "destructive": true
         },
         {
           "ref": "webdav-uploads-abort",
@@ -5753,9 +5753,9 @@
           "path": "/remote.php/dav/uploads/{user}/{uploadId}/.file",
           "status": "exposed",
           "key": "company-box-nextcloud.webdav-uploads-finish",
-          "capability": "connector.dispatch",
+          "capability": "connector.admin",
           "outward": false,
-          "destructive": false
+          "destructive": true
         },
         {
           "ref": "webdav-uploads-put-chunk",
