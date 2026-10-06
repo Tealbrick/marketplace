@@ -317,7 +317,10 @@ function synth(schema: unknown, defs: Record<string, unknown>, depth = 0): unkno
         if (names.length >= minProperties) break;
         if (!names.includes(name)) names.push(name);
       }
-      own = Object.fromEntries(names.map((name) => [name, synth(properties[name], defs, depth + 1)]));
+      // File values ({base64, filename?, contentType?}) need strictly valid base64.
+      own = Object.fromEntries(
+        names.map((name) => [name, name === "base64" ? "aGVsbG8=" : synth(properties[name], defs, depth + 1)]),
+      );
       break;
     }
     case "array": {
@@ -338,7 +341,6 @@ function synth(schema: unknown, defs: Record<string, unknown>, depth = 0): unkno
     case "string": {
       switch (schema.format) {
         case "binary":
-          // The argument validator asserts type string for binary properties (see report: object file values are refused).
           own = "hello";
           break;
         case "date-time":
