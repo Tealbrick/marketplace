@@ -2,10 +2,10 @@
   "schema": 1,
   "ok": true,
   "totals": {
-    "entries": 5,
-    "operations": 680,
-    "exposed": 664,
-    "excluded": 16
+    "entries": 6,
+    "operations": 984,
+    "exposed": 948,
+    "excluded": 36
   },
   "entries": [
     {
@@ -2805,6 +2805,3005 @@
           "status": "exposed",
           "key": "company-box-listmonk.post-bounce-webhook-service",
           "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        }
+      ]
+    },
+    {
+      "id": "nextcloud",
+      "displayName": "Nextcloud",
+      "source": "openapi",
+      "appVersion": "31.0.14",
+      "pinnedSha256": "fefdc71dbe0fba439d8f6877af9965eb43912ad670153d36059e13bb6767fae6",
+      "exposure": "discovery",
+      "total": 304,
+      "exposed": 284,
+      "excluded": 20,
+      "failed": 0,
+      "outward": 33,
+      "destructive": 40,
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "items": [
+        {
+          "ref": "mount_public_link-create-federated-share",
+          "method": "POST",
+          "path": "/index.php/apps/federatedfilesharing/createFederatedShare",
+          "status": "exposed",
+          "key": "company-box-nextcloud.mount-public-link-create-federated-share",
+          "capability": "connector.dispatch",
+          "outward": true,
+          "destructive": false
+        },
+        {
+          "ref": "api-get-thumbnail",
+          "method": "GET",
+          "path": "/index.php/apps/files/api/v1/thumbnail/{x}/{y}/{file}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.api-get-thumbnail",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "public_preview-get-preview",
+          "method": "GET",
+          "path": "/index.php/apps/files_sharing/publicpreview/{token}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.public-preview-get-preview",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "share_info-info",
+          "method": "POST",
+          "path": "/index.php/apps/files_sharing/shareinfo",
+          "status": "exposed",
+          "key": "company-box-nextcloud.share-info-info",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "files_trashbin-preview-get-preview",
+          "method": "GET",
+          "path": "/index.php/apps/files_trashbin/preview",
+          "status": "exposed",
+          "key": "company-box-nextcloud.files-trashbin-preview-get-preview",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "files_versions-preview-get-preview",
+          "method": "GET",
+          "path": "/index.php/apps/files_versions/preview",
+          "status": "exposed",
+          "key": "company-box-nextcloud.files-versions-preview-get-preview",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "oauth_api-get-token",
+          "method": "POST",
+          "path": "/index.php/apps/oauth2/api/v1/token",
+          "status": "excluded",
+          "reason": "Interactive login and OAuth2 bootstrap that hands out credentials or needs a browser redirect; an agent already holds an app password, so this stays in Nextcloud's own sign-in flow."
+        },
+        {
+          "ref": "login_redirector-authorize",
+          "method": "GET",
+          "path": "/index.php/apps/oauth2/authorize",
+          "status": "excluded",
+          "reason": "Interactive login and OAuth2 bootstrap that hands out credentials or needs a browser redirect; an agent already holds an app password, so this stays in Nextcloud's own sign-in flow."
+        },
+        {
+          "ref": "user_theme-get-background",
+          "method": "GET",
+          "path": "/index.php/apps/theming/background",
+          "status": "exposed",
+          "key": "company-box-nextcloud.user-theme-get-background",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "user_theme-delete-background",
+          "method": "DELETE",
+          "path": "/index.php/apps/theming/background/custom",
+          "status": "exposed",
+          "key": "company-box-nextcloud.user-theme-delete-background",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "user_theme-set-background",
+          "method": "POST",
+          "path": "/index.php/apps/theming/background/{type}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.user-theme-set-background",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "icon-get-favicon",
+          "method": "GET",
+          "path": "/index.php/apps/theming/favicon/{app}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.icon-get-favicon",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "icon-get-touch-icon",
+          "method": "GET",
+          "path": "/index.php/apps/theming/icon/{app}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.icon-get-touch-icon",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "theming-get-image",
+          "method": "GET",
+          "path": "/index.php/apps/theming/image/{key}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.theming-get-image",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "icon-get-themed-icon",
+          "method": "GET",
+          "path": "/index.php/apps/theming/img/{app}/{image}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.icon-get-themed-icon",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "theming-get-manifest",
+          "method": "GET",
+          "path": "/index.php/apps/theming/manifest/{app}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.theming-get-manifest",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "theming-get-theme-stylesheet",
+          "method": "GET",
+          "path": "/index.php/apps/theming/theme/{themeId}.css",
+          "status": "exposed",
+          "key": "company-box-nextcloud.theming-get-theme-stylesheet",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "guest_avatar-get-avatar",
+          "method": "GET",
+          "path": "/index.php/avatar/guest/{guestName}/{size}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.guest-avatar-get-avatar",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "guest_avatar-get-avatar-dark",
+          "method": "GET",
+          "path": "/index.php/avatar/guest/{guestName}/{size}/dark",
+          "status": "exposed",
+          "key": "company-box-nextcloud.guest-avatar-get-avatar-dark",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "avatar-get-avatar",
+          "method": "GET",
+          "path": "/index.php/avatar/{userId}/{size}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.avatar-get-avatar",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "avatar-get-avatar-dark",
+          "method": "GET",
+          "path": "/index.php/avatar/{userId}/{size}/dark",
+          "status": "exposed",
+          "key": "company-box-nextcloud.avatar-get-avatar-dark",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "preview-get-mime-icon-url",
+          "method": "GET",
+          "path": "/index.php/core/mimeicon",
+          "status": "exposed",
+          "key": "company-box-nextcloud.preview-get-mime-icon-url",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "preview-get-preview-by-file-id",
+          "method": "GET",
+          "path": "/index.php/core/preview",
+          "status": "exposed",
+          "key": "company-box-nextcloud.preview-get-preview-by-file-id",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "preview-get-preview",
+          "method": "GET",
+          "path": "/index.php/core/preview.png",
+          "status": "exposed",
+          "key": "company-box-nextcloud.preview-get-preview",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "reference-preview",
+          "method": "GET",
+          "path": "/index.php/core/references/preview/{referenceId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.reference-preview",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "wipe-check-wipe",
+          "method": "POST",
+          "path": "/index.php/core/wipe/check",
+          "status": "exposed",
+          "key": "company-box-nextcloud.wipe-check-wipe",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "wipe-wipe-done",
+          "method": "POST",
+          "path": "/index.php/core/wipe/success",
+          "status": "exposed",
+          "key": "company-box-nextcloud.wipe-wipe-done",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "csrf_token-index",
+          "method": "GET",
+          "path": "/index.php/csrftoken",
+          "status": "exposed",
+          "key": "company-box-nextcloud.csrf-token-index",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "login-confirm-password",
+          "method": "POST",
+          "path": "/index.php/login/confirm",
+          "status": "excluded",
+          "reason": "Mints, rotates, deletes or confirms credentials, so an agent could leak a secret or invalidate the app password this connector authenticates with; manage app passwords in Nextcloud's own Security settings."
+        },
+        {
+          "ref": "client_flow_login_v2-init",
+          "method": "POST",
+          "path": "/index.php/login/v2",
+          "status": "excluded",
+          "reason": "Interactive login and OAuth2 bootstrap that hands out credentials or needs a browser redirect; an agent already holds an app password, so this stays in Nextcloud's own sign-in flow."
+        },
+        {
+          "ref": "client_flow_login_v2-poll",
+          "method": "POST",
+          "path": "/index.php/login/v2/poll",
+          "status": "excluded",
+          "reason": "Interactive login and OAuth2 bootstrap that hands out credentials or needs a browser redirect; an agent already holds an app password, so this stays in Nextcloud's own sign-in flow."
+        },
+        {
+          "ref": "ocm-discovery",
+          "method": "GET",
+          "path": "/index.php/ocm-provider",
+          "status": "exposed",
+          "key": "company-box-nextcloud.ocm-discovery",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "request_handler-receive-notification",
+          "method": "POST",
+          "path": "/index.php/ocm/notifications",
+          "status": "exposed",
+          "key": "company-box-nextcloud.request-handler-receive-notification",
+          "capability": "connector.dispatch",
+          "outward": true,
+          "destructive": false
+        },
+        {
+          "ref": "request_handler-add-share",
+          "method": "POST",
+          "path": "/index.php/ocm/shares",
+          "status": "exposed",
+          "key": "company-box-nextcloud.request-handler-add-share",
+          "capability": "connector.dispatch",
+          "outward": true,
+          "destructive": false
+        },
+        {
+          "ref": "public_preview-direct-link",
+          "method": "GET",
+          "path": "/index.php/s/{token}/preview",
+          "status": "exposed",
+          "key": "company-box-nextcloud.public-preview-direct-link",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "log_settings-download",
+          "method": "GET",
+          "path": "/index.php/settings/admin/log/download",
+          "status": "exposed",
+          "key": "company-box-nextcloud.log-settings-download",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "activity-get-default",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/activity/api/v2/activity",
+          "status": "exposed",
+          "key": "company-box-nextcloud.activity-get-default",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "activity-list-filters",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/activity/api/v2/activity/filters",
+          "status": "exposed",
+          "key": "company-box-nextcloud.activity-list-filters",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "activity-get-filter",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/activity/api/v2/activity/{filter}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.activity-get-filter",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "dashboard_api-get-widget-items",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/dashboard/api/v1/widget-items",
+          "status": "exposed",
+          "key": "company-box-nextcloud.dashboard-api-get-widget-items",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "dashboard_api-get-widgets",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/dashboard/api/v1/widgets",
+          "status": "exposed",
+          "key": "company-box-nextcloud.dashboard-api-get-widgets",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "dashboard_api-get-widget-items-v2",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/dashboard/api/v2/widget-items",
+          "status": "exposed",
+          "key": "company-box-nextcloud.dashboard-api-get-widget-items-v2",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "dashboard_api-get-layout",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/dashboard/api/v3/layout",
+          "status": "exposed",
+          "key": "company-box-nextcloud.dashboard-api-get-layout",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "dashboard_api-update-layout",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/dashboard/api/v3/layout",
+          "status": "exposed",
+          "key": "company-box-nextcloud.dashboard-api-update-layout",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "dashboard_api-get-statuses",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/dashboard/api/v3/statuses",
+          "status": "exposed",
+          "key": "company-box-nextcloud.dashboard-api-get-statuses",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "dashboard_api-update-statuses",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/dashboard/api/v3/statuses",
+          "status": "exposed",
+          "key": "company-box-nextcloud.dashboard-api-update-statuses",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "direct-get-url",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/dav/api/v1/direct",
+          "status": "exposed",
+          "key": "company-box-nextcloud.direct-get-url",
+          "capability": "connector.dispatch",
+          "outward": true,
+          "destructive": false
+        },
+        {
+          "ref": "upcoming_events-get-events",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/dav/api/v1/events/upcoming",
+          "status": "exposed",
+          "key": "company-box-nextcloud.upcoming-events-get-events",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "out_of_office-get-out-of-office",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/dav/api/v1/outOfOffice/{userId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.out-of-office-get-out-of-office",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "out_of_office-set-out-of-office",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/dav/api/v1/outOfOffice/{userId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.out-of-office-set-out-of-office",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "out_of_office-clear-out-of-office",
+          "method": "DELETE",
+          "path": "/ocs/v2.php/apps/dav/api/v1/outOfOffice/{userId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.out-of-office-clear-out-of-office",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "out_of_office-get-current-out-of-office-data",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/dav/api/v1/outOfOffice/{userId}/now",
+          "status": "exposed",
+          "key": "company-box-nextcloud.out-of-office-get-current-out-of-office-data",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "ocs_authapi-request-shared-secret-legacy",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/federation/api/v1/request-shared-secret",
+          "status": "exposed",
+          "key": "company-box-nextcloud.ocs-authapi-request-shared-secret-legacy",
+          "capability": "connector.dispatch",
+          "outward": true,
+          "destructive": false
+        },
+        {
+          "ref": "ocs_authapi-get-shared-secret-legacy",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/federation/api/v1/shared-secret",
+          "status": "exposed",
+          "key": "company-box-nextcloud.ocs-authapi-get-shared-secret-legacy",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "settings-get-servers",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/federation/trusted-servers",
+          "status": "exposed",
+          "key": "company-box-nextcloud.settings-get-servers",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "settings-add-server",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/federation/trusted-servers",
+          "status": "excluded",
+          "reason": "Adds or removes a trusted server, which decides which other Nextcloud servers may exchange shares and shared secrets with this one; manage it in Nextcloud's admin settings."
+        },
+        {
+          "ref": "settings-remove-server",
+          "method": "DELETE",
+          "path": "/ocs/v2.php/apps/federation/trusted-servers/{id}",
+          "status": "excluded",
+          "reason": "Adds or removes a trusted server, which decides which other Nextcloud servers may exchange shares and shared secrets with this one; manage it in Nextcloud's admin settings."
+        },
+        {
+          "ref": "conversion_api-convert",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/files/api/v1/convert",
+          "status": "exposed",
+          "key": "company-box-nextcloud.conversion-api-convert",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "direct_editing-info",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/files/api/v1/directEditing",
+          "status": "exposed",
+          "key": "company-box-nextcloud.direct-editing-info",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "direct_editing-create",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/files/api/v1/directEditing/create",
+          "status": "exposed",
+          "key": "company-box-nextcloud.direct-editing-create",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "direct_editing-open",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/files/api/v1/directEditing/open",
+          "status": "exposed",
+          "key": "company-box-nextcloud.direct-editing-open",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "direct_editing-templates",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/files/api/v1/directEditing/templates/{editorId}/{creatorId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.direct-editing-templates",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "api-get-folder-tree",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/files/api/v1/folder-tree",
+          "status": "exposed",
+          "key": "company-box-nextcloud.api-get-folder-tree",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "open_local_editor-create",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/files/api/v1/openlocaleditor",
+          "status": "exposed",
+          "key": "company-box-nextcloud.open-local-editor-create",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "open_local_editor-validate",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/files/api/v1/openlocaleditor/{token}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.open-local-editor-validate",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "template-list",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/files/api/v1/templates",
+          "status": "exposed",
+          "key": "company-box-nextcloud.template-list",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "template-create",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/files/api/v1/templates/create",
+          "status": "exposed",
+          "key": "company-box-nextcloud.template-create",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "template-list-template-fields",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/files/api/v1/templates/fields/{fileId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.template-list-template-fields",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "template-path",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/files/api/v1/templates/path",
+          "status": "exposed",
+          "key": "company-box-nextcloud.template-path",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "transfer_ownership-transfer",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/files/api/v1/transferownership",
+          "status": "exposed",
+          "key": "company-box-nextcloud.transfer-ownership-transfer",
+          "capability": "connector.admin",
+          "outward": true,
+          "destructive": true
+        },
+        {
+          "ref": "transfer_ownership-accept",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/files/api/v1/transferownership/{id}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.transfer-ownership-accept",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "transfer_ownership-reject",
+          "method": "DELETE",
+          "path": "/ocs/v2.php/apps/files/api/v1/transferownership/{id}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.transfer-ownership-reject",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "api-get-user-mounts",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/files_external/api/v1/mounts",
+          "status": "exposed",
+          "key": "company-box-nextcloud.api-get-user-mounts",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "api-get",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/files_reminders/api/v{version}/{fileId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.api-get",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "api-set",
+          "method": "PUT",
+          "path": "/ocs/v2.php/apps/files_reminders/api/v{version}/{fileId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.api-set",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "api-remove",
+          "method": "DELETE",
+          "path": "/ocs/v2.php/apps/files_reminders/api/v{version}/{fileId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.api-remove",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "deleted_shareapi-index",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/files_sharing/api/v1/deletedshares",
+          "status": "exposed",
+          "key": "company-box-nextcloud.deleted-shareapi-index",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "deleted_shareapi-undelete",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/files_sharing/api/v1/deletedshares/{id}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.deleted-shareapi-undelete",
+          "capability": "connector.dispatch",
+          "outward": true,
+          "destructive": false
+        },
+        {
+          "ref": "remote-get-shares",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/files_sharing/api/v1/remote_shares",
+          "status": "exposed",
+          "key": "company-box-nextcloud.remote-get-shares",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "remote-get-open-shares",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/files_sharing/api/v1/remote_shares/pending",
+          "status": "exposed",
+          "key": "company-box-nextcloud.remote-get-open-shares",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "remote-accept-share",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/files_sharing/api/v1/remote_shares/pending/{id}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.remote-accept-share",
+          "capability": "connector.dispatch",
+          "outward": true,
+          "destructive": false
+        },
+        {
+          "ref": "remote-decline-share",
+          "method": "DELETE",
+          "path": "/ocs/v2.php/apps/files_sharing/api/v1/remote_shares/pending/{id}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.remote-decline-share",
+          "capability": "connector.admin",
+          "outward": true,
+          "destructive": true
+        },
+        {
+          "ref": "remote-get-share",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/files_sharing/api/v1/remote_shares/{id}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.remote-get-share",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "remote-unshare",
+          "method": "DELETE",
+          "path": "/ocs/v2.php/apps/files_sharing/api/v1/remote_shares/{id}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.remote-unshare",
+          "capability": "connector.admin",
+          "outward": true,
+          "destructive": true
+        },
+        {
+          "ref": "shareesapi-search",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/files_sharing/api/v1/sharees",
+          "status": "exposed",
+          "key": "company-box-nextcloud.shareesapi-search",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "shareesapi-find-recommended",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/files_sharing/api/v1/sharees_recommended",
+          "status": "exposed",
+          "key": "company-box-nextcloud.shareesapi-find-recommended",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "shareapi-get-shares",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/files_sharing/api/v1/shares",
+          "status": "exposed",
+          "key": "company-box-nextcloud.shareapi-get-shares",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "shareapi-create-share",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/files_sharing/api/v1/shares",
+          "status": "exposed",
+          "key": "company-box-nextcloud.shareapi-create-share",
+          "capability": "connector.dispatch",
+          "outward": true,
+          "destructive": false
+        },
+        {
+          "ref": "shareapi-get-inherited-shares",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/files_sharing/api/v1/shares/inherited",
+          "status": "exposed",
+          "key": "company-box-nextcloud.shareapi-get-inherited-shares",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "shareapi-pending-shares",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/files_sharing/api/v1/shares/pending",
+          "status": "exposed",
+          "key": "company-box-nextcloud.shareapi-pending-shares",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "shareapi-accept-share",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/files_sharing/api/v1/shares/pending/{id}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.shareapi-accept-share",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "shareapi-get-share",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/files_sharing/api/v1/shares/{id}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.shareapi-get-share",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "shareapi-update-share",
+          "method": "PUT",
+          "path": "/ocs/v2.php/apps/files_sharing/api/v1/shares/{id}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.shareapi-update-share",
+          "capability": "connector.dispatch",
+          "outward": true,
+          "destructive": false
+        },
+        {
+          "ref": "shareapi-delete-share",
+          "method": "DELETE",
+          "path": "/ocs/v2.php/apps/files_sharing/api/v1/shares/{id}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.shareapi-delete-share",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "shareapi-send-share-email",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/files_sharing/api/v1/shares/{id}/send-email",
+          "status": "exposed",
+          "key": "company-box-nextcloud.shareapi-send-share-email",
+          "capability": "connector.dispatch",
+          "outward": true,
+          "destructive": false
+        },
+        {
+          "ref": "shareapi-generate-token",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/files_sharing/api/v1/token",
+          "status": "exposed",
+          "key": "company-box-nextcloud.shareapi-generate-token",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "api-generate-notification-v3",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/notifications/api/{apiVersion3}/admin_notifications/{userId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.api-generate-notification-v3",
+          "capability": "connector.dispatch",
+          "outward": true,
+          "destructive": false
+        },
+        {
+          "ref": "api-self-test-push",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/notifications/api/{apiVersion3}/test/self",
+          "status": "exposed",
+          "key": "company-box-nextcloud.api-self-test-push",
+          "capability": "connector.dispatch",
+          "outward": true,
+          "destructive": false
+        },
+        {
+          "ref": "api-generate-notification",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/notifications/api/{apiVersion}/admin_notifications/{userId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.api-generate-notification",
+          "capability": "connector.dispatch",
+          "outward": true,
+          "destructive": false
+        },
+        {
+          "ref": "endpoint-list-notifications",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/notifications/api/{apiVersion}/notifications",
+          "status": "exposed",
+          "key": "company-box-nextcloud.endpoint-list-notifications",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "endpoint-delete-all-notifications",
+          "method": "DELETE",
+          "path": "/ocs/v2.php/apps/notifications/api/{apiVersion}/notifications",
+          "status": "exposed",
+          "key": "company-box-nextcloud.endpoint-delete-all-notifications",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "endpoint-confirm-ids-for-user",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/notifications/api/{apiVersion}/notifications/exists",
+          "status": "exposed",
+          "key": "company-box-nextcloud.endpoint-confirm-ids-for-user",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "endpoint-get-notification",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/notifications/api/{apiVersion}/notifications/{id}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.endpoint-get-notification",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "endpoint-delete-notification",
+          "method": "DELETE",
+          "path": "/ocs/v2.php/apps/notifications/api/{apiVersion}/notifications/{id}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.endpoint-delete-notification",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "push-register-device",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/notifications/api/{apiVersion}/push",
+          "status": "exposed",
+          "key": "company-box-nextcloud.push-register-device",
+          "capability": "connector.dispatch",
+          "outward": true,
+          "destructive": false
+        },
+        {
+          "ref": "push-remove-device",
+          "method": "DELETE",
+          "path": "/ocs/v2.php/apps/notifications/api/{apiVersion}/push",
+          "status": "exposed",
+          "key": "company-box-nextcloud.push-remove-device",
+          "capability": "connector.admin",
+          "outward": true,
+          "destructive": true
+        },
+        {
+          "ref": "settings-personal",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/notifications/api/{apiVersion}/settings",
+          "status": "exposed",
+          "key": "company-box-nextcloud.settings-personal",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "settings-admin",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/notifications/api/{apiVersion}/settings/admin",
+          "status": "exposed",
+          "key": "company-box-nextcloud.settings-admin",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "api-generate",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/password_policy/api/v1/generate",
+          "status": "exposed",
+          "key": "company-box-nextcloud.api-generate",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "api-validate",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/password_policy/api/v1/validate",
+          "status": "exposed",
+          "key": "company-box-nextcloud.api-validate",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "app_config-get-apps",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/provisioning_api/api/v1/config/apps",
+          "status": "exposed",
+          "key": "company-box-nextcloud.app-config-get-apps",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "app_config-get-keys",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/provisioning_api/api/v1/config/apps/{app}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.app-config-get-keys",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "app_config-set-value",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/provisioning_api/api/v1/config/apps/{app}/{key}",
+          "status": "excluded",
+          "reason": "Writes server or app-wide configuration (admin settings), which can reconfigure or lock down the whole instance; change it from Nextcloud's admin settings or occ."
+        },
+        {
+          "ref": "preferences-set-multiple-preferences",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/provisioning_api/api/v1/config/users/{appId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.preferences-set-multiple-preferences",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "preferences-delete-multiple-preference",
+          "method": "DELETE",
+          "path": "/ocs/v2.php/apps/provisioning_api/api/v1/config/users/{appId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.preferences-delete-multiple-preference",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "preferences-set-preference",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/provisioning_api/api/v1/config/users/{appId}/{configKey}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.preferences-set-preference",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "preferences-delete-preference",
+          "method": "DELETE",
+          "path": "/ocs/v2.php/apps/provisioning_api/api/v1/config/users/{appId}/{configKey}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.preferences-delete-preference",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "recommendation-index",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/recommendations/api/v1/recommendations",
+          "status": "exposed",
+          "key": "company-box-nextcloud.recommendation-index",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "recommendation-always",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/recommendations/api/v1/recommendations/always",
+          "status": "exposed",
+          "key": "company-box-nextcloud.recommendation-always",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "serverinfo-basic-data",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/serverinfo/api/v1/basicdata",
+          "status": "exposed",
+          "key": "company-box-nextcloud.serverinfo-basic-data",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "serverinfo-disk-data",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/serverinfo/api/v1/diskdata",
+          "status": "exposed",
+          "key": "company-box-nextcloud.serverinfo-disk-data",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "serverinfo-info",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/serverinfo/api/v1/info",
+          "status": "exposed",
+          "key": "company-box-nextcloud.serverinfo-info",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "user_theme-disable-theme",
+          "method": "DELETE",
+          "path": "/ocs/v2.php/apps/theming/api/v1/theme/{themeId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.user-theme-disable-theme",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "user_theme-enable-theme",
+          "method": "PUT",
+          "path": "/ocs/v2.php/apps/theming/api/v1/theme/{themeId}/enable",
+          "status": "exposed",
+          "key": "company-box-nextcloud.user-theme-enable-theme",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "api-get-app-list",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/updatenotification/api/{apiVersion}/applist/{newVersion}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.api-get-app-list",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "api-get-app-changelog-entry",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/updatenotification/api/{apiVersion}/changelog/{appId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.api-get-app-changelog-entry",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "settings-set-admin-config",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/user_oidc/api/{apiVersion}/admin-config",
+          "status": "excluded",
+          "reason": "Changes how users sign in to the server (OpenID Connect providers and admin config hold client secrets and can lock everyone out); manage it in Nextcloud's admin settings."
+        },
+        {
+          "ref": "settings-get-providers",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/user_oidc/api/{apiVersion}/provider",
+          "status": "exposed",
+          "key": "company-box-nextcloud.settings-get-providers",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "settings-create-provider",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/user_oidc/api/{apiVersion}/provider",
+          "status": "excluded",
+          "reason": "Changes how users sign in to the server (OpenID Connect providers and admin config hold client secrets and can lock everyone out); manage it in Nextcloud's admin settings."
+        },
+        {
+          "ref": "settings-seti-d4me",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/user_oidc/api/{apiVersion}/provider/id4me",
+          "status": "excluded",
+          "reason": "Changes how users sign in to the server (OpenID Connect providers and admin config hold client secrets and can lock everyone out); manage it in Nextcloud's admin settings."
+        },
+        {
+          "ref": "settings-update-provider",
+          "method": "PUT",
+          "path": "/ocs/v2.php/apps/user_oidc/api/{apiVersion}/provider/{providerId}",
+          "status": "excluded",
+          "reason": "Changes how users sign in to the server (OpenID Connect providers and admin config hold client secrets and can lock everyone out); manage it in Nextcloud's admin settings."
+        },
+        {
+          "ref": "settings-delete-provider",
+          "method": "DELETE",
+          "path": "/ocs/v2.php/apps/user_oidc/api/{apiVersion}/provider/{providerId}",
+          "status": "excluded",
+          "reason": "Changes how users sign in to the server (OpenID Connect providers and admin config hold client secrets and can lock everyone out); manage it in Nextcloud's admin settings."
+        },
+        {
+          "ref": "settings-get-supported-settings",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/user_oidc/api/{apiVersion}/supported-settings",
+          "status": "exposed",
+          "key": "company-box-nextcloud.settings-get-supported-settings",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "ocs_api-create-user",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/user_oidc/api/{apiVersion}/user",
+          "status": "exposed",
+          "key": "company-box-nextcloud.ocs-api-create-user",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "ocs_api-delete-user",
+          "method": "DELETE",
+          "path": "/ocs/v2.php/apps/user_oidc/api/{apiVersion}/user/{userId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.ocs-api-delete-user",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "heartbeat-heartbeat",
+          "method": "PUT",
+          "path": "/ocs/v2.php/apps/user_status/api/v1/heartbeat",
+          "status": "exposed",
+          "key": "company-box-nextcloud.heartbeat-heartbeat",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "predefined_status-find-all",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/user_status/api/v1/predefined_statuses",
+          "status": "exposed",
+          "key": "company-box-nextcloud.predefined-status-find-all",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "statuses-find-all",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/user_status/api/v1/statuses",
+          "status": "exposed",
+          "key": "company-box-nextcloud.statuses-find-all",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "statuses-find",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/user_status/api/v1/statuses/{userId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.statuses-find",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "user_status-get-status",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/user_status/api/v1/user_status",
+          "status": "exposed",
+          "key": "company-box-nextcloud.user-status-get-status",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "user_status-clear-message",
+          "method": "DELETE",
+          "path": "/ocs/v2.php/apps/user_status/api/v1/user_status/message",
+          "status": "exposed",
+          "key": "company-box-nextcloud.user-status-clear-message",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "user_status-set-custom-message",
+          "method": "PUT",
+          "path": "/ocs/v2.php/apps/user_status/api/v1/user_status/message/custom",
+          "status": "exposed",
+          "key": "company-box-nextcloud.user-status-set-custom-message",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "user_status-set-predefined-message",
+          "method": "PUT",
+          "path": "/ocs/v2.php/apps/user_status/api/v1/user_status/message/predefined",
+          "status": "exposed",
+          "key": "company-box-nextcloud.user-status-set-predefined-message",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "user_status-revert-status",
+          "method": "DELETE",
+          "path": "/ocs/v2.php/apps/user_status/api/v1/user_status/revert/{messageId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.user-status-revert-status",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "user_status-set-status",
+          "method": "PUT",
+          "path": "/ocs/v2.php/apps/user_status/api/v1/user_status/status",
+          "status": "exposed",
+          "key": "company-box-nextcloud.user-status-set-status",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "weather_status-get-favorites",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/weather_status/api/v1/favorites",
+          "status": "exposed",
+          "key": "company-box-nextcloud.weather-status-get-favorites",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "weather_status-set-favorites",
+          "method": "PUT",
+          "path": "/ocs/v2.php/apps/weather_status/api/v1/favorites",
+          "status": "exposed",
+          "key": "company-box-nextcloud.weather-status-set-favorites",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "weather_status-get-forecast",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/weather_status/api/v1/forecast",
+          "status": "exposed",
+          "key": "company-box-nextcloud.weather-status-get-forecast",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "weather_status-get-location",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/weather_status/api/v1/location",
+          "status": "exposed",
+          "key": "company-box-nextcloud.weather-status-get-location",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "weather_status-set-location",
+          "method": "PUT",
+          "path": "/ocs/v2.php/apps/weather_status/api/v1/location",
+          "status": "exposed",
+          "key": "company-box-nextcloud.weather-status-set-location",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "weather_status-set-mode",
+          "method": "PUT",
+          "path": "/ocs/v2.php/apps/weather_status/api/v1/mode",
+          "status": "exposed",
+          "key": "company-box-nextcloud.weather-status-set-mode",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "weather_status-use-personal-address",
+          "method": "PUT",
+          "path": "/ocs/v2.php/apps/weather_status/api/v1/use-personal",
+          "status": "exposed",
+          "key": "company-box-nextcloud.weather-status-use-personal-address",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webhooks-index",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/webhook_listeners/api/v1/webhooks",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webhooks-index",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webhooks-create",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/webhook_listeners/api/v1/webhooks",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webhooks-create",
+          "capability": "connector.dispatch",
+          "outward": true,
+          "destructive": false
+        },
+        {
+          "ref": "webhooks-delete-by-app-id",
+          "method": "DELETE",
+          "path": "/ocs/v2.php/apps/webhook_listeners/api/v1/webhooks/byappid/{appid}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webhooks-delete-by-app-id",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "webhooks-show",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/webhook_listeners/api/v1/webhooks/{id}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webhooks-show",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webhooks-update",
+          "method": "POST",
+          "path": "/ocs/v2.php/apps/webhook_listeners/api/v1/webhooks/{id}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webhooks-update",
+          "capability": "connector.dispatch",
+          "outward": true,
+          "destructive": false
+        },
+        {
+          "ref": "webhooks-destroy",
+          "method": "DELETE",
+          "path": "/ocs/v2.php/apps/webhook_listeners/api/v1/webhooks/{id}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webhooks-destroy",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "apps-get-apps",
+          "method": "GET",
+          "path": "/ocs/v2.php/cloud/apps",
+          "status": "exposed",
+          "key": "company-box-nextcloud.apps-get-apps",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "apps-get-app-info",
+          "method": "GET",
+          "path": "/ocs/v2.php/cloud/apps/{app}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.apps-get-app-info",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "apps-enable",
+          "method": "POST",
+          "path": "/ocs/v2.php/cloud/apps/{app}",
+          "status": "excluded",
+          "reason": "Enabling or disabling an app changes what code runs on the server; do it from the Apps page or occ."
+        },
+        {
+          "ref": "apps-disable",
+          "method": "DELETE",
+          "path": "/ocs/v2.php/cloud/apps/{app}",
+          "status": "excluded",
+          "reason": "Enabling or disabling an app changes what code runs on the server; do it from the Apps page or occ."
+        },
+        {
+          "ref": "ocs-get-capabilities",
+          "method": "GET",
+          "path": "/ocs/v2.php/cloud/capabilities",
+          "status": "exposed",
+          "key": "company-box-nextcloud.ocs-get-capabilities",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "groups-get-groups",
+          "method": "GET",
+          "path": "/ocs/v2.php/cloud/groups",
+          "status": "exposed",
+          "key": "company-box-nextcloud.groups-get-groups",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "groups-get-groups-details",
+          "method": "GET",
+          "path": "/ocs/v2.php/cloud/groups/details",
+          "status": "exposed",
+          "key": "company-box-nextcloud.groups-get-groups-details",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "groups-get-group",
+          "method": "GET",
+          "path": "/ocs/v2.php/cloud/groups/{groupId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.groups-get-group",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "groups-get-sub-admins-of-group",
+          "method": "GET",
+          "path": "/ocs/v2.php/cloud/groups/{groupId}/subadmins",
+          "status": "exposed",
+          "key": "company-box-nextcloud.groups-get-sub-admins-of-group",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "groups-get-group-users",
+          "method": "GET",
+          "path": "/ocs/v2.php/cloud/groups/{groupId}/users",
+          "status": "exposed",
+          "key": "company-box-nextcloud.groups-get-group-users",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "groups-get-group-users-details",
+          "method": "GET",
+          "path": "/ocs/v2.php/cloud/groups/{groupId}/users/details",
+          "status": "exposed",
+          "key": "company-box-nextcloud.groups-get-group-users-details",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "ocs_authapi-get-shared-secret",
+          "method": "GET",
+          "path": "/ocs/v2.php/cloud/shared-secret",
+          "status": "exposed",
+          "key": "company-box-nextcloud.ocs-authapi-get-shared-secret",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "ocs_authapi-request-shared-secret",
+          "method": "POST",
+          "path": "/ocs/v2.php/cloud/shared-secret",
+          "status": "exposed",
+          "key": "company-box-nextcloud.ocs-authapi-request-shared-secret",
+          "capability": "connector.dispatch",
+          "outward": true,
+          "destructive": false
+        },
+        {
+          "ref": "request_handler-create-share",
+          "method": "POST",
+          "path": "/ocs/v2.php/cloud/shares",
+          "status": "exposed",
+          "key": "company-box-nextcloud.request-handler-create-share",
+          "capability": "connector.dispatch",
+          "outward": true,
+          "destructive": false
+        },
+        {
+          "ref": "request_handler-accept-share",
+          "method": "POST",
+          "path": "/ocs/v2.php/cloud/shares/{id}/accept",
+          "status": "exposed",
+          "key": "company-box-nextcloud.request-handler-accept-share",
+          "capability": "connector.dispatch",
+          "outward": true,
+          "destructive": false
+        },
+        {
+          "ref": "request_handler-decline-share",
+          "method": "POST",
+          "path": "/ocs/v2.php/cloud/shares/{id}/decline",
+          "status": "exposed",
+          "key": "company-box-nextcloud.request-handler-decline-share",
+          "capability": "connector.dispatch",
+          "outward": true,
+          "destructive": false
+        },
+        {
+          "ref": "request_handler-move",
+          "method": "POST",
+          "path": "/ocs/v2.php/cloud/shares/{id}/move",
+          "status": "exposed",
+          "key": "company-box-nextcloud.request-handler-move",
+          "capability": "connector.dispatch",
+          "outward": true,
+          "destructive": false
+        },
+        {
+          "ref": "request_handler-update-permissions",
+          "method": "POST",
+          "path": "/ocs/v2.php/cloud/shares/{id}/permissions",
+          "status": "exposed",
+          "key": "company-box-nextcloud.request-handler-update-permissions",
+          "capability": "connector.dispatch",
+          "outward": true,
+          "destructive": false
+        },
+        {
+          "ref": "request_handler-re-share",
+          "method": "POST",
+          "path": "/ocs/v2.php/cloud/shares/{id}/reshare",
+          "status": "exposed",
+          "key": "company-box-nextcloud.request-handler-re-share",
+          "capability": "connector.dispatch",
+          "outward": true,
+          "destructive": false
+        },
+        {
+          "ref": "request_handler-revoke",
+          "method": "POST",
+          "path": "/ocs/v2.php/cloud/shares/{id}/revoke",
+          "status": "exposed",
+          "key": "company-box-nextcloud.request-handler-revoke",
+          "capability": "connector.dispatch",
+          "outward": true,
+          "destructive": false
+        },
+        {
+          "ref": "request_handler-unshare",
+          "method": "POST",
+          "path": "/ocs/v2.php/cloud/shares/{id}/unshare",
+          "status": "exposed",
+          "key": "company-box-nextcloud.request-handler-unshare",
+          "capability": "connector.dispatch",
+          "outward": true,
+          "destructive": false
+        },
+        {
+          "ref": "users-get-current-user",
+          "method": "GET",
+          "path": "/ocs/v2.php/cloud/user",
+          "status": "exposed",
+          "key": "company-box-nextcloud.users-get-current-user",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "users-get-enabled-apps",
+          "method": "GET",
+          "path": "/ocs/v2.php/cloud/user/apps",
+          "status": "exposed",
+          "key": "company-box-nextcloud.users-get-enabled-apps",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "users-get-editable-fields",
+          "method": "GET",
+          "path": "/ocs/v2.php/cloud/user/fields",
+          "status": "exposed",
+          "key": "company-box-nextcloud.users-get-editable-fields",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "users-get-editable-fields-for-user",
+          "method": "GET",
+          "path": "/ocs/v2.php/cloud/user/fields/{userId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.users-get-editable-fields-for-user",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "users-get-users",
+          "method": "GET",
+          "path": "/ocs/v2.php/cloud/users",
+          "status": "exposed",
+          "key": "company-box-nextcloud.users-get-users",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "users-add-user",
+          "method": "POST",
+          "path": "/ocs/v2.php/cloud/users",
+          "status": "exposed",
+          "key": "company-box-nextcloud.users-add-user",
+          "capability": "connector.dispatch",
+          "outward": true,
+          "destructive": false
+        },
+        {
+          "ref": "users-get-users-details",
+          "method": "GET",
+          "path": "/ocs/v2.php/cloud/users/details",
+          "status": "exposed",
+          "key": "company-box-nextcloud.users-get-users-details",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "users-get-disabled-users-details",
+          "method": "GET",
+          "path": "/ocs/v2.php/cloud/users/disabled",
+          "status": "exposed",
+          "key": "company-box-nextcloud.users-get-disabled-users-details",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "users-get-last-logged-in-users",
+          "method": "GET",
+          "path": "/ocs/v2.php/cloud/users/recent",
+          "status": "exposed",
+          "key": "company-box-nextcloud.users-get-last-logged-in-users",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "users-search-by-phone-numbers",
+          "method": "POST",
+          "path": "/ocs/v2.php/cloud/users/search/by-phone",
+          "status": "exposed",
+          "key": "company-box-nextcloud.users-search-by-phone-numbers",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "users-get-user",
+          "method": "GET",
+          "path": "/ocs/v2.php/cloud/users/{userId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.users-get-user",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "users-edit-user",
+          "method": "PUT",
+          "path": "/ocs/v2.php/cloud/users/{userId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.users-edit-user",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "users-delete-user",
+          "method": "DELETE",
+          "path": "/ocs/v2.php/cloud/users/{userId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.users-delete-user",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "users-disable-user",
+          "method": "PUT",
+          "path": "/ocs/v2.php/cloud/users/{userId}/disable",
+          "status": "exposed",
+          "key": "company-box-nextcloud.users-disable-user",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "users-enable-user",
+          "method": "PUT",
+          "path": "/ocs/v2.php/cloud/users/{userId}/enable",
+          "status": "exposed",
+          "key": "company-box-nextcloud.users-enable-user",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "users-get-users-groups",
+          "method": "GET",
+          "path": "/ocs/v2.php/cloud/users/{userId}/groups",
+          "status": "exposed",
+          "key": "company-box-nextcloud.users-get-users-groups",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "users-add-to-group",
+          "method": "POST",
+          "path": "/ocs/v2.php/cloud/users/{userId}/groups",
+          "status": "exposed",
+          "key": "company-box-nextcloud.users-add-to-group",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "users-remove-from-group",
+          "method": "DELETE",
+          "path": "/ocs/v2.php/cloud/users/{userId}/groups",
+          "status": "exposed",
+          "key": "company-box-nextcloud.users-remove-from-group",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "users-get-users-groups-details",
+          "method": "GET",
+          "path": "/ocs/v2.php/cloud/users/{userId}/groups/details",
+          "status": "exposed",
+          "key": "company-box-nextcloud.users-get-users-groups-details",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "users-get-user-sub-admin-groups",
+          "method": "GET",
+          "path": "/ocs/v2.php/cloud/users/{userId}/subadmins",
+          "status": "exposed",
+          "key": "company-box-nextcloud.users-get-user-sub-admin-groups",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "users-add-sub-admin",
+          "method": "POST",
+          "path": "/ocs/v2.php/cloud/users/{userId}/subadmins",
+          "status": "exposed",
+          "key": "company-box-nextcloud.users-add-sub-admin",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "users-remove-sub-admin",
+          "method": "DELETE",
+          "path": "/ocs/v2.php/cloud/users/{userId}/subadmins",
+          "status": "exposed",
+          "key": "company-box-nextcloud.users-remove-sub-admin",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "users-get-user-sub-admin-groups-details",
+          "method": "GET",
+          "path": "/ocs/v2.php/cloud/users/{userId}/subadmins/details",
+          "status": "exposed",
+          "key": "company-box-nextcloud.users-get-user-sub-admin-groups-details",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "users-resend-welcome-message",
+          "method": "POST",
+          "path": "/ocs/v2.php/cloud/users/{userId}/welcome",
+          "status": "exposed",
+          "key": "company-box-nextcloud.users-resend-welcome-message",
+          "capability": "connector.dispatch",
+          "outward": true,
+          "destructive": false
+        },
+        {
+          "ref": "users-wipe-user-devices",
+          "method": "POST",
+          "path": "/ocs/v2.php/cloud/users/{userId}/wipe",
+          "status": "exposed",
+          "key": "company-box-nextcloud.users-wipe-user-devices",
+          "capability": "connector.admin",
+          "outward": true,
+          "destructive": true
+        },
+        {
+          "ref": "users-edit-user-multi-value",
+          "method": "PUT",
+          "path": "/ocs/v2.php/cloud/users/{userId}/{collectionName}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.users-edit-user-multi-value",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "collaboration_resources-search-collections",
+          "method": "GET",
+          "path": "/ocs/v2.php/collaboration/resources/collections/search/{filter}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.collaboration-resources-search-collections",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "collaboration_resources-list-collection",
+          "method": "GET",
+          "path": "/ocs/v2.php/collaboration/resources/collections/{collectionId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.collaboration-resources-list-collection",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "collaboration_resources-rename-collection",
+          "method": "PUT",
+          "path": "/ocs/v2.php/collaboration/resources/collections/{collectionId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.collaboration-resources-rename-collection",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "collaboration_resources-add-resource",
+          "method": "POST",
+          "path": "/ocs/v2.php/collaboration/resources/collections/{collectionId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.collaboration-resources-add-resource",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "collaboration_resources-remove-resource",
+          "method": "DELETE",
+          "path": "/ocs/v2.php/collaboration/resources/collections/{collectionId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.collaboration-resources-remove-resource",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "collaboration_resources-create-collection-on-resource",
+          "method": "POST",
+          "path": "/ocs/v2.php/collaboration/resources/{baseResourceType}/{baseResourceId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.collaboration-resources-create-collection-on-resource",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "collaboration_resources-get-collections-by-resource",
+          "method": "GET",
+          "path": "/ocs/v2.php/collaboration/resources/{resourceType}/{resourceId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.collaboration-resources-get-collections-by-resource",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "app_password-delete-app-password",
+          "method": "DELETE",
+          "path": "/ocs/v2.php/core/apppassword",
+          "status": "excluded",
+          "reason": "Mints, rotates, deletes or confirms credentials, so an agent could leak a secret or invalidate the app password this connector authenticates with; manage app passwords in Nextcloud's own Security settings."
+        },
+        {
+          "ref": "app_password-confirm-user-password",
+          "method": "PUT",
+          "path": "/ocs/v2.php/core/apppassword/confirm",
+          "status": "excluded",
+          "reason": "Mints, rotates, deletes or confirms credentials, so an agent could leak a secret or invalidate the app password this connector authenticates with; manage app passwords in Nextcloud's own Security settings."
+        },
+        {
+          "ref": "app_password-rotate-app-password",
+          "method": "POST",
+          "path": "/ocs/v2.php/core/apppassword/rotate",
+          "status": "excluded",
+          "reason": "Mints, rotates, deletes or confirms credentials, so an agent could leak a secret or invalidate the app password this connector authenticates with; manage app passwords in Nextcloud's own Security settings."
+        },
+        {
+          "ref": "auto_complete-get",
+          "method": "GET",
+          "path": "/ocs/v2.php/core/autocomplete/get",
+          "status": "exposed",
+          "key": "company-box-nextcloud.auto-complete-get",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "app_password-get-app-password",
+          "method": "GET",
+          "path": "/ocs/v2.php/core/getapppassword",
+          "status": "excluded",
+          "reason": "Mints, rotates, deletes or confirms credentials, so an agent could leak a secret or invalidate the app password this connector authenticates with; manage app passwords in Nextcloud's own Security settings."
+        },
+        {
+          "ref": "navigation-get-apps-navigation",
+          "method": "GET",
+          "path": "/ocs/v2.php/core/navigation/apps",
+          "status": "exposed",
+          "key": "company-box-nextcloud.navigation-get-apps-navigation",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "navigation-get-settings-navigation",
+          "method": "GET",
+          "path": "/ocs/v2.php/core/navigation/settings",
+          "status": "exposed",
+          "key": "company-box-nextcloud.navigation-get-settings-navigation",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "whats_new-get",
+          "method": "GET",
+          "path": "/ocs/v2.php/core/whatsnew",
+          "status": "exposed",
+          "key": "company-box-nextcloud.whats-new-get",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "whats_new-dismiss",
+          "method": "POST",
+          "path": "/ocs/v2.php/core/whatsnew",
+          "status": "exposed",
+          "key": "company-box-nextcloud.whats-new-dismiss",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "hover_card-get-user",
+          "method": "GET",
+          "path": "/ocs/v2.php/hovercard/v1/{userId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.hover-card-get-user",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "profile_api-get-profile-fields",
+          "method": "GET",
+          "path": "/ocs/v2.php/profile/{targetUserId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.profile-api-get-profile-fields",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "profile_api-set-visibility",
+          "method": "PUT",
+          "path": "/ocs/v2.php/profile/{targetUserId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.profile-api-set-visibility",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "reference_api-extract",
+          "method": "POST",
+          "path": "/ocs/v2.php/references/extract",
+          "status": "exposed",
+          "key": "company-box-nextcloud.reference-api-extract",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "reference_api-extract-public",
+          "method": "POST",
+          "path": "/ocs/v2.php/references/extractPublic",
+          "status": "exposed",
+          "key": "company-box-nextcloud.reference-api-extract-public",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "reference_api-touch-provider",
+          "method": "PUT",
+          "path": "/ocs/v2.php/references/provider/{providerId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.reference-api-touch-provider",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "reference_api-get-providers-info",
+          "method": "GET",
+          "path": "/ocs/v2.php/references/providers",
+          "status": "exposed",
+          "key": "company-box-nextcloud.reference-api-get-providers-info",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "reference_api-resolve-one",
+          "method": "GET",
+          "path": "/ocs/v2.php/references/resolve",
+          "status": "exposed",
+          "key": "company-box-nextcloud.reference-api-resolve-one",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "reference_api-resolve",
+          "method": "POST",
+          "path": "/ocs/v2.php/references/resolve",
+          "status": "exposed",
+          "key": "company-box-nextcloud.reference-api-resolve",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "reference_api-resolve-one-public",
+          "method": "GET",
+          "path": "/ocs/v2.php/references/resolvePublic",
+          "status": "exposed",
+          "key": "company-box-nextcloud.reference-api-resolve-one-public",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "reference_api-resolve-public",
+          "method": "POST",
+          "path": "/ocs/v2.php/references/resolvePublic",
+          "status": "exposed",
+          "key": "company-box-nextcloud.reference-api-resolve-public",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "unified_search-get-providers",
+          "method": "GET",
+          "path": "/ocs/v2.php/search/providers",
+          "status": "exposed",
+          "key": "company-box-nextcloud.unified-search-get-providers",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "unified_search-search",
+          "method": "GET",
+          "path": "/ocs/v2.php/search/providers/{providerId}/search",
+          "status": "exposed",
+          "key": "company-box-nextcloud.unified-search-search",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "declarative_settings-get-forms",
+          "method": "GET",
+          "path": "/ocs/v2.php/settings/api/declarative/forms",
+          "status": "exposed",
+          "key": "company-box-nextcloud.declarative-settings-get-forms",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "declarative_settings-set-value",
+          "method": "POST",
+          "path": "/ocs/v2.php/settings/api/declarative/value",
+          "status": "excluded",
+          "reason": "Writes server or app-wide configuration (admin settings), which can reconfigure or lock down the whole instance; change it from Nextcloud's admin settings or occ."
+        },
+        {
+          "ref": "task_processing_api-schedule",
+          "method": "POST",
+          "path": "/ocs/v2.php/taskprocessing/schedule",
+          "status": "exposed",
+          "key": "company-box-nextcloud.task-processing-api-schedule",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "task_processing_api-get-task",
+          "method": "GET",
+          "path": "/ocs/v2.php/taskprocessing/task/{id}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.task-processing-api-get-task",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "task_processing_api-delete-task",
+          "method": "DELETE",
+          "path": "/ocs/v2.php/taskprocessing/task/{id}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.task-processing-api-delete-task",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "task_processing_api-list-tasks",
+          "method": "GET",
+          "path": "/ocs/v2.php/taskprocessing/tasks",
+          "status": "exposed",
+          "key": "company-box-nextcloud.task-processing-api-list-tasks",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "task_processing_api-list-tasks-by-app",
+          "method": "GET",
+          "path": "/ocs/v2.php/taskprocessing/tasks/app/{appId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.task-processing-api-list-tasks-by-app",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "task_processing_api-cancel-task",
+          "method": "POST",
+          "path": "/ocs/v2.php/taskprocessing/tasks/{taskId}/cancel",
+          "status": "exposed",
+          "key": "company-box-nextcloud.task-processing-api-cancel-task",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "task_processing_api-get-file-contents",
+          "method": "GET",
+          "path": "/ocs/v2.php/taskprocessing/tasks/{taskId}/file/{fileId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.task-processing-api-get-file-contents",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "task_processing_api-get-next-scheduled-task",
+          "method": "GET",
+          "path": "/ocs/v2.php/taskprocessing/tasks_provider/next",
+          "status": "exposed",
+          "key": "company-box-nextcloud.task-processing-api-get-next-scheduled-task",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "task_processing_api-set-file-contents-ex-app",
+          "method": "POST",
+          "path": "/ocs/v2.php/taskprocessing/tasks_provider/{taskId}/file",
+          "status": "exposed",
+          "key": "company-box-nextcloud.task-processing-api-set-file-contents-ex-app",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "task_processing_api-get-file-contents-ex-app",
+          "method": "GET",
+          "path": "/ocs/v2.php/taskprocessing/tasks_provider/{taskId}/file/{fileId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.task-processing-api-get-file-contents-ex-app",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "task_processing_api-set-progress",
+          "method": "POST",
+          "path": "/ocs/v2.php/taskprocessing/tasks_provider/{taskId}/progress",
+          "status": "exposed",
+          "key": "company-box-nextcloud.task-processing-api-set-progress",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "task_processing_api-set-result",
+          "method": "POST",
+          "path": "/ocs/v2.php/taskprocessing/tasks_provider/{taskId}/result",
+          "status": "exposed",
+          "key": "company-box-nextcloud.task-processing-api-set-result",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "task_processing_api-task-types",
+          "method": "GET",
+          "path": "/ocs/v2.php/taskprocessing/tasktypes",
+          "status": "exposed",
+          "key": "company-box-nextcloud.task-processing-api-task-types",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "teams_api-list-teams",
+          "method": "GET",
+          "path": "/ocs/v2.php/teams/resources/{providerId}/{resourceId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.teams-api-list-teams",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "teams_api-resolve-one",
+          "method": "GET",
+          "path": "/ocs/v2.php/teams/{teamId}/resources",
+          "status": "exposed",
+          "key": "company-box-nextcloud.teams-api-resolve-one",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "text_to_image_api-is-available",
+          "method": "GET",
+          "path": "/ocs/v2.php/text2image/is_available",
+          "status": "exposed",
+          "key": "company-box-nextcloud.text-to-image-api-is-available",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "text_to_image_api-schedule",
+          "method": "POST",
+          "path": "/ocs/v2.php/text2image/schedule",
+          "status": "exposed",
+          "key": "company-box-nextcloud.text-to-image-api-schedule",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "text_to_image_api-get-task",
+          "method": "GET",
+          "path": "/ocs/v2.php/text2image/task/{id}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.text-to-image-api-get-task",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "text_to_image_api-delete-task",
+          "method": "DELETE",
+          "path": "/ocs/v2.php/text2image/task/{id}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.text-to-image-api-delete-task",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "text_to_image_api-get-image",
+          "method": "GET",
+          "path": "/ocs/v2.php/text2image/task/{id}/image/{index}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.text-to-image-api-get-image",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "text_to_image_api-list-tasks-by-app",
+          "method": "GET",
+          "path": "/ocs/v2.php/text2image/tasks/app/{appId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.text-to-image-api-list-tasks-by-app",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "text_processing_api-schedule",
+          "method": "POST",
+          "path": "/ocs/v2.php/textprocessing/schedule",
+          "status": "exposed",
+          "key": "company-box-nextcloud.text-processing-api-schedule",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "text_processing_api-get-task",
+          "method": "GET",
+          "path": "/ocs/v2.php/textprocessing/task/{id}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.text-processing-api-get-task",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "text_processing_api-delete-task",
+          "method": "DELETE",
+          "path": "/ocs/v2.php/textprocessing/task/{id}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.text-processing-api-delete-task",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "text_processing_api-list-tasks-by-app",
+          "method": "GET",
+          "path": "/ocs/v2.php/textprocessing/tasks/app/{appId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.text-processing-api-list-tasks-by-app",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "text_processing_api-task-types",
+          "method": "GET",
+          "path": "/ocs/v2.php/textprocessing/tasktypes",
+          "status": "exposed",
+          "key": "company-box-nextcloud.text-processing-api-task-types",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "translation_api-languages",
+          "method": "GET",
+          "path": "/ocs/v2.php/translation/languages",
+          "status": "exposed",
+          "key": "company-box-nextcloud.translation-api-languages",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "translation_api-translate",
+          "method": "POST",
+          "path": "/ocs/v2.php/translation/translate",
+          "status": "exposed",
+          "key": "company-box-nextcloud.translation-api-translate",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "two_factor_api-disable",
+          "method": "POST",
+          "path": "/ocs/v2.php/twofactor/disable",
+          "status": "exposed",
+          "key": "company-box-nextcloud.two-factor-api-disable",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "two_factor_api-enable",
+          "method": "POST",
+          "path": "/ocs/v2.php/twofactor/enable",
+          "status": "exposed",
+          "key": "company-box-nextcloud.two-factor-api-enable",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "two_factor_api-state",
+          "method": "GET",
+          "path": "/ocs/v2.php/twofactor/state",
+          "status": "exposed",
+          "key": "company-box-nextcloud.two-factor-api-state",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-comments-create",
+          "method": "POST",
+          "path": "/remote.php/dav/comments/files/{fileId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-comments-create",
+          "capability": "connector.dispatch",
+          "outward": true,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-comments-list",
+          "method": "REPORT",
+          "path": "/remote.php/dav/comments/files/{fileId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-comments-list",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-comments-delete",
+          "method": "DELETE",
+          "path": "/remote.php/dav/comments/files/{fileId}/{commentId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-comments-delete",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "webdav-comments-update",
+          "method": "PROPPATCH",
+          "path": "/remote.php/dav/comments/files/{fileId}/{commentId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-comments-update",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-files-list-root",
+          "method": "PROPFIND",
+          "path": "/remote.php/dav/files/{user}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-files-list-root",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-files-search-report",
+          "method": "REPORT",
+          "path": "/remote.php/dav/files/{user}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-files-search-report",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-files-download",
+          "method": "GET",
+          "path": "/remote.php/dav/files/{user}/{path}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-files-download",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-files-upload",
+          "method": "PUT",
+          "path": "/remote.php/dav/files/{user}/{path}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-files-upload",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-files-delete",
+          "method": "DELETE",
+          "path": "/remote.php/dav/files/{user}/{path}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-files-delete",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "webdav-files-propfind",
+          "method": "PROPFIND",
+          "path": "/remote.php/dav/files/{user}/{path}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-files-propfind",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-files-proppatch",
+          "method": "PROPPATCH",
+          "path": "/remote.php/dav/files/{user}/{path}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-files-proppatch",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-files-mkcol",
+          "method": "MKCOL",
+          "path": "/remote.php/dav/files/{user}/{path}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-files-mkcol",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-files-move",
+          "method": "MOVE",
+          "path": "/remote.php/dav/files/{user}/{path}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-files-move",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "webdav-files-copy",
+          "method": "COPY",
+          "path": "/remote.php/dav/files/{user}/{path}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-files-copy",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-systemtags-create",
+          "method": "POST",
+          "path": "/remote.php/dav/systemtags",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-systemtags-create",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-systemtags-list",
+          "method": "PROPFIND",
+          "path": "/remote.php/dav/systemtags",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-systemtags-list",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-systemtags-file-tags",
+          "method": "PROPFIND",
+          "path": "/remote.php/dav/systemtags-relations/files/{fileId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-systemtags-file-tags",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-systemtags-assign",
+          "method": "PUT",
+          "path": "/remote.php/dav/systemtags-relations/files/{fileId}/{tagId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-systemtags-assign",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-systemtags-unassign",
+          "method": "DELETE",
+          "path": "/remote.php/dav/systemtags-relations/files/{fileId}/{tagId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-systemtags-unassign",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "webdav-systemtags-delete",
+          "method": "DELETE",
+          "path": "/remote.php/dav/systemtags/{tagId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-systemtags-delete",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "webdav-systemtags-get",
+          "method": "PROPFIND",
+          "path": "/remote.php/dav/systemtags/{tagId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-systemtags-get",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-systemtags-update",
+          "method": "PROPPATCH",
+          "path": "/remote.php/dav/systemtags/{tagId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-systemtags-update",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-trashbin-empty",
+          "method": "DELETE",
+          "path": "/remote.php/dav/trashbin/{user}/trash",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-trashbin-empty",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "webdav-trashbin-list",
+          "method": "PROPFIND",
+          "path": "/remote.php/dav/trashbin/{user}/trash",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-trashbin-list",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-trashbin-download",
+          "method": "GET",
+          "path": "/remote.php/dav/trashbin/{user}/trash/{item}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-trashbin-download",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-trashbin-delete",
+          "method": "DELETE",
+          "path": "/remote.php/dav/trashbin/{user}/trash/{item}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-trashbin-delete",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "webdav-trashbin-item-propfind",
+          "method": "PROPFIND",
+          "path": "/remote.php/dav/trashbin/{user}/trash/{item}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-trashbin-item-propfind",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-trashbin-restore",
+          "method": "MOVE",
+          "path": "/remote.php/dav/trashbin/{user}/trash/{item}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-trashbin-restore",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "webdav-uploads-abort",
+          "method": "DELETE",
+          "path": "/remote.php/dav/uploads/{user}/{uploadId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-uploads-abort",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "webdav-uploads-list-chunks",
+          "method": "PROPFIND",
+          "path": "/remote.php/dav/uploads/{user}/{uploadId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-uploads-list-chunks",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-uploads-start",
+          "method": "MKCOL",
+          "path": "/remote.php/dav/uploads/{user}/{uploadId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-uploads-start",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-uploads-finish",
+          "method": "MOVE",
+          "path": "/remote.php/dav/uploads/{user}/{uploadId}/.file",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-uploads-finish",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "webdav-uploads-put-chunk",
+          "method": "PUT",
+          "path": "/remote.php/dav/uploads/{user}/{uploadId}/{chunkId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-uploads-put-chunk",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-versions-list",
+          "method": "PROPFIND",
+          "path": "/remote.php/dav/versions/{user}/versions/{fileId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-versions-list",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-versions-download",
+          "method": "GET",
+          "path": "/remote.php/dav/versions/{user}/versions/{fileId}/{versionId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-versions-download",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-versions-restore",
+          "method": "MOVE",
+          "path": "/remote.php/dav/versions/{user}/versions/{fileId}/{versionId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-versions-restore",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "get-status",
+          "method": "GET",
+          "path": "/status.php",
+          "status": "exposed",
+          "key": "company-box-nextcloud.get-status",
+          "capability": "connector.observe",
           "outward": false,
           "destructive": false
         }

@@ -1,0 +1,218 @@
+{
+  "paths": {
+    "/ocs/v2.php/apps/files_sharing/api/v1/sharees": {
+      "get": {
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Text to search for",
+            "schema": {
+              "type": "string",
+              "default": ""
+            }
+          },
+          {
+            "name": "itemType",
+            "in": "query",
+            "description": "Limit to specific item types",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Page offset for searching",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 1
+            }
+          },
+          {
+            "name": "perPage",
+            "in": "query",
+            "description": "Limit amount of search results per page",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 200
+            }
+          },
+          {
+            "name": "shareType",
+            "in": "query",
+            "description": "Limit to specific share types (Supplemented: the upstream schema marks this query value nullable without a type, which the engine refuses; nullable dropped, since a query parameter is simply omitted instead.)",
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "int64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "name": "lookup",
+            "in": "query",
+            "description": "If a global lookup should be performed too",
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "enum": [
+                0,
+                1
+              ]
+            }
+          },
+          {
+            "name": "OCS-APIRequest",
+            "in": "header",
+            "description": "Required to be true for the API request to pass",
+            "required": true,
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        ],
+        "x-company-box-supplement": true
+      }
+    },
+    "/ocs/v2.php/apps/files_sharing/api/v1/sharees_recommended": {
+      "get": {
+        "parameters": [
+          {
+            "name": "itemType",
+            "in": "query",
+            "description": "Limit to specific item types",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "shareType",
+            "in": "query",
+            "description": "Limit to specific share types (Supplemented: the upstream schema marks this query value nullable without a type, which the engine refuses; nullable dropped, since a query parameter is simply omitted instead.)",
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "int64"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "name": "OCS-APIRequest",
+            "in": "header",
+            "description": "Required to be true for the API request to pass",
+            "required": true,
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        ],
+        "x-company-box-supplement": true
+      }
+    },
+    "/ocs/v2.php/search/providers/{providerId}/search": {
+      "get": {
+        "parameters": [
+          {
+            "name": "providerId",
+            "in": "path",
+            "description": "ID of the provider",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "term",
+            "in": "query",
+            "description": "Term to search",
+            "schema": {
+              "type": "string",
+              "default": ""
+            }
+          },
+          {
+            "name": "sortOrder",
+            "in": "query",
+            "description": "Order of entries",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "nullable": true
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum amount of entries (capped by configurable unified-search.max-results-per-request, default: 25)",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "nullable": true
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Offset for searching (Supplemented: the upstream schema marks this query value nullable without a type, which the engine refuses; nullable dropped, since a query parameter is simply omitted instead.)",
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "The current user URL",
+            "schema": {
+              "type": "string",
+              "default": ""
+            }
+          },
+          {
+            "name": "OCS-APIRequest",
+            "in": "header",
+            "description": "Required to be true for the API request to pass",
+            "required": true,
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        ],
+        "x-company-box-supplement": true
+      }
+    }
+  }
+}

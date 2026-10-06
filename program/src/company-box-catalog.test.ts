@@ -31,6 +31,8 @@ const AGENT = { ...SERVICE, "x-tealbrick-agent-token": "agent-1", "x-tealbrick-a
 const SECRET = "cb-catalog-secret-value-0001";
 const USER = "api-user";
 const METHODS = ["get", "post", "put", "patch", "delete"] as const;
+/** Path-item keys that hold operations, including the WebDAV `x-<method>` extension. */
+const SPEC_METHODS = [...METHODS, "x-propfind", "x-proppatch", "x-mkcol", "x-move", "x-copy", "x-report", "x-lock", "x-unlock"] as const;
 
 type Expectation = {
   total: number;
@@ -95,6 +97,29 @@ const EXPECTED: Record<string, Expectation> = {
     health: "PublicIntegrationsController_getActiveIntegrations",
     expectHeader: ["authorization", SECRET],
   },
+  nextcloud: {
+    total: 304,
+    exposed: 284,
+    excluded: 20,
+    outward: 33,
+    reads: [
+      "POST /index.php/apps/files_sharing/shareinfo",
+      "POST /index.php/core/wipe/check",
+      "POST /ocs/v2.php/apps/notifications/api/{apiVersion}/notifications/exists",
+      "POST /ocs/v2.php/apps/password_policy/api/v1/validate",
+      "POST /ocs/v2.php/cloud/users/search/by-phone",
+      "POST /ocs/v2.php/references/extract",
+      "POST /ocs/v2.php/references/extractPublic",
+      "POST /ocs/v2.php/references/resolve",
+      "POST /ocs/v2.php/references/resolvePublic",
+      "POST /ocs/v2.php/translation/translate",
+    ],
+    exposure: "discovery",
+    auth: { type: "basic" },
+    credentials: { username: USER, password: SECRET },
+    health: "ocs-get-capabilities",
+    expectHeader: ["authorization", `Basic ${Buffer.from(`${USER}:${SECRET}`).toString("base64")}`],
+  },
   pretix: {
     total: 370,
     exposed: 370,
@@ -121,13 +146,13 @@ function specOperationCount(id: string, specFile = "openapi.json") {
   const spec = JSON.parse(readFileSync(path.join(DEFAULT_COMPANY_BOX_CATALOG_DIR, id, specFile), "utf8")) as {
     paths: Record<string, Record<string, unknown>>;
   };
-  return Object.values(spec.paths).reduce((sum, item) => sum + METHODS.filter((method) => item[method]).length, 0);
+  return Object.values(spec.paths).reduce((sum, item) => sum + SPEC_METHODS.filter((method) => item[method]).length, 0);
 }
 
 describe("shipped Company Box catalog", () => {
   const catalog = loadCompanyBoxCatalog(DEFAULT_COMPANY_BOX_CATALOG_DIR);
 
-  it("loads exactly the five entries without errors", () => {
+  it("loads exactly the six entries without errors", () => {
     expect(catalog.loadErrors).toEqual([]);
     expect(catalog.entries.map((entry) => entry.entry.id).sort()).toEqual(Object.keys(EXPECTED).sort());
     for (const entry of catalog.entries) expect(entry.errors, entry.entry.id).toEqual([]);
@@ -181,7 +206,10 @@ describe("shipped Company Box catalog", () => {
   it("marks only read-only POST operations as reads, never outward or destructive", () => {
     for (const [id, expected] of Object.entries(EXPECTED)) {
       const compiled = catalog.get(id) as CompiledOpenApiEntry;
-      const reads = compiled.operations.filter((operation) => operation.method !== "get" && operation.capability === "connector.observe");
+      // PROPFIND and REPORT are reads by method (WebDAV); only POST reads are declared through `reads`.
+      const reads = compiled.operations.filter(
+        (operation) => !["get", "propfind", "report"].includes(operation.method) && operation.capability === "connector.observe",
+      );
       expect(reads.map((operation) => `${operation.method.toUpperCase()} ${operation.path}`).sort(), id).toEqual([...expected.reads].sort());
       for (const operation of reads) {
         expect(operation, `${id} ${operation.ref}`).toMatchObject({ write: false, outward: false, destructive: false });
@@ -192,7 +220,7 @@ describe("shipped Company Box catalog", () => {
 
   it("keeps upstream specs pristine and applies overlays only where needed", () => {
     const withOverlay = catalog.entries.filter((entry) => entry.kind === "openapi" && entry.entry.openapi?.overlay).map((entry) => entry.entry.id);
-    expect(withOverlay.sort()).toEqual(["formbricks", "postiz"]);
+    expect(withOverlay.sort()).toEqual(["formbricks", "nextcloud", "postiz"]);
     const postizSpec = readFileSync(path.join(DEFAULT_COMPANY_BOX_CATALOG_DIR, "postiz", "openapi.json"), "utf8");
     expect(postizSpec).not.toContain("x-company-box-supplement");
     const postiz = catalog.get("postiz") as CompiledOpenApiEntry;
@@ -201,6 +229,129 @@ describe("shipped Company Box catalog", () => {
     const listmonk = catalog.get("listmonk") as CompiledOpenApiEntry;
     expect(listmonk.coverage.find((item) => item.ref === "previewTemplateById")).toMatchObject({ status: "excluded", auto: true });
     expect(listmonk.entry.excluded.map((exclusion) => exclusion.operation).sort()).toEqual(["logout", "streamEvents"]);
+  });
+
+  it("merges every enabled Nextcloud OCS app spec, namespaced and tagged by app, with a documented exclusion per operation", () => {
+    const compiled = catalog.get("nextcloud") as CompiledOpenApiEntry;
+    expect(compiled.entry.app.version).toBe("31.0.14");
+    const spec = JSON.parse(readFileSync(path.join(DEFAULT_COMPANY_BOX_CATALOG_DIR, "nextcloud", "openapi.json"), "utf8")) as {
+      info: Record<string, unknown>;
+      paths: Record<string, Record<string, { "x-nextcloud-app"?: string; "x-source"?: string; tags?: string[] }>>;
+      components: { schemas: Record<string, unknown> };
+    };
+    expect(spec.info["x-source"]).toBe("merged-upstream");
+    const perApp: Record<string, number> = {};
+    for (const item of Object.values(spec.paths)) {
+      for (const method of SPEC_METHODS) {
+        const operation = item[method];
+        if (!operation) continue;
+        const app = operation["x-nextcloud-app"]!;
+        perApp[app] = (perApp[app] ?? 0) + 1;
+        expect(operation.tags?.[0], `${method} ${app}`).toBe(app);
+      }
+    }
+    expect(perApp).toEqual({
+      activity: 3,
+      cloud_federation_api: 2,
+      core: 77,
+      dashboard: 7,
+      dav: 6,
+      federatedfilesharing: 9,
+      federation: 7,
+      files: 16,
+      files_external: 1,
+      files_reminders: 3,
+      files_sharing: 23,
+      files_trashbin: 1,
+      files_versions: 1,
+      notifications: 12,
+      oauth2: 2,
+      password_policy: 2,
+      provisioning_api: 43,
+      recommendations: 2,
+      serverinfo: 3,
+      settings: 3,
+      theming: 11,
+      updatenotification: 2,
+      user_oidc: 9,
+      user_status: 10,
+      weather_status: 7,
+      webdav: 36,
+      webhook_listeners: 6,
+    });
+    expect(spec.info["x-hand-authored-apps"]).toEqual(["activity", "serverinfo", "webdav"]);
+    // Disabled apps (user_ldap) are not merged; component schemas are namespaced per app.
+    expect(Object.keys(perApp)).not.toContain("user_ldap");
+    expect(Object.keys(spec.components.schemas).every((name) => /^[a-z_0-9]+\./u.test(name))).toBe(true);
+    // Every OCS operation declares the OCS-APIRequest header with default true, which the engine sends on its own.
+    for (const operation of compiled.operations) {
+      const header = operation.operation.parameters.find((parameter) => parameter.in === "header" && parameter.name === "OCS-APIRequest");
+      if (operation.path.startsWith("/ocs/")) expect(header, operation.ref).toMatchObject({ required: true, schema: { type: "boolean", default: true } });
+    }
+    // Credential, login, app-enable and server-config operations stay out, each with its own reason.
+    expect(compiled.entry.excluded.map((exclusion) => exclusion.operation).sort()).toEqual(
+      [
+        "app_config-set-value",
+        "app_password-confirm-user-password",
+        "app_password-delete-app-password",
+        "app_password-get-app-password",
+        "app_password-rotate-app-password",
+        "apps-disable",
+        "apps-enable",
+        "client_flow_login_v2-init",
+        "client_flow_login_v2-poll",
+        "declarative_settings-set-value",
+        "login-confirm-password",
+        "login_redirector-authorize",
+        "oauth_api-get-token",
+        "settings-add-server",
+        "settings-create-provider",
+        "settings-delete-provider",
+        "settings-remove-server",
+        "settings-seti-d4me",
+        "settings-set-admin-config",
+        "settings-update-provider",
+      ].sort(),
+    );
+    expect(compiled.coverage.filter((item) => item.status === "excluded" && item.auto)).toEqual([]);
+    const outward = new Set(compiled.operations.filter((operation) => operation.outward).map((operation) => operation.operationId));
+    for (const id of [
+      "shareapi-create-share",
+      "shareapi-update-share",
+      "shareapi-send-share-email",
+      "direct-get-url",
+      "api-generate-notification-v3",
+      "users-add-user",
+      "users-resend-welcome-message",
+      "webhooks-create",
+      "remote-accept-share",
+      "webdav-comments-create",
+    ]) {
+      expect(outward.has(id), id).toBe(true);
+    }
+    const byId = (id: string) => compiled.operations.find((operation) => operation.operationId === id);
+    expect(byId("users-delete-user")).toMatchObject({ destructive: true, capability: "connector.admin" });
+    expect(byId("users-wipe-user-devices")).toMatchObject({ destructive: true, outward: true });
+    expect(byId("webdav-versions-restore")).toMatchObject({ destructive: true, capability: "connector.admin" });
+    expect(byId("webdav-trashbin-empty")).toMatchObject({ destructive: true, capability: "connector.admin" });
+    expect(byId("webdav-files-propfind")).toMatchObject({ method: "propfind", capability: "connector.observe", write: false, outward: false });
+    // MOVE is always destructive (it can replace the target and removes the source); COPY has Overwrite fixed to F.
+    expect(byId("webdav-files-move")).toMatchObject({ method: "move", capability: "connector.admin", destructive: true, write: true });
+    expect(byId("webdav-files-copy")).toMatchObject({ method: "copy", capability: "connector.dispatch", destructive: false, write: true });
+    expect(byId("webdav-trashbin-restore")).toMatchObject({ method: "move", destructive: true });
+    expect(byId("webdav-uploads-finish")).toMatchObject({ method: "move", destructive: true });
+    // Hand-authored operations are marked as such; upstream ones are not.
+    const handAuthored: Record<string, number> = {};
+    for (const item of Object.values(spec.paths)) {
+      for (const method of SPEC_METHODS) {
+        const operation = item[method];
+        if (operation?.["x-source"] === "hand-authored") handAuthored[operation["x-nextcloud-app"]!] = (handAuthored[operation["x-nextcloud-app"]!] ?? 0) + 1;
+      }
+    }
+    expect(handAuthored).toEqual({ activity: 3, serverinfo: 3, webdav: 36 });
+    expect(byId("shareapi-get-shares")).toMatchObject({ capability: "connector.observe", outward: false });
+    // The three query schemas the engine refused (nullable without a type) are supplemented by the overlay only.
+    expect(byId("unified_search-search")?.operation.parameters.some((parameter) => parameter.name === "cursor")).toBe(true);
   });
 
   it("excludes only Easy!Appointments admin and settings operations", () => {
@@ -363,6 +514,9 @@ function synth(schema: unknown, defs: Record<string, unknown>, depth = 0): unkno
           const minLength = typeof schema.minLength === "number" ? schema.minLength : 1;
           own = "7".padEnd(Math.max(minLength, 1), "x");
           if (typeof schema.maxLength === "number") own = (own as string).slice(0, schema.maxLength);
+          // Literal patterns such as "^1$" or "^(v3)$" (Nextcloud's API version path segments).
+          const literal = typeof schema.pattern === "string" ? /^\^\(?([A-Za-z0-9_.-]+)(?:\|[^)]*)?\)?\$$/u.exec(schema.pattern)?.[1] : undefined;
+          if (literal) own = literal;
         }
       }
       break;
@@ -580,6 +734,8 @@ describe.each(Object.keys(EXPECTED))("agent path: %s", (id) => {
       expect(seen.method, key).toBe(operation.method.toUpperCase());
       expect(seen.path, key).toMatch(pathMatcher(compiled, operation.path));
       expect(seen.headers[expected.expectHeader[0]], key).toBe(expected.expectHeader[1]);
+      // Nextcloud OCS routes need `OCS-APIRequest: true` (declared as a required header parameter, supplied by the agent call).
+      if (id === "nextcloud" && operation.path.startsWith("/ocs/")) expect(seen.headers["ocs-apirequest"], key).toBe("true");
     }
     expect(f.rest.requests.length - healthRequests).toBe(expected.exposed);
     const outwardCalls = f.rulesCalls.filter(
@@ -626,4 +782,111 @@ describe.each(Object.keys(EXPECTED))("agent path: %s", (id) => {
       }
     }, 240_000);
   }
+});
+
+// ---------------------------------------------------------------------------
+// Nextcloud WebDAV through the agent surface: nested paths, custom methods.
+// ---------------------------------------------------------------------------
+
+describe("agent path: nextcloud WebDAV files", () => {
+  async function dav() {
+    const f = await fixture("nextcloud", "allow");
+    const run = async (operationId: string, args: Record<string, unknown>) => {
+      const key = `company-box-nextcloud.${operationId}`;
+      const response = await f.call(key, args, await f.grant(key));
+      return { response, request: f.rest.requests.at(-1)! };
+    };
+    return { f, run };
+  }
+  const base = `/remote.php/dav/files/${USER}`;
+
+  it("lists, uploads, moves and copies at any depth with the right methods and encoded paths", async () => {
+    const { f, run } = await dav();
+    const listed = await run("webdav-files-propfind", { path: { user: USER, path: "Documents/Q3 report" } });
+    expect(listed.response.statusCode, listed.response.body).toBe(200);
+    expect(listed.request).toMatchObject({ method: "PROPFIND", path: `${base}/Documents/Q3%20report` });
+    expect(listed.request.headers.depth).toBe("1");
+    expect(listed.request.headers["ocs-apirequest"]).toBeUndefined();
+
+    const root = await run("webdav-files-list-root", { path: { user: USER }, header: { Depth: "0" } });
+    expect(root.response.statusCode, root.response.body).toBe(200);
+    expect(root.request).toMatchObject({ method: "PROPFIND", path: base });
+    expect(root.request.headers.depth).toBe("0");
+
+    const upload = await run("webdav-files-upload", {
+      path: { user: USER, path: "/Documents/Q3 report/notes.md" },
+      body: { base64: Buffer.from("# notes\n").toString("base64"), filename: "notes.md", contentType: "application/octet-stream" },
+    });
+    expect(upload.response.statusCode, upload.response.body).toBe(200);
+    expect(upload.request).toMatchObject({ method: "PUT", path: `${base}/Documents/Q3%20report/notes.md` });
+    expect(upload.request.raw.toString("utf8")).toBe("# notes\n");
+    expect(upload.request.headers["content-type"]).toBe("application/octet-stream");
+
+    const move = await run("webdav-files-move", { path: { user: USER, path: "Documents/Q3 report/notes.md" }, header: { Destination: "Archive/2026/notes final.md" } });
+    expect(move.response.statusCode, move.response.body).toBe(200);
+    expect(move.request).toMatchObject({ method: "MOVE", path: `${base}/Documents/Q3%20report/notes.md` });
+    expect(move.request.headers.destination).toBe(`${f.rest.origin}${base}/Archive/2026/notes%20final.md`);
+    expect(move.request.headers.overwrite).toBe("F");
+
+    const copy = await run("webdav-files-copy", { path: { user: USER, path: "a.md" }, header: { Destination: "b/a.md" } });
+    expect(copy.request).toMatchObject({ method: "COPY", path: `${base}/a.md` });
+    expect(copy.request.headers.overwrite).toBe("F");
+    const overwrite = await run("webdav-files-copy", { path: { user: USER, path: "a.md" }, header: { Destination: "b/a.md", Overwrite: "T" } });
+    expect(overwrite.response.statusCode).toBe(400);
+
+    for (const [operationId, method] of [["webdav-files-mkcol", "MKCOL"], ["webdav-files-download", "GET"], ["webdav-files-delete", "DELETE"]] as const) {
+      const result = await run(operationId, { path: { user: USER, path: "Documents/new folder" } });
+      expect(result.response.statusCode, `${operationId}: ${result.response.body}`).toBe(200);
+      expect(result.request).toMatchObject({ method, path: `${base}/Documents/new%20folder` });
+    }
+  });
+
+  it("refuses traversal and caller-supplied destination URLs", async () => {
+    const { f, run } = await dav();
+    const before = f.rest.requests.length;
+    for (const bad of ["../etc/passwd", "a/../../b", "a//b", "a/%2e%2e/b", "a\\b"]) {
+      const result = await run("webdav-files-propfind", { path: { user: USER, path: bad } });
+      expect(result.response.statusCode, bad).toBe(400);
+    }
+    const url = await run("webdav-files-move", { path: { user: USER, path: "a.md" }, header: { Destination: "https://evil.example/x" } });
+    expect(url.response.statusCode).toBe(400);
+    expect(f.rest.requests.length).toBe(before);
+  });
+
+  it("restores from the trash bin and versions, and assembles chunked uploads", async () => {
+    const { f, run } = await dav();
+    const trash = await run("webdav-trashbin-restore", { path: { user: USER, item: "folder.d1700000000/notes.md" } });
+    expect(trash.request).toMatchObject({ method: "MOVE", path: `/remote.php/dav/trashbin/${USER}/trash/folder.d1700000000/notes.md` });
+    expect(trash.request.headers.destination).toBe(`${f.rest.origin}/remote.php/dav/trashbin/${USER}/restore/restored`);
+    const version = await run("webdav-versions-restore", { path: { user: USER, fileId: "42", versionId: "1700000000" } });
+    expect(version.request).toMatchObject({ method: "MOVE", path: `/remote.php/dav/versions/${USER}/versions/42/1700000000` });
+    expect(version.request.headers.destination).toBe(`${f.rest.origin}/remote.php/dav/versions/${USER}/restore/target`);
+    const start = await run("webdav-uploads-start", { path: { user: USER, uploadId: "up-1" }, header: { Destination: "Videos/big file.mp4" } });
+    expect(start.request).toMatchObject({ method: "MKCOL", path: `/remote.php/dav/uploads/${USER}/up-1` });
+    expect(start.request.headers.destination).toBe(`${f.rest.origin}${base}/Videos/big%20file.mp4`);
+    const chunk = await run("webdav-uploads-put-chunk", { path: { user: USER, uploadId: "up-1", chunkId: "00001" }, header: { Destination: "Videos/big file.mp4", "OC-Total-Length": "5" }, body: { base64: "aGVsbG8=" } });
+    expect(chunk.request).toMatchObject({ method: "PUT", path: `/remote.php/dav/uploads/${USER}/up-1/00001` });
+    expect(chunk.request.headers["oc-total-length"]).toBe("5");
+    const finish = await run("webdav-uploads-finish", { path: { user: USER, uploadId: "up-1" }, header: { Destination: "Videos/big file.mp4" } });
+    expect(finish.request).toMatchObject({ method: "MOVE", path: `/remote.php/dav/uploads/${USER}/up-1/.file` });
+  });
+
+  it("sends the OCS header by default on OCS routes and keeps WebDAV risk classes", async () => {
+    const { f, run } = await dav();
+    const caps = await run("ocs-get-capabilities", {});
+    expect(caps.request).toMatchObject({ method: "GET", path: "/ocs/v2.php/cloud/capabilities" });
+    expect(caps.request.headers["ocs-apirequest"]).toBe("true");
+    expect(f.rest.requests[0]).toMatchObject({ path: "/ocs/v2.php/cloud/capabilities" });
+  });
+
+  it("holds a comment for owner approval without touching the app", async () => {
+    // Comments are visible to everyone who can open the file, so creating one is outward.
+    const owner = await fixture("nextcloud", "owner");
+    const before = owner.rest.requests.length;
+    const key = "company-box-nextcloud.webdav-comments-create";
+    const held = await owner.call(key, { path: { fileId: "42" }, body: { message: "hi" } }, await owner.grant(key));
+    expect(held.statusCode, held.body).toBe(202);
+    expect(held.json()).toMatchObject({ status: "approval_pending" });
+    expect(owner.rest.requests.length).toBe(before);
+  });
 });
