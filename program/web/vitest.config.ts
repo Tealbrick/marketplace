@@ -10,5 +10,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     include: ["src/**/*.test.ts"],
+    // @tealbrick/ui imports its brand SVG; let Vite transform it for component tests.
+    server: { deps: { inline: ["@tealbrick/ui"] } },
   },
 });

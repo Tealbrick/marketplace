@@ -1,4 +1,4 @@
-import type { AuditResponse, CardDetailResponse, CardsResponse, CardsSummaryResponse, CustomConnector, CustomConnectorCreate, CustomConnectorPatch, CustomConnectorsResponse, FrontendBootstrap, OperatorSession, ProviderSettings, RuntimeHealth } from "./types";
+import type { CompanyBoxResponse, CompanyBoxResult, CompanyBoxSetup, AuditResponse, CardDetailResponse, CardsResponse, CardsSummaryResponse, CustomConnector, CustomConnectorCreate, CustomConnectorPatch, CustomConnectorsResponse, FrontendBootstrap, OperatorSession, ProviderSettings, RuntimeHealth } from "./types";
 
 let operatorCsrfToken: string | null = null;
 
@@ -161,3 +161,33 @@ export const deleteCustomConnector = (pluginId: string) =>
 
 export const refreshCustomConnector = (pluginId: string) =>
   api<{ ok: true; connector: CustomConnector }>(customConnectorRoute(pluginId, "/refresh"), { method: "POST" });
+
+// Company Box. The workspace comes from the operator session. Credentials go
+// up once and never come back; the response carries fingerprints only.
+const companyBoxRoute = (entryId?: string, suffix = "") =>
+  `/api/marketplace/company-box${entryId ? `/${encodeURIComponent(entryId)}` : ""}${suffix}`;
+
+export const getCompanyBox = () => api<CompanyBoxResponse>(companyBoxRoute());
+
+/** Set up or update an entry. A failed connection test resolves with `ok: false` (HTTP 502). */
+export async function setupCompanyBoxEntry(entryId: string, input: CompanyBoxSetup): Promise<CompanyBoxResult> {
+  return companyBoxResult(() => api<CompanyBoxResult>(companyBoxRoute(entryId, "/setup"), { method: "POST", body: JSON.stringify(input) }));
+}
+
+export async function testCompanyBoxEntry(entryId: string): Promise<CompanyBoxResult> {
+  return companyBoxResult(() => api<CompanyBoxResult>(companyBoxRoute(entryId, "/test"), { method: "POST" }));
+}
+
+export const removeCompanyBoxEntry = (entryId: string) =>
+  api<{ ok: true; entry: CompanyBoxResult["entry"] | null }>(companyBoxRoute(entryId), { method: "DELETE" });
+
+async function companyBoxResult(run: () => Promise<CompanyBoxResult>): Promise<CompanyBoxResult> {
+  try {
+    return await run();
+  } catch (error) {
+    // Saved, but the connection test failed: the body still carries the entry.
+    const body = error instanceof ApiError && error.body && typeof error.body === "object" ? (error.body as Partial<CompanyBoxResult>) : null;
+    if (error instanceof ApiError && error.status === 502 && body?.entry) return { ok: false, error: body.error, entry: body.entry };
+    throw error;
+  }
+}

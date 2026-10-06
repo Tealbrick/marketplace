@@ -227,7 +227,7 @@ function appendQuery(search: URLSearchParams, parameter: OpenApiParameter, value
 function buildBody(
   operation: OpenApiCallOptions["operation"],
   value: unknown,
-): { body?: string | Buffer | FormData; contentType?: string } {
+): { body?: string | Uint8Array<ArrayBuffer> | FormData; contentType?: string } {
   const requestBody = operation.requestBody;
   if (value === undefined) {
     if (requestBody?.required) argumentError("body", "required");
@@ -254,7 +254,7 @@ function buildBody(
     for (const [key, child] of Object.entries(record)) {
       const file = recordValue(child);
       if (file && typeof file.base64 === "string") {
-        const bytes = Buffer.from(file.base64, "base64");
+        const bytes = new Uint8Array(Buffer.from(file.base64, "base64"));
         form.append(
           key,
           new Blob([bytes], {
@@ -274,7 +274,7 @@ function buildBody(
   }
   const file = recordValue(value);
   if (file && typeof file.base64 === "string") {
-    return { body: Buffer.from(file.base64, "base64"), contentType };
+    return { body: new Uint8Array(Buffer.from(file.base64, "base64")), contentType };
   }
   if (typeof value === "string") return { body: value, contentType };
   return { body: JSON.stringify(value), contentType };
