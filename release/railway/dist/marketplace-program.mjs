@@ -3775,8 +3775,8 @@ var require_req = __commonJS({
       if (req.originalUrl) {
         _req.url = req.originalUrl;
       } else {
-        const path10 = req.path;
-        _req.url = typeof path10 === "string" ? path10 : req.url ? req.url.path || req.url : void 0;
+        const path9 = req.path;
+        _req.url = typeof path9 === "string" ? path9 : req.url ? req.url.path || req.url : void 0;
       }
       if (req.query) {
         _req.query = req.query;
@@ -3941,14 +3941,14 @@ var require_redact = __commonJS({
       }
       return obj;
     }
-    function parsePath(path10) {
+    function parsePath(path9) {
       const parts = [];
       let current = "";
       let inBrackets = false;
       let inQuotes = false;
       let quoteChar = "";
-      for (let i = 0; i < path10.length; i++) {
-        const char = path10[i];
+      for (let i = 0; i < path9.length; i++) {
+        const char = path9[i];
         if (!inBrackets && char === ".") {
           if (current) {
             parts.push(current);
@@ -4079,10 +4079,10 @@ var require_redact = __commonJS({
       return current;
     }
     function redactPaths(obj, paths, censor, remove = false) {
-      for (const path10 of paths) {
-        const parts = parsePath(path10);
+      for (const path9 of paths) {
+        const parts = parsePath(path9);
         if (parts.includes("*")) {
-          redactWildcardPath(obj, parts, censor, path10, remove);
+          redactWildcardPath(obj, parts, censor, path9, remove);
         } else {
           if (remove) {
             removeKey(obj, parts);
@@ -4167,8 +4167,8 @@ var require_redact = __commonJS({
           }
         } else {
           if (afterWildcard.includes("*")) {
-            const wrappedCensor = typeof censor === "function" ? (value, path10) => {
-              const fullPath = [...pathArray.slice(0, pathLength), ...path10];
+            const wrappedCensor = typeof censor === "function" ? (value, path9) => {
+              const fullPath = [...pathArray.slice(0, pathLength), ...path9];
               return censor(value, fullPath);
             } : censor;
             redactWildcardPath(current, afterWildcard, wrappedCensor, originalPath, remove);
@@ -4203,8 +4203,8 @@ var require_redact = __commonJS({
         return null;
       }
       const pathStructure = /* @__PURE__ */ new Map();
-      for (const path10 of pathsToClone) {
-        const parts = parsePath(path10);
+      for (const path9 of pathsToClone) {
+        const parts = parsePath(path9);
         let current = pathStructure;
         for (let i = 0; i < parts.length; i++) {
           const part = parts[i];
@@ -4256,24 +4256,24 @@ var require_redact = __commonJS({
       }
       return cloneSelectively(obj, pathStructure);
     }
-    function validatePath(path10) {
-      if (typeof path10 !== "string") {
+    function validatePath(path9) {
+      if (typeof path9 !== "string") {
         throw new Error("Paths must be (non-empty) strings");
       }
-      if (path10 === "") {
+      if (path9 === "") {
         throw new Error("Invalid redaction path ()");
       }
-      if (path10.includes("..")) {
-        throw new Error(`Invalid redaction path (${path10})`);
+      if (path9.includes("..")) {
+        throw new Error(`Invalid redaction path (${path9})`);
       }
-      if (path10.includes(",")) {
-        throw new Error(`Invalid redaction path (${path10})`);
+      if (path9.includes(",")) {
+        throw new Error(`Invalid redaction path (${path9})`);
       }
       let bracketCount = 0;
       let inQuotes = false;
       let quoteChar = "";
-      for (let i = 0; i < path10.length; i++) {
-        const char = path10[i];
+      for (let i = 0; i < path9.length; i++) {
+        const char = path9[i];
         if ((char === '"' || char === "'") && bracketCount > 0) {
           if (!inQuotes) {
             inQuotes = true;
@@ -4287,20 +4287,20 @@ var require_redact = __commonJS({
         } else if (char === "]" && !inQuotes) {
           bracketCount--;
           if (bracketCount < 0) {
-            throw new Error(`Invalid redaction path (${path10})`);
+            throw new Error(`Invalid redaction path (${path9})`);
           }
         }
       }
       if (bracketCount !== 0) {
-        throw new Error(`Invalid redaction path (${path10})`);
+        throw new Error(`Invalid redaction path (${path9})`);
       }
     }
     function validatePaths(paths) {
       if (!Array.isArray(paths)) {
         throw new TypeError("paths must be an array");
       }
-      for (const path10 of paths) {
-        validatePath(path10);
+      for (const path9 of paths) {
+        validatePath(path9);
       }
     }
     function slowRedact(options = {}) {
@@ -4468,8 +4468,8 @@ var require_redaction = __commonJS({
         if (shape[k] === null) {
           o[k] = (value) => topCensor(value, [k]);
         } else {
-          const wrappedCensor = typeof censor === "function" ? (value, path10) => {
-            return censor(value, [k, ...path10]);
+          const wrappedCensor = typeof censor === "function" ? (value, path9) => {
+            return censor(value, [k, ...path9]);
           } : censor;
           o[k] = Redact({
             paths: shape[k],
@@ -4690,7 +4690,7 @@ var require_sonic_boom = __commonJS({
     var fs5 = __require("fs");
     var EventEmitter = __require("events");
     var inherits = __require("util").inherits;
-    var path10 = __require("path");
+    var path9 = __require("path");
     var sleep = require_atomic_sleep();
     var assert = __require("assert");
     var BUSY_WRITE_TIMEOUT = 100;
@@ -4744,7 +4744,7 @@ var require_sonic_boom = __commonJS({
       const mode = sonic.mode;
       if (sonic.sync) {
         try {
-          if (sonic.mkdir) fs5.mkdirSync(path10.dirname(file), { recursive: true });
+          if (sonic.mkdir) fs5.mkdirSync(path9.dirname(file), { recursive: true });
           const fd = fs5.openSync(file, flags, mode);
           fileOpened(null, fd);
         } catch (err) {
@@ -4752,7 +4752,7 @@ var require_sonic_boom = __commonJS({
           throw err;
         }
       } else if (sonic.mkdir) {
-        fs5.mkdir(path10.dirname(file), { recursive: true }, (err) => {
+        fs5.mkdir(path9.dirname(file), { recursive: true }, (err) => {
           if (err) return fileOpened(err);
           fs5.open(file, flags, mode, fileOpened);
         });
@@ -6018,10 +6018,10 @@ var require_transport = __commonJS({
   "node_modules/.pnpm/pino@10.3.1/node_modules/pino/lib/transport.js"(exports, module) {
     "use strict";
     var { createRequire } = __require("module");
-    var { existsSync: existsSync2 } = __require("node:fs");
+    var { existsSync } = __require("node:fs");
     var getCallers = require_caller();
     var { join, isAbsolute, sep } = __require("node:path");
-    var { fileURLToPath: fileURLToPath4 } = __require("node:url");
+    var { fileURLToPath: fileURLToPath3 } = __require("node:url");
     var sleep = require_atomic_sleep();
     var onExit = require_on_exit_leak_free();
     var ThreadStream = require_thread_stream();
@@ -6084,15 +6084,15 @@ var require_transport = __commonJS({
       if (!unquoted) {
         return false;
       }
-      let path10 = unquoted;
-      if (path10.startsWith("file://")) {
+      let path9 = unquoted;
+      if (path9.startsWith("file://")) {
         try {
-          path10 = fileURLToPath4(path10);
+          path9 = fileURLToPath3(path9);
         } catch {
           return false;
         }
       }
-      return isAbsolute(path10) && !existsSync2(path10);
+      return isAbsolute(path9) && !existsSync(path9);
     }
     function stripQuotes(value) {
       const first = value[0];
@@ -15566,8 +15566,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path10) {
-      let input = path10;
+    function removeDotSegments(path9) {
+      let input = path9;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -15819,8 +15819,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path10, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path10 && path10 !== "/" ? path10 : void 0;
+        const [path9, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path9 && path9 !== "/" ? path9 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -17081,8 +17081,8 @@ var require_multipleOf = __commonJS({
         const { gen, data, schemaCode, it } = cxt;
         const prec = it.opts.multipleOfPrecision;
         const res = gen.let("res");
-        const invalid2 = prec ? (0, codegen_1._)`Math.abs(Math.round(${res}) - ${res}) > 1e-${prec}` : (0, codegen_1._)`${res} !== parseInt(${res})`;
-        cxt.fail$data((0, codegen_1._)`(${schemaCode} === 0 || (${res} = ${data}/${schemaCode}, ${invalid2}))`);
+        const invalid = prec ? (0, codegen_1._)`Math.abs(Math.round(${res}) - ${res}) > 1e-${prec}` : (0, codegen_1._)`${res} !== parseInt(${res})`;
+        cxt.fail$data((0, codegen_1._)`(${schemaCode} === 0 || (${res} = ${data}/${schemaCode}, ${invalid}))`);
       }
     };
     exports.default = def;
@@ -28554,40 +28554,40 @@ var require_node = __commonJS({
         super();
         this.staticChildren = {};
       }
-      findStaticMatchingChild(path10, pathIndex) {
-        const staticChild = this.staticChildren[path10.charAt(pathIndex)];
-        if (staticChild === void 0 || !staticChild.matchPrefix(path10, pathIndex)) {
+      findStaticMatchingChild(path9, pathIndex) {
+        const staticChild = this.staticChildren[path9.charAt(pathIndex)];
+        if (staticChild === void 0 || !staticChild.matchPrefix(path9, pathIndex)) {
           return null;
         }
         return staticChild;
       }
-      getStaticChild(path10, pathIndex = 0) {
-        if (path10.length === pathIndex) {
+      getStaticChild(path9, pathIndex = 0) {
+        if (path9.length === pathIndex) {
           return this;
         }
-        const staticChild = this.findStaticMatchingChild(path10, pathIndex);
+        const staticChild = this.findStaticMatchingChild(path9, pathIndex);
         if (staticChild) {
-          return staticChild.getStaticChild(path10, pathIndex + staticChild.prefix.length);
+          return staticChild.getStaticChild(path9, pathIndex + staticChild.prefix.length);
         }
         return null;
       }
-      createStaticChild(path10) {
-        if (path10.length === 0) {
+      createStaticChild(path9) {
+        if (path9.length === 0) {
           return this;
         }
-        let staticChild = this.staticChildren[path10.charAt(0)];
+        let staticChild = this.staticChildren[path9.charAt(0)];
         if (staticChild) {
           let i = 1;
           for (; i < staticChild.prefix.length; i++) {
-            if (path10.charCodeAt(i) !== staticChild.prefix.charCodeAt(i)) {
+            if (path9.charCodeAt(i) !== staticChild.prefix.charCodeAt(i)) {
               staticChild = staticChild.split(this, i);
               break;
             }
           }
-          return staticChild.createStaticChild(path10.slice(i));
+          return staticChild.createStaticChild(path9.slice(i));
         }
-        const label = path10.charAt(0);
-        this.staticChildren[label] = new StaticNode(path10);
+        const label = path9.charAt(0);
+        this.staticChildren[label] = new StaticNode(path9);
         return this.staticChildren[label];
       }
     };
@@ -28647,8 +28647,8 @@ var require_node = __commonJS({
         parentNode.staticChildren[parentPrefix.charAt(0)] = staticNode;
         return staticNode;
       }
-      getNextNode(path10, pathIndex, nodeStack, paramsCount) {
-        let node = this.findStaticMatchingChild(path10, pathIndex);
+      getNextNode(path9, pathIndex, nodeStack, paramsCount) {
+        let node = this.findStaticMatchingChild(path9, pathIndex);
         let parametricBrotherNodeIndex = 0;
         if (node === null) {
           if (this.parametricChildren.length === 0) {
@@ -28695,8 +28695,8 @@ var require_node = __commonJS({
         this.kind = NODE_TYPES.PARAMETRIC;
         this.nodePaths = /* @__PURE__ */ new Set([nodePath]);
       }
-      getNextNode(path10, pathIndex) {
-        return this.findStaticMatchingChild(path10, pathIndex);
+      getNextNode(path9, pathIndex) {
+        return this.findStaticMatchingChild(path9, pathIndex);
       }
     };
     var WildcardNode = class extends Node {
@@ -29034,33 +29034,33 @@ var require_url_sanitizer = __commonJS({
       }
       return null;
     }
-    function safeDecodeURI(path10, useSemicolonDelimiter) {
+    function safeDecodeURI(path9, useSemicolonDelimiter) {
       let shouldDecode = false;
       let shouldDecodeParam = false;
       let querystring = "";
-      for (let i = 1; i < path10.length; i++) {
-        const charCode = path10.charCodeAt(i);
+      for (let i = 1; i < path9.length; i++) {
+        const charCode = path9.charCodeAt(i);
         if (charCode === 37) {
-          const highCharCode = path10.charCodeAt(i + 1);
-          const lowCharCode = path10.charCodeAt(i + 2);
+          const highCharCode = path9.charCodeAt(i + 1);
+          const lowCharCode = path9.charCodeAt(i + 2);
           if (decodeComponentChar(highCharCode, lowCharCode) === null) {
             shouldDecode = true;
           } else {
             shouldDecodeParam = true;
             if (highCharCode === 50 && lowCharCode === 53) {
               shouldDecode = true;
-              path10 = path10.slice(0, i + 1) + "25" + path10.slice(i + 1);
+              path9 = path9.slice(0, i + 1) + "25" + path9.slice(i + 1);
               i += 2;
             }
             i += 2;
           }
         } else if (charCode === 63 || charCode === 35 || charCode === 59 && useSemicolonDelimiter) {
-          querystring = path10.slice(i + 1);
-          path10 = path10.slice(0, i);
+          querystring = path9.slice(i + 1);
+          path9 = path9.slice(0, i);
           break;
         }
       }
-      const decodedPath = shouldDecode ? decodeURI(path10) : path10;
+      const decodedPath = shouldDecode ? decodeURI(path9) : path9;
       return { path: decodedPath, querystring, shouldDecodeParam };
     }
     function safeDecodeURIComponent(uriComponent) {
@@ -29154,7 +29154,7 @@ var require_find_my_way = __commonJS({
       this.routes = [];
       this.trees = {};
     }
-    Router.prototype.on = function on(method, path10, opts, handler, store2) {
+    Router.prototype.on = function on(method, path9, opts, handler, store2) {
       if (typeof opts === "function") {
         if (handler !== void 0) {
           store2 = handler;
@@ -29162,34 +29162,34 @@ var require_find_my_way = __commonJS({
         handler = opts;
         opts = {};
       }
-      assert(typeof path10 === "string", "Path should be a string");
-      assert(path10.length > 0, "The path could not be empty");
-      assert(path10[0] === "/" || path10[0] === "*", "The first character of a path should be `/` or `*`");
+      assert(typeof path9 === "string", "Path should be a string");
+      assert(path9.length > 0, "The path could not be empty");
+      assert(path9[0] === "/" || path9[0] === "*", "The first character of a path should be `/` or `*`");
       assert(typeof handler === "function", "Handler should be a function");
-      const optionalParamMatch = path10.match(OPTIONAL_PARAM_REGEXP);
+      const optionalParamMatch = path9.match(OPTIONAL_PARAM_REGEXP);
       if (optionalParamMatch) {
-        assert(path10.length === optionalParamMatch.index + optionalParamMatch[0].length, "Optional Parameter needs to be the last parameter of the path");
-        const pathFull = path10.replace(OPTIONAL_PARAM_REGEXP, "$1$2");
-        const pathOptional = path10.replace(OPTIONAL_PARAM_REGEXP, "$2") || "/";
+        assert(path9.length === optionalParamMatch.index + optionalParamMatch[0].length, "Optional Parameter needs to be the last parameter of the path");
+        const pathFull = path9.replace(OPTIONAL_PARAM_REGEXP, "$1$2");
+        const pathOptional = path9.replace(OPTIONAL_PARAM_REGEXP, "$2") || "/";
         this.on(method, pathFull, opts, handler, store2);
         this.on(method, pathOptional, opts, handler, store2);
         return;
       }
-      const route = path10;
+      const route = path9;
       if (this.ignoreDuplicateSlashes) {
-        path10 = removeDuplicateSlashes(path10);
+        path9 = removeDuplicateSlashes(path9);
       }
       if (this.ignoreTrailingSlash) {
-        path10 = trimLastSlash(path10);
+        path9 = trimLastSlash(path9);
       }
       const methods = Array.isArray(method) ? method : [method];
       for (const method2 of methods) {
         assert(typeof method2 === "string", "Method should be a string");
         assert(httpMethods.includes(method2), `Method '${method2}' is not an http method.`);
-        this._on(method2, path10, opts, handler, store2, route);
+        this._on(method2, path9, opts, handler, store2, route);
       }
     };
-    Router.prototype._on = function _on(method, path10, opts, handler, store2) {
+    Router.prototype._on = function _on(method, path9, opts, handler, store2) {
       let constraints = {};
       if (opts.constraints !== void 0) {
         assert(typeof opts.constraints === "object" && opts.constraints !== null, "Constraints should be an object");
@@ -29202,7 +29202,7 @@ var require_find_my_way = __commonJS({
       if (this.trees[method] === void 0) {
         this.trees[method] = new StaticNode("/");
       }
-      let pattern = path10;
+      let pattern = path9;
       if (pattern === "*" && this.trees[method].prefix.length !== 0) {
         const currentRoot = this.trees[method];
         this.trees[method] = new StaticNode("");
@@ -29305,19 +29305,19 @@ var require_find_my_way = __commonJS({
           throw new Error(`Method '${method}' already declared for route '${pattern}' with constraints '${JSON.stringify(constraints)}'`);
         }
       }
-      const route = { method, path: path10, pattern, params, opts, handler, store: store2 };
+      const route = { method, path: path9, pattern, params, opts, handler, store: store2 };
       this.routes.push(route);
       currentNode.addRoute(route, this.constrainer);
     };
-    Router.prototype.hasRoute = function hasRoute(method, path10, constraints) {
-      const route = this.findRoute(method, path10, constraints);
+    Router.prototype.hasRoute = function hasRoute(method, path9, constraints) {
+      const route = this.findRoute(method, path9, constraints);
       return route !== null;
     };
-    Router.prototype.findRoute = function findNode(method, path10, constraints = {}) {
+    Router.prototype.findRoute = function findNode(method, path9, constraints = {}) {
       if (this.trees[method] === void 0) {
         return null;
       }
-      let pattern = path10;
+      let pattern = path9;
       let currentNode = this.trees[method];
       let parentNodePathIndex = currentNode.prefix.length;
       const params = [];
@@ -29435,39 +29435,39 @@ var require_find_my_way = __commonJS({
       this.trees = {};
       this.routes = [];
     };
-    Router.prototype.off = function off(method, path10, constraints) {
-      assert(typeof path10 === "string", "Path should be a string");
-      assert(path10.length > 0, "The path could not be empty");
-      assert(path10[0] === "/" || path10[0] === "*", "The first character of a path should be `/` or `*`");
+    Router.prototype.off = function off(method, path9, constraints) {
+      assert(typeof path9 === "string", "Path should be a string");
+      assert(path9.length > 0, "The path could not be empty");
+      assert(path9[0] === "/" || path9[0] === "*", "The first character of a path should be `/` or `*`");
       assert(
         typeof constraints === "undefined" || typeof constraints === "object" && !Array.isArray(constraints) && constraints !== null,
         "Constraints should be an object or undefined."
       );
-      const optionalParamMatch = path10.match(OPTIONAL_PARAM_REGEXP);
+      const optionalParamMatch = path9.match(OPTIONAL_PARAM_REGEXP);
       if (optionalParamMatch) {
-        assert(path10.length === optionalParamMatch.index + optionalParamMatch[0].length, "Optional Parameter needs to be the last parameter of the path");
-        const pathFull = path10.replace(OPTIONAL_PARAM_REGEXP, "$1$2");
-        const pathOptional = path10.replace(OPTIONAL_PARAM_REGEXP, "$2");
+        assert(path9.length === optionalParamMatch.index + optionalParamMatch[0].length, "Optional Parameter needs to be the last parameter of the path");
+        const pathFull = path9.replace(OPTIONAL_PARAM_REGEXP, "$1$2");
+        const pathOptional = path9.replace(OPTIONAL_PARAM_REGEXP, "$2");
         this.off(method, pathFull, constraints);
         this.off(method, pathOptional, constraints);
         return;
       }
       if (this.ignoreDuplicateSlashes) {
-        path10 = removeDuplicateSlashes(path10);
+        path9 = removeDuplicateSlashes(path9);
       }
       if (this.ignoreTrailingSlash) {
-        path10 = trimLastSlash(path10);
+        path9 = trimLastSlash(path9);
       }
       const methods = Array.isArray(method) ? method : [method];
       for (const method2 of methods) {
-        this._off(method2, path10, constraints);
+        this._off(method2, path9, constraints);
       }
     };
-    Router.prototype._off = function _off(method, path10, constraints) {
+    Router.prototype._off = function _off(method, path9, constraints) {
       assert(typeof method === "string", "Method should be a string");
       assert(httpMethods.includes(method), `Method '${method}' is not an http method.`);
       function matcherWithoutConstraints(route) {
-        return method !== route.method || path10 !== route.path;
+        return method !== route.method || path9 !== route.path;
       }
       function matcherWithConstraints(route) {
         return matcherWithoutConstraints(route) || !deepEqual(constraints, route.opts.constraints || {});
@@ -29504,37 +29504,37 @@ var require_find_my_way = __commonJS({
       if (handle === null) return this._defaultRoute(req, res, ctx);
       return ctx === void 0 ? handle.handler(req, res, handle.params, handle.store, handle.searchParams) : handle.handler.call(ctx, req, res, handle.params, handle.store, handle.searchParams);
     };
-    Router.prototype.find = function find(method, path10, derivedConstraints) {
+    Router.prototype.find = function find(method, path9, derivedConstraints) {
       let currentNode = this.trees[method];
       if (currentNode === void 0) return null;
-      if (path10.charCodeAt(0) !== 47) {
-        path10 = path10.replace(FULL_PATH_REGEXP, "/");
+      if (path9.charCodeAt(0) !== 47) {
+        path9 = path9.replace(FULL_PATH_REGEXP, "/");
       }
       if (this.ignoreDuplicateSlashes) {
-        path10 = removeDuplicateSlashes(path10);
+        path9 = removeDuplicateSlashes(path9);
       }
       let sanitizedUrl;
       let querystring2;
       let shouldDecodeParam;
       try {
-        sanitizedUrl = safeDecodeURI(path10, this.useSemicolonDelimiter);
-        path10 = sanitizedUrl.path;
+        sanitizedUrl = safeDecodeURI(path9, this.useSemicolonDelimiter);
+        path9 = sanitizedUrl.path;
         querystring2 = sanitizedUrl.querystring;
         shouldDecodeParam = sanitizedUrl.shouldDecodeParam;
       } catch (error) {
-        return this._onBadUrl(path10);
+        return this._onBadUrl(path9);
       }
       if (this.ignoreTrailingSlash) {
-        path10 = trimLastSlash(path10);
+        path9 = trimLastSlash(path9);
       }
-      const originPath = path10;
+      const originPath = path9;
       if (this.caseSensitive === false) {
-        path10 = path10.toLowerCase();
+        path9 = path9.toLowerCase();
       }
       const maxParamLength = this.maxParamLength;
       let pathIndex = currentNode.prefix.length;
       const params = [];
-      const pathLen = path10.length;
+      const pathLen = path9.length;
       const brothersNodesStack = [];
       let maxParamLengthExceeded = false;
       while (true) {
@@ -29549,7 +29549,7 @@ var require_find_my_way = __commonJS({
             };
           }
         }
-        let node = currentNode.getNextNode(path10, pathIndex, brothersNodesStack, params.length);
+        let node = currentNode.getNextNode(path9, pathIndex, brothersNodesStack, params.length);
         if (node === null) {
           if (brothersNodesStack.length === 0) {
             if (maxParamLengthExceeded && this.onMaxParamLength) {
@@ -29620,8 +29620,8 @@ var require_find_my_way = __commonJS({
     Router.prototype._rebuild = function(routes) {
       this.reset();
       for (const route of routes) {
-        const { method, path: path10, opts, handler, store: store2 } = route;
-        this._on(method, path10, opts, handler, store2);
+        const { method, path: path9, opts, handler, store: store2 } = route;
+        this._on(method, path9, opts, handler, store2);
       }
     };
     Router.prototype._defaultRoute = function(req, res, ctx) {
@@ -29632,24 +29632,24 @@ var require_find_my_way = __commonJS({
         res.end();
       }
     };
-    Router.prototype._onBadUrl = function(path10) {
+    Router.prototype._onBadUrl = function(path9) {
       if (this.onBadUrl === null) {
         return null;
       }
       const onBadUrl = this.onBadUrl;
       return {
-        handler: (req, res, ctx) => onBadUrl(path10, req, res),
+        handler: (req, res, ctx) => onBadUrl(path9, req, res),
         params: {},
         store: null
       };
     };
-    Router.prototype._onMaxParamLength = function(path10) {
+    Router.prototype._onMaxParamLength = function(path9) {
       if (this.onMaxParamLength === null) {
         return null;
       }
       const onMaxParamLength = this.onMaxParamLength;
       return {
-        handler: (req, res, ctx) => onMaxParamLength(path10, req, res),
+        handler: (req, res, ctx) => onMaxParamLength(path9, req, res),
         params: {},
         store: null
       };
@@ -29681,12 +29681,12 @@ var require_find_my_way = __commonJS({
       if (!httpMethods.hasOwnProperty(i)) continue;
       const m = httpMethods[i];
       const methodName = m.toLowerCase();
-      Router.prototype[methodName] = function(path10, handler, store2) {
-        return this.on(m, path10, handler, store2);
+      Router.prototype[methodName] = function(path9, handler, store2) {
+        return this.on(m, path9, handler, store2);
       };
     }
-    Router.prototype.all = function(path10, handler, store2) {
-      this.on(httpMethods, path10, handler, store2);
+    Router.prototype.all = function(path9, handler, store2) {
+      this.on(httpMethods, path9, handler, store2);
     };
     Router.sanitizeUrlPath = function sanitizeUrlPath(url, useSemicolonDelimiter) {
       const decoded = safeDecodeURI(url, useSemicolonDelimiter);
@@ -29701,14 +29701,14 @@ var require_find_my_way = __commonJS({
     function escapeRegExp(string) {
       return string.replace(ESCAPE_REGEXP, "\\$&");
     }
-    function removeDuplicateSlashes(path10) {
-      return path10.indexOf("//") !== -1 ? path10.replace(REMOVE_DUPLICATE_SLASHES_REGEXP, "/") : path10;
+    function removeDuplicateSlashes(path9) {
+      return path9.indexOf("//") !== -1 ? path9.replace(REMOVE_DUPLICATE_SLASHES_REGEXP, "/") : path9;
     }
-    function trimLastSlash(path10) {
-      if (path10.length > 1 && path10.charCodeAt(path10.length - 1) === 47) {
-        return path10.slice(0, -1);
+    function trimLastSlash(path9) {
+      if (path9.length > 1 && path9.charCodeAt(path9.length - 1) === 47) {
+        return path9.slice(0, -1);
       }
-      return path10;
+      return path9;
     }
     function trimRegExpStartAndEnd(regexString) {
       if (regexString.charCodeAt(1) === 94) {
@@ -29719,22 +29719,22 @@ var require_find_my_way = __commonJS({
       }
       return regexString;
     }
-    function getClosingParenthensePosition(path10, idx) {
+    function getClosingParenthensePosition(path9, idx) {
       let parentheses = 1;
-      while (idx < path10.length) {
+      while (idx < path9.length) {
         idx++;
-        if (path10.charCodeAt(idx) === 92) {
+        if (path9.charCodeAt(idx) === 92) {
           idx++;
           continue;
         }
-        if (path10.charCodeAt(idx) === 41) {
+        if (path9.charCodeAt(idx) === 41) {
           parentheses--;
-        } else if (path10.charCodeAt(idx) === 40) {
+        } else if (path9.charCodeAt(idx) === 40) {
           parentheses++;
         }
         if (!parentheses) return idx;
       }
-      throw new TypeError('Invalid regexp expression in "' + path10 + '"');
+      throw new TypeError('Invalid regexp expression in "' + path9 + '"');
     }
     function defaultBuildPrettyMeta(route) {
       if (!route) return {};
@@ -29971,12 +29971,12 @@ var require_route = __commonJS({
       function route({ options: options2, isFastify }) {
         throwIfAlreadyStarted("Cannot add route!");
         const opts = { ...options2 };
-        const path10 = opts.url || opts.path || "";
+        const path9 = opts.url || opts.path || "";
         if (!opts.handler) {
-          throw new FST_ERR_ROUTE_MISSING_HANDLER(opts.method, path10);
+          throw new FST_ERR_ROUTE_MISSING_HANDLER(opts.method, path9);
         }
         if (opts.errorHandler !== void 0 && typeof opts.errorHandler !== "function") {
-          throw new FST_ERR_ROUTE_HANDLER_NOT_FN(opts.method, path10);
+          throw new FST_ERR_ROUTE_HANDLER_NOT_FN(opts.method, path9);
         }
         validateBodyLimitOption(opts.bodyLimit);
         validateHandlerTimeoutOption(opts.handlerTimeout);
@@ -29986,22 +29986,22 @@ var require_route = __commonJS({
         if (Array.isArray(opts.method)) {
           for (let i = 0; i < opts.method.length; ++i) {
             opts.method[i] = normalizeAndValidateMethod.call(this, opts.method[i]);
-            validateSchemaBodyOption.call(this, opts.method[i], path10, opts.schema);
+            validateSchemaBodyOption.call(this, opts.method[i], path9, opts.schema);
             isGetRoute = opts.method.includes("GET");
             isHeadRoute = opts.method.includes("HEAD");
           }
         } else {
           opts.method = normalizeAndValidateMethod.call(this, opts.method);
-          validateSchemaBodyOption.call(this, opts.method, path10, opts.schema);
+          validateSchemaBodyOption.call(this, opts.method, path9, opts.schema);
           isGetRoute = opts.method === "GET";
           isHeadRoute = opts.method === "HEAD";
         }
         const headOpts = shouldExposeHead && isGetRoute ? { ...options2 } : null;
         const prefix = this[kRoutePrefix];
-        if (path10 === "/" && prefix.length > 0 && opts.method !== "HEAD") {
+        if (path9 === "/" && prefix.length > 0 && opts.method !== "HEAD") {
           switch (opts.prefixTrailingSlash) {
             case "slash":
-              addNewRoute.call(this, { path: path10, isFastify });
+              addNewRoute.call(this, { path: path9, isFastify });
               break;
             case "no-slash":
               addNewRoute.call(this, { path: "", isFastify });
@@ -30010,20 +30010,20 @@ var require_route = __commonJS({
             default:
               addNewRoute.call(this, { path: "", isFastify });
               if (ignoreTrailingSlash !== true && (ignoreDuplicateSlashes !== true || !prefix.endsWith("/"))) {
-                addNewRoute.call(this, { path: path10, prefixing: true, isFastify });
+                addNewRoute.call(this, { path: path9, prefixing: true, isFastify });
               }
           }
-        } else if (path10[0] === "/" && prefix.endsWith("/")) {
-          addNewRoute.call(this, { path: path10.slice(1), isFastify });
+        } else if (path9[0] === "/" && prefix.endsWith("/")) {
+          addNewRoute.call(this, { path: path9.slice(1), isFastify });
         } else {
-          addNewRoute.call(this, { path: path10, isFastify });
+          addNewRoute.call(this, { path: path9, isFastify });
         }
         return this;
-        function addNewRoute({ path: path11, prefixing = false, isFastify: isFastify2 = false }) {
-          const url = prefix + path11;
+        function addNewRoute({ path: path10, prefixing = false, isFastify: isFastify2 = false }) {
+          const url = prefix + path10;
           opts.url = url;
           opts.path = url;
-          opts.routePath = path11;
+          opts.routePath = path10;
           opts.prefix = prefix;
           opts.logLevel = opts.logLevel || this[kLogLevel];
           if (this[kLogSerializers] || opts.logSerializers) {
@@ -30153,7 +30153,7 @@ var require_route = __commonJS({
           });
           if (shouldExposeHead && isGetRoute && !isHeadRoute && !hasHEADHandler) {
             const onSendHandlers = parseHeadOnSendHandlers(headOpts.onSend);
-            prepareRoute.call(this, { method: "HEAD", url: path11, options: { ...headOpts, onSend: onSendHandlers }, isFastify: true });
+            prepareRoute.call(this, { method: "HEAD", url: path10, options: { ...headOpts, onSend: onSendHandlers }, isFastify: true });
           }
         }
       }
@@ -30277,9 +30277,9 @@ var require_route = __commonJS({
       }
       return method;
     }
-    function validateSchemaBodyOption(method, path10, schema) {
+    function validateSchemaBodyOption(method, path9, schema) {
       if (this[kSupportedHTTPMethods].bodyless.has(method) && schema?.body) {
-        throw new FST_ERR_ROUTE_BODY_VALIDATION_SCHEMA_NOT_SUPPORTED(method, path10);
+        throw new FST_ERR_ROUTE_BODY_VALIDATION_SCHEMA_NOT_SUPPORTED(method, path9);
       }
     }
     function validateBodyLimitOption(bodyLimit) {
@@ -30378,7 +30378,7 @@ var require_four_oh_four = __commonJS({
         });
       }
       function createOnBadUrl() {
-        return function onBadUrl(path10, req, res) {
+        return function onBadUrl(path9, req, res) {
           const fourOhFourContext = this[kFourOhFourLevelInstance][kFourOhFourContext];
           const id = getGenReqId(fourOhFourContext.server, req);
           const childLogger = createChildLogger(fourOhFourContext, logger, req, id);
@@ -33703,7 +33703,7 @@ var require_light_my_request = __commonJS({
 var require_fastify = __commonJS({
   "node_modules/.pnpm/fastify@5.8.5/node_modules/fastify/fastify.js"(exports, module) {
     "use strict";
-    var VERSION2 = "5.8.5";
+    var VERSION = "5.8.5";
     var Avvio = require_boot();
     var http = __require("node:http");
     var diagnostics = __require("node:diagnostics_channel");
@@ -34006,7 +34006,7 @@ var require_fastify = __commonJS({
         version: {
           configurable: true,
           get() {
-            return VERSION2;
+            return VERSION;
           }
         },
         errorHandler: {
@@ -34237,7 +34237,7 @@ var require_fastify = __commonJS({
         }
         fourOhFour.router.lookup(req, res);
       }
-      function onBadUrl(path10, req, res) {
+      function onBadUrl(path9, req, res) {
         if (options.frameworkErrors) {
           const id = getGenReqId(onBadUrlContext.server, req);
           const childLogger = createChildLogger(onBadUrlContext, options.logger, req, id);
@@ -34247,12 +34247,12 @@ var require_fastify = __commonJS({
           if (resolvedDisableRequestLogging === false) {
             childLogger.info({ req: request }, "incoming request");
           }
-          return options.frameworkErrors(new FST_ERR_BAD_URL(path10), request, reply);
+          return options.frameworkErrors(new FST_ERR_BAD_URL(path9), request, reply);
         }
         const body = JSON.stringify({
           error: "Bad Request",
           code: "FST_ERR_BAD_URL",
-          message: `'${path10}' is not a valid url component`,
+          message: `'${path9}' is not a valid url component`,
           statusCode: 400
         });
         res.writeHead(400, {
@@ -35610,14 +35610,14 @@ var require_util3 = __commonJS({
         }
         const port = url.port != null ? url.port : url.protocol === "https:" ? 443 : 80;
         let origin = url.origin != null ? url.origin : `${url.protocol || ""}//${url.hostname || ""}:${port}`;
-        let path10 = url.path != null ? url.path : `${url.pathname || ""}${url.search || ""}`;
+        let path9 = url.path != null ? url.path : `${url.pathname || ""}${url.search || ""}`;
         if (origin[origin.length - 1] === "/") {
           origin = origin.slice(0, origin.length - 1);
         }
-        if (path10 && path10[0] !== "/") {
-          path10 = `/${path10}`;
+        if (path9 && path9[0] !== "/") {
+          path9 = `/${path9}`;
         }
-        return new URL(`${origin}${path10}`);
+        return new URL(`${origin}${path9}`);
       }
       if (!isHttpOrHttpsPrefixed(url.origin || url.protocol)) {
         throw new InvalidArgumentError("Invalid URL protocol: the URL must start with `http:` or `https:`.");
@@ -36438,9 +36438,9 @@ var require_diagnostics = __commonJS({
         "undici:client:sendHeaders",
         (evt) => {
           const {
-            request: { method, path: path10, origin }
+            request: { method, path: path9, origin }
           } = evt;
-          debugLog("sending request to %s %s%s", method, origin, path10);
+          debugLog("sending request to %s %s%s", method, origin, path9);
         }
       );
     }
@@ -36458,14 +36458,14 @@ var require_diagnostics = __commonJS({
         "undici:request:headers",
         (evt) => {
           const {
-            request: { method, path: path10, origin },
+            request: { method, path: path9, origin },
             response: { statusCode }
           } = evt;
           debugLog(
             "received response to %s %s%s - HTTP %d",
             method,
             origin,
-            path10,
+            path9,
             statusCode
           );
         }
@@ -36474,23 +36474,23 @@ var require_diagnostics = __commonJS({
         "undici:request:trailers",
         (evt) => {
           const {
-            request: { method, path: path10, origin }
+            request: { method, path: path9, origin }
           } = evt;
-          debugLog("trailers received from %s %s%s", method, origin, path10);
+          debugLog("trailers received from %s %s%s", method, origin, path9);
         }
       );
       diagnosticsChannel.subscribe(
         "undici:request:error",
         (evt) => {
           const {
-            request: { method, path: path10, origin },
+            request: { method, path: path9, origin },
             error
           } = evt;
           debugLog(
             "request to %s %s%s errored - %s",
             method,
             origin,
-            path10,
+            path9,
             error.message
           );
         }
@@ -36605,7 +36605,7 @@ var require_request3 = __commonJS({
     var kHandler = /* @__PURE__ */ Symbol("handler");
     var Request2 = class {
       constructor(origin, {
-        path: path10,
+        path: path9,
         method,
         body,
         headers,
@@ -36622,11 +36622,11 @@ var require_request3 = __commonJS({
         maxRedirections,
         typeOfService
       }, handler) {
-        if (typeof path10 !== "string") {
+        if (typeof path9 !== "string") {
           throw new InvalidArgumentError("path must be a string");
-        } else if (path10[0] !== "/" && !(path10.startsWith("http://") || path10.startsWith("https://")) && method !== "CONNECT") {
+        } else if (path9[0] !== "/" && !(path9.startsWith("http://") || path9.startsWith("https://")) && method !== "CONNECT") {
           throw new InvalidArgumentError("path must be an absolute URL or start with a slash");
-        } else if (invalidPathRegex.test(path10)) {
+        } else if (invalidPathRegex.test(path9)) {
           throw new InvalidArgumentError("invalid request path");
         }
         if (typeof method !== "string") {
@@ -36701,7 +36701,7 @@ var require_request3 = __commonJS({
         this.completed = false;
         this.aborted = false;
         this.upgrade = upgrade || null;
-        this.path = query ? serializePathWithQuery(path10, query) : path10;
+        this.path = query ? serializePathWithQuery(path9, query) : path9;
         this.origin = origin;
         this.protocol = getProtocolFromUrlString(origin);
         this.idempotent = idempotent == null ? method === "HEAD" || method === "GET" : idempotent;
@@ -41884,7 +41884,7 @@ var require_client_h1 = __commonJS({
       return method !== "GET" && method !== "HEAD" && method !== "OPTIONS" && method !== "TRACE" && method !== "CONNECT";
     }
     function writeH1(client, request) {
-      const { method, path: path10, host, upgrade, blocking, reset } = request;
+      const { method, path: path9, host, upgrade, blocking, reset } = request;
       let { body, headers, contentLength } = request;
       const expectsPayload = method === "PUT" || method === "POST" || method === "PATCH" || method === "QUERY" || method === "PROPFIND" || method === "PROPPATCH";
       if (util2.isFormDataLike(body)) {
@@ -41962,7 +41962,7 @@ var require_client_h1 = __commonJS({
       if (socket.setTypeOfService) {
         socket.setTypeOfService(request.typeOfService);
       }
-      let header = `${method} ${path10} HTTP/1.1\r
+      let header = `${method} ${path9} HTTP/1.1\r
 `;
       if (typeof host === "string") {
         header += `host: ${host}\r
@@ -42615,7 +42615,7 @@ var require_client_h2 = __commonJS({
     function writeH2(client, request) {
       const requestTimeout = request.bodyTimeout ?? client[kBodyTimeout];
       const session = client[kHTTP2Session];
-      const { method, path: path10, host, upgrade, expectContinue, signal, protocol, headers: reqHeaders } = request;
+      const { method, path: path9, host, upgrade, expectContinue, signal, protocol, headers: reqHeaders } = request;
       let { body } = request;
       if (upgrade != null && upgrade !== "websocket") {
         util2.errorRequest(client, request, new InvalidArgumentError(`Custom upgrade "${upgrade}" not supported over HTTP/2`));
@@ -42683,7 +42683,7 @@ var require_client_h2 = __commonJS({
           }
           headers[HTTP2_HEADER_METHOD] = "CONNECT";
           headers[HTTP2_HEADER_PROTOCOL] = "websocket";
-          headers[HTTP2_HEADER_PATH] = path10;
+          headers[HTTP2_HEADER_PATH] = path9;
           if (protocol === "ws:" || protocol === "wss:") {
             headers[HTTP2_HEADER_SCHEME] = protocol === "ws:" ? "http" : "https";
           } else {
@@ -42724,7 +42724,7 @@ var require_client_h2 = __commonJS({
         stream.setTimeout(requestTimeout);
         return true;
       }
-      headers[HTTP2_HEADER_PATH] = path10;
+      headers[HTTP2_HEADER_PATH] = path9;
       headers[HTTP2_HEADER_SCHEME] = protocol === "http:" ? "http" : "https";
       const expectsPayload = method === "PUT" || method === "POST" || method === "PATCH";
       if (body && typeof body.read === "function") {
@@ -45067,10 +45067,10 @@ var require_proxy_agent = __commonJS({
         };
         const {
           origin,
-          path: path10 = "/",
+          path: path9 = "/",
           headers = {}
         } = opts;
-        opts.path = origin + path10;
+        opts.path = origin + path9;
         if (!("host" in headers) && !("Host" in headers)) {
           const { host } = new URL(origin);
           headers.host = host;
@@ -47153,20 +47153,20 @@ var require_mock_utils = __commonJS({
       }
       return normalizedQp;
     }
-    function safeUrl(path10) {
-      if (typeof path10 !== "string") {
-        return path10;
+    function safeUrl(path9) {
+      if (typeof path9 !== "string") {
+        return path9;
       }
-      const pathSegments = path10.split("?", 3);
+      const pathSegments = path9.split("?", 3);
       if (pathSegments.length !== 2) {
-        return path10;
+        return path9;
       }
       const qp = new URLSearchParams(pathSegments.pop());
       qp.sort();
       return [...pathSegments, qp.toString()].join("?");
     }
-    function matchKey(mockDispatch2, { path: path10, method, body, headers }) {
-      const pathMatch = matchValue(mockDispatch2.path, path10);
+    function matchKey(mockDispatch2, { path: path9, method, body, headers }) {
+      const pathMatch = matchValue(mockDispatch2.path, path9);
       const methodMatch = matchValue(mockDispatch2.method, method);
       const bodyMatch = typeof mockDispatch2.body !== "undefined" ? matchValue(mockDispatch2.body, body) : true;
       const headersMatch = matchHeaders(mockDispatch2, headers);
@@ -47191,8 +47191,8 @@ var require_mock_utils = __commonJS({
       const basePath = key.query ? serializePathWithQuery(key.path, key.query) : key.path;
       const resolvedPath = typeof basePath === "string" ? safeUrl(basePath) : basePath;
       const resolvedPathWithoutTrailingSlash = removeTrailingSlash(resolvedPath);
-      let matchedMockDispatches = mockDispatches.filter(({ consumed }) => !consumed).filter(({ path: path10, ignoreTrailingSlash }) => {
-        return ignoreTrailingSlash ? matchValue(removeTrailingSlash(safeUrl(path10)), resolvedPathWithoutTrailingSlash) : matchValue(safeUrl(path10), resolvedPath);
+      let matchedMockDispatches = mockDispatches.filter(({ consumed }) => !consumed).filter(({ path: path9, ignoreTrailingSlash }) => {
+        return ignoreTrailingSlash ? matchValue(removeTrailingSlash(safeUrl(path9)), resolvedPathWithoutTrailingSlash) : matchValue(safeUrl(path9), resolvedPath);
       });
       if (matchedMockDispatches.length === 0) {
         throw new MockNotMatchedError(`Mock dispatch not matched for path '${resolvedPath}'`);
@@ -47231,19 +47231,19 @@ var require_mock_utils = __commonJS({
         mockDispatches.splice(index, 1);
       }
     }
-    function removeTrailingSlash(path10) {
-      while (path10.endsWith("/")) {
-        path10 = path10.slice(0, -1);
+    function removeTrailingSlash(path9) {
+      while (path9.endsWith("/")) {
+        path9 = path9.slice(0, -1);
       }
-      if (path10.length === 0) {
-        path10 = "/";
+      if (path9.length === 0) {
+        path9 = "/";
       }
-      return path10;
+      return path9;
     }
     function buildKey(opts) {
-      const { path: path10, method, body, headers, query } = opts;
+      const { path: path9, method, body, headers, query } = opts;
       return {
-        path: path10,
+        path: path9,
         method,
         body,
         headers,
@@ -47933,10 +47933,10 @@ var require_pending_interceptors_formatter = __commonJS({
       }
       format(pendingInterceptors) {
         const withPrettyHeaders = pendingInterceptors.map(
-          ({ method, path: path10, data: { statusCode }, persist, times, timesInvoked, origin }) => ({
+          ({ method, path: path9, data: { statusCode }, persist, times, timesInvoked, origin }) => ({
             Method: method,
             Origin: origin,
-            Path: path10,
+            Path: path9,
             "Status code": statusCode,
             Persistent: persist ? PERSISTENT : NOT_PERSISTENT,
             Invocations: timesInvoked,
@@ -48018,9 +48018,9 @@ var require_mock_agent = __commonJS({
         const acceptNonStandardSearchParameters = this[kMockAgentAcceptsNonStandardSearchParameters];
         const dispatchOpts = { ...opts };
         if (acceptNonStandardSearchParameters && dispatchOpts.path) {
-          const [path10, searchParams] = dispatchOpts.path.split("?");
+          const [path9, searchParams] = dispatchOpts.path.split("?");
           const normalizedSearchParams = normalizeSearchParams(searchParams, acceptNonStandardSearchParameters);
-          dispatchOpts.path = `${path10}?${normalizedSearchParams}`;
+          dispatchOpts.path = `${path9}?${normalizedSearchParams}`;
         }
         return this[kAgent].dispatch(dispatchOpts, handler);
       }
@@ -48224,7 +48224,7 @@ var require_snapshot_utils = __commonJS({
 var require_snapshot_recorder = __commonJS({
   "node_modules/.pnpm/undici@7.29.0/node_modules/undici/lib/mock/snapshot-recorder.js"(exports, module) {
     "use strict";
-    var { writeFile: writeFile3, readFile: readFile4, mkdir: mkdir3 } = __require("node:fs/promises");
+    var { writeFile: writeFile3, readFile: readFile3, mkdir: mkdir3 } = __require("node:fs/promises");
     var { dirname, resolve } = __require("node:path");
     var { setTimeout: setTimeout2, clearTimeout: clearTimeout2 } = __require("node:timers");
     var { InvalidArgumentError, UndiciError } = require_errors5();
@@ -48421,12 +48421,12 @@ var require_snapshot_recorder = __commonJS({
        * @return {Promise<void>} - Resolves when snapshots are loaded
        */
       async loadSnapshots(filePath) {
-        const path10 = filePath || this.#snapshotPath;
-        if (!path10) {
+        const path9 = filePath || this.#snapshotPath;
+        if (!path9) {
           throw new InvalidArgumentError("Snapshot path is required");
         }
         try {
-          const data = await readFile4(resolve(path10), "utf8");
+          const data = await readFile3(resolve(path9), "utf8");
           const parsed = JSON.parse(data);
           if (Array.isArray(parsed)) {
             this.#snapshots.clear();
@@ -48440,7 +48440,7 @@ var require_snapshot_recorder = __commonJS({
           if (error.code === "ENOENT") {
             this.#snapshots.clear();
           } else {
-            throw new UndiciError(`Failed to load snapshots from ${path10}`, { cause: error });
+            throw new UndiciError(`Failed to load snapshots from ${path9}`, { cause: error });
           }
         }
       }
@@ -48451,11 +48451,11 @@ var require_snapshot_recorder = __commonJS({
        * @returns {Promise<void>} - Resolves when snapshots are saved
        */
       async saveSnapshots(filePath) {
-        const path10 = filePath || this.#snapshotPath;
-        if (!path10) {
+        const path9 = filePath || this.#snapshotPath;
+        if (!path9) {
           throw new InvalidArgumentError("Snapshot path is required");
         }
-        const resolvedPath = resolve(path10);
+        const resolvedPath = resolve(path9);
         await mkdir3(dirname(resolvedPath), { recursive: true });
         const data = Array.from(this.#snapshots.entries()).map(([hash, snapshot]) => ({
           hash,
@@ -49087,15 +49087,15 @@ var require_redirect_handler = __commonJS({
           return;
         }
         const { origin, pathname, search } = util2.parseURL(new URL(this.location, this.opts.origin && new URL(this.opts.path, this.opts.origin)));
-        const path10 = search ? `${pathname}${search}` : pathname;
-        const redirectUrlString = `${origin}${path10}`;
+        const path9 = search ? `${pathname}${search}` : pathname;
+        const redirectUrlString = `${origin}${path9}`;
         for (const historyUrl of this.history) {
           if (historyUrl.toString() === redirectUrlString) {
             throw new InvalidArgumentError(`Redirect loop detected. Cannot redirect to ${origin}. This typically happens when using a Client or Pool with cross-origin redirects. Use an Agent for cross-origin redirects.`);
           }
         }
         this.opts.headers = cleanRequestHeaders(this.opts.headers, statusCode === 303, this.opts.origin !== origin);
-        this.opts.path = path10;
+        this.opts.path = path9;
         this.opts.origin = origin;
         this.opts.query = null;
       }
@@ -49650,17 +49650,17 @@ var require_dns = __commonJS({
         const timestamp = Date.now();
         const records = { records: { 4: null, 6: null } };
         let minTTL = this.#maxTTL;
-        for (const record2 of addresses) {
-          record2.timestamp = timestamp;
-          if (typeof record2.ttl === "number") {
-            record2.ttl = Math.min(record2.ttl, this.#maxTTL);
-            minTTL = Math.min(minTTL, record2.ttl);
+        for (const record of addresses) {
+          record.timestamp = timestamp;
+          if (typeof record.ttl === "number") {
+            record.ttl = Math.min(record.ttl, this.#maxTTL);
+            minTTL = Math.min(minTTL, record.ttl);
           } else {
-            record2.ttl = this.#maxTTL;
+            record.ttl = this.#maxTTL;
           }
-          const familyRecords = records.records[record2.family] ?? { ips: [] };
-          familyRecords.ips.push(record2);
-          records.records[record2.family] = familyRecords;
+          const familyRecords = records.records[record.family] ?? { ips: [] };
+          familyRecords.ips.push(record);
+          records.records[record.family] = familyRecords;
         }
         this.storage.set(origin.hostname, records, { ttl: minTTL });
       }
@@ -50864,10 +50864,10 @@ var require_cache_handler = __commonJS({
       }
       return locationUrl.pathname + locationUrl.search;
     }
-    function deleteCachedUri(store2, cacheKey, path10) {
+    function deleteCachedUri(store2, cacheKey, path9) {
       deleteCachedValue(store2, {
         ...cacheKey,
-        path: path10
+        path: path9
       });
       for (let i = 0; i < util2.safeHTTPMethods.length; i++) {
         const method = util2.safeHTTPMethods[i];
@@ -50875,7 +50875,7 @@ var require_cache_handler = __commonJS({
           deleteCachedValue(store2, {
             ...cacheKey,
             method,
-            path: path10
+            path: path9
           });
         }
       }
@@ -50886,9 +50886,9 @@ var require_cache_handler = __commonJS({
       }
       const values = Array.isArray(headerValue2) ? headerValue2 : [headerValue2];
       for (let i = 0; i < values.length; i++) {
-        const path10 = getSameOriginPath(cacheKey, values[i]);
-        if (path10 !== void 0) {
-          deleteCachedUri(store2, cacheKey, path10);
+        const path9 = getSameOriginPath(cacheKey, values[i]);
+        if (path9 !== void 0) {
+          deleteCachedUri(store2, cacheKey, path9);
         }
       }
     }
@@ -52675,7 +52675,7 @@ var require_sqlite_cache_store = __commonJS({
     var { Writable } = __require("node:stream");
     var { assertCacheKey, assertCacheValue } = require_cache();
     var DatabaseSync2;
-    var VERSION2 = 3;
+    var VERSION = 3;
     var MAX_ENTRY_SIZE = 2 * 1e3 * 1e3 * 1e3;
     module.exports = class SqliteCacheStore {
       #maxEntrySize = MAX_ENTRY_SIZE;
@@ -52746,7 +52746,7 @@ var require_sqlite_cache_store = __commonJS({
       PRAGMA temp_store = memory;
       PRAGMA optimize;
 
-      CREATE TABLE IF NOT EXISTS cacheInterceptorV${VERSION2} (
+      CREATE TABLE IF NOT EXISTS cacheInterceptorV${VERSION} (
         -- Data specific to us
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         url TEXT NOT NULL,
@@ -52765,8 +52765,8 @@ var require_sqlite_cache_store = __commonJS({
         staleAt INTEGER NOT NULL
       );
 
-      CREATE INDEX IF NOT EXISTS idx_cacheInterceptorV${VERSION2}_getValuesQuery ON cacheInterceptorV${VERSION2}(url, method, deleteAt);
-      CREATE INDEX IF NOT EXISTS idx_cacheInterceptorV${VERSION2}_deleteByUrlQuery ON cacheInterceptorV${VERSION2}(deleteAt);
+      CREATE INDEX IF NOT EXISTS idx_cacheInterceptorV${VERSION}_getValuesQuery ON cacheInterceptorV${VERSION}(url, method, deleteAt);
+      CREATE INDEX IF NOT EXISTS idx_cacheInterceptorV${VERSION}_deleteByUrlQuery ON cacheInterceptorV${VERSION}(deleteAt);
     `);
         this.#getValuesQuery = this.#db.prepare(`
       SELECT
@@ -52781,7 +52781,7 @@ var require_sqlite_cache_store = __commonJS({
         vary,
         cachedAt,
         staleAt
-      FROM cacheInterceptorV${VERSION2}
+      FROM cacheInterceptorV${VERSION}
       WHERE
         url = ?
         AND method = ?
@@ -52789,7 +52789,7 @@ var require_sqlite_cache_store = __commonJS({
         deleteAt ASC
     `);
         this.#updateValueQuery = this.#db.prepare(`
-      UPDATE cacheInterceptorV${VERSION2} SET
+      UPDATE cacheInterceptorV${VERSION} SET
         body = ?,
         deleteAt = ?,
         statusCode = ?,
@@ -52803,7 +52803,7 @@ var require_sqlite_cache_store = __commonJS({
         id = ?
     `);
         this.#insertValueQuery = this.#db.prepare(`
-      INSERT INTO cacheInterceptorV${VERSION2} (
+      INSERT INTO cacheInterceptorV${VERSION} (
         url,
         method,
         body,
@@ -52819,20 +52819,20 @@ var require_sqlite_cache_store = __commonJS({
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
         this.#deleteByUrlQuery = this.#db.prepare(
-          `DELETE FROM cacheInterceptorV${VERSION2} WHERE url = ?`
+          `DELETE FROM cacheInterceptorV${VERSION} WHERE url = ?`
         );
         this.#countEntriesQuery = this.#db.prepare(
-          `SELECT COUNT(*) AS total FROM cacheInterceptorV${VERSION2}`
+          `SELECT COUNT(*) AS total FROM cacheInterceptorV${VERSION}`
         );
         this.#deleteExpiredValuesQuery = this.#db.prepare(
-          `DELETE FROM cacheInterceptorV${VERSION2} WHERE deleteAt <= ?`
+          `DELETE FROM cacheInterceptorV${VERSION} WHERE deleteAt <= ?`
         );
         this.#deleteOldValuesQuery = this.#maxCount === Infinity ? null : this.#db.prepare(`
-        DELETE FROM cacheInterceptorV${VERSION2}
+        DELETE FROM cacheInterceptorV${VERSION}
         WHERE id IN (
           SELECT
             id
-          FROM cacheInterceptorV${VERSION2}
+          FROM cacheInterceptorV${VERSION}
           ORDER BY cachedAt ASC
           LIMIT ?
         )
@@ -55766,11 +55766,11 @@ var require_fetch = __commonJS({
       function dispatch({ body }) {
         const url = requestCurrentURL(request);
         const agent = fetchParams.controller.dispatcher;
-        const path10 = url.pathname + url.search;
+        const path9 = url.pathname + url.search;
         const hasTrailingQuestionMark = url.search.length === 0 && url.href[url.href.length - url.hash.length - 1] === "?";
         return new Promise((resolve, reject) => agent.dispatch(
           {
-            path: hasTrailingQuestionMark ? `${path10}?` : path10,
+            path: hasTrailingQuestionMark ? `${path9}?` : path9,
             origin: url.origin,
             method: request.method,
             body: agent.isMockActive ? request.body && (request.body.source || request.body.stream) : body,
@@ -56717,9 +56717,9 @@ var require_util6 = __commonJS({
         }
       }
     }
-    function validateCookiePath(path10) {
-      for (let i = 0; i < path10.length; ++i) {
-        const code = path10.charCodeAt(i);
+    function validateCookiePath(path9) {
+      for (let i = 0; i < path9.length; ++i) {
+        const code = path9.charCodeAt(i);
         if (code < 32 || // exclude CTLs (0-31)
         code > 126 || // exclude DEL and non-ascii
         code === 59) {
@@ -59956,11 +59956,11 @@ var require_undici = __commonJS({
           if (typeof opts.path !== "string") {
             throw new InvalidArgumentError("invalid opts.path");
           }
-          let path10 = opts.path;
+          let path9 = opts.path;
           if (!opts.path.startsWith("/")) {
-            path10 = `/${path10}`;
+            path9 = `/${path9}`;
           }
-          url = new URL(util2.parseOrigin(url).origin + path10);
+          url = new URL(util2.parseOrigin(url).origin + path9);
         } else {
           if (!opts) {
             opts = typeof url === "object" ? url : {};
@@ -61245,11 +61245,11 @@ var require_commonjs3 = __commonJS({
       return (f) => f.length === len && f !== "." && f !== "..";
     };
     var defaultPlatform = typeof process === "object" && process ? typeof process.env === "object" && process.env && process.env.__MINIMATCH_TESTING_PLATFORM__ || process.platform : "posix";
-    var path10 = {
+    var path9 = {
       win32: { sep: "\\" },
       posix: { sep: "/" }
     };
-    exports.sep = defaultPlatform === "win32" ? path10.win32.sep : path10.posix.sep;
+    exports.sep = defaultPlatform === "win32" ? path9.win32.sep : path9.posix.sep;
     exports.minimatch.sep = exports.sep;
     exports.GLOBSTAR = /* @__PURE__ */ Symbol("globstar **");
     exports.minimatch.GLOBSTAR = exports.GLOBSTAR;
@@ -63825,12 +63825,12 @@ var require_commonjs5 = __commonJS({
       /**
        * Get the Path object referenced by the string path, resolved from this Path
        */
-      resolve(path10) {
-        if (!path10) {
+      resolve(path9) {
+        if (!path9) {
           return this;
         }
-        const rootPath = this.getRootString(path10);
-        const dir = path10.substring(rootPath.length);
+        const rootPath = this.getRootString(path9);
+        const dir = path9.substring(rootPath.length);
         const dirParts = dir.split(this.splitSep);
         const result = rootPath ? this.getRoot(rootPath).#resolveParts(dirParts) : this.#resolveParts(dirParts);
         return result;
@@ -64583,8 +64583,8 @@ var require_commonjs5 = __commonJS({
       /**
        * @internal
        */
-      getRootString(path10) {
-        return node_path_1.win32.parse(path10).root;
+      getRootString(path9) {
+        return node_path_1.win32.parse(path9).root;
       }
       /**
        * @internal
@@ -64631,8 +64631,8 @@ var require_commonjs5 = __commonJS({
       /**
        * @internal
        */
-      getRootString(path10) {
-        return path10.startsWith("/") ? "/" : "";
+      getRootString(path9) {
+        return path9.startsWith("/") ? "/" : "";
       }
       /**
        * @internal
@@ -64722,11 +64722,11 @@ var require_commonjs5 = __commonJS({
       /**
        * Get the depth of a provided path, string, or the cwd
        */
-      depth(path10 = this.cwd) {
-        if (typeof path10 === "string") {
-          path10 = this.cwd.resolve(path10);
+      depth(path9 = this.cwd) {
+        if (typeof path9 === "string") {
+          path9 = this.cwd.resolve(path9);
         }
-        return path10.depth();
+        return path9.depth();
       }
       /**
        * Return the cache of child entries.  Exposed so subclasses can create
@@ -65213,9 +65213,9 @@ var require_commonjs5 = __commonJS({
         process2();
         return results;
       }
-      chdir(path10 = this.cwd) {
+      chdir(path9 = this.cwd) {
         const oldCwd = this.cwd;
-        this.cwd = typeof path10 === "string" ? this.cwd.resolve(path10) : path10;
+        this.cwd = typeof path9 === "string" ? this.cwd.resolve(path9) : path9;
         this.cwd[setAsCwd](oldCwd);
       }
     };
@@ -65603,8 +65603,8 @@ var require_processor = __commonJS({
       }
       // match, absolute, ifdir
       entries() {
-        return [...this.store.entries()].map(([path10, n]) => [
-          path10,
+        return [...this.store.entries()].map(([path9, n]) => [
+          path9,
           !!(n & 2),
           !!(n & 1)
         ]);
@@ -65822,9 +65822,9 @@ var require_walker = __commonJS({
       signal;
       maxDepth;
       includeChildMatches;
-      constructor(patterns, path10, opts) {
+      constructor(patterns, path9, opts) {
         this.patterns = patterns;
-        this.path = path10;
+        this.path = path9;
         this.opts = opts;
         this.#sep = !opts.posix && opts.platform === "win32" ? "\\" : "/";
         this.includeChildMatches = opts.includeChildMatches !== false;
@@ -65843,11 +65843,11 @@ var require_walker = __commonJS({
           });
         }
       }
-      #ignored(path10) {
-        return this.seen.has(path10) || !!this.#ignore?.ignored?.(path10);
+      #ignored(path9) {
+        return this.seen.has(path9) || !!this.#ignore?.ignored?.(path9);
       }
-      #childrenIgnored(path10) {
-        return !!this.#ignore?.childrenIgnored?.(path10);
+      #childrenIgnored(path9) {
+        return !!this.#ignore?.childrenIgnored?.(path9);
       }
       // backpressure mechanism
       pause() {
@@ -66063,8 +66063,8 @@ var require_walker = __commonJS({
     exports.GlobUtil = GlobUtil;
     var GlobWalker = class extends GlobUtil {
       matches = /* @__PURE__ */ new Set();
-      constructor(patterns, path10, opts) {
-        super(patterns, path10, opts);
+      constructor(patterns, path9, opts) {
+        super(patterns, path9, opts);
       }
       matchEmit(e) {
         this.matches.add(e);
@@ -66102,8 +66102,8 @@ var require_walker = __commonJS({
     exports.GlobWalker = GlobWalker;
     var GlobStream = class extends GlobUtil {
       results;
-      constructor(patterns, path10, opts) {
-        super(patterns, path10, opts);
+      constructor(patterns, path9, opts) {
+        super(patterns, path9, opts);
         this.results = new minipass_1.Minipass({
           signal: this.signal,
           objectMode: true
@@ -66595,11 +66595,11 @@ var require_Mime = __commonJS({
         }
       }
     };
-    Mime.prototype.getType = function(path10) {
-      path10 = String(path10);
-      let last = path10.replace(/^.*[/\\]/, "").toLowerCase();
+    Mime.prototype.getType = function(path9) {
+      path9 = String(path9);
+      let last = path9.replace(/^.*[/\\]/, "").toLowerCase();
       let ext = last.replace(/^.*\./, "").toLowerCase();
-      let hasPath = last.length < path10.length;
+      let hasPath = last.length < path9.length;
       let hasDot = ext.length < last.length - 1;
       return (hasDot || !hasPath) && this._types[ext] || null;
     };
@@ -67629,7 +67629,7 @@ var require_send = __commonJS({
   "node_modules/.pnpm/@fastify+send@4.1.1/node_modules/@fastify/send/lib/send.js"(exports, module) {
     "use strict";
     var fs5 = __require("node:fs");
-    var path10 = __require("node:path");
+    var path9 = __require("node:path");
     var stream = __require("node:stream");
     var debug = __require("node:util").debuglog("send");
     var decode = require_fast_decode_uri_component();
@@ -67645,11 +67645,11 @@ var require_send = __commonJS({
     var { parseBytesRange } = require_parseBytesRange();
     var { parseTokenList } = require_parseTokenList();
     var { createHttpError } = require_createHttpError();
-    var extname = path10.extname;
-    var join = path10.join;
-    var normalize = path10.normalize;
-    var resolve = path10.resolve;
-    var sep = path10.sep;
+    var extname = path9.extname;
+    var join = path9.join;
+    var normalize = path9.normalize;
+    var resolve = path9.resolve;
+    var sep = path9.sep;
     var Readable = stream.Readable;
     var BYTES_RANGE_REGEXP = /^ *bytes=/;
     var MAX_MAXAGE = 60 * 60 * 24 * 365 * 1e3;
@@ -67716,36 +67716,36 @@ var require_send = __commonJS({
       };
     }
     function normalizePath(_path, root) {
-      let path11 = decode(_path);
-      if (path11 == null) {
+      let path10 = decode(_path);
+      if (path10 == null) {
         return { statusCode: 400 };
       }
-      if (~path11.indexOf("\0")) {
+      if (~path10.indexOf("\0")) {
         return { statusCode: 400 };
       }
       let parts;
       if (root !== null) {
-        if (path11) {
-          path11 = normalize("." + sep + path11);
+        if (path10) {
+          path10 = normalize("." + sep + path10);
         }
-        if (UP_PATH_REGEXP.test(path11)) {
-          debug('malicious path "%s"', path11);
+        if (UP_PATH_REGEXP.test(path10)) {
+          debug('malicious path "%s"', path10);
           return { statusCode: 403 };
         }
-        parts = path11.split(sep);
-        path11 = normalize(join(root, path11));
+        parts = path10.split(sep);
+        path10 = normalize(join(root, path10));
       } else {
-        if (UP_PATH_REGEXP.test(path11)) {
-          debug('malicious path "%s"', path11);
+        if (UP_PATH_REGEXP.test(path10)) {
+          debug('malicious path "%s"', path10);
           return { statusCode: 403 };
         }
-        parts = normalize(path11).split(sep);
-        path11 = resolve(path11);
+        parts = normalize(path10).split(sep);
+        path10 = resolve(path10);
       }
-      return { path: path11, parts };
+      return { path: path10, parts };
     }
-    function hasTrailingSlash(path11) {
-      return path11[path11.length - 1] === "/";
+    function hasTrailingSlash(path10) {
+      return path10[path10.length - 1] === "/";
     }
     function isConditionalGET(request) {
       return request.headers["if-match"] || request.headers["if-unmodified-since"] || request.headers["if-none-match"] || request.headers["if-modified-since"];
@@ -67835,9 +67835,9 @@ var require_send = __commonJS({
         lastModified <= ifRangeTimestamp
       );
     }
-    function tryStat(path11) {
+    function tryStat(path10) {
       return new Promise((resolve2) => {
-        fs5.stat(path11, function onstat(error, stat) {
+        fs5.stat(path10, function onstat(error, stat) {
           resolve2({ error, stat });
         });
       });
@@ -67873,7 +67873,7 @@ var require_send = __commonJS({
           return sendError(500, err);
       }
     }
-    function sendNotModified(headers, path11, stat) {
+    function sendNotModified(headers, path10, stat) {
       debug("not modified");
       delete headers["Content-Encoding"];
       delete headers["Content-Language"];
@@ -67886,15 +67886,15 @@ var require_send = __commonJS({
         stream: Readable.from(""),
         // metadata
         type: "file",
-        metadata: { path: path11, stat }
+        metadata: { path: path10, stat }
       };
     }
-    function sendFileDirectly(request, path11, stat, options) {
+    function sendFileDirectly(request, path10, stat, options) {
       let len = stat.size;
       let offset = options.start ?? 0;
       let statusCode = 200;
       const headers = {};
-      debug('send "%s"', path11);
+      debug('send "%s"', path10);
       if (options.acceptRanges) {
         debug("accept ranges");
         headers["Accept-Ranges"] = "bytes";
@@ -67918,7 +67918,7 @@ var require_send = __commonJS({
         headers.ETag = etag;
       }
       if (options.contentType) {
-        let type = mime.getType(path11) || mime.default_type;
+        let type = mime.getType(path10) || mime.default_type;
         debug("content-type %s", type);
         if (type && isUtf8MimeType(type)) {
           type += "; charset=utf-8";
@@ -67932,7 +67932,7 @@ var require_send = __commonJS({
           return sendError(412);
         }
         if (isNotModifiedFailure(request, headers)) {
-          return sendNotModified(headers, path11, stat);
+          return sendNotModified(headers, path10, stat);
         }
       }
       len = Math.max(0, len - offset);
@@ -67974,10 +67974,10 @@ var require_send = __commonJS({
           stream: Readable.from(""),
           // metadata
           type: "file",
-          metadata: { path: path11, stat }
+          metadata: { path: path10, stat }
         };
       }
-      const stream2 = fs5.createReadStream(path11, {
+      const stream2 = fs5.createReadStream(path10, {
         highWaterMark: options.highWaterMark,
         start: offset,
         end: Math.max(offset, offset + len - 1)
@@ -67988,10 +67988,10 @@ var require_send = __commonJS({
         stream: stream2,
         // metadata
         type: "file",
-        metadata: { path: path11, stat }
+        metadata: { path: path10, stat }
       };
     }
-    function sendRedirect(path11, options) {
+    function sendRedirect(path10, options) {
       if (hasTrailingSlash(options.path)) {
         return sendError(403);
       }
@@ -68009,14 +68009,14 @@ var require_send = __commonJS({
         stream: Readable.from(doc[0]),
         // metadata
         type: "directory",
-        metadata: { requestPath: options.path, path: path11 }
+        metadata: { requestPath: options.path, path: path10 }
       };
     }
-    async function sendIndex(request, path11, options) {
+    async function sendIndex(request, path10, options) {
       let err;
       for (let i = 0; i < options.index.length; i++) {
         const index = options.index[i];
-        const p = join(path11, index);
+        const p = join(path10, index);
         const { error, stat } = await tryStat(p);
         if (error) {
           err = error;
@@ -68030,13 +68030,13 @@ var require_send = __commonJS({
       }
       return sendError(404);
     }
-    async function sendFile(request, path11, options) {
-      const { error, stat } = await tryStat(path11);
-      if (error && error.code === "ENOENT" && !extname(path11) && path11[path11.length - 1] !== sep) {
+    async function sendFile(request, path10, options) {
+      const { error, stat } = await tryStat(path10);
+      if (error && error.code === "ENOENT" && !extname(path10) && path10[path10.length - 1] !== sep) {
         let err = error;
         for (let i = 0; i < options.extensions.length; i++) {
           const extension = options.extensions[i];
-          const p = path11 + "." + extension;
+          const p = path10 + "." + extension;
           const { error: error2, stat: stat2 } = await tryStat(p);
           if (error2) {
             err = error2;
@@ -68054,14 +68054,14 @@ var require_send = __commonJS({
         return sendError(404);
       }
       if (error) return sendStatError(error);
-      if (stat.isDirectory()) return sendRedirect(path11, options);
-      return sendFileDirectly(request, path11, stat, options);
+      if (stat.isDirectory()) return sendRedirect(path10, options);
+      return sendFileDirectly(request, path10, stat, options);
     }
     async function send(request, _path, options) {
       const opts = normalizeOptions(options);
       opts.path = _path;
       const parsed = normalizePath(_path, opts.root);
-      const { path: path11, parts } = parsed;
+      const { path: path10, parts } = parsed;
       if (parsed.statusCode !== void 0) {
         return sendError(parsed.statusCode);
       }
@@ -68071,23 +68071,23 @@ var require_send = __commonJS({
           /* c8 ignore start */
           /* unreachable, because NODE_DEBUG can not be set after process is running */
           case 0:
-            debug('allow dotfile "%s"', path11);
+            debug('allow dotfile "%s"', path10);
             break;
           /* c8 ignore stop */
           case 2:
-            debug('deny dotfile "%s"', path11);
+            debug('deny dotfile "%s"', path10);
             return sendError(403);
           case 1:
           // 'ignore'
           default:
-            debug('ignore dotfile "%s"', path11);
+            debug('ignore dotfile "%s"', path10);
             return sendError(404);
         }
       }
       if (opts.index.length && hasTrailingSlash(_path)) {
-        return sendIndex(request, path11, opts);
+        return sendIndex(request, path10, opts);
       }
-      return sendFile(request, path11, opts);
+      return sendFile(request, path10, opts);
     }
     module.exports.send = send;
   }
@@ -68474,16 +68474,16 @@ var require_dirList = __commonJS({
   "node_modules/.pnpm/@fastify+static@8.3.0/node_modules/@fastify/static/lib/dirList.js"(exports, module) {
     "use strict";
     var os2 = __require("node:os");
-    var path10 = __require("node:path");
+    var path9 = __require("node:path");
     var fs5 = __require("node:fs/promises");
     var fastq = require_queue();
     var fastqConcurrency = Math.max(1, os2.cpus().length - 1);
     var dirList = {
       _getExtendedInfo: async function(dir, info) {
-        const depth = dir.split(path10.sep).length;
+        const depth = dir.split(path9.sep).length;
         const files = await fs5.readdir(dir);
         const worker = async (filename) => {
-          const filePath = path10.join(dir, filename);
+          const filePath = path9.join(dir, filename);
           let stats;
           try {
             stats = await fs5.stat(filePath);
@@ -68492,12 +68492,12 @@ var require_dirList = __commonJS({
           }
           if (stats.isDirectory()) {
             info.totalFolderCount++;
-            filePath.split(path10.sep).length === depth + 1 && info.folderCount++;
+            filePath.split(path9.sep).length === depth + 1 && info.folderCount++;
             await dirList._getExtendedInfo(filePath, info);
           } else {
             info.totalSize += stats.size;
             info.totalFileCount++;
-            filePath.split(path10.sep).length === depth + 1 && info.fileCount++;
+            filePath.split(path9.sep).length === depth + 1 && info.fileCount++;
             info.lastModified = Math.max(info.lastModified, stats.mtimeMs);
           }
         };
@@ -68540,14 +68540,14 @@ var require_dirList = __commonJS({
         const worker = async (filename) => {
           let stats;
           try {
-            stats = await fs5.stat(path10.join(dir, filename));
+            stats = await fs5.stat(path9.join(dir, filename));
           } catch {
             return;
           }
           const entry = { name: filename, stats };
           if (stats.isDirectory()) {
             if (options.extendedFolderInfo) {
-              entry.extendedInfo = await dirList.getExtendedInfo(path10.join(dir, filename));
+              entry.extendedInfo = await dirList.getExtendedInfo(path9.join(dir, filename));
             }
             entries.dirs.push(entry);
           } else {
@@ -68603,11 +68603,11 @@ var require_dirList = __commonJS({
        * @return {ListFile}
        */
       htmlInfo: function(entry, route, prefix, options) {
-        if (options.names?.includes(path10.basename(route))) {
-          route = path10.normalize(path10.join(route, ".."));
+        if (options.names?.includes(path9.basename(route))) {
+          route = path9.normalize(path9.join(route, ".."));
         }
         return {
-          href: encodeURI(path10.join(prefix, route, entry.name).replace(/\\/gu, "/")),
+          href: encodeURI(path9.join(prefix, route, entry.name).replace(/\\/gu, "/")),
           name: entry.name,
           stats: entry.stats,
           extendedInfo: entry.extendedInfo
@@ -68620,7 +68620,7 @@ var require_dirList = __commonJS({
        * @return {boolean}
        */
       handle: function(route, options) {
-        return options.names?.includes(path10.basename(route)) || // match trailing slash
+        return options.names?.includes(path9.basename(route)) || // match trailing slash
         ((options.names?.includes("/") && route[route.length - 1] === "/") ?? false);
       },
       /**
@@ -68630,7 +68630,7 @@ var require_dirList = __commonJS({
        */
       path: function(root, route) {
         const _route = route[route.length - 1] === "/" ? route + "none" : route;
-        return path10.dirname(path10.join(root, _route));
+        return path9.dirname(path9.join(root, _route));
       },
       /**
        * validate options
@@ -68665,8 +68665,8 @@ var require_dirList = __commonJS({
 var require_static = __commonJS({
   "node_modules/.pnpm/@fastify+static@8.3.0/node_modules/@fastify/static/index.js"(exports, module) {
     "use strict";
-    var path10 = __require("node:path");
-    var { fileURLToPath: fileURLToPath4 } = __require("node:url");
+    var path9 = __require("node:path");
+    var { fileURLToPath: fileURLToPath3 } = __require("node:url");
     var { statSync } = __require("node:fs");
     var { glob } = require_commonjs6();
     var fp = require_plugin2();
@@ -68776,7 +68776,7 @@ var require_static = __commonJS({
           const routes = /* @__PURE__ */ new Set();
           const roots = Array.isArray(sendOptions.root) ? sendOptions.root : [sendOptions.root];
           for (let rootPath of roots) {
-            rootPath = rootPath.split(path10.win32.sep).join(path10.posix.sep);
+            rootPath = rootPath.split(path9.win32.sep).join(path9.posix.sep);
             !rootPath.endsWith("/") && (rootPath += "/");
             const files = await glob("**/**", {
               cwd: rootPath,
@@ -68787,16 +68787,16 @@ var require_static = __commonJS({
               ignore: opts.globIgnore
             });
             for (let file of files) {
-              file = file.split(path10.win32.sep).join(path10.posix.sep);
+              file = file.split(path9.win32.sep).join(path9.posix.sep);
               const route = prefix + file;
               if (routes.has(route)) {
                 continue;
               }
               routes.add(route);
               setUpHeadAndGet(routeOpts, route, `/${file}`, rootPath);
-              const key = path10.posix.basename(route);
+              const key = path9.posix.basename(route);
               if (indexes.has(key) && !indexDirs.has(key)) {
-                indexDirs.set(path10.posix.dirname(route), rootPath);
+                indexDirs.set(path9.posix.dirname(route), rootPath);
               }
             }
           }
@@ -68820,7 +68820,7 @@ var require_static = __commonJS({
           } else {
             options.root = rootPath;
           }
-        } else if (path10.isAbsolute(pathname) === false) {
+        } else if (path9.isAbsolute(pathname) === false) {
           return reply.callNotFound();
         }
         if (allowedPath && !allowedPath(pathname, options.root, request)) {
@@ -68852,11 +68852,11 @@ var require_static = __commonJS({
         } = await send(request.raw, encodeURI(pathnameForSend), options);
         switch (type) {
           case "directory": {
-            const path11 = metadata.path;
+            const path10 = metadata.path;
             if (opts.list) {
               await dirList.send({
                 reply,
-                dir: path11,
+                dir: path10,
                 options: opts.list,
                 route: pathname,
                 prefix,
@@ -68985,13 +68985,13 @@ var require_static = __commonJS({
         return root;
       }
       if (root instanceof URL && root.protocol === "file:") {
-        return fileURLToPath4(root);
+        return fileURLToPath3(root);
       }
       if (Array.isArray(root)) {
         const result = [];
         for (let i = 0, il = root.length; i < il; ++i) {
           if (root[i] instanceof URL && root[i].protocol === "file:") {
-            result.push(fileURLToPath4(root[i]));
+            result.push(fileURLToPath3(root[i]));
           } else {
             result.push(root[i]);
           }
@@ -69013,7 +69013,7 @@ var require_static = __commonJS({
             '"root" option array contains one or more duplicate paths'
           );
         }
-        rootPath.map((path11) => checkPath(fastify, path11));
+        rootPath.map((path10) => checkPath(fastify, path10));
         return;
       }
       if (typeof rootPath === "string") {
@@ -69025,7 +69025,7 @@ var require_static = __commonJS({
       if (typeof rootPath !== "string") {
         throw new TypeError('"root" option must be a string');
       }
-      if (path10.isAbsolute(rootPath) === false) {
+      if (path9.isAbsolute(rootPath) === false) {
         throw new Error('"root" option must be an absolute path');
       }
       let pathStat;
@@ -69042,8 +69042,8 @@ var require_static = __commonJS({
         throw new Error('"root" option must point to a directory');
       }
     }
-    function getContentType(path11) {
-      const type = send.mime.getType(path11) || send.mime.default_type;
+    function getContentType(path10) {
+      const type = send.mime.getType(path10) || send.mime.default_type;
       if (!send.isUtf8MimeType(type)) {
         return type;
       }
@@ -69052,7 +69052,7 @@ var require_static = __commonJS({
     function findIndexFile(pathname, root, indexFiles = ["index.html"]) {
       if (Array.isArray(indexFiles)) {
         return indexFiles.find((filename) => {
-          const p = path10.join(root, pathname, filename);
+          const p = path9.join(root, pathname, filename);
           try {
             const stats = statSync(p);
             return !stats.isDirectory();
@@ -69098,13 +69098,13 @@ var require_static = __commonJS({
 
 // src/index.ts
 import { mkdir as mkdir2, rm, writeFile as writeFile2 } from "node:fs/promises";
-import path9 from "node:path";
+import path8 from "node:path";
 
 // src/app.ts
 var import_fastify = __toESM(require_fastify(), 1);
-import { readFile as readFile3 } from "node:fs/promises";
+import { readFile as readFile2 } from "node:fs/promises";
 import { createHash as createHash6, randomUUID as randomUUID2 } from "node:crypto";
-import path7 from "node:path";
+import path6 from "node:path";
 
 // node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/external.js
 var external_exports = {};
@@ -69584,8 +69584,8 @@ function getErrorMap() {
 
 // node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
-  const { data, path: path10, errorMaps, issueData } = params;
-  const fullPath = [...path10, ...issueData.path || []];
+  const { data, path: path9, errorMaps, issueData } = params;
+  const fullPath = [...path9, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -69701,11 +69701,11 @@ var errorUtil;
 
 // node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path10, key) {
+  constructor(parent, value, path9, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path10;
+    this._path = path9;
     this._key = key;
   }
   get path() {
@@ -73456,9 +73456,9 @@ function composioToolNameForAction(listing, action) {
   const composio = recordValue(listing.manifest.composio);
   const tools = Array.isArray(composio?.tools) ? composio.tools : [];
   for (const tool of tools) {
-    const record2 = recordValue(tool);
-    if (record2?.action === action && typeof record2.toolName === "string" && record2.toolName.trim()) {
-      return record2.toolName.trim();
+    const record = recordValue(tool);
+    if (record?.action === action && typeof record.toolName === "string" && record.toolName.trim()) {
+      return record.toolName.trim();
     }
   }
   return action;
@@ -73557,9 +73557,9 @@ function buildComposioListingFromTools(input) {
   };
 }
 function normalizeComposioToolkit(value) {
-  const record2 = recordValue(value);
-  const meta = recordValue(record2?.meta);
-  const slugValue = stringValue(record2?.slug);
+  const record = recordValue(value);
+  const meta = recordValue(record?.meta);
+  const slugValue = stringValue(record?.slug);
   if (!slugValue) {
     return null;
   }
@@ -73577,19 +73577,19 @@ function normalizeComposioToolkit(value) {
   return {
     slug,
     connectorSlug,
-    name: stringValue(record2?.name) ?? titleCase(connectorSlug),
+    name: stringValue(record?.name) ?? titleCase(connectorSlug),
     description: stringValue(meta?.description) ?? "",
     logoUrl: stringValue(meta?.logo) ?? null,
     appUrl: stringValue(meta?.app_url) ?? null,
     categories,
-    authSchemes: Array.isArray(record2?.auth_schemes) ? record2.auth_schemes.map(String) : [],
+    authSchemes: Array.isArray(record?.auth_schemes) ? record.auth_schemes.map(String) : [],
     managedAuthSchemes: Array.isArray(
-      record2?.composio_managed_auth_schemes
-    ) ? record2.composio_managed_auth_schemes.map(String) : [],
+      record?.composio_managed_auth_schemes
+    ) ? record.composio_managed_auth_schemes.map(String) : [],
     toolsCount: numberValue2(meta?.tools_count),
     triggersCount: numberValue2(meta?.triggers_count),
     version: stringValue(meta?.version) ?? null,
-    noAuth: record2?.no_auth === true
+    noAuth: record?.no_auth === true
   };
 }
 function buildComposioCatalogListing(input) {
@@ -73709,11 +73709,11 @@ function nativeConnectorListings(now = (/* @__PURE__ */ new Date()).toISOString(
   }));
 }
 function normalizeComposioTool(tool, toolkit) {
-  const record2 = recordValue(tool);
-  if (!record2) {
+  const record = recordValue(tool);
+  if (!record) {
     return [];
   }
-  const rawToolName = stringValue(record2.name) ?? stringValue(record2.slug) ?? stringValue(record2.id);
+  const rawToolName = stringValue(record.name) ?? stringValue(record.slug) ?? stringValue(record.id);
   if (!rawToolName) {
     return [];
   }
@@ -73723,13 +73723,13 @@ function normalizeComposioTool(tool, toolkit) {
   const policy = composioPolicyFor(toolkit);
   const governed = policy ? composioToolPolicy(policy, rawToolName, inferred) : null;
   const capability = governed?.capability ?? inferred;
-  const inputArguments = composioToolInputArguments(record2);
+  const inputArguments = composioToolInputArguments(record);
   return [
     {
       action,
       toolName: rawToolName,
-      displayName: stringValue(record2.displayName) ?? stringValue(record2.display_name) ?? titleCase(actionSuffix),
-      description: stringValue(record2.description) ?? "",
+      displayName: stringValue(record.displayName) ?? stringValue(record.display_name) ?? titleCase(actionSuffix),
+      description: stringValue(record.description) ?? "",
       capability,
       ...inputArguments ? { inputArguments } : {},
       ...governed?.outward ? { outward: governed.outward } : {},
@@ -73781,9 +73781,9 @@ function applyComposioPolicyToListing(listing) {
     updatedAt: (/* @__PURE__ */ new Date()).toISOString()
   };
 }
-function composioToolInputArguments(record2) {
+function composioToolInputArguments(record) {
   const schema = recordValue(
-    record2.input_parameters ?? record2.inputParameters ?? record2.input_schema ?? record2.inputSchema
+    record.input_parameters ?? record.inputParameters ?? record.input_schema ?? record.inputSchema
   );
   const properties = recordValue(schema?.properties);
   if (!properties) {
@@ -74095,17 +74095,17 @@ async function fetchActivepiecesCatalog(env = process.env, fetchImpl = fetch) {
     throw new Error(response.error ?? `Activepieces catalog fetch failed with status ${response.statusCode ?? "unknown"}.`);
   }
   const items = response.json.map((item) => {
-    const record2 = item && typeof item === "object" ? item : {};
+    const record = item && typeof item === "object" ? item : {};
     return {
-      id: String(record2.id ?? record2.name ?? ""),
-      name: String(record2.name ?? ""),
-      displayName: String(record2.displayName ?? record2.name ?? ""),
-      description: typeof record2.description === "string" ? record2.description : "",
-      version: typeof record2.version === "string" ? record2.version : null,
-      actions: typeof record2.actions === "number" ? record2.actions : null,
-      triggers: typeof record2.triggers === "number" ? record2.triggers : null,
-      categories: Array.isArray(record2.categories) ? record2.categories.map(String) : [],
-      authRequired: Boolean(record2.auth)
+      id: String(record.id ?? record.name ?? ""),
+      name: String(record.name ?? ""),
+      displayName: String(record.displayName ?? record.name ?? ""),
+      description: typeof record.description === "string" ? record.description : "",
+      version: typeof record.version === "string" ? record.version : null,
+      actions: typeof record.actions === "number" ? record.actions : null,
+      triggers: typeof record.triggers === "number" ? record.triggers : null,
+      categories: Array.isArray(record.categories) ? record.categories.map(String) : [],
+      authRequired: Boolean(record.auth)
     };
   });
   return {
@@ -74282,14 +74282,14 @@ async function createComposioAuthLink(input) {
     fetchImpl,
     body
   });
-  const record2 = objectValue(response) ?? {};
-  const connectedAccountId = stringValue2(record2.connected_account_id) ?? stringValue2(record2.connectedAccountId) ?? stringValue2(record2.connection_id) ?? stringValue2(record2.id) ?? null;
-  const redirectUrl = stringValue2(record2.redirect_url) ?? stringValue2(record2.redirectUrl) ?? stringValue2(record2.url) ?? stringValue2(record2.link) ?? null;
+  const record = objectValue(response) ?? {};
+  const connectedAccountId = stringValue2(record.connected_account_id) ?? stringValue2(record.connectedAccountId) ?? stringValue2(record.connection_id) ?? stringValue2(record.id) ?? null;
+  const redirectUrl = stringValue2(record.redirect_url) ?? stringValue2(record.redirectUrl) ?? stringValue2(record.url) ?? stringValue2(record.link) ?? null;
   return {
     authConfigId,
     connectedAccountId,
     redirectUrl,
-    status: stringValue2(record2.status) ?? (redirectUrl ? "PENDING" : "UNKNOWN"),
+    status: stringValue2(record.status) ?? (redirectUrl ? "PENDING" : "UNKNOWN"),
     upstream: redactSensitiveFields(response)
   };
 }
@@ -74388,17 +74388,17 @@ async function postComposioJson(input) {
   return payload;
 }
 function authConfigIdFromPayload(payload, toolkit) {
-  const record2 = objectValue(payload);
-  const direct = stringValue2(record2?.id) ?? stringValue2(record2?.nanoid) ?? stringValue2(record2?.nanoId);
+  const record = objectValue(payload);
+  const direct = stringValue2(record?.id) ?? stringValue2(record?.nanoid) ?? stringValue2(record?.nanoId);
   if (direct) {
     return direct;
   }
-  const nested = objectValue(record2?.auth_config) ?? objectValue(record2?.authConfig);
+  const nested = objectValue(record?.auth_config) ?? objectValue(record?.authConfig);
   const nestedId = stringValue2(nested?.id) ?? stringValue2(nested?.nanoid) ?? stringValue2(nested?.nanoId);
   if (nestedId) {
     return nestedId;
   }
-  const items = Array.isArray(record2?.items) ? record2.items : Array.isArray(record2?.data) ? record2.data : [];
+  const items = Array.isArray(record?.items) ? record.items : Array.isArray(record?.data) ? record.data : [];
   for (const item of items) {
     const itemRecord = objectValue(item);
     const itemToolkit = objectValue(itemRecord?.toolkit);
@@ -74918,26 +74918,6 @@ function companyBoxApprovalFromRow(row) {
     updatedAt: String(row.updated_at)
   };
 }
-function sessionCorrelationFromRow(row) {
-  return {
-    id: String(row.id),
-    workspaceSlug: String(row.workspace_slug),
-    appThreadId: String(row.app_thread_id),
-    provider: String(row.provider),
-    providerInstanceId: String(row.provider_instance_id),
-    remoteSessionId: String(row.remote_session_id),
-    hermesLiveSessionId: row.hermes_live_session_id === null ? null : String(row.hermes_live_session_id),
-    hermesStoredSessionId: row.hermes_stored_session_id === null ? null : String(row.hermes_stored_session_id),
-    profile: row.profile === null ? null : String(row.profile),
-    runtimeMode: row.runtime_mode === null ? null : String(row.runtime_mode),
-    cwd: row.cwd === null ? null : String(row.cwd),
-    source: String(row.source),
-    eventType: String(row.event_type),
-    metadata: jsonParse(String(row.metadata), {}),
-    firstSeenAt: String(row.first_seen_at),
-    lastSeenAt: String(row.last_seen_at)
-  };
-}
 function brokerGrantFromRow(row) {
   return {
     id: String(row.id),
@@ -75240,6 +75220,8 @@ var SqliteMarketplaceStore = class {
         created_at TEXT NOT NULL
       );
 
+      -- Retired feature: no code reads or writes this table any more. It is
+      -- kept so existing databases and the table inventory stay unchanged.
       CREATE TABLE IF NOT EXISTS agent_session_correlation (
         id TEXT PRIMARY KEY,
         workspace_slug TEXT NOT NULL,
@@ -75825,88 +75807,6 @@ var SqliteMarketplaceStore = class {
       Math.max(1, Math.min(input.limit ?? 100, 500))
     );
     return rows.map(usageFromRow);
-  }
-  recordSessionCorrelation(input) {
-    const timestamp = nowIso();
-    const id = createId("agent_session");
-    this.db.prepare(
-      `INSERT INTO agent_session_correlation (
-          id, workspace_slug, app_thread_id, provider, provider_instance_id,
-          remote_session_id, hermes_live_session_id, hermes_stored_session_id,
-          profile, runtime_mode, cwd, source, event_type, metadata,
-          first_seen_at, last_seen_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(workspace_slug, app_thread_id, provider_instance_id, remote_session_id)
-        DO UPDATE SET
-          hermes_live_session_id = excluded.hermes_live_session_id,
-          hermes_stored_session_id = COALESCE(excluded.hermes_stored_session_id, hermes_stored_session_id),
-          profile = COALESCE(excluded.profile, profile),
-          runtime_mode = COALESCE(excluded.runtime_mode, runtime_mode),
-          cwd = COALESCE(excluded.cwd, cwd),
-          source = excluded.source,
-          event_type = excluded.event_type,
-          metadata = excluded.metadata,
-          last_seen_at = excluded.last_seen_at`
-    ).run(
-      id,
-      input.workspaceSlug,
-      input.appThreadId,
-      input.provider,
-      input.providerInstanceId,
-      input.remoteSessionId,
-      input.hermesLiveSessionId ?? null,
-      input.hermesStoredSessionId ?? null,
-      input.profile ?? null,
-      input.runtimeMode ?? null,
-      input.cwd ?? null,
-      input.source ?? "doppelganger-app",
-      input.eventType ?? "session.observed",
-      JSON.stringify(input.metadata ?? {}),
-      timestamp,
-      timestamp
-    );
-    return this.requireSessionCorrelation({
-      workspaceSlug: input.workspaceSlug,
-      appThreadId: input.appThreadId,
-      providerInstanceId: input.providerInstanceId,
-      remoteSessionId: input.remoteSessionId
-    });
-  }
-  requireSessionCorrelation(input) {
-    const row = this.db.prepare(
-      `SELECT * FROM agent_session_correlation
-         WHERE workspace_slug = ?
-           AND app_thread_id = ?
-           AND provider_instance_id = ?
-           AND remote_session_id = ?`
-    ).get(
-      input.workspaceSlug,
-      input.appThreadId,
-      input.providerInstanceId,
-      input.remoteSessionId
-    );
-    if (!row) {
-      throw new Error(`Missing session correlation for ${input.appThreadId}`);
-    }
-    return sessionCorrelationFromRow(row);
-  }
-  listSessionCorrelations(input) {
-    const rows = this.db.prepare(
-      `SELECT * FROM agent_session_correlation
-         WHERE workspace_slug = ?
-           AND (? IS NULL OR app_thread_id = ?)
-           AND (? IS NULL OR remote_session_id = ?)
-         ORDER BY last_seen_at DESC
-         LIMIT ?`
-    ).all(
-      input.workspaceSlug,
-      input.appThreadId ?? null,
-      input.appThreadId ?? null,
-      input.remoteSessionId ?? null,
-      input.remoteSessionId ?? null,
-      Math.max(1, Math.min(input.limit ?? 100, 500))
-    );
-    return rows.map(sessionCorrelationFromRow);
   }
   createBrokerGrant(input) {
     const timestamp = nowIso();
@@ -76942,38 +76842,15 @@ var SqliteMarketplaceStore = class {
 // src/custom-mcp.ts
 import { createHash as createHash2 } from "node:crypto";
 
-// src/types.ts
-var MARKETPLACE_PLUGIN_RECORD_VERSION = "doppelganger.marketplace.plugin-record.v1";
-var MARKETPLACE_SETTINGS_SURFACE_VERSION = "doppelganger.capability-settings.v1";
-
 // src/hub.ts
-var MARKETPLACE_HUB_UNIT = {
-  unitId: "marketplace",
-  version: "0.2.0",
-  enabled: true,
-  required: true
-};
-var HDDA_MARKETPLACE_PROXY_BASE = "/api/plugins/doppelganger-registry/proxy/marketplace";
-var MARKETPLACE_CAPABILITY_PROJECTION = {
-  gatewayPluginId: "doppelganger-registry",
-  recordsPath: `${HDDA_MARKETPLACE_PROXY_BASE}/api/plugins/marketplace-hub/records`
-};
 function recordValue2(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value : void 0;
 }
-function stringValue3(value) {
-  return typeof value === "string" && value.trim() ? value.trim() : void 0;
-}
-function stringArray(value) {
-  return Array.isArray(value) ? value.filter(
-    (item) => typeof item === "string" && item.trim().length > 0
-  ) : [];
-}
-function skillsHubMetadata(listing) {
+function legacyHubMetadata(listing) {
   return recordValue2(listing.manifest.skillsHub) ?? {};
 }
 function listingIsRequired(listing) {
-  const hub = skillsHubMetadata(listing);
+  const hub = legacyHubMetadata(listing);
   const directSystem = recordValue2(listing.manifest.system);
   const namespacedSystem = recordValue2(
     manifestNamespace(recordValue2(listing.manifest))?.system
@@ -76981,530 +76858,10 @@ function listingIsRequired(listing) {
   return hub.required === true || directSystem?.required === true || namespacedSystem?.required === true;
 }
 function listingIsCustomMcp(listing) {
-  return listing.source === "mcp" && skillsHubMetadata(listing).custom === true;
+  return listing.source === "mcp" && legacyHubMetadata(listing).custom === true;
 }
 function listingIsOperatorCustomMcp(listing) {
-  return listingIsCustomMcp(listing) && skillsHubMetadata(listing).operatorManaged === true && typeof listing.ownerWorkspaceSlug === "string";
-}
-function extensionContributions(listing) {
-  const hub = skillsHubMetadata(listing);
-  const contributions = Array.isArray(hub.contributions) ? hub.contributions : [];
-  return contributions.flatMap((value) => {
-    const contribution = recordValue2(value);
-    const id = stringValue3(contribution?.id);
-    const label = stringValue3(contribution?.label);
-    const routeSegment = stringValue3(contribution?.routeSegment);
-    const mount = stringValue3(contribution?.mount);
-    const settings = recordValue2(contribution?.settings);
-    if (!id || !label || !routeSegment || !["workspace", "right-rail", "settings-panel", "overlay"].includes(
-      mount ?? ""
-    )) {
-      return [];
-    }
-    return [
-      {
-        id,
-        type: "extension-surface",
-        label,
-        mount,
-        routeSegment,
-        ...stringValue3(contribution?.region) ? { region: stringValue3(contribution?.region) } : {},
-        ...stringValue3(contribution?.minHostSdk) ? { minHostSdk: stringValue3(contribution?.minHostSdk) } : {},
-        ...settings ? {
-          settings: {
-            ...stringValue3(settings.settingsSurfaceId) ? {
-              settingsSurfaceId: stringValue3(
-                settings.settingsSurfaceId
-              )
-            } : {},
-            ...stringValue3(settings.title) ? { title: stringValue3(settings.title) } : {},
-            ...stringValue3(settings.description) ? { description: stringValue3(settings.description) } : {},
-            ...recordValue2(settings.schema) ? { schema: recordValue2(settings.schema) } : {},
-            ...recordValue2(settings.uiSchema) ? { uiSchema: recordValue2(settings.uiSchema) } : {}
-          }
-        } : {},
-        enabled: contribution?.enabled !== false
-      }
-    ];
-  });
-}
-function marketplaceMcpAdapterConfig(listing, includeSensitive = false) {
-  const hub = skillsHubMetadata(listing);
-  const adapter = recordValue2(hub.adapter);
-  const mcp = recordValue2(adapter?.mcp);
-  const transport = stringValue3(mcp?.transport);
-  return {
-    transport: transport === "sse" || transport === "streamable-http" ? transport : "stdio",
-    ...stringValue3(mcp?.command) ? { command: stringValue3(mcp?.command) } : {},
-    ...stringArray(mcp?.args).length > 0 ? { args: stringArray(mcp?.args) } : {},
-    ...stringValue3(mcp?.url) ? { url: stringValue3(mcp?.url) } : {},
-    ...stringValue3(mcp?.cwd) ? { cwd: stringValue3(mcp?.cwd) } : {},
-    ...includeSensitive && recordValue2(mcp?.env) ? {
-      env: Object.fromEntries(
-        Object.entries(recordValue2(mcp?.env)).map(([key, value]) => [
-          key,
-          String(value)
-        ])
-      )
-    } : {},
-    ...includeSensitive && recordValue2(mcp?.headers) ? {
-      headers: Object.fromEntries(
-        Object.entries(recordValue2(mcp?.headers)).map(([key, value]) => [
-          key,
-          String(value)
-        ])
-      )
-    } : {},
-    config: recordValue2(mcp?.config) ?? {}
-  };
-}
-function connectionState(listing, state) {
-  if (state === "connected") return "connected";
-  if (state === "pending") return "connecting";
-  if (state === "blocked") return "error";
-  if (state === "disconnected") return "disconnected";
-  if (listing.authOwner === "nango" || listing.authOwner === "composio") {
-    return "auth-required";
-  }
-  return "disconnected";
-}
-function allowedActions(input) {
-  if (!input.installed) {
-    if (input.connectFirst && input.connectionState !== "connected") {
-      return ["authenticate"];
-    }
-    return [
-      "install",
-      ...input.custom ? ["configure", "update", "delete"] : []
-    ];
-  }
-  return [
-    ...input.composioAuth && (input.connectionState === "auth-required" || input.connectionState === "connecting" || input.connectionState === "error") ? ["authenticate"] : [],
-    ...input.enabled ? input.required ? [] : ["disable"] : ["enable"],
-    ...input.custom ? ["configure", "update"] : [],
-    "reload",
-    ...input.required ? [] : ["uninstall"]
-  ];
-}
-function pluginRecordId(pluginId) {
-  return `plugin:${pluginId}`;
-}
-function listingIconUrl(listing) {
-  const manifest = recordValue2(listing.manifest);
-  const composio = recordValue2(manifest?.composio);
-  const catalog = recordValue2(composio?.catalog);
-  const candidate = stringValue3(catalog?.logoUrl);
-  if (!candidate) {
-    return void 0;
-  }
-  try {
-    const url = new URL(candidate);
-    return url.protocol === "https:" ? url.toString() : void 0;
-  } catch {
-    return void 0;
-  }
-}
-function pluginSettingsSurfaceId(pluginId) {
-  return `marketplace.plugin.${pluginId}.settings`;
-}
-function extensionRecordId(pluginId, contributionId) {
-  return `extension:${pluginId}:${contributionId}`;
-}
-function extensionSettingsSurfaceId(pluginId, contribution) {
-  return contribution.settings?.settingsSurfaceId ?? `marketplace.extension.${pluginId}.${contribution.id}.settings`;
-}
-var EMPTY_SETTINGS_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  properties: {}
-};
-function pluginSettingsSurface(record2) {
-  const isMcp = record2.adapter.type === "mcp";
-  return {
-    schemaVersion: MARKETPLACE_SETTINGS_SURFACE_VERSION,
-    settingsSurfaceId: pluginSettingsSurfaceId(record2.pluginId),
-    ownerRecordId: record2.recordId,
-    presentation: "modal",
-    title: `${record2.displayName} settings`,
-    description: isMcp ? "MCP adapter configuration contributed by Marketplace." : "Plugin settings contributed by Marketplace.",
-    jsonSchema: isMcp ? {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        displayName: { type: "string" },
-        description: { type: "string" },
-        transport: { enum: ["stdio", "sse", "streamable-http"] },
-        command: { type: "string" },
-        args: { type: "array", items: { type: "string" } },
-        url: { type: "string", format: "uri" },
-        cwd: { type: "string" },
-        config: { type: "object" }
-      }
-    } : EMPTY_SETTINGS_SCHEMA,
-    allowedActions: record2.allowedActions.filter(
-      (action) => action === "configure" || action === "update"
-    ),
-    ...record2.allowedActions.includes("configure") ? { submitActionId: `${record2.recordId}:configure` } : {}
-  };
-}
-function extensionSettingsSurface(input) {
-  const settings = input.contribution.settings;
-  return {
-    schemaVersion: MARKETPLACE_SETTINGS_SURFACE_VERSION,
-    settingsSurfaceId: input.extension.settingsSurfaceId,
-    ownerRecordId: input.extension.recordId,
-    presentation: "modal",
-    title: settings?.title ?? `${input.extension.displayName} settings`,
-    description: settings?.description ?? "Extension settings contributed by its owning Plugin.",
-    jsonSchema: settings?.schema ?? EMPTY_SETTINGS_SCHEMA,
-    ...settings?.uiSchema ? { uiSchema: settings.uiSchema } : {},
-    allowedActions: []
-  };
-}
-function extensionRecord(plugin, contribution) {
-  return {
-    recordId: extensionRecordId(plugin.pluginId, contribution.id),
-    providerId: "marketplace",
-    ownerPluginId: plugin.pluginId,
-    displayName: contribution.label,
-    description: `Contributed by ${plugin.displayName}.`,
-    visible: contribution.enabled,
-    enabled: plugin.enabled && contribution.enabled,
-    required: plugin.required,
-    status: plugin.connection,
-    ...contribution.settings ? {
-      settingsSurfaceId: extensionSettingsSurfaceId(
-        plugin.pluginId,
-        contribution
-      )
-    } : {},
-    capabilities: plugin.capabilities
-  };
-}
-function actionLabel(action) {
-  if (action === "authenticate") return "Connect";
-  return action.charAt(0).toUpperCase() + action.slice(1);
-}
-function pluginActions(record2, workspaceSlug) {
-  return record2.allowedActions.map((operation) => {
-    if (operation === "authenticate") {
-      const provider = record2.adapter.type === "native" ? record2.adapter.native.provider : record2.providerId;
-      return {
-        actionId: `${record2.recordId}:${operation}`,
-        ownerRecordId: record2.recordId,
-        operation,
-        label: actionLabel(operation),
-        endpoint: `${HDDA_MARKETPLACE_PROXY_BASE}/api/marketplace/plugins/${encodeURIComponent(record2.pluginId)}/connection`,
-        method: "POST",
-        payload: {
-          workspaceSlug,
-          actorId: "operator",
-          provider,
-          backend: "composio",
-          toolkit: provider
-        }
-      };
-    }
-    const settingsAction = operation === "configure" || operation === "update";
-    const destructive = operation === "uninstall" || operation === "delete";
-    const pluginPath = `${HDDA_MARKETPLACE_PROXY_BASE}/api/marketplace/hub/plugins/${encodeURIComponent(record2.pluginId)}`;
-    return {
-      actionId: `${record2.recordId}:${operation}`,
-      ownerRecordId: record2.recordId,
-      operation,
-      label: operation === "install" && record2.connection.state === "connected" ? "Enable" : actionLabel(operation),
-      endpoint: settingsAction || operation === "delete" ? `${pluginPath}?workspaceSlug=${encodeURIComponent(workspaceSlug)}` : `${pluginPath}/lifecycle`,
-      method: operation === "delete" ? "DELETE" : settingsAction ? "PATCH" : "POST",
-      ...!settingsAction && operation !== "delete" ? {
-        payload: {
-          workspaceSlug,
-          actorId: "operator",
-          action: operation
-        }
-      } : {},
-      ...destructive ? { destructive: true } : {}
-    };
-  });
-}
-function extensionActions(_record) {
-  return [];
-}
-function assertUniqueOwnership(input) {
-  const seen = /* @__PURE__ */ new Set();
-  for (const value of input.values) {
-    if (seen.has(value)) {
-      throw new Error(`Duplicate ${input.label} ownership: ${value}`);
-    }
-    seen.add(value);
-  }
-}
-function marketplacePluginRecord(input) {
-  const install = input.store.getInstall(
-    input.workspaceSlug,
-    input.listing.pluginId
-  );
-  const installed = install?.lifecycle === "installed";
-  const enabled = installed && install?.enabled === true;
-  const required = listingIsRequired(input.listing);
-  const custom2 = listingIsCustomMcp(input.listing) && !listingIsOperatorCustomMcp(input.listing);
-  const connection = input.store.getConnection(
-    input.workspaceSlug,
-    input.listing.pluginId
-  );
-  const state = connectionState(input.listing, connection?.state);
-  const contributions = extensionContributions(input.listing);
-  const hub = skillsHubMetadata(input.listing);
-  const connectFirst = stringValue3(recordValue2(input.listing.manifest)?.role) === "composio-catalog-connector";
-  const unitId = stringValue3(hub.unitId) ?? input.listing.pluginId;
-  const version = stringValue3(input.listing.manifest.version) ?? "0.1.0";
-  return {
-    schemaVersion: MARKETPLACE_PLUGIN_RECORD_VERSION,
-    recordId: pluginRecordId(input.listing.pluginId),
-    providerId: "marketplace",
-    pluginId: input.listing.pluginId,
-    displayName: input.listing.displayName,
-    description: input.listing.description,
-    ...listingIconUrl(input.listing) ? { iconUrl: listingIconUrl(input.listing) } : {},
-    version,
-    kind: input.listing.source === "mcp" ? "mcp" : "native",
-    lifecycle: installed ? "installed" : "available",
-    enabled,
-    required,
-    connection: {
-      state,
-      detail: connection?.detail ?? (state === "auth-required" ? "External authentication requires the permissioned HDDA auth flow." : state === "connected" ? "Connected." : "No active connection.")
-    },
-    contributions,
-    adapter: input.listing.source === "mcp" ? { type: "mcp", mcp: marketplaceMcpAdapterConfig(input.listing) } : {
-      type: "native",
-      native: {
-        provider: input.listing.provider,
-        runtimeSources: input.listing.runtimeSources ?? []
-      }
-    },
-    capabilities: input.listing.capabilities,
-    actions: input.listing.actions,
-    allowedActions: allowedActions({
-      installed,
-      enabled,
-      required,
-      custom: custom2,
-      connectFirst,
-      composioAuth: input.listing.authOwner === "composio",
-      connectionState: state
-    }),
-    settingsSurfaceIds: input.listing.source === "mcp" ? [pluginSettingsSurfaceId(input.listing.pluginId)] : [],
-    registry: {
-      authority: "doppelganger-registry",
-      unitId,
-      contributionIds: contributions.map((contribution) => contribution.id)
-    },
-    custom: custom2,
-    createdAt: input.listing.createdAt,
-    updatedAt: input.listing.updatedAt
-  };
-}
-function marketplacePluginRecords(input) {
-  return input.store.listListingsForWorkspace(input.workspaceSlug).map((listing) => marketplacePluginRecord({ ...input, listing }));
-}
-function marketplaceCapabilitiesHostProjection(input) {
-  const pluginRecords = marketplacePluginRecords(input);
-  const extensionRecords = pluginRecords.flatMap(
-    (plugin) => plugin.contributions.map(
-      (contribution) => extensionRecord(plugin, contribution)
-    )
-  );
-  const extensionContributionIds = pluginRecords.flatMap(
-    (plugin) => plugin.contributions.map((contribution) => contribution.id)
-  );
-  const settingsSurfaces = [
-    ...pluginRecords.filter((record2) => record2.adapter.type === "mcp").map(pluginSettingsSurface),
-    ...extensionRecords.flatMap((extension) => {
-      const owner = pluginRecords.find(
-        (plugin) => plugin.pluginId === extension.ownerPluginId
-      );
-      if (!owner) {
-        throw new Error(
-          `Missing Plugin owner for Extension record ${extension.recordId}`
-        );
-      }
-      const contribution = owner.contributions.find(
-        (candidate) => extensionRecordId(owner.pluginId, candidate.id) === extension.recordId
-      );
-      if (!contribution) {
-        throw new Error(
-          `Missing Extension contribution for record ${extension.recordId}`
-        );
-      }
-      return contribution.settings ? [extensionSettingsSurface({ extension, contribution })] : [];
-    })
-  ];
-  const actions = [
-    ...pluginRecords.flatMap((record2) => pluginActions(record2, input.workspaceSlug)),
-    ...extensionRecords.flatMap(extensionActions)
-  ];
-  assertUniqueOwnership({
-    label: "Plugin record",
-    values: pluginRecords.map((record2) => record2.recordId)
-  });
-  assertUniqueOwnership({
-    label: "Extension record",
-    values: extensionRecords.map((record2) => record2.recordId)
-  });
-  assertUniqueOwnership({
-    label: "Extension contribution",
-    values: extensionContributionIds
-  });
-  assertUniqueOwnership({
-    label: "action",
-    values: actions.map((action) => action.actionId)
-  });
-  assertUniqueOwnership({
-    label: "settings surface",
-    values: settingsSurfaces.map((surface) => surface.settingsSurfaceId)
-  });
-  return {
-    host: {
-      entry: "capabilities",
-      tabs: ["skills", "plugins", "extensions"],
-      lifecycleAuthority: "marketplace",
-      directHermesRole: "underlying-adapters-only"
-    },
-    pluginRecords,
-    extensionRecords,
-    actions,
-    settingsSurfaces
-  };
-}
-function mcpListingFromInput(input, existing) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const capabilities2 = input.capabilities ?? [
-    "connector.observe",
-    "connector.dispatch"
-  ];
-  const actions = input.actions ?? ["mcp.tools.list", "mcp.tools.call"];
-  const adapter = {
-    transport: input.transport,
-    ...input.command ? { command: input.command } : {},
-    ...input.args && input.args.length > 0 ? { args: input.args } : {},
-    ...input.url ? { url: input.url } : {},
-    ...input.cwd ? { cwd: input.cwd } : {},
-    ...input.env ? { env: input.env } : {},
-    ...input.headers ? { headers: input.headers } : {},
-    config: input.config ?? {}
-  };
-  return {
-    pluginId: input.pluginId,
-    displayName: input.displayName,
-    kind: "toolset",
-    provider: input.pluginId,
-    description: input.description ?? "Custom Plugin using an MCP transport adapter.",
-    capabilities: capabilities2,
-    actions,
-    source: "mcp",
-    authOwner: "program",
-    executionOwner: "mcp",
-    runtimeSources: [
-      {
-        runtimeSourceId: `${input.pluginId}-mcp`,
-        kind: "mcp",
-        label: `${input.displayName} MCP adapter`,
-        primary: true,
-        mcpServerId: input.pluginId
-      }
-    ],
-    enabledByDefault: false,
-    manifest: {
-      version: input.version ?? stringValue3(existing?.manifest.version) ?? "0.1.0",
-      kind: "plugin",
-      actionRequirements: Object.fromEntries(
-        actions.map((action) => [
-          action,
-          {
-            kind: "mcp",
-            capability: action.endsWith(".call") ? "connector.dispatch" : "connector.observe"
-          }
-        ])
-      ),
-      skillsHub: {
-        custom: true,
-        required: false,
-        unitId: input.pluginId,
-        contributions: input.contributions ?? [],
-        adapter: { type: "mcp", mcp: adapter }
-      }
-    },
-    createdAt: existing?.createdAt ?? now,
-    updatedAt: now
-  };
-}
-function reconcileGatewayRegistry(snapshot) {
-  const issues = [];
-  const unit = snapshot.units.find(
-    (candidate) => candidate.unitId === MARKETPLACE_HUB_UNIT.unitId
-  );
-  if (!unit) {
-    issues.push({
-      code: "marketplace-unit-missing",
-      detail: "The Marketplace unit is absent."
-    });
-  } else {
-    if (!unit.enabled) {
-      issues.push({
-        code: "required-unit-disabled",
-        detail: "The required Marketplace unit must remain enabled."
-      });
-    }
-    if (unit.required !== true) {
-      issues.push({
-        code: "required-policy-missing",
-        detail: "The gateway registry must mark Marketplace as required."
-      });
-    }
-    if (!unit.capabilityProjection) {
-      issues.push({
-        code: "capabilities-projection-missing",
-        detail: "The required Marketplace unit must declare its gateway projection."
-      });
-    } else if (unit.capabilityProjection.gatewayPluginId !== MARKETPLACE_CAPABILITY_PROJECTION.gatewayPluginId || unit.capabilityProjection.recordsPath !== MARKETPLACE_CAPABILITY_PROJECTION.recordsPath) {
-      issues.push({
-        code: "capabilities-projection-mismatch",
-        detail: "The Marketplace projection must use the mounted marketplace-hub gateway adapter and its records route."
-      });
-    }
-  }
-  for (const contribution of snapshot.contributions) {
-    if (contribution.mount === "hub-tab" || contribution.type === "hub-family-filler") {
-      issues.push({
-        code: "duplicate-top-level-tab",
-        detail: `${contribution.id} attempts to replace or append a Capabilities tab.`
-      });
-    }
-    if (["mcp", "toolsets", "hub"].includes(
-      (contribution.family ?? contribution.routeSegment ?? "").toLowerCase()
-    )) {
-      issues.push({
-        code: "unexpected-top-level-category",
-        detail: `${contribution.label} must be represented as a Plugin, not a top-level Hub category.`
-      });
-    }
-  }
-  return {
-    ok: issues.length === 0,
-    authority: "doppelganger-registry",
-    writesRegistry: false,
-    expected: {
-      unit: MARKETPLACE_HUB_UNIT,
-      capabilityProjection: MARKETPLACE_CAPABILITY_PROJECTION,
-      entry: "capabilities",
-      tabs: ["skills", "plugins", "extensions"],
-      projectionEndpoint: MARKETPLACE_CAPABILITY_PROJECTION.recordsPath,
-      contributionMode: "gateway-projected-records",
-      lifecycleAuthority: "marketplace"
-    },
-    observedRevision: snapshot.revision,
-    issues
-  };
+  return listingIsCustomMcp(listing) && legacyHubMetadata(listing).operatorManaged === true && typeof listing.ownerWorkspaceSlug === "string";
 }
 
 // src/custom-mcp.ts
@@ -77563,8 +76920,8 @@ var CustomMcpPatchSchema = external_exports.object({
 });
 function requestsStdioTransport(body) {
   if (!body || typeof body !== "object" || Array.isArray(body)) return false;
-  const record2 = body;
-  return record2.transport === "stdio" || STDIO_ONLY_FIELDS.some((field) => field in record2);
+  const record = body;
+  return record.transport === "stdio" || STDIO_ONLY_FIELDS.some((field) => field in record);
 }
 function normalizeHeaderName(name, field) {
   const trimmed = name.trim();
@@ -78159,7 +77516,7 @@ function policyCheckedLookup(lookup = defaultMcpLookup) {
 // package.json
 var package_default = {
   name: "@tealbrick/marketplace-program",
-  version: "0.1.15",
+  version: "0.1.16",
   private: true,
   type: "module",
   packageManager: "pnpm@9.15.4",
@@ -78814,11 +78171,11 @@ function compileArgumentValidator(schema) {
   return (args) => {
     if (validate(args)) return { ok: true };
     const error = validate.errors?.[0];
-    const path10 = (error?.instancePath ?? "").split("/").filter(Boolean).join(".");
+    const path9 = (error?.instancePath ?? "").split("/").filter(Boolean).join(".");
     const missing = error?.keyword === "required" && typeof error.params?.missingProperty === "string" ? error.params.missingProperty : error?.keyword === "additionalProperties" && typeof error.params?.additionalProperty === "string" ? error.params.additionalProperty : null;
     return {
       ok: false,
-      field: [path10, missing].filter(Boolean).join(".") || "arguments",
+      field: [path9, missing].filter(Boolean).join(".") || "arguments",
       reason: error?.keyword === "additionalProperties" ? "not declared by the operation" : error?.message ?? "invalid"
     };
   };
@@ -78877,11 +78234,11 @@ function parameterNeedsArgument(parameter) {
 function recordValue5(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : null;
 }
-function stringValue4(value) {
+function stringValue3(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
-function operationIdentity(method, path10) {
-  return `${method.toUpperCase()} ${path10}`;
+function operationIdentity(method, path9) {
+  return `${method.toUpperCase()} ${path9}`;
 }
 function decodePointerToken(token) {
   return token.replace(/~1/gu, "/").replace(/~0/gu, "~");
@@ -78901,8 +78258,8 @@ function resolvePointer(document, ref) {
     if (Array.isArray(current)) {
       current = current[Number(token)];
     } else {
-      const record2 = recordValue5(current);
-      current = record2 ? record2[token] : void 0;
+      const record = recordValue5(current);
+      current = record ? record[token] : void 0;
     }
     if (current === void 0) {
       throw new OpenApiSpecError("openapi_ref_unresolved", `Unresolvable $ref ${ref}.`);
@@ -78922,13 +78279,13 @@ function derefObject(document, value) {
 }
 function rewriteSchema(context, value, seen = /* @__PURE__ */ new Set()) {
   if (Array.isArray(value)) return value.map((item) => rewriteSchema(context, item, seen));
-  const record2 = recordValue5(value);
-  if (!record2) return value;
-  if (typeof record2.$ref === "string") {
-    const ref = record2.$ref;
+  const record = recordValue5(value);
+  if (!record) return value;
+  if (typeof record.$ref === "string") {
+    const ref = record.$ref;
     for (const prefix of context.defPrefixes) {
       if (ref.startsWith(prefix)) {
-        const { $ref: _ignored, ...siblings } = record2;
+        const { $ref: _ignored, ...siblings } = record;
         const rewritten = { $ref: `#/$defs/${ref.slice(prefix.length)}` };
         return Object.keys(siblings).length ? { allOf: [rewritten], ...rewriteSchema(context, siblings, seen) } : rewritten;
       }
@@ -78940,7 +78297,7 @@ function rewriteSchema(context, value, seen = /* @__PURE__ */ new Set()) {
     return rewriteSchema(context, target, /* @__PURE__ */ new Set([...seen, ref]));
   }
   const out = {};
-  for (const [key, child] of Object.entries(record2)) {
+  for (const [key, child] of Object.entries(record)) {
     out[key] = rewriteSchema(context, child, seen);
   }
   return nullableWithoutType(out);
@@ -78955,13 +78312,13 @@ function collectDefRefs(value, into) {
     for (const item of value) collectDefRefs(item, into);
     return;
   }
-  const record2 = recordValue5(value);
-  if (!record2) return;
-  if (typeof record2.$ref === "string" && record2.$ref.startsWith("#/$defs/")) {
-    const name = decodePointerToken(record2.$ref.slice("#/$defs/".length).split("/")[0] ?? "");
+  const record = recordValue5(value);
+  if (!record) return;
+  if (typeof record.$ref === "string" && record.$ref.startsWith("#/$defs/")) {
+    const name = decodePointerToken(record.$ref.slice("#/$defs/".length).split("/")[0] ?? "");
     if (name) into.add(name);
   }
-  for (const child of Object.values(record2)) collectDefRefs(child, into);
+  for (const child of Object.values(record)) collectDefRefs(child, into);
 }
 function reachableDefs(schema, defs) {
   const names = /* @__PURE__ */ new Set();
@@ -78988,23 +78345,23 @@ function inlineDefs(schema, defs) {
     nodes += 1;
     if (nodes > INLINE_NODE_BUDGET) throw new Error("budget");
     if (Array.isArray(value)) return value.map((item) => walk(item, stack));
-    const record2 = recordValue5(value);
-    if (!record2) return value;
-    if (typeof record2.$ref === "string" && record2.$ref.startsWith("#/$defs/")) {
-      const path10 = record2.$ref.slice("#/$defs/".length).split("/").map(decodePointerToken);
-      const name = path10[0];
+    const record = recordValue5(value);
+    if (!record) return value;
+    if (typeof record.$ref === "string" && record.$ref.startsWith("#/$defs/")) {
+      const path9 = record.$ref.slice("#/$defs/".length).split("/").map(decodePointerToken);
+      const name = path9[0];
       if (stack.includes(name)) throw new Error("cycle");
       let target = defs[name];
-      for (const token of path10.slice(1)) target = recordValue5(target)?.[token];
+      for (const token of path9.slice(1)) target = recordValue5(target)?.[token];
       if (target === void 0) throw new Error("missing");
-      const { $ref: _ref, ...siblings } = record2;
+      const { $ref: _ref, ...siblings } = record;
       const resolved = walk(target, [...stack, name]);
       if (!Object.keys(siblings).length) return resolved;
       const extra = walk(siblings, stack);
       return recordValue5(resolved) ? { ...resolved, ...extra } : { allOf: [resolved], ...extra };
     }
     const out = {};
-    for (const [key, child] of Object.entries(record2)) out[key] = walk(child, stack);
+    for (const [key, child] of Object.entries(record)) out[key] = walk(child, stack);
     return out;
   };
   try {
@@ -79065,8 +78422,8 @@ function mergeParameters(document, pathLevel, operationLevel) {
   for (const list of [pathLevel, operationLevel]) {
     for (const raw of Array.isArray(list) ? list : []) {
       const parameter = derefObject(document, raw);
-      const name = stringValue4(parameter?.name);
-      const location = stringValue4(parameter?.in);
+      const name = stringValue3(parameter?.name);
+      const location = stringValue3(parameter?.in);
       if (!parameter || !name || !location) {
         throw new OpenApiSpecError("openapi_spec_invalid", "A parameter is missing name or in.");
       }
@@ -79076,14 +78433,14 @@ function mergeParameters(document, pathLevel, operationLevel) {
   return [...merged.values()];
 }
 function boundedText2(value, max) {
-  const text = stringValue4(value);
+  const text = stringValue3(value);
   return text ? text.slice(0, max) : null;
 }
 function parseOpenApiDocument(raw) {
   const document = recordValue5(raw);
   if (!document) throw new OpenApiSpecError("openapi_spec_invalid", "The spec is not a JSON object.");
-  const openapi = stringValue4(document.openapi);
-  const swagger = stringValue4(document.swagger);
+  const openapi = stringValue3(document.openapi);
+  const swagger = stringValue3(document.swagger);
   let format;
   if (openapi && /^3\.\d+(\.\d+)?$/u.test(openapi)) format = "openapi-3";
   else if (swagger === "2.0") format = "swagger-2";
@@ -79107,9 +78464,9 @@ function parseOpenApiDocument(raw) {
   const info = recordValue5(document.info) ?? {};
   let basePath = "";
   if (format === "swagger-2") {
-    basePath = stringValue4(document.basePath) ?? "";
+    basePath = stringValue3(document.basePath) ?? "";
   } else {
-    const server = stringValue4(recordValue5(document.servers?.[0])?.url);
+    const server = stringValue3(recordValue5(document.servers?.[0])?.url);
     if (server) {
       try {
         basePath = new URL(server, "http://placeholder.invalid").pathname;
@@ -79122,7 +78479,7 @@ function parseOpenApiDocument(raw) {
   if (basePath && !basePath.startsWith("/")) basePath = `/${basePath}`;
   const globalConsumes = Array.isArray(document.consumes) ? document.consumes.filter((item) => typeof item === "string") : [];
   const operations = [];
-  for (const [path10, rawItem] of Object.entries(paths)) {
+  for (const [path9, rawItem] of Object.entries(paths)) {
     const item = derefObject(document, rawItem);
     if (!item) continue;
     for (const method of [...OPENAPI_METHODS, ...WEBDAV_METHODS]) {
@@ -79130,7 +78487,7 @@ function parseOpenApiDocument(raw) {
         WEBDAV_METHODS.includes(method) ? item[`x-${method}`] : item[method]
       );
       if (!operation) continue;
-      const operationId = stringValue4(operation.operationId);
+      const operationId = stringValue3(operation.operationId);
       const parameters = [];
       const unsupportedParameters = [];
       let requestBody = null;
@@ -79217,7 +78574,7 @@ function parseOpenApiDocument(raw) {
           };
         }
       }
-      for (const match of path10.matchAll(/\{([^}]+)\}/gu)) {
+      for (const match of path9.matchAll(/\{([^}]+)\}/gu)) {
         const name = match[1];
         if (!parameters.some((parameter) => parameter.in === "path" && parameter.name === name)) {
           parameters.push({ name, in: "path", required: true, schema: { type: "string" } });
@@ -79227,10 +78584,10 @@ function parseOpenApiDocument(raw) {
         requestBody = { ...requestBody, schema: fileAwareBodySchema(requestBody.contentType, requestBody.schema, defs) };
       }
       operations.push({
-        ref: operationId ?? operationIdentity(method, path10),
+        ref: operationId ?? operationIdentity(method, path9),
         operationId,
         method,
-        path: path10,
+        path: path9,
         summary: boundedText2(operation.summary, OPENAPI_TITLE_MAX),
         description: boundedText2(operation.description, OPENAPI_FULL_DESCRIPTION_MAX),
         tags: Array.isArray(operation.tags) ? operation.tags.filter((tag) => typeof tag === "string").slice(0, 20) : [],
@@ -79244,8 +78601,8 @@ function parseOpenApiDocument(raw) {
   return {
     format,
     specVersion: openapi ?? swagger,
-    title: stringValue4(info.title) ?? "API",
-    apiVersion: stringValue4(info.version) ?? "",
+    title: stringValue3(info.title) ?? "API",
+    apiVersion: stringValue3(info.version) ?? "",
     basePath,
     defs,
     operations
@@ -79451,14 +78808,14 @@ var FILE_UPLOAD_SCHEMA = {
   "x-file-upload": true
 };
 function isBinarySchema(schema) {
-  const record2 = recordValue5(schema);
-  if (!record2) return false;
-  return record2.format === "binary" || typeof record2.contentMediaType === "string" && record2.type !== "object" && record2.type !== "array" || typeof record2.contentEncoding === "string";
+  const record = recordValue5(schema);
+  if (!record) return false;
+  return record.format === "binary" || typeof record.contentMediaType === "string" && record.type !== "object" && record.type !== "array" || typeof record.contentEncoding === "string";
 }
 function fileAware(schema) {
   if (isBinarySchema(schema)) return FILE_UPLOAD_SCHEMA;
-  const record2 = recordValue5(schema);
-  if (record2?.type === "array" && isBinarySchema(record2.items)) return { ...record2, items: FILE_UPLOAD_SCHEMA };
+  const record = recordValue5(schema);
+  if (record?.type === "array" && isBinarySchema(record.items)) return { ...record, items: FILE_UPLOAD_SCHEMA };
   return schema;
 }
 function fileAwareBodySchema(contentType, schema, defs) {
@@ -79580,18 +78937,18 @@ function scrubSecrets(text, secrets) {
 function scrubDeep(value, secrets) {
   if (typeof value === "string") return scrubSecrets(value, secrets);
   if (Array.isArray(value)) return value.map((item) => scrubDeep(item, secrets));
-  const record2 = recordValue6(value);
-  if (!record2) return value;
+  const record = recordValue6(value);
+  if (!record) return value;
   return Object.fromEntries(
-    Object.entries(record2).map(([key, child]) => [scrubSecrets(key, secrets), scrubDeep(child, secrets)])
+    Object.entries(record).map(([key, child]) => [scrubSecrets(key, secrets), scrubDeep(child, secrets)])
   );
 }
 function groupArgs(args, group) {
   const value = args[group];
   if (value === void 0 || value === null) return {};
-  const record2 = recordValue6(value);
-  if (!record2) argumentError(group, "expected an object");
-  return record2;
+  const record = recordValue6(value);
+  if (!record) argumentError(group, "expected an object");
+  return record;
 }
 function declared(parameters, location) {
   return new Map(
@@ -79616,33 +78973,33 @@ function appendQuery(search, parameter, value, auth) {
     else for (const item of items) search.append(parameter.name, item);
     return;
   }
-  const record2 = recordValue6(value);
-  if (record2) {
+  const record = recordValue6(value);
+  if (record) {
     const properties = recordValue6(parameter.schema.properties);
     if (parameter.schema.type !== "object" || !properties) argumentError(field, "expected a scalar or array");
-    for (const key of Object.keys(record2)) {
+    for (const key of Object.keys(record)) {
       if (!(key in properties)) argumentError(`${field}.${key}`, "not declared by the operation");
       if (reservedParameterName(key, auth)) argumentError(`${field}.${key}`, "reserved parameter name");
     }
     if (parameter.style === "deepObject") {
-      for (const [key, child] of Object.entries(record2)) {
+      for (const [key, child] of Object.entries(record)) {
         search.append(`${parameter.name}[${key}]`, scalarString(child, field));
       }
     } else if (parameter.explode === false) {
       search.append(
         parameter.name,
-        Object.entries(record2).flatMap(([key, child]) => [key, scalarString(child, field)]).join(",")
+        Object.entries(record).flatMap(([key, child]) => [key, scalarString(child, field)]).join(",")
       );
     } else {
-      for (const [key, child] of Object.entries(record2)) search.append(key, scalarString(child, field));
+      for (const [key, child] of Object.entries(record)) search.append(key, scalarString(child, field));
     }
     return;
   }
   search.append(parameter.name, scalarString(value, field));
 }
 function fileArgument(value) {
-  const record2 = recordValue6(value);
-  return record2 && typeof record2.base64 === "string" ? record2 : null;
+  const record = recordValue6(value);
+  return record && typeof record.base64 === "string" ? record : null;
 }
 function decodeFile(file, field, budget) {
   const text = file.base64.replace(/\s+/gu, "");
@@ -79681,16 +79038,16 @@ function buildBody(operation, value, maxUploadBytes = OPENAPI_DEFAULT_MAX_UPLOAD
     return { body: JSON.stringify(value), contentType };
   }
   if (base === "application/x-www-form-urlencoded") {
-    const record2 = recordValue6(value) ?? argumentError("body", "expected an object");
+    const record = recordValue6(value) ?? argumentError("body", "expected an object");
     const form = new URLSearchParams();
-    for (const [key, child] of Object.entries(record2)) {
+    for (const [key, child] of Object.entries(record)) {
       if (Array.isArray(child)) for (const item of child) form.append(key, scalarString(item, `body.${key}`));
       else if (child !== void 0 && child !== null) form.append(key, scalarString(child, `body.${key}`));
     }
     return { body: form.toString(), contentType };
   }
   if (base === "multipart/form-data") {
-    const record2 = recordValue6(value) ?? argumentError("body", "expected an object");
+    const record = recordValue6(value) ?? argumentError("body", "expected an object");
     const form = new FormData();
     const appendPart = (key, child, field) => {
       const file2 = fileArgument(child);
@@ -79707,7 +79064,7 @@ function buildBody(operation, value, maxUploadBytes = OPENAPI_DEFAULT_MAX_UPLOAD
         form.append(key, typeof child === "object" ? JSON.stringify(child) : scalarString(child, field));
       }
     };
-    for (const [key, child] of Object.entries(record2)) {
+    for (const [key, child] of Object.entries(record)) {
       if (Array.isArray(child) && child.some((item) => fileArgument(item))) {
         child.forEach((item, index) => appendPart(key, item, `body.${key}.${index}`));
       } else {
@@ -81302,436 +80659,11 @@ var MarketplaceProviderSettingsStore = class {
   }
 };
 
-// src/extension-settings-projection.ts
-import { readdir, readFile as readFile2 } from "node:fs/promises";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import path5 from "node:path";
-import { fileURLToPath as fileURLToPath2 } from "node:url";
-
-// ../.sdk/extension-settings.mjs
-var VERSION = "doppelganger.capability-settings.v1";
-var SECRET_NAME = /(token|secret|password|api.?key)$/iu;
-function invalid(message) {
-  const error = new Error(message);
-  error.statusCode = 400;
-  throw error;
-}
-function record(value) {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
-}
-function validateSettingsDeclaration(value) {
-  const declaration = record(value);
-  if (!declaration || declaration.schemaVersion !== VERSION) {
-    invalid(`settings declaration must use ${VERSION}`);
-  }
-  if (declaration.state === "none" || declaration.state === "unavailable") {
-    if (!["dynamic-provider", "developer-only", "none"].includes(declaration.posture)) {
-      invalid(`${declaration.state} settings declaration requires an explicit posture`);
-    }
-    if (typeof declaration.reason !== "string" || !declaration.reason.trim()) {
-      invalid(`${declaration.state} settings declaration requires a reason`);
-    }
-    return declaration;
-  }
-  if (declaration.state !== "available") {
-    invalid("settings declaration state must be available, unavailable, or none");
-  }
-  if (declaration.posture !== "operational") {
-    invalid("available settings declarations must use the operational posture");
-  }
-  if (declaration.transport !== void 0 && !["gateway", "desktop-runtime-bridge"].includes(declaration.transport)) {
-    invalid("settings declaration transport must be gateway or desktop-runtime-bridge");
-  }
-  for (const key of ["settingsSurfaceId", "title", "audience", "applyMode"]) {
-    if (typeof declaration[key] !== "string" || !declaration[key]) {
-      invalid(`available settings declaration requires ${key}`);
-    }
-  }
-  if (!record(declaration.jsonSchema) || declaration.jsonSchema.type !== "object") {
-    invalid("settings jsonSchema must describe an object");
-  }
-  const read = record(declaration.endpoints)?.read;
-  const apply = record(declaration.endpoints)?.apply;
-  if (read?.method !== "GET" || apply?.method !== "PATCH") {
-    invalid("settings endpoints must provide authenticated GET and PATCH descriptors");
-  }
-  if (read.authentication !== "bearer" || apply.authentication !== "bearer") {
-    invalid("settings endpoints must require bearer authentication");
-  }
-  const credentialFields = /* @__PURE__ */ new Set();
-  for (const entry of declaration.credentialReferences ?? []) {
-    if (!entry.field?.endsWith("CredentialRef") || !entry.statusField?.endsWith("CredentialStatus")) {
-      invalid("secret settings may expose credential references and status fields only");
-    }
-    credentialFields.add(entry.field);
-    credentialFields.add(entry.statusField);
-  }
-  for (const property of Object.keys(declaration.jsonSchema.properties ?? {})) {
-    if (SECRET_NAME.test(property) && !credentialFields.has(property)) {
-      invalid(`secret-shaped field ${property} must be represented as a credential reference/status`);
-    }
-  }
-  return declaration;
-}
-
-// src/extension-settings-projection.ts
-function emptyProjection() {
-  return {
-    host: {
-      entry: "capabilities",
-      tabs: ["skills", "plugins", "extensions"],
-      lifecycleAuthority: "marketplace",
-      directHermesRole: "underlying-adapters-only"
-    },
-    pluginRecords: [],
-    extensionRecords: [],
-    actions: [],
-    settingsSurfaces: []
-  };
-}
-function assertUnique(label, values) {
-  const seen = /* @__PURE__ */ new Set();
-  for (const value of values) {
-    if (seen.has(value)) throw new Error(`duplicate ${label}: ${value}`);
-    seen.add(value);
-  }
-}
-function asRecord(value) {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
-}
-var UNIT_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/u;
-function gatewayProgramProxyEndpoint(unitId, declaredPath) {
-  if (!UNIT_ID_PATTERN.test(unitId)) {
-    throw new Error(`invalid Extension unit id for gateway proxy: ${unitId}`);
-  }
-  if (typeof declaredPath !== "string" || !declaredPath.trim()) {
-    throw new Error(`invalid Program settings path for ${unitId}`);
-  }
-  const trimmed = declaredPath.trim();
-  if (trimmed.includes("\\") || trimmed.includes("?") || trimmed.includes("#") || /^[a-z][a-z0-9+.-]*:/iu.test(trimmed)) {
-    throw new Error(`invalid Program settings path for ${unitId}: ${trimmed}`);
-  }
-  const normalized2 = `/${trimmed.replace(/^\/+/, "")}`;
-  const segments = normalized2.split("/").filter(Boolean);
-  for (const segment of segments) {
-    let decoded;
-    try {
-      decoded = decodeURIComponent(segment);
-    } catch {
-      throw new Error(`invalid Program settings path encoding for ${unitId}: ${trimmed}`);
-    }
-    if (decoded === "." || decoded === ".." || decoded.includes("/") || decoded.includes("\\")) {
-      throw new Error(`Program settings path traversal is not allowed for ${unitId}: ${trimmed}`);
-    }
-  }
-  return `/api/plugins/doppelganger-registry/proxy/${unitId}${normalized2}`;
-}
-function manifestPathForUnit(root, unitId) {
-  const standaloneManifest = path5.join(root, "extension", "manifest.json");
-  const standaloneProduct = path5.join(root, "manifest.json");
-  if (existsSync(standaloneManifest) && existsSync(standaloneProduct)) {
-    try {
-      const product = JSON.parse(readFileSync(standaloneProduct, "utf8"));
-      if (product.id === unitId) return standaloneManifest;
-    } catch {
-    }
-  }
-  const direct = path5.join(root, unitId, "extension", "manifest.json");
-  if (existsSync(direct)) return direct;
-  const installed = path5.join(root, unitId, "current", "extension", "manifest.json");
-  return existsSync(installed) ? installed : null;
-}
-function standaloneUnitId(root) {
-  const extensionManifest = path5.join(root, "extension", "manifest.json");
-  const productManifest = path5.join(root, "manifest.json");
-  if (!existsSync(extensionManifest) || !existsSync(productManifest)) return null;
-  try {
-    const product = JSON.parse(readFileSync(productManifest, "utf8"));
-    return typeof product.id === "string" && product.id ? product.id : null;
-  } catch {
-    return null;
-  }
-}
-function isManifestRoot(root) {
-  if (standaloneUnitId(root)) return true;
-  try {
-    return readdirSync(root, { withFileTypes: true }).some(
-      (entry) => !entry.name.startsWith(".") && (entry.isDirectory() || entry.isSymbolicLink()) && manifestPathForUnit(root, entry.name)
-    );
-  } catch {
-    return false;
-  }
-}
-function defaultMicroappsRoot(env = process.env, moduleDir = path5.dirname(fileURLToPath2(import.meta.url))) {
-  const explicit = readCompatEnv(env, "MICROAPPS_ROOT");
-  if (explicit) {
-    const resolved2 = path5.resolve(explicit);
-    if (!isManifestRoot(resolved2)) {
-      const source = env.TEALBRICK_MICROAPPS_ROOT?.trim() ? "TEALBRICK_MICROAPPS_ROOT" : "DOPPELGANGER_MICROAPPS_ROOT";
-      throw new Error(`${source} does not contain Extension manifests: ${resolved2}`);
-    }
-    return resolved2;
-  }
-  const candidates = [
-    path5.resolve(moduleDir, "../.."),
-    path5.resolve(moduleDir, "../../.."),
-    path5.resolve(moduleDir, "../../../../..")
-  ];
-  const resolved = candidates.find(isManifestRoot);
-  if (!resolved) {
-    throw new Error(
-      `No Micro-app Extension manifest root found. Set TEALBRICK_MICROAPPS_ROOT; checked: ${candidates.join(", ")}`
-    );
-  }
-  return resolved;
-}
-async function loadExtensionManifests(microappsRoot) {
-  const resolvedRoot = microappsRoot ? path5.resolve(microappsRoot) : defaultMicroappsRoot();
-  if (!isManifestRoot(resolvedRoot)) {
-    throw new Error(`Micro-app root contains no Extension manifests: ${resolvedRoot}`);
-  }
-  const standaloneId = standaloneUnitId(resolvedRoot);
-  if (standaloneId) {
-    const standalonePath = manifestPathForUnit(resolvedRoot, standaloneId);
-    if (!standalonePath) throw new Error(`Micro-app root contains no readable Extension manifests: ${resolvedRoot}`);
-    const manifest = JSON.parse(await readFile2(standalonePath, "utf8"));
-    if (manifest.capabilitySettings !== void 0) {
-      validateSettingsDeclaration(manifest.capabilitySettings);
-    }
-    return [manifest];
-  }
-  const entries = await readdir(resolvedRoot, { withFileTypes: true });
-  const manifests = [];
-  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
-    if (!entry.isDirectory() && !entry.isSymbolicLink() || entry.name.startsWith(".")) continue;
-    const manifestPath = manifestPathForUnit(resolvedRoot, entry.name);
-    if (!manifestPath) continue;
-    try {
-      const manifest = JSON.parse(await readFile2(manifestPath, "utf8"));
-      if (manifest.capabilitySettings !== void 0) {
-        validateSettingsDeclaration(manifest.capabilitySettings);
-      }
-      manifests.push(manifest);
-    } catch (error) {
-      throw new Error(`${entry.name} Extension settings declaration is invalid: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-  if (manifests.length === 0) {
-    throw new Error(`Micro-app root contains no readable Extension manifests: ${resolvedRoot}`);
-  }
-  return manifests;
-}
-async function loadDynamicProviderPanels(microappsRoot, manifest) {
-  const id = String(manifest.id);
-  if (typeof manifest.registryManifest !== "string" || !manifest.registryManifest.trim()) {
-    return [];
-  }
-  const pluginManifest = await loadSourcePluginManifest(microappsRoot, manifest, true);
-  if (!pluginManifest) return [];
-  const panels = manifestNamespace(pluginManifest)?.settingsPanels;
-  if (!Array.isArray(panels)) return [];
-  return panels.flatMap((value) => {
-    const panel = asRecord(value);
-    const settings = asRecord(panel?.settings);
-    if (!panel || !settings) return [];
-    const jsonSchema = asRecord(settings.jsonSchema);
-    const uiSchema = asRecord(settings.uiSchema);
-    const loadAction = asRecord(settings.loadAction);
-    const submitAction = asRecord(settings.submitAction);
-    if (typeof panel.panelId !== "string" || !panel.panelId.trim()) {
-      throw new Error(`${id} dynamic-provider settings panel requires panelId`);
-    }
-    if (typeof panel.label !== "string" || !panel.label.trim()) {
-      throw new Error(`${id} dynamic-provider settings panel requires label`);
-    }
-    if (!jsonSchema || jsonSchema.type !== "object") {
-      throw new Error(`${id} dynamic-provider settings panel requires object jsonSchema`);
-    }
-    if (!uiSchema) {
-      throw new Error(`${id} dynamic-provider settings panel requires uiSchema`);
-    }
-    if (loadAction?.method !== "GET" || typeof loadAction.path !== "string" || !loadAction.path) {
-      throw new Error(`${id} dynamic-provider settings panel requires a GET loadAction`);
-    }
-    if (!["PATCH", "PUT"].includes(String(submitAction?.method)) || typeof submitAction?.path !== "string" || !submitAction.path) {
-      throw new Error(`${id} dynamic-provider settings panel requires a PATCH or PUT submitAction`);
-    }
-    return [{ panel, settings, jsonSchema, uiSchema, loadAction, submitAction }];
-  });
-}
-async function loadSourcePluginManifest(microappsRoot, manifest, requireDeclaredPath = false) {
-  const id = String(manifest.id);
-  const extensionManifestPath = manifestPathForUnit(microappsRoot, id);
-  if (!extensionManifestPath) {
-    throw new Error(`${id} Extension manifest path is unavailable`);
-  }
-  const declaredPath = typeof manifest.registryManifest === "string" ? manifest.registryManifest.trim() : "";
-  if (requireDeclaredPath && !declaredPath) return null;
-  const registryManifest = declaredPath || "../.codex-plugin/plugin.json";
-  const unitRoot = path5.dirname(path5.dirname(extensionManifestPath));
-  const pluginManifestPath = path5.resolve(
-    path5.dirname(extensionManifestPath),
-    registryManifest
-  );
-  if (pluginManifestPath !== unitRoot && !pluginManifestPath.startsWith(`${unitRoot}${path5.sep}`)) {
-    throw new Error(`${id} registryManifest must stay inside its Micro-app root`);
-  }
-  try {
-    const plugin = JSON.parse(await readFile2(pluginManifestPath, "utf8"));
-    const productPath = path5.join(unitRoot, "manifest.json");
-    if (existsSync(productPath)) {
-      const product = JSON.parse(await readFile2(productPath, "utf8"));
-      const namespace = manifestNamespace(product) ?? manifestNamespace(plugin);
-      if (namespace) plugin.tealbrick = namespace;
-    }
-    return plugin;
-  } catch (error) {
-    if (!declaredPath && error?.code === "ENOENT") {
-      return null;
-    }
-    throw new Error(
-      `${id} registry manifest is unreadable: ${error instanceof Error ? error.message : String(error)}`
-    );
-  }
-}
-function dynamicSettingsSurfaceId(unitId, panelId) {
-  return panelId === unitId ? `${unitId}.settings` : `${unitId}.${panelId}.settings`;
-}
-async function projectExtensionSettings(options = {}) {
-  const base = options.baseProjection ?? emptyProjection();
-  const microappsRoot = options.microappsRoot ? path5.resolve(options.microappsRoot) : defaultMicroappsRoot();
-  const manifests = await loadExtensionManifests(microappsRoot);
-  const extensionRecords = [...base.extensionRecords];
-  const actions = [...base.actions];
-  const settingsSurfaces = [...base.settingsSurfaces];
-  for (const manifest of manifests) {
-    const id = String(manifest.id);
-    const pluginManifest = await loadSourcePluginManifest(microappsRoot, manifest);
-    const pluginDisplayName = asRecord(pluginManifest?.interface)?.displayName;
-    const name = typeof manifest.name === "string" && manifest.name.trim() ? manifest.name.trim() : typeof pluginDisplayName === "string" && pluginDisplayName.trim() ? pluginDisplayName.trim() : id;
-    const declaration = manifest.capabilitySettings === void 0 ? {
-      schemaVersion: "doppelganger.capability-settings.v1",
-      state: "none",
-      posture: "none",
-      reason: "This Extension does not declare a settings surface."
-    } : validateSettingsDeclaration(manifest.capabilitySettings);
-    const available = declaration.state === "available";
-    const dynamicPanels = declaration.posture === "dynamic-provider" ? await loadDynamicProviderPanels(microappsRoot, manifest) : [];
-    const settingsAvailable = available || dynamicPanels.length > 0;
-    const recordId = `extension:${id}`;
-    extensionRecords.push({
-      recordId,
-      providerId: "marketplace",
-      ownerPluginId: id,
-      displayName: name,
-      description: typeof manifest.description === "string" ? manifest.description : `${name} first-party Extension.`,
-      visible: true,
-      enabled: true,
-      required: manifest.system?.required === true,
-      status: {
-        state: "connected",
-        detail: settingsAvailable ? "Settings available." : "No configurable settings."
-      },
-      ...available ? { settingsSurfaceId: declaration.settingsSurfaceId } : dynamicPanels[0] ? { settingsSurfaceId: dynamicSettingsSurfaceId(id, String(dynamicPanels[0].panel.panelId)) } : {},
-      capabilities: Array.isArray(manifest.interface?.capabilities) ? manifest.interface.capabilities : [],
-      settingsPosture: declaration.posture
-    });
-    if (!available) {
-      for (const dynamic of dynamicPanels) {
-        const panelId = String(dynamic.panel.panelId);
-        const settingsSurfaceId = dynamicSettingsSurfaceId(id, panelId);
-        const actionPrefix = panelId === id ? recordId : `${recordId}:${panelId}`;
-        const loadActionId2 = `${actionPrefix}:load-settings`;
-        const submitActionId2 = `${actionPrefix}:configure`;
-        actions.push(
-          {
-            actionId: loadActionId2,
-            ownerRecordId: recordId,
-            operation: "open-settings",
-            label: dynamic.loadAction.label ?? "Load settings",
-            endpoint: gatewayProgramProxyEndpoint(id, dynamic.loadAction.path),
-            method: dynamic.loadAction.method
-          },
-          {
-            actionId: submitActionId2,
-            ownerRecordId: recordId,
-            operation: "configure",
-            label: dynamic.submitAction.label ?? "Save settings",
-            endpoint: gatewayProgramProxyEndpoint(id, dynamic.submitAction.path),
-            method: dynamic.submitAction.method
-          }
-        );
-        settingsSurfaces.push({
-          settingsSurfaceId,
-          ownerRecordId: recordId,
-          schemaVersion: "doppelganger.capability-settings.v1",
-          presentation: "modal",
-          title: dynamic.panel.label,
-          jsonSchema: dynamic.jsonSchema,
-          uiSchema: dynamic.uiSchema,
-          loadActionId: loadActionId2,
-          submitActionId: submitActionId2,
-          allowedActions: ["configure"],
-          audience: "normal",
-          applyMode: "live"
-        });
-      }
-      continue;
-    }
-    const endpoints = declaration.endpoints;
-    const read = endpoints.read;
-    const apply = endpoints.apply;
-    const transport = declaration.transport === "desktop-runtime-bridge" ? "desktop-runtime-bridge" : void 0;
-    const loadActionId = `${recordId}:load-settings`;
-    const submitActionId = `${recordId}:configure`;
-    actions.push(
-      {
-        actionId: loadActionId,
-        ownerRecordId: recordId,
-        operation: "open-settings",
-        label: "Load settings",
-        endpoint: gatewayProgramProxyEndpoint(id, read.path),
-        method: read.method,
-        ...transport ? { transport } : {}
-      },
-      {
-        actionId: submitActionId,
-        ownerRecordId: recordId,
-        operation: "configure",
-        label: "Save settings",
-        endpoint: gatewayProgramProxyEndpoint(id, apply.path),
-        method: apply.method,
-        ...transport ? { transport } : {}
-      }
-    );
-    settingsSurfaces.push({
-      settingsSurfaceId: declaration.settingsSurfaceId,
-      ownerRecordId: recordId,
-      schemaVersion: declaration.schemaVersion,
-      presentation: "modal",
-      title: declaration.title,
-      ...declaration.description ? { description: declaration.description } : {},
-      jsonSchema: declaration.jsonSchema,
-      ...declaration.uiSchema ? { uiSchema: declaration.uiSchema } : {},
-      loadActionId,
-      submitActionId,
-      allowedActions: ["configure"],
-      audience: declaration.audience,
-      applyMode: transport ? "live" : declaration.applyMode
-    });
-  }
-  assertUnique("Extension record ownership", extensionRecords.map((record2) => String(record2.recordId)));
-  assertUnique("Plugin record ownership", base.pluginRecords.map((record2) => String(record2.recordId)));
-  assertUnique("capability action ownership", actions.map((action) => String(action.actionId)));
-  assertUnique("settings surface ownership", settingsSurfaces.map((surface) => String(surface.settingsSurfaceId)));
-  return { ...base, extensionRecords, actions, settingsSurfaces };
-}
-
 // src/frontend.ts
 var import_static = __toESM(require_static(), 1);
 import fs4 from "node:fs";
-import path6 from "node:path";
-import { fileURLToPath as fileURLToPath3 } from "node:url";
+import path5 from "node:path";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // src/openapi.ts
 var jsonObject = { type: "object", additionalProperties: true };
@@ -81743,7 +80675,7 @@ function buildMarketplaceOpenApi(baseUrl = "/") {
     info: {
       title: "Teal Brick Marketplace API",
       version: MARKETPLACE_VERSION,
-      description: "Program-owned catalog, Rules-governed plugin lifecycle, provider connections, capability bindings, Composio execution, and audit. The launch profile treats every non-Composio source as catalog-only. Hub and cross-app service routes require an internal bearer credential that is never exposed to the browser."
+      description: "Program-owned catalog, Rules-governed plugin lifecycle, provider connections, capability bindings, Composio execution, and audit. The launch profile treats every non-Composio source as catalog-only. Cross-app service routes require an internal bearer credential that is never exposed to the browser."
     },
     servers: [{ url: baseUrl }],
     security: operatorSecurity,
@@ -81752,7 +80684,7 @@ function buildMarketplaceOpenApi(baseUrl = "/") {
         bearerAuth: {
           type: "http",
           scheme: "bearer",
-          description: "Internal HDDA Host SDK or cross-app service credential."
+          description: "Internal cross-app service credential."
         },
         operatorSession: {
           type: "apiKey",
@@ -81773,7 +80705,6 @@ function buildMarketplaceOpenApi(baseUrl = "/") {
       { name: "Provider settings" },
       { name: "Custom connectors" },
       { name: "Company Box" },
-      { name: "Hub service" },
       { name: "Agent" }
     ],
     paths: {
@@ -81825,11 +80756,9 @@ function buildMarketplaceOpenApi(baseUrl = "/") {
       },
       "/api/settings/providers/composio/test": { post: { security: operatorSecurity, tags: ["Provider settings"], summary: "Check a Composio API key against the allowlisted Composio host", description: "Tests the saved key, or an unsaved key in the body, with one read-only request to an https://*.composio.dev base URL. The key is never returned. Records an audit event.", requestBody: { required: false, content: { "application/json": { schema: { type: "object", properties: { composioApiKey: { type: "string", writeOnly: true } } } } } }, responses: { "200": { description: "Key accepted" }, "400": { description: "No key, malformed key, or base URL not allowed" }, "422": { description: "Composio rejected the key" }, "502": { description: "Composio unreachable" } } } },
       "/api/settings/providers/composio/key": { delete: { security: operatorSecurity, tags: ["Provider settings"], summary: "Remove the Program-stored Composio API key", description: "Records an audit event. A key supplied by the deployment environment cannot be removed here (409).", responses: { "200": { description: "Removed (or already absent)" }, "409": { description: "Key managed by the deployment environment" } } } },
-      "/api/agent/capabilities": { get: { tags: ["Agent"], summary: "List enabled Composio and custom MCP tools currently projected to Agents", description: "Custom MCP connectors are projected after a successful tool refresh. Native, Activepieces, Nango, and Hub MCP records are catalog-only and are not projected as executable Agent tools in this launch profile.", parameters: [{ name: "workspaceSlug", in: "query", schema: { type: "string", default: "default" } }], responses: { "200": { description: "Capabilities" } } } },
+      "/api/agent/capabilities": { get: { tags: ["Agent"], summary: "List enabled Composio and custom MCP tools currently projected to Agents", description: "Custom MCP connectors are projected after a successful tool refresh. Native, Activepieces, Nango, and non-custom MCP records are catalog-only and are not projected as executable Agent tools in this launch profile.", parameters: [{ name: "workspaceSlug", in: "query", schema: { type: "string", default: "default" } }], responses: { "200": { description: "Capabilities" } } } },
       "/api/marketplace/v1/agent/action-catalog": { get: { security: [...operatorSecurity, ...bearerSecurity], tags: ["Agent"], summary: "List the agent actions this workspace currently publishes", description: "Contract doppelganger.marketplace.agent-action-catalog.v1. Returns { contractVersion, workspaceSlug, actions[] } where each action is { pluginId, pluginName, provider, actionKey, label, description, capability, resourceKind, mode: 'connected-account', accounts: [{ accountId, label? }], allowedArguments: string[] | null, toolName }. An action is listed only while its connector is registered, installed and enabled, executable for agents, connected, the action is enabled, and its capability binding is enabled. Portal selections, consents, grants and runtime calls resolve against this same live catalog. Secrets, connection metadata beyond the account id and label, and raw manifests are never returned. Operator sessions are scoped to their organization; the internal service bearer must pass workspaceSlug.", parameters: [{ name: "workspaceSlug", in: "query", required: false, description: "Must equal the caller's organization. Required for the service bearer.", schema: { type: "string" } }], responses: { "200": { description: "Published agent action catalog" }, "400": { description: "workspaceSlug missing for the service bearer" }, "401": { description: "Session or bearer required" }, "403": { description: "workspaceSlug belongs to a different organization" } } } },
       "/api/marketplace/broker/grants": { post: { security: bearerSecurity, tags: ["Execution"], summary: "Issue a single-use scoped Composio broker grant", description: "Internal services only. Grants are stored as token hashes, expire within at most 900 seconds, and are consumed atomically before provider dispatch.", requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["requesterMiniappId", "pluginId", "actionKeys"], properties: { requesterMiniappId: { type: "string" }, pluginId: { type: "string" }, actionKeys: { type: "array", minItems: 1, items: { type: "string" } }, ttlSeconds: { type: "integer", minimum: 1, maximum: 900, default: 300 } } } } } }, responses: { "201": { description: "Single-use grant issued" }, "400": { description: "Invalid scope or TTL" }, "401": { description: "Unauthorized" }, "403": { description: "Rules denied" } } } },
-      "/api/marketplace/hub/records": { get: { security: bearerSecurity, tags: ["Hub service"], summary: "Project normalized records to the HDDA Host SDK", responses: { "200": { description: "Projection" }, "401": { description: "Unauthorized" }, "503": { description: "Service auth unconfigured" } } } },
-      "/api/marketplace/hub/plugins/{pluginId}/lifecycle": { post: { security: bearerSecurity, tags: ["Hub service"], summary: "Internal Host SDK lifecycle including enable, disable, and reload", parameters: [{ name: "pluginId", in: "path", required: true, schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: jsonObject } } }, responses: { "200": { description: "Lifecycle changed" }, "401": { description: "Unauthorized" } } } },
       "/api/marketplace/v1/broker/composio/execute": { post: { security: bearerSecurity, tags: ["Execution"], summary: "Authenticated cross-app Composio broker execution", description: "Issues and consumes one internal single-use grant for this call; raw provider credentials are never returned.", requestBody: { required: true, content: { "application/json": { schema: jsonObject } } }, responses: { "200": { description: "Executed" }, "401": { description: "Unauthorized" }, "403": { description: "Rules denied" } } } }
     },
     "x-doppelganger-commands": [
@@ -81852,11 +80781,11 @@ function buildMarketplaceOpenApi(baseUrl = "/") {
 // src/frontend.ts
 var PROGRAM = { id: "marketplace", name: "Marketplace", version: MARKETPLACE_VERSION };
 async function registerMarketplaceFrontend(app2) {
-  const webRoot = path6.resolve(path6.dirname(fileURLToPath3(import.meta.url)), "../web-dist");
-  const webIndexPath = path6.join(webRoot, "index.html");
+  const webRoot = path5.resolve(path5.dirname(fileURLToPath2(import.meta.url)), "../web-dist");
+  const webIndexPath = path5.join(webRoot, "index.html");
   if (fs4.existsSync(webIndexPath)) {
     await app2.register(import_static.default, {
-      root: path6.join(webRoot, "assets"),
+      root: path5.join(webRoot, "assets"),
       prefix: "/assets/",
       immutable: true,
       maxAge: "1y"
@@ -82210,15 +81139,15 @@ function agentResourceKindForProvider(provider) {
 function recordValue8(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value : void 0;
 }
-function stringValue5(value) {
+function stringValue4(value) {
   return typeof value === "string" && value.trim() ? value.trim() : void 0;
 }
 function composioToolRecord(listing, actionKey) {
   const composio = recordValue8(listing.manifest.composio);
   const tools = Array.isArray(composio?.tools) ? composio.tools : [];
   for (const tool of tools) {
-    const record2 = recordValue8(tool);
-    if (record2?.action === actionKey) return record2;
+    const record = recordValue8(tool);
+    if (record?.action === actionKey) return record;
   }
   return void 0;
 }
@@ -82237,7 +81166,7 @@ function allowedArgumentNames(names) {
   ];
 }
 function accountLabel(connection) {
-  return stringValue5(connection.metadata.accountLabel) ?? stringValue5(connection.metadata.accountName);
+  return stringValue4(connection.metadata.accountLabel) ?? stringValue4(connection.metadata.accountName);
 }
 function selectionShapeIsValid(input) {
   return AGENT_SELECTION_PLUGIN_ID_PATTERN.test(input.pluginId) && input.actionKey.length <= AGENT_SELECTION_ACTION_KEY_MAX_LENGTH && AGENT_SELECTION_ACTION_KEY_PATTERN.test(input.actionKey) && AGENT_SELECTION_RESOURCE_KIND_PATTERN.test(input.resourceKind);
@@ -82327,14 +81256,14 @@ function entriesForListing(input) {
         pluginName: listing.displayName,
         provider: listing.provider,
         actionKey,
-        label: stringValue5(tool?.displayName) ?? actionKey,
-        description: stringValue5(tool?.description) ?? "",
+        label: stringValue4(tool?.displayName) ?? actionKey,
+        description: stringValue4(tool?.description) ?? "",
         capability: requirement.capability,
         resourceKind,
         mode: "connected-account",
         accounts: [account],
         allowedArguments: legacy ? [...LEGACY_GITHUB_LIST_REPOSITORIES.allowedArguments] : allowedArgumentsFromTool(tool),
-        toolName: legacy ? LEGACY_GITHUB_LIST_REPOSITORIES.toolName : stringValue5(tool?.toolName) ?? actionKey
+        toolName: legacy ? LEGACY_GITHUB_LIST_REPOSITORIES.toolName : stringValue4(tool?.toolName) ?? actionKey
       }
     ];
   });
@@ -82780,7 +81709,7 @@ function createPortalHandoffClient(input) {
   const issuer = input.issuer?.trim().replace(/\/$/u, "") || null;
   const instanceProof = input.instanceProof?.trim() || null;
   const fetchImpl = input.fetchImpl ?? fetch;
-  async function post(path10, body) {
+  async function post(path9, body) {
     if (!issuer || !instanceProof) {
       throw new PortalHandoffError(
         "portal_handoff_unconfigured",
@@ -82790,7 +81719,7 @@ function createPortalHandoffClient(input) {
     }
     let response;
     try {
-      response = await fetchImpl(`${issuer}${path10}`, {
+      response = await fetchImpl(`${issuer}${path9}`, {
         method: "POST",
         headers: {
           accept: "application/json",
@@ -83293,107 +82222,6 @@ var InstallInputSchema = external_exports.object({
   workspaceSlug: external_exports.string().trim().min(1),
   actorId: external_exports.string().trim().min(1).default("operator")
 });
-var HubAuthQuerySchema = external_exports.object({
-  workspaceSlug: external_exports.string().trim().min(1).default("default")
-});
-var SettingsSurfaceDeclarationSchema = external_exports.object({
-  settingsSurfaceId: external_exports.string().trim().min(1).optional(),
-  title: external_exports.string().trim().min(1).optional(),
-  description: external_exports.string().trim().min(1).optional(),
-  schema: external_exports.record(external_exports.unknown()).optional(),
-  uiSchema: external_exports.record(external_exports.unknown()).optional()
-});
-var ExtensionContributionSchema = external_exports.object({
-  id: external_exports.string().trim().min(1),
-  type: external_exports.literal("extension-surface").default("extension-surface"),
-  label: external_exports.string().trim().min(1),
-  mount: external_exports.enum(["workspace", "right-rail", "settings-panel", "overlay"]),
-  routeSegment: external_exports.string().trim().min(1),
-  region: external_exports.string().trim().min(1).optional(),
-  minHostSdk: external_exports.string().trim().min(1).optional(),
-  settings: SettingsSurfaceDeclarationSchema.optional(),
-  enabled: external_exports.boolean().default(true)
-});
-var McpPluginFieldsSchema = external_exports.object({
-  workspaceSlug: external_exports.string().trim().min(1).default("default"),
-  actorId: external_exports.string().trim().min(1).default("operator"),
-  pluginId: external_exports.string().trim().min(1).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u),
-  displayName: external_exports.string().trim().min(1),
-  description: external_exports.string().trim().min(1).optional(),
-  version: external_exports.string().trim().min(1).optional(),
-  transport: external_exports.enum(["stdio", "sse", "streamable-http"]),
-  command: external_exports.string().trim().min(1).optional(),
-  args: external_exports.array(external_exports.string()).optional(),
-  url: external_exports.string().url().optional(),
-  cwd: external_exports.string().trim().min(1).optional(),
-  env: external_exports.record(external_exports.string()).optional(),
-  headers: external_exports.record(external_exports.string()).optional(),
-  config: external_exports.record(external_exports.unknown()).optional(),
-  contributions: external_exports.array(ExtensionContributionSchema).optional(),
-  capabilities: external_exports.array(
-    external_exports.enum(["connector.observe", "connector.dispatch", "connector.admin"])
-  ).optional(),
-  actions: external_exports.array(external_exports.string().trim().min(1)).optional()
-});
-var McpPluginSchema = McpPluginFieldsSchema.superRefine((value, context) => {
-  if (value.transport === "stdio" && !value.command) {
-    context.addIssue({
-      code: external_exports.ZodIssueCode.custom,
-      path: ["command"],
-      message: "stdio MCP Plugins require a command."
-    });
-  }
-  if (value.transport !== "stdio" && !value.url) {
-    context.addIssue({
-      code: external_exports.ZodIssueCode.custom,
-      path: ["url"],
-      message: "Network MCP Plugins require a URL."
-    });
-  }
-  const contributionIds = value.contributions?.map((contribution) => contribution.id) ?? [];
-  if (new Set(contributionIds).size !== contributionIds.length) {
-    context.addIssue({
-      code: external_exports.ZodIssueCode.custom,
-      path: ["contributions"],
-      message: "Each contributed Extension surface requires a unique id."
-    });
-  }
-});
-var McpPluginUpdateSchema = McpPluginFieldsSchema.omit({
-  workspaceSlug: true,
-  actorId: true,
-  pluginId: true
-}).partial();
-var HubLifecycleSchema = external_exports.object({
-  workspaceSlug: external_exports.string().trim().min(1).default("default"),
-  actorId: external_exports.string().trim().min(1).default("operator"),
-  action: external_exports.enum(["install", "enable", "disable", "reload", "uninstall"])
-});
-var GatewayRegistrySnapshotSchema = external_exports.object({
-  contractVersion: external_exports.string().trim().min(1),
-  revision: external_exports.coerce.number().int().nonnegative(),
-  units: external_exports.array(
-    external_exports.object({
-      unitId: external_exports.string().trim().min(1),
-      version: external_exports.string().trim().min(1),
-      enabled: external_exports.boolean(),
-      required: external_exports.boolean().optional()
-    })
-  ),
-  contributions: external_exports.array(
-    external_exports.object({
-      id: external_exports.string().trim().min(1),
-      unitId: external_exports.string().trim().min(1),
-      type: external_exports.string().trim().min(1),
-      label: external_exports.string().trim().min(1),
-      family: external_exports.string().optional(),
-      region: external_exports.string().optional(),
-      mount: external_exports.string().optional(),
-      routeSegment: external_exports.string().optional()
-    })
-  ),
-  flags: external_exports.object({ developerMode: external_exports.boolean().optional() }).optional()
-});
 var BindingInputSchema = external_exports.object({
   workspaceSlug: external_exports.string().trim().min(1),
   actorId: external_exports.string().trim().min(1).default("operator"),
@@ -83536,27 +82364,6 @@ var AuditQuerySchema = external_exports.object({
   workspaceSlug: external_exports.string().trim().min(1).optional(),
   pluginId: external_exports.string().trim().min(1).optional(),
   provider: external_exports.string().trim().min(1).optional(),
-  limit: external_exports.coerce.number().int().positive().max(500).default(100)
-});
-var SessionCorrelationInputSchema = external_exports.object({
-  workspaceSlug: external_exports.string().trim().min(1).default("default"),
-  appThreadId: external_exports.string().trim().min(1),
-  provider: external_exports.string().trim().min(1).default("hermes"),
-  providerInstanceId: external_exports.string().trim().min(1),
-  remoteSessionId: external_exports.string().trim().min(1).optional(),
-  hermesLiveSessionId: external_exports.string().trim().min(1).optional().nullable(),
-  hermesStoredSessionId: external_exports.string().trim().min(1).optional().nullable(),
-  profile: external_exports.string().trim().min(1).optional().nullable(),
-  runtimeMode: external_exports.string().trim().min(1).optional().nullable(),
-  cwd: external_exports.string().trim().min(1).optional().nullable(),
-  source: external_exports.string().trim().min(1).default("doppelganger-app"),
-  eventType: external_exports.string().trim().min(1).default("session.observed"),
-  metadata: external_exports.record(external_exports.unknown()).default({})
-});
-var SessionCorrelationQuerySchema = external_exports.object({
-  workspaceSlug: external_exports.string().trim().min(1).default("default"),
-  appThreadId: external_exports.string().trim().min(1).optional(),
-  remoteSessionId: external_exports.string().trim().min(1).optional(),
   limit: external_exports.coerce.number().int().positive().max(500).default(100)
 });
 var SkillDeclarationSchema = external_exports.object({
@@ -83752,9 +82559,9 @@ function bindMarketplacePrincipalScope(request, principal) {
   for (const value of [request.query, request.body]) {
     if (!value || typeof value !== "object" || Array.isArray(value)) continue;
     if (value === request.body && strictBodyPaths.has(pathname)) continue;
-    const record2 = value;
-    record2.workspaceSlug = principal.organizationId;
-    record2.actorId = principal.id;
+    const record = value;
+    record.workspaceSlug = principal.organizationId;
+    record.actorId = principal.id;
   }
 }
 function requireCrossAppBearerAuth(input) {
@@ -83772,21 +82579,6 @@ function requireCrossAppBearerAuth(input) {
       ok: false,
       error: "marketplace_cross_app_unauthorized"
     };
-  }
-  return null;
-}
-function requireHubBearerAuth(input) {
-  if (!input.expectedToken) {
-    input.reply.code(503);
-    return {
-      ok: false,
-      error: "marketplace_hub_auth_unconfigured",
-      detail: "MARKETPLACE_INTERNAL_AUTH_TOKEN is required for the HDDA Skills Hub adapter."
-    };
-  }
-  if (bearerTokenFrom(input.request) !== input.expectedToken) {
-    input.reply.code(401);
-    return { ok: false, error: "marketplace_hub_unauthorized" };
   }
   return null;
 }
@@ -84011,30 +82803,30 @@ function listingConnected(input) {
 function arrayValue(value) {
   return Array.isArray(value) ? value : [];
 }
-function stringValue6(value) {
+function stringValue5(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 function listingSkills(listing) {
   const manifest = recordValue9(listing.manifest);
   return arrayValue(manifest?.skills).flatMap((entry) => {
-    const record2 = recordValue9(entry);
-    if (!record2) {
+    const record = recordValue9(entry);
+    if (!record) {
       return [];
     }
-    const skillId = stringValue6(record2.skillId) ?? stringValue6(record2.skillName);
-    const displayName = stringValue6(record2.displayName) ?? skillId;
+    const skillId = stringValue5(record.skillId) ?? stringValue5(record.skillName);
+    const displayName = stringValue5(record.displayName) ?? skillId;
     if (!skillId || !displayName) {
       return [];
     }
     return [
       {
         skillId,
-        ...stringValue6(record2.skillName) ? { skillName: stringValue6(record2.skillName) } : {},
+        ...stringValue5(record.skillName) ? { skillName: stringValue5(record.skillName) } : {},
         displayName,
-        ...stringValue6(record2.description) ? { description: stringValue6(record2.description) } : {},
-        ...stringValue6(record2.sourcePath) ? { sourcePath: stringValue6(record2.sourcePath) } : {},
-        ...stringValue6(record2.skillRoot) ? { skillRoot: stringValue6(record2.skillRoot) } : {},
-        requiresConnectors: arrayValue(record2.requiresConnectors).map((value) => stringValue6(value)).filter((value) => value !== null)
+        ...stringValue5(record.description) ? { description: stringValue5(record.description) } : {},
+        ...stringValue5(record.sourcePath) ? { sourcePath: stringValue5(record.sourcePath) } : {},
+        ...stringValue5(record.skillRoot) ? { skillRoot: stringValue5(record.skillRoot) } : {},
+        requiresConnectors: arrayValue(record.requiresConnectors).map((value) => stringValue5(value)).filter((value) => value !== null)
       }
     ];
   });
@@ -84043,11 +82835,11 @@ function composioToolsForListing(listing) {
   const manifest = recordValue9(listing.manifest);
   const composio = recordValue9(manifest?.composio);
   return arrayValue(composio?.tools).flatMap((tool) => {
-    const record2 = recordValue9(tool);
-    const action = stringValue6(record2?.action);
-    const toolName = stringValue6(record2?.toolName);
-    const displayName = stringValue6(record2?.displayName) ?? action;
-    const capability = stringValue6(record2?.capability);
+    const record = recordValue9(tool);
+    const action = stringValue5(record?.action);
+    const toolName = stringValue5(record?.toolName);
+    const displayName = stringValue5(record?.displayName) ?? action;
+    const capability = stringValue5(record?.capability);
     if (!action || !toolName || !displayName) {
       return [];
     }
@@ -84056,7 +82848,7 @@ function composioToolsForListing(listing) {
         action,
         toolName,
         displayName,
-        description: stringValue6(record2?.description) ?? "",
+        description: stringValue5(record?.description) ?? "",
         capability: capability === "connector.admin" || capability === "connector.dispatch" || capability === "connector.observe" ? capability : "connector.observe"
       }
     ];
@@ -84370,7 +83162,7 @@ async function pluginCardsForWorkspace(input) {
   );
 }
 function composioListingRole(listing) {
-  return stringValue6(recordValue9(listing.manifest)?.role);
+  return stringValue5(recordValue9(listing.manifest)?.role);
 }
 function composioListingHasCatalog(listing) {
   const composio = recordValue9(recordValue9(listing.manifest)?.composio);
@@ -84379,14 +83171,14 @@ function composioListingHasCatalog(listing) {
 function composioToolkitForListing(listing) {
   const composio = recordValue9(recordValue9(listing.manifest)?.composio);
   const catalog = recordValue9(composio?.catalog);
-  return stringValue6(composio?.toolkit) ?? stringValue6(catalog?.slug) ?? listing.provider;
+  return stringValue5(composio?.toolkit) ?? stringValue5(catalog?.slug) ?? listing.provider;
 }
 function composioAuthMetadataForListing(listing) {
   const composio = recordValue9(recordValue9(listing.manifest)?.composio);
   const catalog = recordValue9(composio?.catalog);
   return {
-    authSchemes: arrayValue(catalog?.authSchemes).map((value) => stringValue6(value)).filter((value) => value !== null),
-    managedAuthSchemes: arrayValue(catalog?.managedAuthSchemes).map((value) => stringValue6(value)).filter((value) => value !== null),
+    authSchemes: arrayValue(catalog?.authSchemes).map((value) => stringValue5(value)).filter((value) => value !== null),
+    managedAuthSchemes: arrayValue(catalog?.managedAuthSchemes).map((value) => stringValue5(value)).filter((value) => value !== null),
     noAuth: catalog?.noAuth === true
   };
 }
@@ -84853,7 +83645,7 @@ function agentCapabilitiesForWorkspace(store2, workspaceSlug, catalog) {
   });
 }
 function callbackUrlForRequest(input) {
-  const path10 = `/api/marketplace/plugins/${encodeURIComponent(input.pluginId)}/oauth/composio/callback`;
+  const path9 = `/api/marketplace/plugins/${encodeURIComponent(input.pluginId)}/oauth/composio/callback`;
   if (!input.publicOrigin?.trim()) {
     throw new Error("MARKETPLACE_PUBLIC_ORIGIN is required for Composio OAuth callbacks.");
   }
@@ -84861,7 +83653,7 @@ function callbackUrlForRequest(input) {
   if (!["http:", "https:"].includes(origin.protocol) || origin.pathname !== "/" || origin.search || origin.hash) {
     throw new Error("MARKETPLACE_PUBLIC_ORIGIN must be an exact HTTP(S) origin.");
   }
-  return `${origin.origin}${path10}`;
+  return `${origin.origin}${path9}`;
 }
 function htmlCloseout(input) {
   return `<!doctype html>
@@ -85061,8 +83853,8 @@ async function buildMarketplaceApp(options) {
   );
   const runtimePath = options.store.describeRuntime().databasePath;
   const providerSettings2 = options.providerSettings ?? new MarketplaceProviderSettingsStore(
-    path7.join(path7.dirname(runtimePath), "provider-settings.json"),
-    path7.join(path7.dirname(runtimePath), "provider-secrets.json"),
+    path6.join(path6.dirname(runtimePath), "provider-settings.json"),
+    path6.join(path6.dirname(runtimePath), "provider-secrets.json"),
     options.env
   );
   await providerSettings2.load();
@@ -86989,418 +85781,6 @@ async function buildMarketplaceApp(options) {
     });
     return { ok: true, approval: ownerApprovalView(denied) };
   });
-  const capabilityProjectionHandler = async (request, reply) => {
-    const authError = requireHubBearerAuth({
-      request,
-      reply,
-      expectedToken: options.internalAuthToken
-    });
-    if (authError) return authError;
-    const query = HubAuthQuerySchema.parse(request.query);
-    try {
-      await ensureComposioCatalog(query.workspaceSlug);
-      const baseProjection = marketplaceCapabilitiesHostProjection({
-        store: options.store,
-        workspaceSlug: query.workspaceSlug
-      });
-      const projection = await projectExtensionSettings({
-        microappsRoot: options.microappsRoot,
-        baseProjection
-      });
-      return {
-        ok: true,
-        workspaceSlug: query.workspaceSlug,
-        ...projection,
-        dependencies: {
-          registryAuthority: "doppelganger-registry",
-          recordMode: "gateway-projected-records",
-          lifecycleAuthority: "marketplace",
-          directHermesRole: "underlying-adapters-only",
-          normalModeDirectHermesControls: false,
-          auth: {
-            owner: "hdda-host-sdk",
-            scope: "auth",
-            status: "dependency"
-          }
-        }
-      };
-    } catch (error) {
-      reply.code(409);
-      return {
-        ok: false,
-        error: "capabilities_ownership_conflict",
-        detail: error instanceof Error ? error.message : String(error)
-      };
-    }
-  };
-  app2.get("/api/marketplace/hub/records", capabilityProjectionHandler);
-  app2.get("/api/plugins/marketplace-hub/records", capabilityProjectionHandler);
-  app2.get("/api/marketplace/hub/plugins/:pluginId", async (request, reply) => {
-    const authError = requireHubBearerAuth({
-      request,
-      reply,
-      expectedToken: options.internalAuthToken
-    });
-    if (authError) return authError;
-    const query = HubAuthQuerySchema.parse(request.query);
-    const { pluginId } = request.params;
-    const listing = options.store.getListingForWorkspace(
-      pluginId,
-      query.workspaceSlug
-    );
-    if (!listing) {
-      reply.code(404);
-      return { ok: false, error: "plugin_not_found" };
-    }
-    return {
-      ok: true,
-      record: marketplacePluginRecord({
-        store: options.store,
-        workspaceSlug: query.workspaceSlug,
-        listing
-      })
-    };
-  });
-  app2.post("/api/marketplace/hub/plugins/mcp", async (request, reply) => {
-    const authError = requireHubBearerAuth({
-      request,
-      reply,
-      expectedToken: options.internalAuthToken
-    });
-    if (authError) return authError;
-    const input = McpPluginSchema.parse(request.body);
-    if (options.store.getListing(input.pluginId)) {
-      reply.code(409);
-      return { ok: false, error: "plugin_already_exists" };
-    }
-    const rules = await enforceRules({
-      reply,
-      workspaceSlug: input.workspaceSlug,
-      operation: "hub.mcp.create",
-      capability: "connector.admin",
-      pluginId: input.pluginId,
-      actorId: input.actorId,
-      payload: { transport: input.transport },
-      actor: principalActor(request),
-      ...governed
-    });
-    if (!("effect" in rules)) return rules;
-    const listing = mcpListingFromInput(input);
-    options.store.upsertListing(listing);
-    options.store.recordAudit({
-      workspaceSlug: input.workspaceSlug,
-      pluginId: input.pluginId,
-      eventType: "marketplace.plugin.created",
-      actorId: input.actorId,
-      rulesDecisionId: rules.decisionId,
-      metadata: { kind: "mcp", transport: input.transport }
-    });
-    reply.code(201);
-    return {
-      ok: true,
-      record: marketplacePluginRecord({
-        store: options.store,
-        workspaceSlug: input.workspaceSlug,
-        listing
-      })
-    };
-  });
-  app2.patch(
-    "/api/marketplace/hub/plugins/:pluginId",
-    async (request, reply) => {
-      const authError = requireHubBearerAuth({
-        request,
-        reply,
-        expectedToken: options.internalAuthToken
-      });
-      if (authError) return authError;
-      const query = HubAuthQuerySchema.parse(request.query);
-      const { pluginId } = request.params;
-      const current = options.store.getListingForWorkspace(
-        pluginId,
-        query.workspaceSlug
-      );
-      if (!current) {
-        reply.code(404);
-        return { ok: false, error: "plugin_not_found" };
-      }
-      if (listingIsOperatorCustomMcp(current)) {
-        reply.code(409);
-        return { ok: false, error: "plugin_managed_by_operator" };
-      }
-      if (!listingIsCustomMcp(current)) {
-        reply.code(409);
-        return { ok: false, error: "plugin_not_custom_mcp" };
-      }
-      const requestBody = recordValue9(request.body);
-      const patch = McpPluginUpdateSchema.parse(
-        requestBody?.settings ?? request.body
-      );
-      const currentRecord = marketplacePluginRecord({
-        store: options.store,
-        workspaceSlug: query.workspaceSlug,
-        listing: current
-      });
-      if (currentRecord.adapter.type !== "mcp") {
-        reply.code(409);
-        return { ok: false, error: "plugin_not_mcp" };
-      }
-      const merged = McpPluginSchema.parse({
-        workspaceSlug: query.workspaceSlug,
-        actorId: "operator",
-        pluginId,
-        displayName: current.displayName,
-        description: current.description,
-        version: currentRecord.version,
-        capabilities: current.capabilities,
-        actions: current.actions,
-        contributions: currentRecord.contributions,
-        ...marketplaceMcpAdapterConfig(current, true),
-        ...patch
-      });
-      const rules = await enforceRules({
-        reply,
-        workspaceSlug: query.workspaceSlug,
-        operation: "hub.mcp.update",
-        capability: "connector.admin",
-        pluginId,
-        actorId: "operator",
-        payload: { transport: merged.transport },
-        actor: principalActor(request),
-        ...governed
-      });
-      if (!("effect" in rules)) return rules;
-      const listing = mcpListingFromInput(merged, current);
-      options.store.upsertListing(listing);
-      const connection = options.store.getConnection(
-        query.workspaceSlug,
-        pluginId
-      );
-      if (connection) {
-        options.store.upsertConnection({
-          workspaceSlug: query.workspaceSlug,
-          pluginId,
-          provider: connection.provider,
-          backend: connection.backend,
-          state: "disconnected",
-          detail: "MCP adapter configuration changed; reload is required.",
-          metadata: connection.metadata
-        });
-      }
-      options.store.recordAudit({
-        workspaceSlug: query.workspaceSlug,
-        pluginId,
-        eventType: "marketplace.plugin.updated",
-        actorId: "operator",
-        rulesDecisionId: rules.decisionId,
-        metadata: { kind: "mcp", transport: merged.transport }
-      });
-      return {
-        ok: true,
-        record: marketplacePluginRecord({
-          store: options.store,
-          workspaceSlug: query.workspaceSlug,
-          listing
-        })
-      };
-    }
-  );
-  app2.delete(
-    "/api/marketplace/hub/plugins/:pluginId",
-    async (request, reply) => {
-      const authError = requireHubBearerAuth({
-        request,
-        reply,
-        expectedToken: options.internalAuthToken
-      });
-      if (authError) return authError;
-      const query = HubAuthQuerySchema.parse(request.query);
-      const { pluginId } = request.params;
-      const listing = options.store.getListingForWorkspace(
-        pluginId,
-        query.workspaceSlug
-      );
-      if (!listing) {
-        reply.code(404);
-        return { ok: false, error: "plugin_not_found" };
-      }
-      if (listingIsOperatorCustomMcp(listing)) {
-        reply.code(409);
-        return { ok: false, error: "plugin_managed_by_operator" };
-      }
-      if (!listingIsCustomMcp(listing)) {
-        reply.code(409);
-        return { ok: false, error: "plugin_not_custom_mcp" };
-      }
-      if (listingIsRequired(listing)) {
-        reply.code(409);
-        return { ok: false, error: "required_plugin_protected" };
-      }
-      if (options.store.getInstall(query.workspaceSlug, pluginId)?.lifecycle === "installed") {
-        reply.code(409);
-        return { ok: false, error: "plugin_must_be_uninstalled_first" };
-      }
-      const rules = await enforceRules({
-        reply,
-        workspaceSlug: query.workspaceSlug,
-        operation: "hub.mcp.delete",
-        capability: "connector.admin",
-        pluginId,
-        actorId: "operator",
-        payload: {},
-        actor: principalActor(request),
-        ...governed
-      });
-      if (!("effect" in rules)) return rules;
-      options.store.revokeBrokerGrantsForPlugin({
-        workspaceSlug: query.workspaceSlug,
-        pluginId
-      });
-      options.store.deleteListing(pluginId);
-      return { ok: true, pluginId, deleted: true };
-    }
-  );
-  app2.post(
-    "/api/marketplace/hub/plugins/:pluginId/lifecycle",
-    async (request, reply) => {
-      const authError = requireHubBearerAuth({
-        request,
-        reply,
-        expectedToken: options.internalAuthToken
-      });
-      if (authError) return authError;
-      const input = HubLifecycleSchema.parse(request.body);
-      const { pluginId } = request.params;
-      let listing = options.store.getListingForWorkspace(
-        pluginId,
-        input.workspaceSlug
-      );
-      if (!listing) {
-        reply.code(404);
-        return { ok: false, error: "plugin_not_found" };
-      }
-      if (listingIsRequired(listing) && (input.action === "disable" || input.action === "uninstall")) {
-        reply.code(409);
-        return { ok: false, error: "required_plugin_protected" };
-      }
-      const install = options.store.getInstall(input.workspaceSlug, pluginId);
-      if (input.action !== "install" && (!install || install.lifecycle !== "installed")) {
-        reply.code(409);
-        return { ok: false, error: "plugin_not_installed" };
-      }
-      const rules = await enforceRules({
-        reply,
-        workspaceSlug: input.workspaceSlug,
-        operation: `hub.lifecycle.${input.action}`,
-        capability: "connector.admin",
-        pluginId,
-        actorId: input.actorId,
-        payload: { action: input.action },
-        actor: principalActor(request),
-        ...governed
-      });
-      if (!("effect" in rules)) return rules;
-      if (input.action === "install") {
-        options.store.registerPlugin(pluginId);
-        options.store.install(input.workspaceSlug, pluginId);
-        for (const capability of listing.capabilities) {
-          options.store.bindCapability({
-            workspaceSlug: input.workspaceSlug,
-            pluginId,
-            capability,
-            enabled: true
-          });
-        }
-        for (const actionKey of listing.actions) {
-          options.store.bindAction({
-            workspaceSlug: input.workspaceSlug,
-            pluginId,
-            actionKey,
-            enabled: true
-          });
-        }
-      } else if (input.action === "enable") {
-        options.store.setInstallEnabled({
-          workspaceSlug: input.workspaceSlug,
-          pluginId,
-          enabled: true
-        });
-      } else if (input.action === "disable") {
-        options.store.setInstallEnabled({
-          workspaceSlug: input.workspaceSlug,
-          pluginId,
-          enabled: false
-        });
-        options.store.revokeBrokerGrantsForPlugin({
-          workspaceSlug: input.workspaceSlug,
-          pluginId
-        });
-      } else if (input.action === "reload") {
-        options.store.requireInstall(input.workspaceSlug, pluginId);
-        listing = options.store.touchListing(pluginId);
-        if (listing.source === "mcp") {
-          options.store.upsertConnection({
-            workspaceSlug: input.workspaceSlug,
-            pluginId,
-            provider: listing.provider,
-            backend: "mcp",
-            state: "pending",
-            detail: "MCP adapter reload requested; transport connection is pending runtime confirmation.",
-            metadata: { reloadedAt: (/* @__PURE__ */ new Date()).toISOString() }
-          });
-        }
-      } else if (input.action === "uninstall") {
-        options.store.revokeBrokerGrantsForPlugin({
-          workspaceSlug: input.workspaceSlug,
-          pluginId
-        });
-        options.store.uninstall(input.workspaceSlug, pluginId);
-        const connection = options.store.getConnection(
-          input.workspaceSlug,
-          pluginId
-        );
-        if (connection) {
-          options.store.upsertConnection({
-            workspaceSlug: input.workspaceSlug,
-            pluginId,
-            provider: connection.provider,
-            backend: connection.backend,
-            state: "disconnected",
-            detail: "Plugin uninstalled through the unified Hub lifecycle.",
-            metadata: connection.metadata
-          });
-        }
-      }
-      options.store.recordAudit({
-        workspaceSlug: input.workspaceSlug,
-        pluginId,
-        eventType: `marketplace.plugin.${input.action}`,
-        actorId: input.actorId,
-        rulesDecisionId: rules.decisionId,
-        metadata: { source: "skills-hub" }
-      });
-      return {
-        ok: true,
-        record: marketplacePluginRecord({
-          store: options.store,
-          workspaceSlug: input.workspaceSlug,
-          listing
-        })
-      };
-    }
-  );
-  app2.post("/api/marketplace/hub/reconcile", async (request, reply) => {
-    const authError = requireHubBearerAuth({
-      request,
-      reply,
-      expectedToken: options.internalAuthToken
-    });
-    if (authError) return authError;
-    const snapshot = GatewayRegistrySnapshotSchema.parse(
-      request.body
-    );
-    return reconcileGatewayRegistry(snapshot);
-  });
   app2.get("/events", async (request, reply) => {
     reply.raw.writeHead(200, {
       ...corsHeadersForOrigin(request.headers.origin, environment),
@@ -87860,13 +86240,13 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
             traceId
           });
         }
-        const connectionState2 = auth.redirectUrl ? "pending" : auth.connectedAccountId ? "connected" : "blocked";
+        const connectionState = auth.redirectUrl ? "pending" : auth.connectedAccountId ? "connected" : "blocked";
         const connection2 = options.store.upsertConnection({
           workspaceSlug: input.workspaceSlug,
           pluginId,
           provider: toolkit,
           backend: "composio",
-          state: connectionState2,
+          state: connectionState,
           detail: auth.redirectUrl ? "Composio authorization popup is pending." : auth.connectedAccountId ? "Composio connected account is available." : "Composio did not return an authorization URL or connected account id.",
           metadata: {
             provider: toolkit,
@@ -88758,7 +87138,7 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
           error: "connector_execution_not_supported",
           executionOwner: listing.executionOwner,
           supportedExecutionOwners: ["composio", "mcp", "openapi"],
-          detail: "This launch profile executes Composio-backed tools and the workspace's own custom MCP connectors only. Native, Activepieces, Nango, and Hub MCP execution are unavailable rather than simulated."
+          detail: "This launch profile executes Composio-backed tools and the workspace's own custom MCP connectors only. Native, Activepieces, Nango, and other MCP execution are unavailable rather than simulated."
         };
       }
       const { type: _riskType, ...riskArgs } = effectiveAction;
@@ -89730,13 +88110,13 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
         metadata: input.metadata,
         ...recordValue9(input.metadata.crossApp) ? {
           crossApp: recordValue9(input.metadata.crossApp),
-          contractVersion: stringValue6(
+          contractVersion: stringValue5(
             recordValue9(input.metadata.crossApp)?.contractVersion
           ),
-          sourceMiniappId: stringValue6(
+          sourceMiniappId: stringValue5(
             recordValue9(input.metadata.crossApp)?.sourceMiniappId
           ),
-          idempotencyKey: stringValue6(
+          idempotencyKey: stringValue5(
             recordValue9(input.metadata.crossApp)?.idempotencyKey
           )
         } : {},
@@ -90012,54 +88392,6 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
       audit: options.store.listAudit(query)
     };
   });
-  app2.post("/api/marketplace/session-correlations", async (request, reply) => {
-    const input = SessionCorrelationInputSchema.parse(request.body);
-    const remoteSessionId = input.remoteSessionId ?? input.hermesStoredSessionId ?? input.hermesLiveSessionId;
-    if (!remoteSessionId) {
-      reply.code(400);
-      return {
-        ok: false,
-        error: "remote_session_id_required",
-        detail: "Provide remoteSessionId, hermesStoredSessionId, or hermesLiveSessionId."
-      };
-    }
-    const correlation = options.store.recordSessionCorrelation({
-      workspaceSlug: input.workspaceSlug,
-      appThreadId: input.appThreadId,
-      provider: input.provider,
-      providerInstanceId: input.providerInstanceId,
-      remoteSessionId,
-      hermesLiveSessionId: input.hermesLiveSessionId ?? null,
-      hermesStoredSessionId: input.hermesStoredSessionId ?? null,
-      profile: input.profile ?? null,
-      runtimeMode: input.runtimeMode ?? null,
-      cwd: input.cwd ?? null,
-      source: input.source,
-      eventType: input.eventType,
-      metadata: input.metadata
-    });
-    options.store.recordEvent({
-      type: "marketplace.agent.session-correlated",
-      traceId: traceIdFrom(request),
-      workspaceSlug: input.workspaceSlug,
-      pluginId: "marketplace",
-      payload: {
-        appThreadId: correlation.appThreadId,
-        providerInstanceId: correlation.providerInstanceId,
-        remoteSessionId: correlation.remoteSessionId,
-        hermesStoredSessionId: correlation.hermesStoredSessionId,
-        hermesLiveSessionId: correlation.hermesLiveSessionId
-      }
-    });
-    reply.code(201);
-    return { ok: true, correlation };
-  });
-  app2.get("/api/marketplace/session-correlations", async (request) => {
-    const query = SessionCorrelationQuerySchema.parse(request.query);
-    return {
-      correlations: options.store.listSessionCorrelations(query)
-    };
-  });
   app2.get("/api/debug/events", async (request) => {
     const query = AuditQuerySchema.parse(request.query);
     return {
@@ -90083,7 +88415,7 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
       return { debug: { enabled: false, logPath: null }, lines: [] };
     }
     try {
-      const text = await readFile3(runtime.logPath, "utf8");
+      const text = await readFile2(runtime.logPath, "utf8");
       return {
         debug: {
           enabled: runtime.debug,
@@ -90383,7 +88715,7 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
 }
 
 // src/config.ts
-import path8 from "node:path";
+import path7 from "node:path";
 function numberFromEnv(value, fallback) {
   if (!value?.trim()) {
     return fallback;
@@ -90393,7 +88725,7 @@ function numberFromEnv(value, fallback) {
 }
 function loadConfig(env = process.env, options = {}) {
   const productWorkspaceDir = readCompatEnv(env, "PRODUCT_WORKSPACE_DIR", options.warn) || env.PRODUCT_WORKSPACE_DIR?.trim();
-  const dataDir = env.MARKETPLACE_DATA_DIR?.trim() || (productWorkspaceDir ? path8.join(productWorkspaceDir, "data") : void 0) || path8.join(
+  const dataDir = env.MARKETPLACE_DATA_DIR?.trim() || (productWorkspaceDir ? path7.join(productWorkspaceDir, "data") : void 0) || path7.join(
     resolveDefaultStateRoot({
       homeDir: options.homeDir,
       migrate: options.migrateLegacyStateDir === true,
@@ -90402,14 +88734,14 @@ function loadConfig(env = process.env, options = {}) {
     "data"
   );
   const internalAuthToken = env.MARKETPLACE_INTERNAL_AUTH_TOKEN?.trim() || readCompatEnv(env, "MARKETPLACE_INTERNAL_AUTH_TOKEN", options.warn);
-  const dbPath = env.MARKETPLACE_DATABASE_PATH?.trim() || path8.join(dataDir, "marketplace.sqlite");
+  const dbPath = env.MARKETPLACE_DATABASE_PATH?.trim() || path7.join(dataDir, "marketplace.sqlite");
   return {
     host: env.MARKETPLACE_HOST?.trim() || "127.0.0.1",
     port: numberFromEnv(env.MARKETPLACE_PORT, 0),
     dbPath,
     ...env.MARKETPLACE_HANDOFF_ENCRYPTION_KEY?.trim() ? { handoffEncryptionKey: env.MARKETPLACE_HANDOFF_ENCRYPTION_KEY.trim() } : {},
-    settingsPath: env.MARKETPLACE_SETTINGS_PATH?.trim() || path8.join(path8.dirname(dbPath), "provider-settings.json"),
-    secretsPath: env.MARKETPLACE_SECRETS_PATH?.trim() || path8.join(path8.dirname(dbPath), "provider-secrets.json"),
+    settingsPath: env.MARKETPLACE_SETTINGS_PATH?.trim() || path7.join(path7.dirname(dbPath), "provider-settings.json"),
+    secretsPath: env.MARKETPLACE_SECRETS_PATH?.trim() || path7.join(path7.dirname(dbPath), "provider-secrets.json"),
     ...internalAuthToken ? { internalAuthToken } : {},
     ...env.RULES_BASE_URL?.trim() ? {
       rules: {
@@ -90587,7 +88919,7 @@ var readyPayload = {
 };
 var runtimeFilePath = readCompatEnv(process.env, "RUNTIME_FILE");
 if (runtimeFilePath) {
-  await mkdir2(path9.dirname(runtimeFilePath), { recursive: true });
+  await mkdir2(path8.dirname(runtimeFilePath), { recursive: true });
   await writeFile2(runtimeFilePath, `${JSON.stringify(readyPayload)}
 `);
 }

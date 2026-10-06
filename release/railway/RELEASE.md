@@ -1,11 +1,11 @@
-# Marketplace standalone 0.1.15 image
+# Marketplace standalone 0.1.16 image
 
-This bundle is the public Marketplace 0.1.15 release line and supersedes
-0.1.14 with seven more full-API Company Box connectors, WebDAV support and a Google Calendar approval policy.
+This bundle is the public Marketplace 0.1.16 release line and supersedes
+0.1.15 with the retired HDDA Skills Hub adapter, Hermes plugin and registry contracts removed.
 
-Source snapshot: `46abccb1b4b8548843b0ce66986c5adfd7d40cbd`
-Source archive SHA256: `419b9b5714f2f742cf92000c2468fbe1ad6a26aec47c6e3d8388590f1f08ff39`
-Image: `ghcr.io/tealbrick/marketplace:0.1.15`
+Source snapshot: `296f9b48fd8ddbd63c27e54ea5e29338ebab13f8`
+Source archive SHA256: `07f1bc7be765e0f2c6b9e62083ecd0cfd9a304cd0ff9bf609be168ffad950833`
+Image: `ghcr.io/tealbrick/marketplace:0.1.16`
 
 ## Runtime contract
 
@@ -23,13 +23,28 @@ Image: `ghcr.io/tealbrick/marketplace:0.1.15`
   into the image or returned to browser code.
 
 The source-backed Railway path uses the fixed public release branch
-`release-marketplace-v0.1.15` (slash-free so the Railway template editor
+`release-marketplace-v0.1.16` (slash-free so the Railway template editor
 accepts it); its exact tag target, branch ruleset, and image
 digest are recorded in the successor receipt. Set the service root directory
 to `release/railway`, keep the Dockerfile entrypoint, and use the relay
 contract in `deploy/railway/recipe.json` and `deploy/railway/railway-blueprint.json`.
 GHCR is optional for the source-build path; no template ID or publication is
 implied by these files.
+
+## v0.1.16 legacy removal disposition
+
+This successor merges Tealbrick/marketplace#18. It removes retired HDDA/Kybernesis-era surfaces that no live consumer uses:
+- the HDDA Skills Hub routes (`/api/marketplace/hub/*`, `/api/plugins/marketplace-hub/records`) and their projection code;
+- the Hermes per-app plugin, which the accepted miniapp contract retires in favour of the unified connector;
+- the HDDA registry contracts and extension;
+- the session-correlation routes.
+
+The following stay unchanged:
+- `MARKETPLACE_INTERNAL_AUTH_TOKEN` and the cross-app service routes, which Portal still uses;
+- persisted manifest keys and tables;
+- legacy id mapping.
+
+There is no schema change. Company Box, the approval queue and tailnet egress are as in 0.1.15. Rollback to 0.1.15 needs no data change.
 
 ## v0.1.15 Company Box expansion disposition
 
