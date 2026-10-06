@@ -213,9 +213,25 @@ describe("schema bounds and risk", () => {
     // Also listed as outward / destructive: those flags still apply.
     expect(operationRisk(op("post", "/digest", "sendDigest"), patterns)).toEqual({ capability: "connector.observe", write: false, outward: true, destructive: false });
     expect(operationRisk(op("post", "/search/purge", "purgeSearch"), patterns)).toEqual({ capability: "connector.admin", write: true, outward: false, destructive: true });
-    // A DELETE marked read-class is not destructive unless listed there.
-    expect(operationRisk(op("delete", "/cache/{key}"), patterns)).toEqual({ capability: "connector.observe", write: false, outward: false, destructive: false });
+    // `reads` never downgrades PUT, PATCH, DELETE or WebDAV writes.
+    expect(operationRisk(op("delete", "/cache/{key}"), patterns)).toEqual({ capability: "connector.admin", write: true, outward: false, destructive: true });
+    const everything = { outward: [], destructive: [], reads: ["*"] };
+    for (const method of ["put", "patch", "proppatch", "mkcol", "lock", "unlock"]) {
+      expect(operationRisk(op(method, "/x", `op${method}`), everything)).toMatchObject({ capability: "connector.dispatch", write: true });
+    }
+    expect(operationRisk(op("move", "/x", "m"), everything)).toMatchObject({ capability: "connector.admin", destructive: true });
+    expect(operationRisk(op("post", "/x", "p"), everything)).toMatchObject({ capability: "connector.observe" });
     expect(operationRisk(op("post", "/notes", "createNote"), patterns)).toMatchObject({ capability: "connector.dispatch", write: true });
+  });
+
+  it("treats MOVE as destructive, and COPY unless Overwrite is fixed to F", () => {
+    const none = { outward: [], destructive: [] };
+    const overwrite = (schema: Record<string, unknown>) => [{ name: "Overwrite", in: "header" as const, required: false, schema }];
+    expect(operationRisk(op("move", "/f/{p}", "move"), none)).toMatchObject({ capability: "connector.admin", destructive: true });
+    expect(operationRisk({ ...op("copy", "/f/{p}", "copy"), parameters: [] }, none)).toMatchObject({ capability: "connector.admin" });
+    expect(operationRisk({ ...op("copy", "/f/{p}", "copy"), parameters: overwrite({ type: "string", default: "F" }) }, none)).toMatchObject({ capability: "connector.admin" });
+    expect(operationRisk({ ...op("copy", "/f/{p}", "copy"), parameters: overwrite({ type: "string", const: "T" }) }, none)).toMatchObject({ capability: "connector.admin" });
+    expect(operationRisk({ ...op("copy", "/f/{p}", "copy"), parameters: overwrite({ type: "string", const: "F" }) }, none)).toEqual({ capability: "connector.dispatch", write: true, outward: false, destructive: false });
   });
 
   it("groups operations by first tag, else first path segment", () => {

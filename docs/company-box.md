@@ -74,9 +74,11 @@ Two kinds of entry:
 - `outward` / `destructive` / `reads` patterns use `*` wildcards,
   case-insensitive, and match the `operationId` or `METHOD /path` (tool name
   for MCP).
-- `reads` marks non-GET operations that only read (search or query
-  endpoints) as read-class: they grant as `connector.observe` and are never
-  outward or destructive unless also listed in those patterns. **Never mark a
+- `reads` marks POST (or QUERY) operations that only read (search or query
+  endpoints) as read-class; it never downgrades PUT, PATCH, DELETE or WebDAV
+  writes (such matches are ignored and reported as coverage warnings).
+  Read-class operations grant as `connector.observe` and are never outward or
+  destructive unless also listed in those patterns. **Never mark a
   GraphQL endpoint as read**: the same `POST /graphql` carries mutations, and a
   read grant would let an agent run them.
 - `auth` decides the credential fields the install form asks for: `header` →
@@ -259,8 +261,12 @@ Objects under `x-<method>` keys of a path item, next to the normal methods:
   `x-report`, `x-lock`, `x-unlock`. They count in coverage, take action keys
   like any operation (`propfind-…` without an operationId), and can be
   excluded as `PROPFIND /path`.
-- PROPFIND and REPORT are reads (`connector.observe`); PROPPATCH, MKCOL, MOVE,
-  COPY, LOCK and UNLOCK are writes. Multistatus (207) XML is returned as text.
+- PROPFIND and REPORT are reads (`connector.observe`); PROPPATCH, MKCOL,
+  LOCK and UNLOCK are writes. MOVE is always destructive (`connector.admin`).
+  COPY is destructive unless its `Overwrite` header is fixed with
+  `const: "F"` (without the header, WebDAV overwrites). An `Overwrite`
+  `default` other than `F` fails coverage. Multistatus (207) XML is returned
+  as text.
 - `x-multi-segment: true` on a path parameter lets its value span `/`
   (`Documents/Q3 report/notes.md`). Each segment is percent-encoded on its own;
   one leading and trailing `/` is ignored; empty, `.` and `..` segments
@@ -308,7 +314,10 @@ arguments in full, so an outward upload over 32 KB is refused with
   `..` (also percent-encoded).
 - Parameter and query names `_method`, `x-http-method*`,
   `x-method-override*` and any case variant of the auth query key are always
-  refused. Objects explode into query keys only for object-typed parameters,
+  refused: a spec declaring one fails coverage for that operation, and the
+  executor checks every header it sends, defaults and consts included. A
+  header `const` is enforced when the request is built; values that cannot be
+  encoded (lone surrogates) are argument errors. Objects explode into query keys only for object-typed parameters,
   and only into declared keys.
 - Credentials belong to the origin they were entered for. Changing an entry's
   base URL (or an MCP connector's URL) to a new origin requires entering every

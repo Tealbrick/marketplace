@@ -37,6 +37,7 @@ import {
   operationRisk,
   parameterNeedsArgument,
   READ_METHODS,
+  READS_DOWNGRADABLE_METHODS,
   OPENAPI_DESCRIPTION_MAX,
   OPENAPI_SUMMARY_MAX,
   OPENAPI_TITLE_MAX,
@@ -47,7 +48,7 @@ import {
   type OpenApiDocument,
   type OpenApiOperation,
 } from "./openapi-adapter.js";
-import type { OpenApiAuth } from "./openapi-http.js";
+import { reservedParameterName, type OpenApiAuth } from "./openapi-http.js";
 import type { ConnectorCapability, MarketplaceListing } from "./types.js";
 
 export const COMPANY_BOX_COLLECTION = {
@@ -462,6 +463,20 @@ function compileOpenApi(
     const key = keys[position]!;
     const risk = operationRisk(operation, patterns);
     try {
+      const reserved = operation.parameters.find(
+        (parameter) =>
+          (parameter.in === "header" || parameter.in === "query") &&
+          reservedParameterName(parameter.name, runtimeAuthFor(entry.auth)),
+      );
+      if (reserved) {
+        throw new Error(`Parameter ${reserved.in} ${reserved.name} is a reserved name (method override or credential).`);
+      }
+      const overwrite = operation.parameters.find(
+        (parameter) => parameter.in === "header" && parameter.name.toLowerCase() === "overwrite",
+      );
+      if (overwrite && "default" in overwrite.schema && overwrite.schema.default !== "F") {
+        throw new Error("An Overwrite header default must be F; overwriting must be asked for explicitly.");
+      }
       const destination = operation.parameters.find(
         (parameter) => parameter.in === "header" && parameter.name.toLowerCase() === "destination",
       );
@@ -522,6 +537,19 @@ function compileOpenApi(
     for (const pattern of list) {
       if (!document.operations.some((operation) => operationPatternMatches(pattern, operation))) {
         warnings.push(`${kind} pattern "${pattern}" matches no operation.`);
+      }
+    }
+  }
+  for (const pattern of entry.reads) {
+    for (const operation of document.operations) {
+      if (
+        operationPatternMatches(pattern, operation) &&
+        !READ_METHODS.has(operation.method) &&
+        !READS_DOWNGRADABLE_METHODS.has(operation.method)
+      ) {
+        warnings.push(
+          `reads pattern "${pattern}" ignored for ${operationIdentity(operation.method, operation.path)}: only POST can be read-class.`,
+        );
       }
     }
   }

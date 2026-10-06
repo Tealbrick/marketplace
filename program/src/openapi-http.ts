@@ -402,13 +402,21 @@ function validSegment(text: string) {
  * ignored), and every segment is checked and percent-encoded on its own.
  */
 export function renderPathValue(text: string, field: string, multiSegment: boolean) {
+  const encode = (segment: string) => {
+    try {
+      return encodeURIComponent(segment);
+    } catch {
+      // Lone surrogates cannot be encoded.
+      return argumentError(field, "not valid Unicode");
+    }
+  };
   if (!multiSegment) {
     if (!validSegment(text)) argumentError(field, "not a valid path segment");
-    return encodeURIComponent(text);
+    return encode(text);
   }
   const segments = text.replace(/^\//u, "").replace(/\/$/u, "").split("/");
   if (!segments.every(validSegment)) argumentError(field, "not a valid path");
-  return segments.map((segment) => encodeURIComponent(segment)).join("/");
+  return segments.map(encode).join("/");
 }
 
 function renderPathTemplate(template: string, value: (name: string) => string) {
@@ -473,10 +481,19 @@ export function buildOpenApiRequest(options: Omit<OpenApiCallOptions, "fetchImpl
       continue;
     }
     const lower = name.toLowerCase();
-    if (FORBIDDEN_HEADER_NAMES.has(lower) || lower.startsWith("proxy-") || lower === authHeaderName) {
+    // Every header sent, defaults and consts included.
+    if (
+      FORBIDDEN_HEADER_NAMES.has(lower) ||
+      lower.startsWith("proxy-") ||
+      lower === authHeaderName ||
+      reservedParameterName(name, auth)
+    ) {
       argumentError(`header.${name}`, "reserved header");
     }
     const text = scalarString(value, `header.${name}`);
+    if ("const" in parameter.schema && text !== scalarString(parameter.schema.const, `header.${name}`)) {
+      argumentError(`header.${name}`, `must be ${String(parameter.schema.const)}`);
+    }
     if (!headerValueValid(text)) argumentError(`header.${name}`, "invalid header value");
     if (lower === "overwrite" && text !== "T" && text !== "F") argumentError(`header.${name}`, "must be T or F");
     if (lower === "depth" && !["0", "1", "infinity"].includes(text)) argumentError(`header.${name}`, "must be 0, 1 or infinity");

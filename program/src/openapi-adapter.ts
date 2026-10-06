@@ -734,16 +734,35 @@ export type OperationRisk = {
  * as reaching people or systems outside the workspace; governance requires
  * approval for it.
  */
+/** Only these methods can be downgraded to read-class by `reads` patterns. */
+export const READS_DOWNGRADABLE_METHODS: ReadonlySet<string> = new Set(["post", "query"]);
+
+/**
+ * What Overwrite a COPY could send. Absent Overwrite means `T` (RFC 4918),
+ * so only a `const: "F"` makes a COPY non-destructive.
+ */
+function copyMayOverwrite(parameters: readonly OpenApiParameter[] | undefined) {
+  const overwrite = (parameters ?? []).find(
+    (parameter) => parameter.in === "header" && parameter.name.toLowerCase() === "overwrite",
+  );
+  return !(overwrite && overwrite.schema.const === "F");
+}
+
 export function operationRisk(
-  operation: Pick<OpenApiOperation, "operationId" | "method" | "path">,
+  operation: Pick<OpenApiOperation, "operationId" | "method" | "path"> & { parameters?: readonly OpenApiParameter[] },
   patterns: { outward: readonly string[]; destructive: readonly string[]; reads?: readonly string[] },
 ): OperationRisk {
   const readMethod = READ_METHODS.has(operation.method);
+  // `reads` may only downgrade POST (and QUERY); PUT, PATCH, DELETE and
+  // WebDAV writes always stay writes (coverage warns about such patterns).
   const readClass =
-    !readMethod && (patterns.reads ?? []).some((pattern) => operationPatternMatches(pattern, operation));
+    READS_DOWNGRADABLE_METHODS.has(operation.method) &&
+    (patterns.reads ?? []).some((pattern) => operationPatternMatches(pattern, operation));
   const write = !readMethod && !readClass;
   const destructive =
-    (operation.method === "delete" && !readClass) ||
+    operation.method === "delete" ||
+    operation.method === "move" ||
+    (operation.method === "copy" && copyMayOverwrite(operation.parameters)) ||
     patterns.destructive.some((pattern) => operationPatternMatches(pattern, operation));
   const outward = patterns.outward.some((pattern) => operationPatternMatches(pattern, operation));
   return {

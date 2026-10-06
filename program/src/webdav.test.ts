@@ -155,8 +155,8 @@ describe("WebDAV operations", () => {
       "list-folder": ["PROPFIND", "connector.observe"],
       "set-properties": ["PROPPATCH", "connector.dispatch"],
       "create-folder": ["MKCOL", "connector.dispatch"],
-      "move-file": ["MOVE", "connector.dispatch"],
-      "copy-file": ["COPY", "connector.dispatch"],
+      "move-file": ["MOVE", "connector.admin"],
+      "copy-file": ["COPY", "connector.admin"],
       "search-files": ["REPORT", "connector.observe"],
       "lock-file": ["LOCK", "connector.dispatch"],
       "unlock-file": ["UNLOCK", "connector.dispatch"],
@@ -272,5 +272,77 @@ describe("header parameter defaults", () => {
     // The schema agents see does not require defaulted headers.
     const schema = entry.byKey.get("company-box-nextcloud.get-capabilities")!.inputSchema;
     expect(schema.required).toEqual([]);
+  });
+});
+
+describe("WebDAV review fixes", () => {
+  function variant(mutate: (spec: typeof SPEC & { paths: Record<string, Record<string, Record<string, unknown>>> }) => void) {
+    const spec = JSON.parse(JSON.stringify(SPEC));
+    mutate(spec);
+    return loadCompanyBoxCatalog(entryDir(spec)).get("nextcloud") as CompiledOpenApiEntry;
+  }
+
+  it("keeps COPY non-destructive only with Overwrite const F, and refuses Overwrite defaults other than F", () => {
+    const fixed = variant((spec) => {
+      (spec.paths[FILE]!["x-copy"]!.parameters as Array<Record<string, unknown>>)[1] = { name: "Overwrite", in: "header", schema: { type: "string", const: "F" } };
+    });
+    expect(fixed.byKey.get("company-box-nextcloud.copy-file")).toMatchObject({ capability: "connector.dispatch", destructive: false });
+    const unsafe = variant((spec) => {
+      (spec.paths[FILE]!["x-copy"]!.parameters as Array<Record<string, unknown>>)[1] = { name: "Overwrite", in: "header", schema: { type: "string", default: "T" } };
+    });
+    expect(unsafe.coverage.find((item) => item.ref === "copyFile")).toMatchObject({ status: "failed", reason: expect.stringContaining("Overwrite header default must be F") });
+  });
+
+  it("ignores and reports reads patterns on non-POST writes", () => {
+    const root = entryDir(SPEC, { reads: ["moveFile", "PUT /remote.php/dav/files/{user}/{path}", "createFolder"] });
+    const entry = loadCompanyBoxCatalog(root).get("nextcloud") as CompiledOpenApiEntry;
+    expect(entry.byKey.get("company-box-nextcloud.move-file")).toMatchObject({ capability: "connector.admin" });
+    expect(entry.byKey.get("company-box-nextcloud.upload-file")).toMatchObject({ capability: "connector.dispatch" });
+    expect(entry.byKey.get("company-box-nextcloud.create-folder")).toMatchObject({ capability: "connector.dispatch" });
+    expect(entry.warnings).toEqual(
+      expect.arrayContaining([
+        'reads pattern "moveFile" ignored for MOVE /remote.php/dav/files/{user}/{path}: only POST can be read-class.',
+        'reads pattern "createFolder" ignored for MKCOL /remote.php/dav/files/{user}/{path}: only POST can be read-class.',
+      ]),
+    );
+  });
+
+  it("refuses reserved header names in the spec and at send time, defaults included", async () => {
+    const entry = variant((spec) => {
+      (spec.paths["/ocs/v2.php/cloud/capabilities"]!.get!.parameters as unknown[]).push({ name: "X-HTTP-Method-Override", in: "header", schema: { type: "string", default: "DELETE" } });
+    });
+    expect(entry.coverage.find((item) => item.ref === "getCapabilities")).toMatchObject({ status: "failed", reason: expect.stringContaining("reserved name") });
+    const server = await davServer();
+    const sent = await callOpenApiOperation({
+      baseUrl: server.origin,
+      operation: { method: "get", path: "/x", requestBody: null, parameters: [{ name: "X-HTTP-Method-Override", in: "header", required: false, schema: { type: "string", default: "DELETE" } }] },
+      args: {},
+      auth: { type: "none" },
+      credentials: {},
+      env: { MARKETPLACE_MCP_ALLOWED_ORIGINS: server.origin },
+    }).catch((error: unknown) => error);
+    expect(sent).toMatchObject({ code: "openapi_argument_invalid", detail: { field: "header.X-HTTP-Method-Override", reason: "reserved header" } });
+    expect(server.requests).toHaveLength(0);
+  });
+
+  it("maps lone surrogates in path and Destination values to a 400-class argument error", async () => {
+    const entry = compiled();
+    const server = await davServer();
+    const call = caller(entry, server.origin);
+    expect(await failure(call("download-file", { path: { user: "alice", path: "Docs/\ud800.md" } }))).toMatchObject({ code: "openapi_argument_invalid", detail: { field: "path.path", reason: "not valid Unicode" } });
+    expect(await failure(call("download-file", { path: { user: "\udfff", path: "a.md" } }))).toMatchObject({ code: "openapi_argument_invalid", detail: { field: "path.user" } });
+    expect(await failure(call("move-file", { path: { user: "alice", path: "a.md" }, header: { Destination: "x/\ud800" } }))).toMatchObject({ code: "openapi_argument_invalid" });
+    expect(server.requests).toHaveLength(0);
+  });
+
+  it("enforces header const in the request builder itself", async () => {
+    const server = await davServer();
+    const operation = { method: "get" as const, path: "/ocs", requestBody: null, parameters: [{ name: "OCS-APIRequest", in: "header" as const, required: true, schema: { type: "string", const: "true" } }] };
+    const send = (args: Record<string, unknown>) =>
+      callOpenApiOperation({ baseUrl: server.origin, operation, args, auth: { type: "basic" }, credentials: { username: "alice", password: SECRET }, env: { MARKETPLACE_MCP_ALLOWED_ORIGINS: server.origin } });
+    expect(await failure(send({ header: { "OCS-APIRequest": "false" } }))).toMatchObject({ detail: { field: "header.OCS-APIRequest", reason: "must be true" } });
+    expect(server.requests).toHaveLength(0);
+    await send({});
+    expect(server.requests.at(-1)!.headers["ocs-apirequest"]).toBe("true");
   });
 });
