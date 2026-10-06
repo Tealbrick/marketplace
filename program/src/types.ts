@@ -75,9 +75,10 @@ export type MarketplaceListing = {
   description: string;
   capabilities: ConnectorCapability[];
   actions: string[];
-  source: "native" | "activepieces" | "composio" | "nango" | "mcp";
+  /** `openapi`: Company Box REST adapter over a vendored OpenAPI spec. */
+  source: "native" | "activepieces" | "composio" | "nango" | "mcp" | "openapi";
   authOwner: "nango" | "program" | "external" | "composio";
-  executionOwner: "native" | "activepieces" | "composio" | "mcp";
+  executionOwner: "native" | "activepieces" | "composio" | "mcp" | "openapi";
   runtimeSources?: PluginRuntimeSourceDescriptor[];
   enabledByDefault: boolean;
   manifest: Record<string, unknown>;
@@ -141,7 +142,7 @@ export type ConnectorConnection = {
   workspaceSlug: string;
   pluginId: string;
   provider: string;
-  backend: "nango" | "activepieces" | "composio" | "native" | "mcp";
+  backend: "nango" | "activepieces" | "composio" | "native" | "mcp" | "openapi";
   state: ConnectorConnectionState;
   detail: string;
   metadata: Record<string, unknown>;
@@ -474,7 +475,7 @@ export type ConnectorUsageLedgerEntry = {
   workspaceSlug: string;
   pluginId: string;
   provider: string;
-  sourceExecutor: "composio" | "native" | "activepieces" | "mcp";
+  sourceExecutor: "composio" | "native" | "activepieces" | "mcp" | "openapi";
   sourceActionKey: string;
   productCapabilityKey: string;
   inputShape: Record<string, unknown>;

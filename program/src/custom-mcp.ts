@@ -220,6 +220,8 @@ export type CustomMcpManifest = {
   headers: Record<string, string>;
   tools: CustomMcpToolRecord[];
   lastRefresh: CustomMcpLastRefresh | null;
+  /** Set when the connector was installed from a Company Box `mcp` entry. */
+  companyBox?: { entryId: string };
 };
 
 function recordValue(value: unknown): Record<string, unknown> | null {
@@ -240,6 +242,7 @@ export function customMcpManifest(listing: MarketplaceListing): CustomMcpManifes
   const mcp = recordValue(listing.manifest.mcp) ?? {};
   const headers = recordValue(mcp.headers) ?? {};
   const lastRefresh = recordValue(mcp.lastRefresh);
+  const companyBox = recordValue(mcp.companyBox);
   return {
     operatorManaged: true,
     transport: mcp.transport === "sse" ? "sse" : "streamable-http",
@@ -281,6 +284,9 @@ export function customMcpManifest(listing: MarketplaceListing): CustomMcpManifes
             typeof lastRefresh.errorCode === "string" ? lastRefresh.errorCode : null,
         }
       : null,
+    ...(typeof companyBox?.entryId === "string"
+      ? { companyBox: { entryId: companyBox.entryId } }
+      : {}),
   };
 }
 

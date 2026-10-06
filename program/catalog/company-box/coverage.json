@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "ok": true,
+  "totals": {
+    "entries": 0,
+    "operations": 0,
+    "exposed": 0,
+    "excluded": 0
+  },
+  "entries": [],
+  "loadErrors": []
+}

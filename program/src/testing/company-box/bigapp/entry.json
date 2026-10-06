@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "id": "bigapp",
+  "displayName": "Big App",
+  "description": "Fixture: a generated 152-operation Swagger 2.0 app that exercises discovery exposure.",
+  "app": { "version": "9.1.0" },
+  "source": "openapi",
+  "openapi": { "spec": "swagger.json", "sha256": "42d1973b42f5856ff807b78e17bcf2df2da65b18a08de4ec175c2041611ee7c8" },
+  "auth": { "type": "query", "name": "api_key" },
+  "healthOperation": "ping",
+  "outward": ["publish*", "POST /res*/{id}/publish"],
+  "exposure": "auto",
+  "excluded": []
+}

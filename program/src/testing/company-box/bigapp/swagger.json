@@ -1,0 +1,3674 @@
+{
+ "swagger": "2.0",
+ "info": {
+  "title": "Big App",
+  "version": "9.1.0"
+ },
+ "basePath": "/api",
+ "consumes": [
+  "application/json"
+ ],
+ "produces": [
+  "application/json"
+ ],
+ "paths": {
+  "/ping": {
+   "get": {
+    "operationId": "ping",
+    "summary": "Ping",
+    "tags": [
+     "system"
+    ],
+    "responses": {
+     "200": {
+      "description": "pong"
+     }
+    }
+   }
+  },
+  "/res00": {
+   "get": {
+    "operationId": "listRes00",
+    "summary": "List res00",
+    "tags": [
+     "res00"
+    ],
+    "parameters": [
+     {
+      "name": "page",
+      "in": "query",
+      "type": "integer"
+     },
+     {
+      "name": "ids",
+      "in": "query",
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "collectionFormat": "multi"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "post": {
+    "operationId": "createRes00",
+    "summary": "Create res00",
+    "tags": [
+     "res00"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "created"
+     }
+    }
+   }
+  },
+  "/res00/{id}": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "type": "string"
+    }
+   ],
+   "get": {
+    "operationId": "getRes00",
+    "summary": "Get res00",
+    "tags": [
+     "res00"
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "put": {
+    "operationId": "updateRes00",
+    "summary": "Update res00",
+    "tags": [
+     "res00"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "deleteRes00",
+    "summary": "Delete res00",
+    "tags": [
+     "res00"
+    ],
+    "responses": {
+     "204": {
+      "description": "gone"
+     }
+    }
+   }
+  },
+  "/res00/{id}/publish": {
+   "post": {
+    "summary": "Publish res00 to subscribers",
+    "tags": [
+     "res00",
+     "publishing"
+    ],
+    "consumes": [
+     "application/x-www-form-urlencoded"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "name": "channel",
+      "in": "formData",
+      "required": true,
+      "type": "string",
+      "enum": [
+       "email",
+       "web"
+      ]
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "queued"
+     }
+    }
+   }
+  },
+  "/res01": {
+   "get": {
+    "operationId": "listRes01",
+    "summary": "List res01",
+    "tags": [
+     "res01"
+    ],
+    "parameters": [
+     {
+      "name": "page",
+      "in": "query",
+      "type": "integer"
+     },
+     {
+      "name": "ids",
+      "in": "query",
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "collectionFormat": "multi"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "post": {
+    "operationId": "createRes01",
+    "summary": "Create res01",
+    "tags": [
+     "res01"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "created"
+     }
+    }
+   }
+  },
+  "/res01/{id}": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "type": "string"
+    }
+   ],
+   "get": {
+    "operationId": "getRes01",
+    "summary": "Get res01",
+    "tags": [
+     "res01"
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "put": {
+    "operationId": "updateRes01",
+    "summary": "Update res01",
+    "tags": [
+     "res01"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "deleteRes01",
+    "summary": "Delete res01",
+    "tags": [
+     "res01"
+    ],
+    "responses": {
+     "204": {
+      "description": "gone"
+     }
+    }
+   }
+  },
+  "/res01/{id}/publish": {
+   "post": {
+    "operationId": "publishRes01",
+    "summary": "Publish res01 to subscribers",
+    "tags": [
+     "res01",
+     "publishing"
+    ],
+    "consumes": [
+     "application/x-www-form-urlencoded"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "name": "channel",
+      "in": "formData",
+      "required": true,
+      "type": "string",
+      "enum": [
+       "email",
+       "web"
+      ]
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "queued"
+     }
+    }
+   }
+  },
+  "/res02": {
+   "get": {
+    "operationId": "listRes02",
+    "summary": "List res02",
+    "tags": [
+     "res02"
+    ],
+    "parameters": [
+     {
+      "name": "page",
+      "in": "query",
+      "type": "integer"
+     },
+     {
+      "name": "ids",
+      "in": "query",
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "collectionFormat": "multi"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "post": {
+    "operationId": "createRes02",
+    "summary": "Create res02",
+    "tags": [
+     "res02"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "created"
+     }
+    }
+   }
+  },
+  "/res02/{id}": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "type": "string"
+    }
+   ],
+   "get": {
+    "operationId": "getRes02",
+    "summary": "Get res02",
+    "tags": [
+     "res02"
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "put": {
+    "operationId": "updateRes02",
+    "summary": "Update res02",
+    "tags": [
+     "res02"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "deleteRes02",
+    "summary": "Delete res02",
+    "tags": [
+     "res02"
+    ],
+    "responses": {
+     "204": {
+      "description": "gone"
+     }
+    }
+   }
+  },
+  "/res02/{id}/publish": {
+   "post": {
+    "operationId": "publishRes02",
+    "summary": "Publish res02 to subscribers",
+    "tags": [
+     "res02",
+     "publishing"
+    ],
+    "consumes": [
+     "application/x-www-form-urlencoded"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "name": "channel",
+      "in": "formData",
+      "required": true,
+      "type": "string",
+      "enum": [
+       "email",
+       "web"
+      ]
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "queued"
+     }
+    }
+   }
+  },
+  "/res03": {
+   "get": {
+    "operationId": "listRes03",
+    "summary": "List res03",
+    "tags": [
+     "res03"
+    ],
+    "parameters": [
+     {
+      "name": "page",
+      "in": "query",
+      "type": "integer"
+     },
+     {
+      "name": "ids",
+      "in": "query",
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "collectionFormat": "multi"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "post": {
+    "operationId": "createRes03",
+    "summary": "Create res03",
+    "tags": [
+     "res03"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "created"
+     }
+    }
+   }
+  },
+  "/res03/{id}": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "type": "string"
+    }
+   ],
+   "get": {
+    "operationId": "getRes03",
+    "summary": "Get res03",
+    "tags": [
+     "res03"
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "put": {
+    "operationId": "updateRes03",
+    "summary": "Update res03",
+    "tags": [
+     "res03"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "deleteRes03",
+    "summary": "Delete res03",
+    "tags": [
+     "res03"
+    ],
+    "responses": {
+     "204": {
+      "description": "gone"
+     }
+    }
+   }
+  },
+  "/res03/{id}/publish": {
+   "post": {
+    "operationId": "publishRes03",
+    "summary": "Publish res03 to subscribers",
+    "tags": [
+     "res03",
+     "publishing"
+    ],
+    "consumes": [
+     "application/x-www-form-urlencoded"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "name": "channel",
+      "in": "formData",
+      "required": true,
+      "type": "string",
+      "enum": [
+       "email",
+       "web"
+      ]
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "queued"
+     }
+    }
+   }
+  },
+  "/res04": {
+   "get": {
+    "operationId": "listRes04",
+    "summary": "List res04",
+    "tags": [
+     "res04"
+    ],
+    "parameters": [
+     {
+      "name": "page",
+      "in": "query",
+      "type": "integer"
+     },
+     {
+      "name": "ids",
+      "in": "query",
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "collectionFormat": "multi"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "post": {
+    "operationId": "createRes04",
+    "summary": "Create res04",
+    "tags": [
+     "res04"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "created"
+     }
+    }
+   }
+  },
+  "/res04/{id}": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "type": "string"
+    }
+   ],
+   "get": {
+    "operationId": "getRes04",
+    "summary": "Get res04",
+    "tags": [
+     "res04"
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "put": {
+    "operationId": "updateRes04",
+    "summary": "Update res04",
+    "tags": [
+     "res04"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "deleteRes04",
+    "summary": "Delete res04",
+    "tags": [
+     "res04"
+    ],
+    "responses": {
+     "204": {
+      "description": "gone"
+     }
+    }
+   }
+  },
+  "/res04/{id}/publish": {
+   "post": {
+    "operationId": "publishRes04",
+    "summary": "Publish res04 to subscribers",
+    "tags": [
+     "res04",
+     "publishing"
+    ],
+    "consumes": [
+     "application/x-www-form-urlencoded"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "name": "channel",
+      "in": "formData",
+      "required": true,
+      "type": "string",
+      "enum": [
+       "email",
+       "web"
+      ]
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "queued"
+     }
+    }
+   }
+  },
+  "/res05": {
+   "get": {
+    "operationId": "listRes05",
+    "summary": "List res05",
+    "tags": [
+     "res05"
+    ],
+    "parameters": [
+     {
+      "name": "page",
+      "in": "query",
+      "type": "integer"
+     },
+     {
+      "name": "ids",
+      "in": "query",
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "collectionFormat": "multi"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "post": {
+    "operationId": "createRes05",
+    "summary": "Create res05",
+    "tags": [
+     "res05"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "created"
+     }
+    }
+   }
+  },
+  "/res05/{id}": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "type": "string"
+    }
+   ],
+   "get": {
+    "operationId": "getRes05",
+    "summary": "Get res05",
+    "tags": [
+     "res05"
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "put": {
+    "operationId": "updateRes05",
+    "summary": "Update res05",
+    "tags": [
+     "res05"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "deleteRes05",
+    "summary": "Delete res05",
+    "tags": [
+     "res05"
+    ],
+    "responses": {
+     "204": {
+      "description": "gone"
+     }
+    }
+   }
+  },
+  "/res05/{id}/publish": {
+   "post": {
+    "summary": "Publish res05 to subscribers",
+    "tags": [
+     "res05",
+     "publishing"
+    ],
+    "consumes": [
+     "application/x-www-form-urlencoded"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "name": "channel",
+      "in": "formData",
+      "required": true,
+      "type": "string",
+      "enum": [
+       "email",
+       "web"
+      ]
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "queued"
+     }
+    }
+   }
+  },
+  "/res06": {
+   "get": {
+    "operationId": "listRes06",
+    "summary": "List res06",
+    "tags": [
+     "res06"
+    ],
+    "parameters": [
+     {
+      "name": "page",
+      "in": "query",
+      "type": "integer"
+     },
+     {
+      "name": "ids",
+      "in": "query",
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "collectionFormat": "multi"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "post": {
+    "operationId": "createRes06",
+    "summary": "Create res06",
+    "tags": [
+     "res06"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "created"
+     }
+    }
+   }
+  },
+  "/res06/{id}": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "type": "string"
+    }
+   ],
+   "get": {
+    "operationId": "getRes06",
+    "summary": "Get res06",
+    "tags": [
+     "res06"
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "put": {
+    "operationId": "updateRes06",
+    "summary": "Update res06",
+    "tags": [
+     "res06"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "deleteRes06",
+    "summary": "Delete res06",
+    "tags": [
+     "res06"
+    ],
+    "responses": {
+     "204": {
+      "description": "gone"
+     }
+    }
+   }
+  },
+  "/res06/{id}/publish": {
+   "post": {
+    "operationId": "publishRes06",
+    "summary": "Publish res06 to subscribers",
+    "tags": [
+     "res06",
+     "publishing"
+    ],
+    "consumes": [
+     "application/x-www-form-urlencoded"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "name": "channel",
+      "in": "formData",
+      "required": true,
+      "type": "string",
+      "enum": [
+       "email",
+       "web"
+      ]
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "queued"
+     }
+    }
+   }
+  },
+  "/res07": {
+   "get": {
+    "operationId": "listRes07",
+    "summary": "List res07",
+    "tags": [
+     "res07"
+    ],
+    "parameters": [
+     {
+      "name": "page",
+      "in": "query",
+      "type": "integer"
+     },
+     {
+      "name": "ids",
+      "in": "query",
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "collectionFormat": "multi"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "post": {
+    "operationId": "createRes07",
+    "summary": "Create res07",
+    "tags": [
+     "res07"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "created"
+     }
+    }
+   }
+  },
+  "/res07/{id}": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "type": "string"
+    }
+   ],
+   "get": {
+    "operationId": "getRes07",
+    "summary": "Get res07",
+    "tags": [
+     "res07"
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "put": {
+    "operationId": "updateRes07",
+    "summary": "Update res07",
+    "tags": [
+     "res07"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "deleteRes07",
+    "summary": "Delete res07",
+    "tags": [
+     "res07"
+    ],
+    "responses": {
+     "204": {
+      "description": "gone"
+     }
+    }
+   }
+  },
+  "/res07/{id}/publish": {
+   "post": {
+    "operationId": "publishRes07",
+    "summary": "Publish res07 to subscribers",
+    "tags": [
+     "res07",
+     "publishing"
+    ],
+    "consumes": [
+     "application/x-www-form-urlencoded"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "name": "channel",
+      "in": "formData",
+      "required": true,
+      "type": "string",
+      "enum": [
+       "email",
+       "web"
+      ]
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "queued"
+     }
+    }
+   }
+  },
+  "/res08": {
+   "get": {
+    "operationId": "listRes08",
+    "summary": "List res08",
+    "tags": [
+     "res08"
+    ],
+    "parameters": [
+     {
+      "name": "page",
+      "in": "query",
+      "type": "integer"
+     },
+     {
+      "name": "ids",
+      "in": "query",
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "collectionFormat": "multi"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "post": {
+    "operationId": "createRes08",
+    "summary": "Create res08",
+    "tags": [
+     "res08"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "created"
+     }
+    }
+   }
+  },
+  "/res08/{id}": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "type": "string"
+    }
+   ],
+   "get": {
+    "operationId": "getRes08",
+    "summary": "Get res08",
+    "tags": [
+     "res08"
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "put": {
+    "operationId": "updateRes08",
+    "summary": "Update res08",
+    "tags": [
+     "res08"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "deleteRes08",
+    "summary": "Delete res08",
+    "tags": [
+     "res08"
+    ],
+    "responses": {
+     "204": {
+      "description": "gone"
+     }
+    }
+   }
+  },
+  "/res08/{id}/publish": {
+   "post": {
+    "operationId": "publishRes08",
+    "summary": "Publish res08 to subscribers",
+    "tags": [
+     "res08",
+     "publishing"
+    ],
+    "consumes": [
+     "application/x-www-form-urlencoded"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "name": "channel",
+      "in": "formData",
+      "required": true,
+      "type": "string",
+      "enum": [
+       "email",
+       "web"
+      ]
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "queued"
+     }
+    }
+   }
+  },
+  "/res09": {
+   "get": {
+    "operationId": "listRes09",
+    "summary": "List res09",
+    "tags": [
+     "res09"
+    ],
+    "parameters": [
+     {
+      "name": "page",
+      "in": "query",
+      "type": "integer"
+     },
+     {
+      "name": "ids",
+      "in": "query",
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "collectionFormat": "multi"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "post": {
+    "operationId": "createRes09",
+    "summary": "Create res09",
+    "tags": [
+     "res09"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "created"
+     }
+    }
+   }
+  },
+  "/res09/{id}": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "type": "string"
+    }
+   ],
+   "get": {
+    "operationId": "getRes09",
+    "summary": "Get res09",
+    "tags": [
+     "res09"
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "put": {
+    "operationId": "updateRes09",
+    "summary": "Update res09",
+    "tags": [
+     "res09"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "deleteRes09",
+    "summary": "Delete res09",
+    "tags": [
+     "res09"
+    ],
+    "responses": {
+     "204": {
+      "description": "gone"
+     }
+    }
+   }
+  },
+  "/res09/{id}/publish": {
+   "post": {
+    "operationId": "publishRes09",
+    "summary": "Publish res09 to subscribers",
+    "tags": [
+     "res09",
+     "publishing"
+    ],
+    "consumes": [
+     "application/x-www-form-urlencoded"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "name": "channel",
+      "in": "formData",
+      "required": true,
+      "type": "string",
+      "enum": [
+       "email",
+       "web"
+      ]
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "queued"
+     }
+    }
+   }
+  },
+  "/res10": {
+   "get": {
+    "operationId": "listRes10",
+    "summary": "List res10",
+    "tags": [
+     "res10"
+    ],
+    "parameters": [
+     {
+      "name": "page",
+      "in": "query",
+      "type": "integer"
+     },
+     {
+      "name": "ids",
+      "in": "query",
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "collectionFormat": "multi"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "post": {
+    "operationId": "createRes10",
+    "summary": "Create res10",
+    "tags": [
+     "res10"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "created"
+     }
+    }
+   }
+  },
+  "/res10/{id}": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "type": "string"
+    }
+   ],
+   "get": {
+    "operationId": "getRes10",
+    "summary": "Get res10",
+    "tags": [
+     "res10"
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "put": {
+    "operationId": "updateRes10",
+    "summary": "Update res10",
+    "tags": [
+     "res10"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "deleteRes10",
+    "summary": "Delete res10",
+    "tags": [
+     "res10"
+    ],
+    "responses": {
+     "204": {
+      "description": "gone"
+     }
+    }
+   }
+  },
+  "/res10/{id}/publish": {
+   "post": {
+    "summary": "Publish res10 to subscribers",
+    "tags": [
+     "res10",
+     "publishing"
+    ],
+    "consumes": [
+     "application/x-www-form-urlencoded"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "name": "channel",
+      "in": "formData",
+      "required": true,
+      "type": "string",
+      "enum": [
+       "email",
+       "web"
+      ]
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "queued"
+     }
+    }
+   }
+  },
+  "/res11": {
+   "get": {
+    "operationId": "listRes11",
+    "summary": "List res11",
+    "tags": [
+     "res11"
+    ],
+    "parameters": [
+     {
+      "name": "page",
+      "in": "query",
+      "type": "integer"
+     },
+     {
+      "name": "ids",
+      "in": "query",
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "collectionFormat": "multi"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "post": {
+    "operationId": "createRes11",
+    "summary": "Create res11",
+    "tags": [
+     "res11"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "created"
+     }
+    }
+   }
+  },
+  "/res11/{id}": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "type": "string"
+    }
+   ],
+   "get": {
+    "operationId": "getRes11",
+    "summary": "Get res11",
+    "tags": [
+     "res11"
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "put": {
+    "operationId": "updateRes11",
+    "summary": "Update res11",
+    "tags": [
+     "res11"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "deleteRes11",
+    "summary": "Delete res11",
+    "tags": [
+     "res11"
+    ],
+    "responses": {
+     "204": {
+      "description": "gone"
+     }
+    }
+   }
+  },
+  "/res11/{id}/publish": {
+   "post": {
+    "operationId": "publishRes11",
+    "summary": "Publish res11 to subscribers",
+    "tags": [
+     "res11",
+     "publishing"
+    ],
+    "consumes": [
+     "application/x-www-form-urlencoded"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "name": "channel",
+      "in": "formData",
+      "required": true,
+      "type": "string",
+      "enum": [
+       "email",
+       "web"
+      ]
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "queued"
+     }
+    }
+   }
+  },
+  "/res12": {
+   "get": {
+    "operationId": "listRes12",
+    "summary": "List res12",
+    "tags": [
+     "res12"
+    ],
+    "parameters": [
+     {
+      "name": "page",
+      "in": "query",
+      "type": "integer"
+     },
+     {
+      "name": "ids",
+      "in": "query",
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "collectionFormat": "multi"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "post": {
+    "operationId": "createRes12",
+    "summary": "Create res12",
+    "tags": [
+     "res12"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "created"
+     }
+    }
+   }
+  },
+  "/res12/{id}": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "type": "string"
+    }
+   ],
+   "get": {
+    "operationId": "getRes12",
+    "summary": "Get res12",
+    "tags": [
+     "res12"
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "put": {
+    "operationId": "updateRes12",
+    "summary": "Update res12",
+    "tags": [
+     "res12"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "deleteRes12",
+    "summary": "Delete res12",
+    "tags": [
+     "res12"
+    ],
+    "responses": {
+     "204": {
+      "description": "gone"
+     }
+    }
+   }
+  },
+  "/res12/{id}/publish": {
+   "post": {
+    "operationId": "publishRes12",
+    "summary": "Publish res12 to subscribers",
+    "tags": [
+     "res12",
+     "publishing"
+    ],
+    "consumes": [
+     "application/x-www-form-urlencoded"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "name": "channel",
+      "in": "formData",
+      "required": true,
+      "type": "string",
+      "enum": [
+       "email",
+       "web"
+      ]
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "queued"
+     }
+    }
+   }
+  },
+  "/res13": {
+   "get": {
+    "operationId": "listRes13",
+    "summary": "List res13",
+    "tags": [
+     "res13"
+    ],
+    "parameters": [
+     {
+      "name": "page",
+      "in": "query",
+      "type": "integer"
+     },
+     {
+      "name": "ids",
+      "in": "query",
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "collectionFormat": "multi"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "post": {
+    "operationId": "createRes13",
+    "summary": "Create res13",
+    "tags": [
+     "res13"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "created"
+     }
+    }
+   }
+  },
+  "/res13/{id}": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "type": "string"
+    }
+   ],
+   "get": {
+    "operationId": "getRes13",
+    "summary": "Get res13",
+    "tags": [
+     "res13"
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "put": {
+    "operationId": "updateRes13",
+    "summary": "Update res13",
+    "tags": [
+     "res13"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "deleteRes13",
+    "summary": "Delete res13",
+    "tags": [
+     "res13"
+    ],
+    "responses": {
+     "204": {
+      "description": "gone"
+     }
+    }
+   }
+  },
+  "/res13/{id}/publish": {
+   "post": {
+    "operationId": "publishRes13",
+    "summary": "Publish res13 to subscribers",
+    "tags": [
+     "res13",
+     "publishing"
+    ],
+    "consumes": [
+     "application/x-www-form-urlencoded"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "name": "channel",
+      "in": "formData",
+      "required": true,
+      "type": "string",
+      "enum": [
+       "email",
+       "web"
+      ]
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "queued"
+     }
+    }
+   }
+  },
+  "/res14": {
+   "get": {
+    "operationId": "listRes14",
+    "summary": "List res14",
+    "tags": [
+     "res14"
+    ],
+    "parameters": [
+     {
+      "name": "page",
+      "in": "query",
+      "type": "integer"
+     },
+     {
+      "name": "ids",
+      "in": "query",
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "collectionFormat": "multi"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "post": {
+    "operationId": "createRes14",
+    "summary": "Create res14",
+    "tags": [
+     "res14"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "created"
+     }
+    }
+   }
+  },
+  "/res14/{id}": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "type": "string"
+    }
+   ],
+   "get": {
+    "operationId": "getRes14",
+    "summary": "Get res14",
+    "tags": [
+     "res14"
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "put": {
+    "operationId": "updateRes14",
+    "summary": "Update res14",
+    "tags": [
+     "res14"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "deleteRes14",
+    "summary": "Delete res14",
+    "tags": [
+     "res14"
+    ],
+    "responses": {
+     "204": {
+      "description": "gone"
+     }
+    }
+   }
+  },
+  "/res14/{id}/publish": {
+   "post": {
+    "operationId": "publishRes14",
+    "summary": "Publish res14 to subscribers",
+    "tags": [
+     "res14",
+     "publishing"
+    ],
+    "consumes": [
+     "application/x-www-form-urlencoded"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "name": "channel",
+      "in": "formData",
+      "required": true,
+      "type": "string",
+      "enum": [
+       "email",
+       "web"
+      ]
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "queued"
+     }
+    }
+   }
+  },
+  "/res15": {
+   "get": {
+    "operationId": "listRes15",
+    "summary": "List res15",
+    "tags": [
+     "res15"
+    ],
+    "parameters": [
+     {
+      "name": "page",
+      "in": "query",
+      "type": "integer"
+     },
+     {
+      "name": "ids",
+      "in": "query",
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "collectionFormat": "multi"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "post": {
+    "operationId": "createRes15",
+    "summary": "Create res15",
+    "tags": [
+     "res15"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "created"
+     }
+    }
+   }
+  },
+  "/res15/{id}": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "type": "string"
+    }
+   ],
+   "get": {
+    "operationId": "getRes15",
+    "summary": "Get res15",
+    "tags": [
+     "res15"
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "put": {
+    "operationId": "updateRes15",
+    "summary": "Update res15",
+    "tags": [
+     "res15"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "deleteRes15",
+    "summary": "Delete res15",
+    "tags": [
+     "res15"
+    ],
+    "responses": {
+     "204": {
+      "description": "gone"
+     }
+    }
+   }
+  },
+  "/res15/{id}/publish": {
+   "post": {
+    "summary": "Publish res15 to subscribers",
+    "tags": [
+     "res15",
+     "publishing"
+    ],
+    "consumes": [
+     "application/x-www-form-urlencoded"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "name": "channel",
+      "in": "formData",
+      "required": true,
+      "type": "string",
+      "enum": [
+       "email",
+       "web"
+      ]
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "queued"
+     }
+    }
+   }
+  },
+  "/res16": {
+   "get": {
+    "operationId": "listRes16",
+    "summary": "List res16",
+    "tags": [
+     "res16"
+    ],
+    "parameters": [
+     {
+      "name": "page",
+      "in": "query",
+      "type": "integer"
+     },
+     {
+      "name": "ids",
+      "in": "query",
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "collectionFormat": "multi"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "post": {
+    "operationId": "createRes16",
+    "summary": "Create res16",
+    "tags": [
+     "res16"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "created"
+     }
+    }
+   }
+  },
+  "/res16/{id}": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "type": "string"
+    }
+   ],
+   "get": {
+    "operationId": "getRes16",
+    "summary": "Get res16",
+    "tags": [
+     "res16"
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "put": {
+    "operationId": "updateRes16",
+    "summary": "Update res16",
+    "tags": [
+     "res16"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "deleteRes16",
+    "summary": "Delete res16",
+    "tags": [
+     "res16"
+    ],
+    "responses": {
+     "204": {
+      "description": "gone"
+     }
+    }
+   }
+  },
+  "/res16/{id}/publish": {
+   "post": {
+    "operationId": "publishRes16",
+    "summary": "Publish res16 to subscribers",
+    "tags": [
+     "res16",
+     "publishing"
+    ],
+    "consumes": [
+     "application/x-www-form-urlencoded"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "name": "channel",
+      "in": "formData",
+      "required": true,
+      "type": "string",
+      "enum": [
+       "email",
+       "web"
+      ]
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "queued"
+     }
+    }
+   }
+  },
+  "/res17": {
+   "get": {
+    "operationId": "listRes17",
+    "summary": "List res17",
+    "tags": [
+     "res17"
+    ],
+    "parameters": [
+     {
+      "name": "page",
+      "in": "query",
+      "type": "integer"
+     },
+     {
+      "name": "ids",
+      "in": "query",
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "collectionFormat": "multi"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "post": {
+    "operationId": "createRes17",
+    "summary": "Create res17",
+    "tags": [
+     "res17"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "created"
+     }
+    }
+   }
+  },
+  "/res17/{id}": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "type": "string"
+    }
+   ],
+   "get": {
+    "operationId": "getRes17",
+    "summary": "Get res17",
+    "tags": [
+     "res17"
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "put": {
+    "operationId": "updateRes17",
+    "summary": "Update res17",
+    "tags": [
+     "res17"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "deleteRes17",
+    "summary": "Delete res17",
+    "tags": [
+     "res17"
+    ],
+    "responses": {
+     "204": {
+      "description": "gone"
+     }
+    }
+   }
+  },
+  "/res17/{id}/publish": {
+   "post": {
+    "operationId": "publishRes17",
+    "summary": "Publish res17 to subscribers",
+    "tags": [
+     "res17",
+     "publishing"
+    ],
+    "consumes": [
+     "application/x-www-form-urlencoded"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "name": "channel",
+      "in": "formData",
+      "required": true,
+      "type": "string",
+      "enum": [
+       "email",
+       "web"
+      ]
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "queued"
+     }
+    }
+   }
+  },
+  "/res18": {
+   "get": {
+    "operationId": "listRes18",
+    "summary": "List res18",
+    "tags": [
+     "res18"
+    ],
+    "parameters": [
+     {
+      "name": "page",
+      "in": "query",
+      "type": "integer"
+     },
+     {
+      "name": "ids",
+      "in": "query",
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "collectionFormat": "multi"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "post": {
+    "operationId": "createRes18",
+    "summary": "Create res18",
+    "tags": [
+     "res18"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "created"
+     }
+    }
+   }
+  },
+  "/res18/{id}": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "type": "string"
+    }
+   ],
+   "get": {
+    "operationId": "getRes18",
+    "summary": "Get res18",
+    "tags": [
+     "res18"
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "put": {
+    "operationId": "updateRes18",
+    "summary": "Update res18",
+    "tags": [
+     "res18"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "deleteRes18",
+    "summary": "Delete res18",
+    "tags": [
+     "res18"
+    ],
+    "responses": {
+     "204": {
+      "description": "gone"
+     }
+    }
+   }
+  },
+  "/res18/{id}/publish": {
+   "post": {
+    "operationId": "publishRes18",
+    "summary": "Publish res18 to subscribers",
+    "tags": [
+     "res18",
+     "publishing"
+    ],
+    "consumes": [
+     "application/x-www-form-urlencoded"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "name": "channel",
+      "in": "formData",
+      "required": true,
+      "type": "string",
+      "enum": [
+       "email",
+       "web"
+      ]
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "queued"
+     }
+    }
+   }
+  },
+  "/res19": {
+   "get": {
+    "operationId": "listRes19",
+    "summary": "List res19",
+    "tags": [
+     "res19"
+    ],
+    "parameters": [
+     {
+      "name": "page",
+      "in": "query",
+      "type": "integer"
+     },
+     {
+      "name": "ids",
+      "in": "query",
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "collectionFormat": "multi"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "post": {
+    "operationId": "createRes19",
+    "summary": "Create res19",
+    "tags": [
+     "res19"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "created"
+     }
+    }
+   }
+  },
+  "/res19/{id}": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "type": "string"
+    }
+   ],
+   "get": {
+    "operationId": "getRes19",
+    "summary": "Get res19",
+    "tags": [
+     "res19"
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "put": {
+    "operationId": "updateRes19",
+    "summary": "Update res19",
+    "tags": [
+     "res19"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "deleteRes19",
+    "summary": "Delete res19",
+    "tags": [
+     "res19"
+    ],
+    "responses": {
+     "204": {
+      "description": "gone"
+     }
+    }
+   }
+  },
+  "/res19/{id}/publish": {
+   "post": {
+    "operationId": "publishRes19",
+    "summary": "Publish res19 to subscribers",
+    "tags": [
+     "res19",
+     "publishing"
+    ],
+    "consumes": [
+     "application/x-www-form-urlencoded"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "name": "channel",
+      "in": "formData",
+      "required": true,
+      "type": "string",
+      "enum": [
+       "email",
+       "web"
+      ]
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "queued"
+     }
+    }
+   }
+  },
+  "/res20": {
+   "get": {
+    "operationId": "listRes20",
+    "summary": "List res20",
+    "tags": [
+     "res20"
+    ],
+    "parameters": [
+     {
+      "name": "page",
+      "in": "query",
+      "type": "integer"
+     },
+     {
+      "name": "ids",
+      "in": "query",
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "collectionFormat": "multi"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "post": {
+    "operationId": "createRes20",
+    "summary": "Create res20",
+    "tags": [
+     "res20"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "created"
+     }
+    }
+   }
+  },
+  "/res20/{id}": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "type": "string"
+    }
+   ],
+   "get": {
+    "operationId": "getRes20",
+    "summary": "Get res20",
+    "tags": [
+     "res20"
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "put": {
+    "operationId": "updateRes20",
+    "summary": "Update res20",
+    "tags": [
+     "res20"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "deleteRes20",
+    "summary": "Delete res20",
+    "tags": [
+     "res20"
+    ],
+    "responses": {
+     "204": {
+      "description": "gone"
+     }
+    }
+   }
+  },
+  "/res20/{id}/publish": {
+   "post": {
+    "summary": "Publish res20 to subscribers",
+    "tags": [
+     "res20",
+     "publishing"
+    ],
+    "consumes": [
+     "application/x-www-form-urlencoded"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "name": "channel",
+      "in": "formData",
+      "required": true,
+      "type": "string",
+      "enum": [
+       "email",
+       "web"
+      ]
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "queued"
+     }
+    }
+   }
+  },
+  "/res21": {
+   "get": {
+    "operationId": "listRes21",
+    "summary": "List res21",
+    "tags": [
+     "res21"
+    ],
+    "parameters": [
+     {
+      "name": "page",
+      "in": "query",
+      "type": "integer"
+     },
+     {
+      "name": "ids",
+      "in": "query",
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "collectionFormat": "multi"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "post": {
+    "operationId": "createRes21",
+    "summary": "Create res21",
+    "tags": [
+     "res21"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "created"
+     }
+    }
+   }
+  },
+  "/res21/{id}": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "type": "string"
+    }
+   ],
+   "get": {
+    "operationId": "getRes21",
+    "summary": "Get res21",
+    "tags": [
+     "res21"
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "put": {
+    "operationId": "updateRes21",
+    "summary": "Update res21",
+    "tags": [
+     "res21"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "deleteRes21",
+    "summary": "Delete res21",
+    "tags": [
+     "res21"
+    ],
+    "responses": {
+     "204": {
+      "description": "gone"
+     }
+    }
+   }
+  },
+  "/res21/{id}/publish": {
+   "post": {
+    "operationId": "publishRes21",
+    "summary": "Publish res21 to subscribers",
+    "tags": [
+     "res21",
+     "publishing"
+    ],
+    "consumes": [
+     "application/x-www-form-urlencoded"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "name": "channel",
+      "in": "formData",
+      "required": true,
+      "type": "string",
+      "enum": [
+       "email",
+       "web"
+      ]
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "queued"
+     }
+    }
+   }
+  },
+  "/res22": {
+   "get": {
+    "operationId": "listRes22",
+    "summary": "List res22",
+    "tags": [
+     "res22"
+    ],
+    "parameters": [
+     {
+      "name": "page",
+      "in": "query",
+      "type": "integer"
+     },
+     {
+      "name": "ids",
+      "in": "query",
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "collectionFormat": "multi"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "post": {
+    "operationId": "createRes22",
+    "summary": "Create res22",
+    "tags": [
+     "res22"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "created"
+     }
+    }
+   }
+  },
+  "/res22/{id}": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "type": "string"
+    }
+   ],
+   "get": {
+    "operationId": "getRes22",
+    "summary": "Get res22",
+    "tags": [
+     "res22"
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "put": {
+    "operationId": "updateRes22",
+    "summary": "Update res22",
+    "tags": [
+     "res22"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "deleteRes22",
+    "summary": "Delete res22",
+    "tags": [
+     "res22"
+    ],
+    "responses": {
+     "204": {
+      "description": "gone"
+     }
+    }
+   }
+  },
+  "/res22/{id}/publish": {
+   "post": {
+    "operationId": "publishRes22",
+    "summary": "Publish res22 to subscribers",
+    "tags": [
+     "res22",
+     "publishing"
+    ],
+    "consumes": [
+     "application/x-www-form-urlencoded"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "name": "channel",
+      "in": "formData",
+      "required": true,
+      "type": "string",
+      "enum": [
+       "email",
+       "web"
+      ]
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "queued"
+     }
+    }
+   }
+  },
+  "/res23": {
+   "get": {
+    "operationId": "listRes23",
+    "summary": "List res23",
+    "tags": [
+     "res23"
+    ],
+    "parameters": [
+     {
+      "name": "page",
+      "in": "query",
+      "type": "integer"
+     },
+     {
+      "name": "ids",
+      "in": "query",
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "collectionFormat": "multi"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "post": {
+    "operationId": "createRes23",
+    "summary": "Create res23",
+    "tags": [
+     "res23"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "created"
+     }
+    }
+   }
+  },
+  "/res23/{id}": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "type": "string"
+    }
+   ],
+   "get": {
+    "operationId": "getRes23",
+    "summary": "Get res23",
+    "tags": [
+     "res23"
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "put": {
+    "operationId": "updateRes23",
+    "summary": "Update res23",
+    "tags": [
+     "res23"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "deleteRes23",
+    "summary": "Delete res23",
+    "tags": [
+     "res23"
+    ],
+    "responses": {
+     "204": {
+      "description": "gone"
+     }
+    }
+   }
+  },
+  "/res23/{id}/publish": {
+   "post": {
+    "operationId": "publishRes23",
+    "summary": "Publish res23 to subscribers",
+    "tags": [
+     "res23",
+     "publishing"
+    ],
+    "consumes": [
+     "application/x-www-form-urlencoded"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "name": "channel",
+      "in": "formData",
+      "required": true,
+      "type": "string",
+      "enum": [
+       "email",
+       "web"
+      ]
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "queued"
+     }
+    }
+   }
+  },
+  "/res24": {
+   "get": {
+    "operationId": "listRes24",
+    "summary": "List res24",
+    "tags": [
+     "res24"
+    ],
+    "parameters": [
+     {
+      "name": "page",
+      "in": "query",
+      "type": "integer"
+     },
+     {
+      "name": "ids",
+      "in": "query",
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "collectionFormat": "multi"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "post": {
+    "operationId": "createRes24",
+    "summary": "Create res24",
+    "tags": [
+     "res24"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "created"
+     }
+    }
+   }
+  },
+  "/res24/{id}": {
+   "parameters": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "type": "string"
+    }
+   ],
+   "get": {
+    "operationId": "getRes24",
+    "summary": "Get res24",
+    "tags": [
+     "res24"
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "put": {
+    "operationId": "updateRes24",
+    "summary": "Update res24",
+    "tags": [
+     "res24"
+    ],
+    "parameters": [
+     {
+      "name": "payload",
+      "in": "body",
+      "required": true,
+      "schema": {
+       "$ref": "#/definitions/Item"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "deleteRes24",
+    "summary": "Delete res24",
+    "tags": [
+     "res24"
+    ],
+    "responses": {
+     "204": {
+      "description": "gone"
+     }
+    }
+   }
+  },
+  "/res24/{id}/publish": {
+   "post": {
+    "operationId": "publishRes24",
+    "summary": "Publish res24 to subscribers",
+    "tags": [
+     "res24",
+     "publishing"
+    ],
+    "consumes": [
+     "application/x-www-form-urlencoded"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "type": "string"
+     },
+     {
+      "name": "channel",
+      "in": "formData",
+      "required": true,
+      "type": "string",
+      "enum": [
+       "email",
+       "web"
+      ]
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "queued"
+     }
+    }
+   }
+  },
+  "/legacy/res00/{id}": {
+   "get": {
+    "operationId": "get_res00",
+    "summary": "Legacy get res00",
+    "tags": [
+     "legacy"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "type": "string"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "ok"
+     }
+    }
+   }
+  }
+ },
+ "definitions": {
+  "Item": {
+   "type": "object",
+   "required": [
+    "name"
+   ],
+   "properties": {
+    "name": {
+     "type": "string"
+    },
+    "owner": {
+     "$ref": "#/definitions/Owner"
+    },
+    "parent": {
+     "$ref": "#/definitions/Item"
+    }
+   }
+  },
+  "Owner": {
+   "type": "object",
+   "properties": {
+    "user_id": {
+     "type": "string"
+    }
+   }
+  }
+ }
+}

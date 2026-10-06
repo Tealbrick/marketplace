@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "id": "tracker",
+  "displayName": "Tracker",
+  "description": "Fixture: an issue tracker reached through its official remote MCP server.",
+  "app": { "version": "1.0.0" },
+  "source": "mcp",
+  "mcp": { "urlTemplate": "{baseUrl}/mcp", "transport": "streamable-http", "tools": "tools.json", "sha256": "3da327812e9584634986e15bf5f46b82b8b3edab81492ff04c01aba981d6410e" },
+  "auth": { "type": "header", "name": "X-Api-Key", "label": "API key" },
+  "baseUrlExample": "https://tracker.your-tailnet.ts.net",
+  "outward": ["create_issue"],
+  "exposure": "auto",
+  "excluded": [
+    { "operation": "Delete Everything!", "reason": "Wipes every project; keep it in the app's own admin screen." }
+  ]
+}
