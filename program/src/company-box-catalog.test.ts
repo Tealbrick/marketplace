@@ -95,6 +95,29 @@ const EXPECTED: Record<string, Expectation> = {
     health: "PublicIntegrationsController_getActiveIntegrations",
     expectHeader: ["authorization", SECRET],
   },
+  nextcloud: {
+    total: 262,
+    exposed: 242,
+    excluded: 20,
+    outward: 32,
+    reads: [
+      "POST /index.php/apps/files_sharing/shareinfo",
+      "POST /index.php/core/wipe/check",
+      "POST /ocs/v2.php/apps/notifications/api/{apiVersion}/notifications/exists",
+      "POST /ocs/v2.php/apps/password_policy/api/v1/validate",
+      "POST /ocs/v2.php/cloud/users/search/by-phone",
+      "POST /ocs/v2.php/references/extract",
+      "POST /ocs/v2.php/references/extractPublic",
+      "POST /ocs/v2.php/references/resolve",
+      "POST /ocs/v2.php/references/resolvePublic",
+      "POST /ocs/v2.php/translation/translate",
+    ],
+    exposure: "discovery",
+    auth: { type: "basic" },
+    credentials: { username: USER, password: SECRET },
+    health: "get-status",
+    expectHeader: ["authorization", `Basic ${Buffer.from(`${USER}:${SECRET}`).toString("base64")}`],
+  },
   pretix: {
     total: 370,
     exposed: 370,
@@ -127,7 +150,7 @@ function specOperationCount(id: string, specFile = "openapi.json") {
 describe("shipped Company Box catalog", () => {
   const catalog = loadCompanyBoxCatalog(DEFAULT_COMPANY_BOX_CATALOG_DIR);
 
-  it("loads exactly the five entries without errors", () => {
+  it("loads exactly the six entries without errors", () => {
     expect(catalog.loadErrors).toEqual([]);
     expect(catalog.entries.map((entry) => entry.entry.id).sort()).toEqual(Object.keys(EXPECTED).sort());
     for (const entry of catalog.entries) expect(entry.errors, entry.entry.id).toEqual([]);
@@ -192,7 +215,7 @@ describe("shipped Company Box catalog", () => {
 
   it("keeps upstream specs pristine and applies overlays only where needed", () => {
     const withOverlay = catalog.entries.filter((entry) => entry.kind === "openapi" && entry.entry.openapi?.overlay).map((entry) => entry.entry.id);
-    expect(withOverlay.sort()).toEqual(["formbricks", "postiz"]);
+    expect(withOverlay.sort()).toEqual(["formbricks", "nextcloud", "postiz"]);
     const postizSpec = readFileSync(path.join(DEFAULT_COMPANY_BOX_CATALOG_DIR, "postiz", "openapi.json"), "utf8");
     expect(postizSpec).not.toContain("x-company-box-supplement");
     const postiz = catalog.get("postiz") as CompiledOpenApiEntry;
@@ -201,6 +224,107 @@ describe("shipped Company Box catalog", () => {
     const listmonk = catalog.get("listmonk") as CompiledOpenApiEntry;
     expect(listmonk.coverage.find((item) => item.ref === "previewTemplateById")).toMatchObject({ status: "excluded", auto: true });
     expect(listmonk.entry.excluded.map((exclusion) => exclusion.operation).sort()).toEqual(["logout", "streamEvents"]);
+  });
+
+  it("merges every enabled Nextcloud OCS app spec, namespaced and tagged by app, with a documented exclusion per operation", () => {
+    const compiled = catalog.get("nextcloud") as CompiledOpenApiEntry;
+    expect(compiled.entry.app.version).toBe("31.0.14");
+    const spec = JSON.parse(readFileSync(path.join(DEFAULT_COMPANY_BOX_CATALOG_DIR, "nextcloud", "openapi.json"), "utf8")) as {
+      info: Record<string, unknown>;
+      paths: Record<string, Record<string, { "x-nextcloud-app"?: string; tags?: string[] }>>;
+      components: { schemas: Record<string, unknown> };
+    };
+    expect(spec.info["x-source"]).toBe("merged-upstream");
+    const perApp: Record<string, number> = {};
+    for (const item of Object.values(spec.paths)) {
+      for (const method of METHODS) {
+        const operation = item[method];
+        if (!operation) continue;
+        const app = operation["x-nextcloud-app"]!;
+        perApp[app] = (perApp[app] ?? 0) + 1;
+        expect(operation.tags?.[0], `${method} ${app}`).toBe(app);
+      }
+    }
+    expect(perApp).toEqual({
+      cloud_federation_api: 2,
+      core: 77,
+      dashboard: 7,
+      dav: 6,
+      federatedfilesharing: 9,
+      federation: 7,
+      files: 16,
+      files_external: 1,
+      files_reminders: 3,
+      files_sharing: 23,
+      files_trashbin: 1,
+      files_versions: 1,
+      notifications: 12,
+      oauth2: 2,
+      password_policy: 2,
+      provisioning_api: 43,
+      recommendations: 2,
+      settings: 3,
+      theming: 11,
+      updatenotification: 2,
+      user_oidc: 9,
+      user_status: 10,
+      weather_status: 7,
+      webhook_listeners: 6,
+    });
+    // Disabled apps (user_ldap) are not merged; component schemas are namespaced per app.
+    expect(Object.keys(perApp)).not.toContain("user_ldap");
+    expect(Object.keys(spec.components.schemas).every((name) => /^[a-z_0-9]+\./u.test(name))).toBe(true);
+    // Every OCS operation requires the OCS-APIRequest header (the engine cannot add static headers yet).
+    for (const operation of compiled.operations) {
+      const header = operation.operation.parameters.find((parameter) => parameter.in === "header" && parameter.name === "OCS-APIRequest");
+      if (operation.path.startsWith("/ocs/")) expect(header, operation.ref).toMatchObject({ required: true, schema: { type: "boolean", default: true } });
+    }
+    // Credential, login, app-enable and server-config operations stay out, each with its own reason.
+    expect(compiled.entry.excluded.map((exclusion) => exclusion.operation).sort()).toEqual(
+      [
+        "app_config-set-value",
+        "app_password-confirm-user-password",
+        "app_password-delete-app-password",
+        "app_password-get-app-password",
+        "app_password-rotate-app-password",
+        "apps-disable",
+        "apps-enable",
+        "client_flow_login_v2-init",
+        "client_flow_login_v2-poll",
+        "declarative_settings-set-value",
+        "login-confirm-password",
+        "login_redirector-authorize",
+        "oauth_api-get-token",
+        "settings-add-server",
+        "settings-create-provider",
+        "settings-delete-provider",
+        "settings-remove-server",
+        "settings-seti-d4me",
+        "settings-set-admin-config",
+        "settings-update-provider",
+      ].sort(),
+    );
+    expect(compiled.coverage.filter((item) => item.status === "excluded" && item.auto)).toEqual([]);
+    const outward = new Set(compiled.operations.filter((operation) => operation.outward).map((operation) => operation.operationId));
+    for (const id of [
+      "shareapi-create-share",
+      "shareapi-update-share",
+      "shareapi-send-share-email",
+      "direct-get-url",
+      "api-generate-notification-v3",
+      "users-add-user",
+      "users-resend-welcome-message",
+      "webhooks-create",
+      "remote-accept-share",
+    ]) {
+      expect(outward.has(id), id).toBe(true);
+    }
+    const byId = (id: string) => compiled.operations.find((operation) => operation.operationId === id);
+    expect(byId("users-delete-user")).toMatchObject({ destructive: true, capability: "connector.admin" });
+    expect(byId("users-wipe-user-devices")).toMatchObject({ destructive: true, outward: true });
+    expect(byId("shareapi-get-shares")).toMatchObject({ capability: "connector.observe", outward: false });
+    // The three query schemas the engine refused (nullable without a type) are supplemented by the overlay only.
+    expect(byId("unified_search-search")?.operation.parameters.some((parameter) => parameter.name === "cursor")).toBe(true);
   });
 
   it("excludes only Easy!Appointments admin and settings operations", () => {
@@ -363,6 +487,9 @@ function synth(schema: unknown, defs: Record<string, unknown>, depth = 0): unkno
           const minLength = typeof schema.minLength === "number" ? schema.minLength : 1;
           own = "7".padEnd(Math.max(minLength, 1), "x");
           if (typeof schema.maxLength === "number") own = (own as string).slice(0, schema.maxLength);
+          // Literal patterns such as "^1$" or "^(v3)$" (Nextcloud's API version path segments).
+          const literal = typeof schema.pattern === "string" ? /^\^\(?([A-Za-z0-9_.-]+)(?:\|[^)]*)?\)?\$$/u.exec(schema.pattern)?.[1] : undefined;
+          if (literal) own = literal;
         }
       }
       break;
@@ -580,6 +707,8 @@ describe.each(Object.keys(EXPECTED))("agent path: %s", (id) => {
       expect(seen.method, key).toBe(operation.method.toUpperCase());
       expect(seen.path, key).toMatch(pathMatcher(compiled, operation.path));
       expect(seen.headers[expected.expectHeader[0]], key).toBe(expected.expectHeader[1]);
+      // Nextcloud OCS routes need `OCS-APIRequest: true` (declared as a required header parameter, supplied by the agent call).
+      if (id === "nextcloud" && operation.path.startsWith("/ocs/")) expect(seen.headers["ocs-apirequest"], key).toBe("true");
     }
     expect(f.rest.requests.length - healthRequests).toBe(expected.exposed);
     const outwardCalls = f.rulesCalls.filter(
