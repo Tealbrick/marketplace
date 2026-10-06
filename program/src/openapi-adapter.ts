@@ -652,18 +652,24 @@ export type OperationRisk = {
 };
 
 /**
- * GET/HEAD/OPTIONS read (observe). Every other method writes (dispatch).
- * DELETE, or a match in the entry's `destructive` patterns, is destructive
- * (admin). A match in `outward` patterns marks the call as reaching people
- * or systems outside the workspace; governance requires approval for it.
+ * GET/HEAD/OPTIONS read (observe). Every other method writes (dispatch),
+ * unless it matches the entry's `reads` patterns (POST search endpoints,
+ * GraphQL queries): those are read-class and are never destructive or
+ * outward unless also listed in those patterns. DELETE, or a match in
+ * `destructive`, is destructive (admin). A match in `outward` marks the call
+ * as reaching people or systems outside the workspace; governance requires
+ * approval for it.
  */
 export function operationRisk(
   operation: Pick<OpenApiOperation, "operationId" | "method" | "path">,
-  patterns: { outward: readonly string[]; destructive: readonly string[] },
+  patterns: { outward: readonly string[]; destructive: readonly string[]; reads?: readonly string[] },
 ): OperationRisk {
-  const write = !["get", "head", "options"].includes(operation.method);
+  const readMethod = ["get", "head", "options"].includes(operation.method);
+  const readClass =
+    !readMethod && (patterns.reads ?? []).some((pattern) => operationPatternMatches(pattern, operation));
+  const write = !readMethod && !readClass;
   const destructive =
-    operation.method === "delete" ||
+    (operation.method === "delete" && !readClass) ||
     patterns.destructive.some((pattern) => operationPatternMatches(pattern, operation));
   const outward = patterns.outward.some((pattern) => operationPatternMatches(pattern, operation));
   return {
@@ -672,6 +678,21 @@ export function operationRisk(
     outward,
     destructive,
   };
+}
+
+/**
+ * Stable group for catalog grouping: the first tag, else the first literal
+ * path segment, in kebab case; `general` when neither exists.
+ */
+export function operationGroup(operation: Pick<OpenApiOperation, "tags" | "path">) {
+  const tag = operation.tags.map(kebab).find(Boolean);
+  if (tag) return tag;
+  const segment = operation.path
+    .split("/")
+    .filter((part) => part && !part.startsWith("{"))
+    .map(kebab)
+    .find(Boolean);
+  return segment ?? "general";
 }
 
 function groupSchema(parameters: readonly OpenApiParameter[]) {

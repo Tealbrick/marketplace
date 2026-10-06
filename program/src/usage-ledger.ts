@@ -1,5 +1,28 @@
 import type { ConnectorPromotionCandidate, ConnectorUsageLedgerEntry } from "./types.js";
 
+import { createHash } from "node:crypto";
+
+/** Largest output Marketplace stores verbatim (usage evidence, approval results). */
+export const STORED_OUTPUT_MAX_BYTES = 64 * 1024;
+
+export type StoredOutputDigest = { bytes: number; sha256: string };
+
+export function outputDigest(value: unknown): StoredOutputDigest {
+  const json = JSON.stringify(value ?? null);
+  return { bytes: Buffer.byteLength(json), sha256: createHash("sha256").update(json).digest("hex") };
+}
+
+/**
+ * Keep an output for storage: verbatim up to 64 KB, otherwise a marker with
+ * the full output's byte length and sha256 so the evidence stays verifiable.
+ */
+export function boundedStoredOutput(value: unknown, maxBytes = STORED_OUTPUT_MAX_BYTES) {
+  const digest = outputDigest(value);
+  return digest.bytes <= maxBytes
+    ? { output: value, truncated: false as const, ...digest }
+    : { output: { truncated: true, ...digest }, truncated: true as const, ...digest };
+}
+
 export function shapeOf(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return {};

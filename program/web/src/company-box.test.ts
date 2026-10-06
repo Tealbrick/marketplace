@@ -85,6 +85,9 @@ describe("Company Box section", () => {
         const setUp = fetchMock.mock.calls.some(([route]) => String(route).endsWith("/setup"));
         return new Response(JSON.stringify(response([setUp ? connected : entry()])), { status: 200 });
       }
+      if (url === "/api/marketplace/company-box/approvals") {
+        return new Response(JSON.stringify({ ok: true, workspaceSlug: "ws", pendingCount: 0, approvals: [] }), { status: 200 });
+      }
       if (url === "/api/marketplace/company-box/notes/setup") {
         return new Response(JSON.stringify({ ok: true, entry: connected }), { status: 200 });
       }
@@ -110,5 +113,50 @@ describe("Company Box section", () => {
     expect(JSON.parse(String(setupCall[1]?.body))).toEqual({ baseUrl: "https://notes.t.ts.net", credentials: { token: SECRET } });
     await waitFor(() => expect(screen.getByText(/abc123def456/u)).toBeTruthy());
     expect(document.body.textContent).not.toContain(SECRET);
+  });
+});
+
+describe("Company Box approvals panel", () => {
+  it("shows waiting requests with agent and argument preview, and approves one", async () => {
+    const pending = {
+      id: "approval_1",
+      pluginId: "company-box-notes",
+      app: "Notes",
+      actionKey: "company-box-notes.share-note",
+      operation: { title: "Email a note to someone", method: "POST", path: "/notes/{id}/share" },
+      capability: "connector.dispatch",
+      agentId: "agent-7",
+      argumentsPreview: '{"path":{"id":"n1"},"body":{"email":"a@b.test"}}',
+      state: "pending",
+      createdAt: "2026-10-06T00:00:00Z",
+      expiresAt: "2026-10-13T00:00:00Z",
+      decidedAt: null,
+      decidedBy: null,
+      error: null,
+    };
+    let decided = false;
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/marketplace/company-box") return new Response(JSON.stringify(response([entry()])), { status: 200 });
+      if (url === "/api/marketplace/company-box/approvals") {
+        const approvals = decided ? [{ ...pending, state: "succeeded", decidedBy: "owner" }] : [pending];
+        return new Response(JSON.stringify({ ok: true, workspaceSlug: "ws", pendingCount: decided ? 0 : 1, approvals }), { status: 200 });
+      }
+      if (url === "/api/marketplace/company-box/approvals/approval_1/approve" && init?.method === "POST") {
+        decided = true;
+        return new Response(JSON.stringify({ ok: true, approval: { ...pending, state: "succeeded" } }), { status: 200 });
+      }
+      return new Response("{}", { status: 404 });
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(createElement(QueryClientProvider, { client }, createElement(CompanyBoxSection, { onChanged: () => undefined })));
+    expect(await screen.findByText("Notes · Email a note to someone")).toBeTruthy();
+    expect(screen.getByText("agent-7")).toBeTruthy();
+    expect(screen.getByText(/a@b\.test/u)).toBeTruthy();
+    expect(screen.getByLabelText("1 waiting")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Approve/u }));
+    expect(await screen.findByText("Approved and ran Email a note to someone.")).toBeTruthy();
+    expect(fetchMock.mock.calls.some(([route, init]) => String(route).endsWith("/approve") && init?.method === "POST")).toBe(true);
+    expect(await screen.findByText("Nothing waiting.")).toBeTruthy();
   });
 });

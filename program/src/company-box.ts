@@ -28,6 +28,7 @@ import {
   boundedToolSchema,
   deriveOperationActionKeys,
   operationArgumentGroups,
+  operationGroup,
   operationIdentity,
   operationInputSchema,
   operationPatternMatches,
@@ -154,6 +155,8 @@ export const CompanyBoxEntrySchema = z
     outward: z.array(z.string().trim().min(1).max(300)).max(500).default([]),
     /** Patterns for destructive operations beyond DELETE. */
     destructive: z.array(z.string().trim().min(1).max(300)).max(500).default([]),
+    /** Patterns for POST/PUT/… operations that only read (search, GraphQL queries). */
+    reads: z.array(z.string().trim().min(1).max(300)).max(500).default([]),
     exposure: z.enum(["auto", "direct", "discovery"]).default("auto"),
     excluded: z.array(ExclusionSchema).max(5_000).default([]),
   })
@@ -231,6 +234,8 @@ export type CompanyBoxOperation = CompanyBoxRisk & {
   summary: string;
   description: string;
   tags: string[];
+  /** Stable catalog group (first tag or path segment). */
+  group: string;
   deprecated: boolean;
   argumentGroups: Array<"path" | "query" | "header" | "body">;
   operation: OpenApiOperation;
@@ -274,6 +279,9 @@ export type CompiledOpenApiEntry = CompiledBase & {
 
 export type CompanyBoxMcpTool = CompanyBoxRisk & {
   name: string;
+  /** Full snapshot input schema (served by describe when the live one is too large to keep). */
+  inputSchema: Record<string, unknown> | null;
+  inputSchemaBytes: number;
   /** Action key for a sample workspace (keys are workspace-scoped at install). */
   sampleKey: string;
   title: string;
@@ -384,7 +392,7 @@ function compileOpenApi(
     pluginId,
     exposedIndexes.map((index) => document.operations[index]!),
   );
-  const patterns = { outward: entry.outward, destructive: entry.destructive };
+  const patterns = { outward: entry.outward, destructive: entry.destructive, reads: entry.reads };
   const coverage: CompanyBoxCoverageItem[] = new Array(document.operations.length);
   const operations: CompanyBoxOperation[] = [];
   for (const [index, reason] of excludedAt) {
@@ -414,6 +422,7 @@ function compileOpenApi(
         summary: bounded(operation.summary ?? operation.description ?? "", OPENAPI_SUMMARY_MAX),
         description: operation.description ?? operation.summary ?? "",
         tags: operation.tags,
+        group: operationGroup(operation),
         deprecated: operation.deprecated,
         argumentGroups: operationArgumentGroups(operation),
         operation,
@@ -449,7 +458,7 @@ function compileOpenApi(
       errors.push(`${operation.ref}: ${error instanceof Error ? error.message : String(error)}`);
     }
   });
-  for (const [kind, list] of [["outward", entry.outward], ["destructive", entry.destructive]] as const) {
+  for (const [kind, list] of [["outward", entry.outward], ["destructive", entry.destructive], ["reads", entry.reads]] as const) {
     for (const pattern of list) {
       if (!document.operations.some((operation) => operationPatternMatches(pattern, operation))) {
         warnings.push(`${kind} pattern "${pattern}" matches no operation.`);
@@ -511,13 +520,18 @@ const ToolsSnapshotSchema = z
 
 /** Tool name → risk for an `mcp` entry (annotations, then entry patterns). */
 export function companyBoxMcpToolRisk(
-  entry: Pick<CompanyBoxEntry, "outward" | "destructive">,
+  entry: Pick<CompanyBoxEntry, "outward" | "destructive" | "reads">,
   tool: Pick<McpRemoteTool, "name" | "annotations">,
   actionSegment: string,
 ): CompanyBoxRisk {
   const asOperation = { operationId: tool.name, method: "post" as const, path: "" };
   const destructivePattern = entry.destructive.some((pattern) => operationPatternMatches(pattern, asOperation));
-  const capability = destructivePattern ? "connector.admin" : capabilityForTool(tool, actionSegment);
+  const readPattern = (entry.reads ?? []).some((pattern) => operationPatternMatches(pattern, asOperation));
+  const capability = destructivePattern
+    ? "connector.admin"
+    : readPattern
+      ? "connector.observe"
+      : capabilityForTool(tool, actionSegment);
   return {
     capability,
     write: capability !== "connector.observe",
@@ -567,15 +581,21 @@ function compileMcp(entry: CompanyBoxEntry, dir: string, directMax: number): Com
       outward: risk.outward,
       destructive: risk.destructive,
     };
+    const schema =
+      tool.inputSchema && typeof tool.inputSchema === "object" && !Array.isArray(tool.inputSchema)
+        ? (tool.inputSchema as Record<string, unknown>)
+        : null;
     return {
       name: tool.name,
+      inputSchema: schema,
+      inputSchemaBytes: schema ? Buffer.byteLength(JSON.stringify(schema)) : 0,
       sampleKey: key,
       title: bounded(tool.title ?? tool.name, OPENAPI_TITLE_MAX),
       description: bounded(tool.description ?? "", OPENAPI_DESCRIPTION_MAX),
       ...risk,
     };
   });
-  for (const [kind, list] of [["outward", entry.outward], ["destructive", entry.destructive]] as const) {
+  for (const [kind, list] of [["outward", entry.outward], ["destructive", entry.destructive], ["reads", entry.reads]] as const) {
     for (const pattern of list) {
       if (!snapshot.tools.some((tool) => operationPatternMatches(pattern, { operationId: tool.name, method: "post", path: "" }))) {
         warnings.push(`${kind} pattern "${pattern}" matches no tool.`);
@@ -695,6 +715,7 @@ export type CompanyBoxOperationSummary = {
   title: string;
   summary: string;
   tags: string[];
+  group: string;
   capability: ConnectorCapability;
   outward: boolean;
   destructive: boolean;
@@ -736,6 +757,7 @@ export function companyBoxListing(compiled: CompiledOpenApiEntry, createdAt?: st
       title: operation.title,
       summary: operation.summary,
       tags: operation.tags,
+      group: operation.group,
       capability: operation.capability,
       outward: operation.outward,
       destructive: operation.destructive,
@@ -853,6 +875,7 @@ export type AgentOperation = {
   title: string;
   summary: string;
   tags: string[];
+  group: string;
   capability: ConnectorCapability;
   outward: boolean;
   destructive: boolean;
@@ -868,10 +891,10 @@ export function searchAgentOperations(
     .filter(Boolean);
   const tag = input.tag?.trim().toLowerCase();
   const filtered = operations.filter((operation) => {
-    if (tag && !operation.tags.some((value) => value.toLowerCase() === tag)) return false;
+    if (tag && operation.group !== tag && !operation.tags.some((value) => value.toLowerCase() === tag)) return false;
     if (input.capability && operation.capability !== input.capability) return false;
     if (!terms.length) return true;
-    const haystack = `${operation.key} ${operation.title} ${operation.summary} ${operation.tags.join(" ")}`.toLowerCase();
+    const haystack = `${operation.key} ${operation.title} ${operation.summary} ${operation.group} ${operation.tags.join(" ")}`.toLowerCase();
     return terms.every((term) => haystack.includes(term));
   });
   const offset = input.cursor && /^\d{1,7}$/u.test(input.cursor) ? Number(input.cursor) : 0;

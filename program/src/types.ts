@@ -551,3 +551,37 @@ export type ProviderExecutionResult = {
   summary: string;
   details: Record<string, unknown>;
 };
+
+export type CompanyBoxApprovalState =
+  | "pending"
+  | "executing"
+  | "succeeded"
+  | "failed"
+  | "denied"
+  | "expired";
+
+/** An agent's outward call held for the workspace owner (owner approval mode). */
+export type CompanyBoxApproval = {
+  id: string;
+  workspaceSlug: string;
+  pluginId: string;
+  actionKey: string;
+  capability: ConnectorCapability;
+  agentId: string;
+  /** How the agent's authority was proven: a stored grant or a Portal consent. */
+  sourceKind: "agent-grant" | "runtime-lease";
+  sourceRef: string;
+  idempotencyKey: string | null;
+  fingerprint: string;
+  arguments: Record<string, unknown>;
+  argumentsPreview: string;
+  state: CompanyBoxApprovalState;
+  /** Bounded (64 KB) stored result; larger results keep bytes + sha256 only. */
+  result: unknown;
+  error: string | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  expiresAt: string;
+  createdAt: string;
+  updatedAt: string;
+};

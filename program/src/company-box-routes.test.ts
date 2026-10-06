@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -7,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildMarketplaceApp } from "./app.js";
 import { MARKETPLACE_OPERATOR_SESSION_COOKIE, MarketplaceOperatorSessionManager } from "./operator-auth.js";
 import { SqliteMarketplaceStore } from "./store.js";
-import { startFakeMcpServer } from "./testing/fake-mcp-server.js";
+import { FAKE_MCP_TOOLS, startFakeMcpServer, type FakeMcpTool } from "./testing/fake-mcp-server.js";
 import { startFakeRestServer, type FakeRestRequest } from "./testing/fake-rest-server.js";
 import type { RulesClient } from "./types.js";
 
@@ -54,13 +55,13 @@ function authorized(request: FakeRestRequest) {
   );
 }
 
-async function fixture(options: { catalogDir?: string; rulesClient?: RulesClient; storeRoot?: string } = {}) {
+async function fixture(options: { catalogDir?: string; rulesClient?: RulesClient; storeRoot?: string; mcpTools?: FakeMcpTool[] } = {}) {
   const root = options.storeRoot ?? tempDir("company-box-app-");
   const store = new SqliteMarketplaceStore(path.join(root, "marketplace.sqlite"), {
     handoffEncryptionKey: "a".repeat(64),
   });
   const rest = await startFakeRestServer({ authorize: authorized });
-  const mcp = await startFakeMcpServer({ requiredHeader: { name: "x-api-key", value: SECRET } });
+  const mcp = await startFakeMcpServer({ requiredHeader: { name: "x-api-key", value: SECRET }, ...(options.mcpTools ? { tools: options.mcpTools } : {}) });
   const sessions = new MarketplaceOperatorSessionManager({ accessToken: "marketplace-operator-token-1234" });
   const rulesCalls: Array<Parameters<RulesClient>[0]> = [];
   const portalGrants = new Map<string, Record<string, unknown>>();
@@ -120,9 +121,10 @@ async function fixture(options: { catalogDir?: string; rulesClient?: RulesClient
       capabilities: [input.requiredCapability],
       expiresAt: Date.now() + 300_000,
     }),
-    agentScopeVerifier: async ({ requiredCapability }) => ({
+    agentScopeVerifier: async ({ requiredCapability, agentToken }) => ({
       organizationId: "ws-a",
-      agentId: "agent-1",
+      // The fake Portal identifies the agent by its token.
+      agentId: agentToken,
       attachmentId: "attachment-1",
       capabilities: [requiredCapability],
       expiresAt: Math.floor(Date.now() / 1000) + 300,
@@ -378,8 +380,8 @@ describe("Company Box governance", () => {
     const share = await f.grant(plugin, `${plugin}.share-note`);
     const before = f.rest.requests.length;
     const shared = await f.tool(`marketplace.${plugin}.share-note`, plugin, { path: { id: "n1" }, body: { email: "a@b.test" } }, share);
-    expect(shared.statusCode).toBe(403);
-    expect(shared.json()).toMatchObject({ error: "owner_approval_required_for_outward", governance: "owner" });
+    expect(shared.statusCode).toBe(202);
+    expect(shared.json()).toMatchObject({ ok: false, status: "approval_pending", approvalId: expect.any(String) });
     expect(f.rest.requests.length).toBe(before);
 
     // The owner running it directly is the approval.
@@ -440,9 +442,17 @@ describe("Company Box Portal runtime path", () => {
 
     const share = await f.consent(plugin, `${plugin}.share-note`, "connector.dispatch");
     const held = await share({ path: { id: "n1" }, body: { email: "a@b.test" } }, "runtime-op-3");
-    expect(held.statusCode).toBe(403);
-    expect(held.json()).toMatchObject({ ok: false, error: "owner_approval_required_for_outward" });
+    expect(held.statusCode).toBe(202);
+    expect(held.json()).toMatchObject({ ok: false, schema: 1, status: "approval_pending" });
     expect(f.rest.requests.length).toBe(before + 1);
+    // The owner approves; the agent gets the result by repeating the same key.
+    const approved = await f.inject("POST", `/api/marketplace/company-box/approvals/${held.json().approvalId}/approve`, f.operator);
+    expect(approved.statusCode, approved.body).toBe(200);
+    expect(f.rest.requests.at(-1)).toMatchObject({ path: "/api/v1/notes/n1/share" });
+    const repeated = await share({ path: { id: "n1" }, body: { email: "a@b.test" } }, "runtime-op-3");
+    expect(repeated.statusCode).toBe(200);
+    expect(repeated.json()).toMatchObject({ ok: true, status: "succeeded", result: { details: { response: { status: 201 } } } });
+    expect(f.rest.requests.length).toBe(before + 2);
     expect(await f.everything()).not.toContain(SECRET);
   });
 });
@@ -477,11 +487,13 @@ describe("Company Box agent exposure", () => {
           `marketplace.${plugin}.operations.search`,
           `marketplace.${plugin}.operations.describe`,
           `marketplace.${plugin}.operations.call`,
+          `marketplace.${plugin}.approvals.status`,
         ]);
         expect(tools[0]).toMatchObject({ exposure: "discovery", operationCount: 152 });
       } else {
-        expect(tools).toHaveLength(152);
-        expect(tools.every((entry) => entry.inputSchema && !entry.toolName.includes(".operations."))).toBe(true);
+        expect(tools).toHaveLength(153);
+        expect(tools.at(-1)?.toolName).toBe(`marketplace.${plugin}.approvals.status`);
+        expect(tools.slice(0, 152).every((entry) => entry.inputSchema && !entry.toolName.includes(".operations."))).toBe(true);
       }
 
       // Enumerate every operation through paginated search.
@@ -561,8 +573,12 @@ describe("Company Box MCP entries and lifecycle", () => {
     expect((await f.tool(`marketplace.${pluginId}.echo`, pluginId, { message: "hi" }, echo)).statusCode).toBe(200);
     const issue = await f.grant(pluginId, `${pluginId}.create-issue`);
     const outward = await f.tool(`marketplace.${pluginId}.create-issue`, pluginId, { title: "Bug" }, issue);
-    expect(outward.statusCode).toBe(403);
-    expect(outward.json()).toMatchObject({ error: "owner_approval_required_for_outward" });
+    expect(outward.statusCode).toBe(202);
+    const toolCalls = () => f.mcp.requests.filter((request) => request.rpcMethod === "tools/call").length;
+    const callsBefore = toolCalls();
+    const approved = await f.inject("POST", `/api/marketplace/company-box/approvals/${outward.json().approvalId}/approve`, f.operator);
+    expect(approved.json()).toMatchObject({ ok: true, approval: { state: "succeeded", operation: { title: "create_issue" } } });
+    expect(toolCalls()).toBe(callsBefore + 1);
     const search = await f.tool(`marketplace.${pluginId}.operations.search`, pluginId, {});
     expect(search.json()).toMatchObject({ total: 3, operations: expect.arrayContaining([expect.objectContaining({ key: `${pluginId}.create-issue`, outward: true })]) });
     expect(await f.everything()).not.toContain(SECRET);
@@ -599,5 +615,208 @@ describe("Company Box MCP entries and lifecycle", () => {
     const catalogResponse = await second.inject("GET", "/api/marketplace/v1/agent/action-catalog?workspaceSlug=ws-a", SERVICE);
     expect(catalogResponse.json().actions.filter((entry: { pluginId: string }) => entry.pluginId === "company-box-notes")).toEqual([]);
     expect((await second.inject("GET", "/api/marketplace/company-box", second.operator)).json().entries).toEqual([]);
+  });
+});
+
+describe("Company Box approvals (owner mode)", () => {
+  const plugin = "company-box-notes";
+  const shareArgs = { path: { id: "n1" }, body: { email: "someone@example.test", message: "private-arg-marker" } };
+
+  async function held(f: Awaited<ReturnType<typeof fixture>>, idempotencyKey = "share-key-0001") {
+    expect((await f.setup("notes", { baseUrl: f.rest.origin, credentials: { token: SECRET } })).statusCode).toBe(200);
+    const grantId = await f.grant(plugin, `${plugin}.share-note`);
+    const call = () =>
+      f.inject("POST", `/api/agent/tools/marketplace.${plugin}.share-note`, AGENT, {
+        workspaceSlug: "ws-a",
+        pluginId: plugin,
+        input: shareArgs,
+        grantId,
+        idempotencyKey,
+      });
+    const first = await call();
+    expect(first.statusCode, first.body).toBe(202);
+    return { approvalId: first.json().approvalId as string, call, grantId };
+  }
+
+  const status = (f: Awaited<ReturnType<typeof fixture>>, approvalId: string, agent = "agent-1") =>
+    f.inject("POST", `/api/agent/tools/marketplace.${plugin}.approvals.status`, { ...AGENT, "x-tealbrick-agent-token": agent }, {
+      workspaceSlug: "ws-a",
+      pluginId: plugin,
+      input: { approvalId },
+    });
+
+  it("lists the held call for the owner and executes it exactly once on approval", async () => {
+    const f = await fixture();
+    const { approvalId, call, grantId } = await held(f);
+    expect((await call()).json()).toMatchObject({ status: "approval_pending", approvalId });
+    const list = await f.inject("GET", "/api/marketplace/company-box/approvals?state=pending", f.operator);
+    expect(list.json()).toMatchObject({
+      pendingCount: 1,
+      approvals: [{ id: approvalId, app: "Notes", agentId: "agent-1", state: "pending", operation: { title: "Email a note to someone", method: "POST", path: "/notes/{id}/share" } }],
+    });
+    expect(list.json().approvals[0].argumentsPreview).toContain("someone@example.test");
+
+    const before = f.rest.requests.length;
+    const [one, two] = await Promise.all([
+      f.inject("POST", `/api/marketplace/company-box/approvals/${approvalId}/approve`, f.operator),
+      f.inject("POST", `/api/marketplace/company-box/approvals/${approvalId}/approve`, f.operator),
+    ]);
+    expect([one.statusCode, two.statusCode].sort()).toEqual([200, 409]);
+    expect(f.rest.requests.length - before).toBe(1);
+    expect(f.rest.requests.at(-1)).toMatchObject({ method: "POST", path: "/api/v1/notes/n1/share" });
+    const again = await f.inject("POST", `/api/marketplace/company-box/approvals/${approvalId}/approve`, f.operator);
+    expect(again.json()).toMatchObject({ error: "approval_not_pending", approval: { state: "succeeded" } });
+
+    const polled = await status(f, approvalId);
+    expect(polled.json()).toMatchObject({ ok: true, status: "succeeded", result: { details: { response: { status: 201 } } } });
+    const repeated = await call();
+    expect(repeated.statusCode).toBe(200);
+    expect(repeated.json()).toMatchObject({ ok: true, status: "succeeded", approvalId });
+    expect(f.rest.requests.length - before).toBe(1);
+
+    const changedArgs = await f.inject("POST", `/api/agent/tools/marketplace.${plugin}.share-note`, AGENT, {
+      workspaceSlug: "ws-a",
+      pluginId: plugin,
+      input: { ...shareArgs, body: { email: "other@example.test" } },
+      grantId,
+      idempotencyKey: "share-key-0001",
+    });
+    expect(changedArgs.statusCode).toBe(409);
+    expect(changedArgs.json()).toMatchObject({ error: "approval_idempotency_conflict" });
+
+    // Arguments are stored for the owner, never in audit, events or logs.
+    const audit = (await f.inject("GET", "/api/marketplace/audit?workspaceSlug=ws-a&limit=500", f.operator)).body;
+    expect(audit).toContain("marketplace.company_box.approval.requested");
+    expect(audit).toContain("marketplace.company_box.approval.approved");
+    expect(audit).not.toContain("private-arg-marker");
+    expect((await f.inject("GET", "/events?workspaceSlug=ws-a", SERVICE)).body).not.toContain("private-arg-marker");
+    expect(JSON.stringify(f.errors.mock.calls)).not.toContain("private-arg-marker");
+  });
+
+  it("records a denial and never runs a denied call", async () => {
+    const f = await fixture();
+    const { approvalId, call } = await held(f);
+    const before = f.rest.requests.length;
+    const denied = await f.inject("POST", `/api/marketplace/company-box/approvals/${approvalId}/deny`, f.operator);
+    expect(denied.json()).toMatchObject({ ok: true, approval: { state: "denied", decidedBy: "operator-ws-a" } });
+    expect((await f.inject("POST", `/api/marketplace/company-box/approvals/${approvalId}/approve`, f.operator)).statusCode).toBe(409);
+    const repeated = await call();
+    expect(repeated.statusCode).toBe(403);
+    expect(repeated.json()).toMatchObject({ status: "denied", error: "approval_denied" });
+    expect((await status(f, approvalId)).json()).toMatchObject({ status: "denied" });
+    expect(f.rest.requests.length).toBe(before);
+    expect((await f.inject("GET", "/api/marketplace/audit?workspaceSlug=ws-a&limit=500", f.operator)).body).toContain("marketplace.company_box.approval.denied");
+  });
+
+  it("expires held calls after 7 days", async () => {
+    const f = await fixture();
+    const { approvalId } = await held(f);
+    const approval = f.store.getCompanyBoxApproval(approvalId)!;
+    expect(Date.parse(approval.expiresAt) - Date.parse(approval.createdAt)).toBe(7 * 24 * 60 * 60 * 1000);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(Date.parse(approval.expiresAt) + 60_000);
+      const late = await f.inject("POST", `/api/marketplace/company-box/approvals/${approvalId}/approve`, f.operator);
+      expect(late.statusCode).toBe(409);
+      expect(late.json()).toMatchObject({ error: "approval_expired", approval: { state: "expired" } });
+      expect((await status(f, approvalId)).json()).toMatchObject({ ok: true, status: "expired" });
+      expect(f.store.getCompanyBoxApproval(approvalId)?.state).toBe("expired");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("only the requesting agent can read an approval, and only the owner can decide it", async () => {
+    const f = await fixture();
+    const { approvalId } = await held(f);
+    expect((await status(f, approvalId)).json()).toMatchObject({ ok: true, status: "approval_pending" });
+    const otherAgent = await status(f, approvalId, "agent-2");
+    expect(otherAgent.statusCode).toBe(404);
+    expect(otherAgent.json()).toEqual({ ok: false, error: "approval_not_found" });
+    const unattested = await f.inject("POST", `/api/agent/tools/marketplace.${plugin}.approvals.status`, SERVICE, {
+      workspaceSlug: "ws-a",
+      pluginId: plugin,
+      input: { approvalId },
+    });
+    expect(unattested.statusCode).toBe(401);
+
+    // Service bearer (agents' infrastructure) cannot approve or list.
+    expect((await f.inject("POST", `/api/marketplace/company-box/approvals/${approvalId}/approve`, AGENT)).statusCode).toBe(403);
+    expect((await f.inject("GET", "/api/marketplace/company-box/approvals", SERVICE)).statusCode).toBe(403);
+    expect(f.store.getCompanyBoxApproval(approvalId)?.state).toBe("pending");
+  });
+
+  it("validates and bounds held arguments before storing them", async () => {
+    const f = await fixture();
+    expect((await f.setup("notes", { baseUrl: f.rest.origin, credentials: { token: SECRET } })).statusCode).toBe(200);
+    const grantId = await f.grant(plugin, `${plugin}.share-note`);
+    const send = (input: Record<string, unknown>) =>
+      f.inject("POST", `/api/agent/tools/marketplace.${plugin}.share-note`, AGENT, { workspaceSlug: "ws-a", pluginId: plugin, input, grantId });
+    const invalid = await send({ path: { id: ".." }, body: { email: "a@b.test" } });
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json()).toMatchObject({ error: "openapi_argument_invalid", field: "path.id" });
+    const large = await send({ path: { id: "n1" }, body: { email: "a@b.test", message: "x".repeat(40_000) } });
+    expect(large.statusCode).toBe(413);
+    expect(large.json()).toMatchObject({ error: "approval_arguments_too_large" });
+    expect(f.store.listCompanyBoxApprovals({ workspaceSlug: "ws-a" })).toEqual([]);
+  });
+});
+
+describe("Company Box catalog groups, reads, schemas and usage evidence", () => {
+  it("publishes a stable group per action and classifies reads patterns as reads", async () => {
+    const root = catalog({ notes: (entry) => (entry.reads = ["createFolder"]) });
+    const f = await fixture({ catalogDir: root });
+    await f.setup("notes", { baseUrl: f.rest.origin, credentials: { token: SECRET } });
+    await f.setup("tracker", { baseUrl: f.mcp.origin, credentials: { token: SECRET } });
+    const actions = (await f.inject("GET", "/api/marketplace/v1/agent/action-catalog?workspaceSlug=ws-a", SERVICE)).json()
+      .actions as Array<{ actionKey: string; group?: string; capability: string; pluginId: string }>;
+    const byKey = new Map(actions.map((action) => [action.actionKey, action]));
+    expect(byKey.get("company-box-notes.list-notes")?.group).toBe("notes");
+    expect(byKey.get("company-box-notes.get-health")?.group).toBe("system");
+    expect(byKey.get("company-box-notes.list-folders")?.group).toBe("folders");
+    // POST createFolder is read-class through `reads`.
+    expect(byKey.get("company-box-notes.create-folder")).toMatchObject({ capability: "connector.observe" });
+    expect(actions.filter((action) => action.pluginId.startsWith("mcp-cb-tracker-")).every((action) => action.group === "tracker")).toBe(true);
+    const readOnly = await f.grant("company-box-notes", "company-box-notes.create-folder");
+    const created = await f.tool("marketplace.company-box-notes.create-folder", "company-box-notes", { body: { name: "Inbox" } }, readOnly);
+    expect(created.statusCode, created.body).toBe(200);
+
+    // Usage evidence keeps the output's size and sha256.
+    const usage = (await f.inject("GET", "/api/marketplace/audit?workspaceSlug=ws-a&limit=500", f.operator)).json().usage as Array<{ sourceActionKey: string; metadata: { output?: { bytes: number; sha256: string } } }>;
+    expect(usage.find((entry) => entry.sourceActionKey === "company-box-notes.create-folder")?.metadata.output).toEqual({
+      bytes: expect.any(Number),
+      sha256: expect.stringMatching(/^[0-9a-f]{64}$/u),
+    });
+  });
+
+  it("describe serves the pinned snapshot schema for MCP tools over 16 KB", async () => {
+    const big = {
+      name: "bulk_import",
+      description: "Import many records.",
+      inputSchema: {
+        type: "object",
+        properties: Object.fromEntries(Array.from({ length: 500 }, (_, index) => [`field_${index}`, { type: "string", description: "y".repeat(40) }])),
+      },
+    };
+    const tools = [...FAKE_MCP_TOOLS, big];
+    const root = catalog();
+    const snapshot = { server: { name: "fake-mcp", version: "1.0.0" }, tools };
+    const text = JSON.stringify(snapshot);
+    writeFileSync(path.join(root, "tracker", "tools.json"), text);
+    const entryPath = path.join(root, "tracker", "entry.json");
+    const entry = JSON.parse(readFileSync(entryPath, "utf8"));
+    entry.mcp.sha256 = createHash("sha256").update(text).digest("hex");
+    writeFileSync(entryPath, JSON.stringify(entry));
+    const f = await fixture({ catalogDir: root, mcpTools: tools });
+    const setup = await f.setup("tracker", { baseUrl: f.mcp.origin, credentials: { token: SECRET } });
+    expect(setup.statusCode, setup.body).toBe(200);
+    const pluginId = setup.json().entry.pluginId as string;
+    expect(f.store.getListing(pluginId)?.manifest).toBeDefined();
+    const described = await f.tool(`marketplace.${pluginId}.operations.describe`, pluginId, { operation: `${pluginId}.bulk-import` });
+    expect(described.statusCode, described.body).toBe(200);
+    expect(described.json().operation).toMatchObject({ schemaSource: "snapshot" });
+    expect(Object.keys(described.json().operation.inputSchema.properties)).toHaveLength(500);
+    const small = await f.tool(`marketplace.${pluginId}.operations.describe`, pluginId, { operation: `${pluginId}.echo` });
+    expect(small.json().operation).toMatchObject({ schemaSource: "server", inputSchema: { properties: { message: { type: "string" } } } });
   });
 });

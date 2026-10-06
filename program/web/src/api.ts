@@ -1,4 +1,4 @@
-import type { CompanyBoxResponse, CompanyBoxResult, CompanyBoxSetup, AuditResponse, CardDetailResponse, CardsResponse, CardsSummaryResponse, CustomConnector, CustomConnectorCreate, CustomConnectorPatch, CustomConnectorsResponse, FrontendBootstrap, OperatorSession, ProviderSettings, RuntimeHealth } from "./types";
+import type { CompanyBoxApproval, CompanyBoxApprovalsResponse, CompanyBoxResponse, CompanyBoxResult, CompanyBoxSetup, AuditResponse, CardDetailResponse, CardsResponse, CardsSummaryResponse, CustomConnector, CustomConnectorCreate, CustomConnectorPatch, CustomConnectorsResponse, FrontendBootstrap, OperatorSession, ProviderSettings, RuntimeHealth } from "./types";
 
 let operatorCsrfToken: string | null = null;
 
@@ -191,3 +191,9 @@ async function companyBoxResult(run: () => Promise<CompanyBoxResult>): Promise<C
     throw error;
   }
 }
+
+export const getCompanyBoxApprovals = (state?: CompanyBoxApproval["state"]) =>
+  api<CompanyBoxApprovalsResponse>(`${companyBoxRoute()}/approvals${state ? `?state=${state}` : ""}`);
+
+export const decideCompanyBoxApproval = (approvalId: string, decision: "approve" | "deny") =>
+  api<{ ok: boolean; approval: CompanyBoxApproval }>(`${companyBoxRoute()}/approvals/${encodeURIComponent(approvalId)}/${decision}`, { method: "POST" });

@@ -70,6 +70,8 @@ export type AgentActionCatalogEntry = {
   accounts: AgentActionCatalogAccount[];
   allowedArguments: string[] | null;
   toolName: string;
+  /** Company Box only: stable grouping key (first tag / path segment / entry id). */
+  group?: string;
 };
 
 export type AgentActionCatalogStore = Pick<
@@ -321,6 +323,7 @@ function entriesForListing(input: {
           // Arguments are grouped by location; parameter names live inside.
           allowedArguments: [...operation.args],
           toolName: operation.ref,
+          group: operation.group ?? "general",
         },
       ];
     }
@@ -345,6 +348,9 @@ function entriesForListing(input: {
               ? allowedArgumentNames(Object.keys(properties))
               : null,
           toolName: mcpTool.name,
+          ...(customMcpManifest(listing).companyBox
+            ? { group: customMcpManifest(listing).companyBox!.entryId }
+            : {}),
         },
       ];
     }

@@ -437,3 +437,29 @@ export interface CompanyBoxResult {
   error?: string;
   entry: CompanyBoxEntry;
 }
+
+/** An agent's outward call held for the owner. Full arguments stay on the server. */
+export interface CompanyBoxApproval {
+  id: string;
+  pluginId: string;
+  app: string;
+  actionKey: string;
+  operation: { title: string; method: string | null; path: string | null };
+  capability: ConnectorCapabilityName;
+  agentId: string;
+  argumentsPreview: string;
+  state: "pending" | "executing" | "succeeded" | "failed" | "denied" | "expired";
+  createdAt: string;
+  expiresAt: string;
+  decidedAt: string | null;
+  decidedBy: string | null;
+  error: string | null;
+  result?: unknown;
+}
+
+export interface CompanyBoxApprovalsResponse {
+  ok: true;
+  workspaceSlug: string;
+  pendingCount: number;
+  approvals: CompanyBoxApproval[];
+}

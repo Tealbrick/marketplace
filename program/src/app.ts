@@ -76,6 +76,8 @@ import {
   validateOpenApiArguments,
 } from "./openapi-http.js";
 import { registerCompanyBoxRoutes } from "./company-box-routes.js";
+import { OPENAPI_TOOL_SCHEMA_MAX_BYTES } from "./openapi-adapter.js";
+import { outputDigest } from "./usage-ledger.js";
 import {
   checkMcpUrlSyntax,
   McpUrlPolicyError,
@@ -162,6 +164,7 @@ import {
 } from "./rules-readiness.js";
 import type {
   AgentConnectorGrant,
+  CompanyBoxApproval,
   ConnectorCapability,
   MarketplaceGatewayRegistrySnapshot,
   MarketplaceListing,
@@ -411,7 +414,11 @@ const ExecuteInputSchema = z.object({
   sessionId: z.string().trim().min(1).optional().nullable(),
   agentGrantId: z.string().trim().min(1).optional(),
   resourceRef: z.string().trim().min(1).optional(),
+  /** Company Box: deduplicates held outward calls per agent. */
+  idempotencyKey: z.string().regex(/^[A-Za-z0-9_-]{8,100}$/u).optional(),
 });
+
+const IdempotencyKeySchema = z.string().regex(/^[A-Za-z0-9_-]{8,100}$/u);
 
 const AgentGrantInputSchema = z.object({
   workspaceSlug: z.string().trim().min(1),
@@ -2058,6 +2065,7 @@ function companyBoxAgentOperation(
       title: operation.title,
       summary: operation.summary,
       tags: operation.tags,
+      group: operation.group,
       capability: operation.capability,
       outward: operation.outward,
       destructive: operation.destructive,
@@ -2071,6 +2079,7 @@ function companyBoxAgentOperation(
     title: published.label,
     summary: published.description.slice(0, 300),
     tags: [],
+    group: published.group ?? entry.entry.id,
     capability: published.capability,
     outward: risk?.outward ?? false,
     destructive: risk?.destructive ?? false,
@@ -2093,6 +2102,7 @@ function describeCompanyBoxOperation(
       title: operation.title,
       description: operation.description,
       tags: operation.tags,
+      group: operation.group,
       deprecated: operation.deprecated,
       capability: operation.capability,
       risk: { write: operation.write, outward: operation.outward, destructive: operation.destructive },
@@ -2103,27 +2113,93 @@ function describeCompanyBoxOperation(
   }
   const tool = customMcpToolForAction(listing, key)!;
   const risk = mcpToolRisk(entry, listing, key);
+  // The live schema is kept up to 16 KB; beyond that, serve the pinned
+  // snapshot's full schema instead of a bare object.
+  const snapshot = entry.tools.find((candidate) => candidate.name === tool.name);
+  const fromSnapshot = Boolean(snapshot?.inputSchema && snapshot.inputSchemaBytes > OPENAPI_TOOL_SCHEMA_MAX_BYTES);
   return {
     key,
     ref: tool.name,
     title: tool.title ?? tool.name,
     description: tool.description ?? "",
+    group: entry.entry.id,
     capability: tool.capability,
     risk: risk ? { write: risk.write, outward: risk.outward, destructive: risk.destructive } : null,
-    inputSchema: tool.inputSchema,
+    inputSchema: fromSnapshot ? snapshot!.inputSchema : tool.inputSchema,
+    schemaSource: fromSnapshot ? "snapshot" : "server",
   };
 }
 
-const COMPANY_BOX_META_TOOLS = ["search", "describe", "call"] as const;
+/** Held outward calls expire after 7 days; their arguments are bounded. */
+const COMPANY_BOX_APPROVAL_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const COMPANY_BOX_APPROVAL_MAX_ARGUMENT_BYTES = 32 * 1024;
+const COMPANY_BOX_APPROVAL_PREVIEW_CHARS = 400;
+
+function approvalFingerprint(actionKey: string, args: Record<string, unknown>) {
+  return createHash("sha256").update(stableJson({ actionKey, args })).digest("hex");
+}
+
+function approvalPreview(args: Record<string, unknown>) {
+  const json = JSON.stringify(args);
+  return json.length > COMPANY_BOX_APPROVAL_PREVIEW_CHARS
+    ? `${json.slice(0, COMPANY_BOX_APPROVAL_PREVIEW_CHARS - 1)}…`
+    : json;
+}
+
+const APPROVAL_STATUS: Record<CompanyBoxApproval["state"], string> = {
+  pending: "approval_pending",
+  executing: "executing",
+  succeeded: "succeeded",
+  failed: "failed",
+  denied: "denied",
+  expired: "expired",
+};
+
+/** What the requesting agent sees: never the arguments. */
+function agentApprovalView(approval: CompanyBoxApproval) {
+  return {
+    approvalId: approval.id,
+    status: APPROVAL_STATUS[approval.state],
+    actionKey: approval.actionKey,
+    expiresAt: approval.expiresAt,
+    ...(approval.state === "succeeded" ? { result: approval.result } : {}),
+    ...(approval.error ? { error: approval.error } : {}),
+  };
+}
+
+/** HTTP reply for a held call (first request, or a repeat with the same idempotency key). */
+function approvalReply(approval: CompanyBoxApproval): { status: number; body: Record<string, unknown> } {
+  const view = agentApprovalView(approval);
+  switch (approval.state) {
+    case "succeeded":
+      return { status: 200, body: { ok: true, ...view } };
+    case "failed":
+      return { status: 502, body: { ok: false, ...view, error: approval.error ?? "approval_execution_failed" } };
+    case "denied":
+      return { status: 403, body: { ok: false, ...view, error: "approval_denied" } };
+    case "expired":
+      return { status: 410, body: { ok: false, ...view, error: "approval_expired" } };
+    default:
+      return { status: 202, body: { ok: false, ...view } };
+  }
+}
+
+const COMPANY_BOX_META_TOOLS = ["search", "describe", "call", "status"] as const;
 type CompanyBoxMetaTool = (typeof COMPANY_BOX_META_TOOLS)[number];
 
+/** `operations.search|describe|call`, and `approvals.status` for held outward calls. */
+function companyBoxMetaSuffix(tool: CompanyBoxMetaTool) {
+  return tool === "status" ? "approvals.status" : `operations.${tool}`;
+}
+
 function companyBoxMetaToolName(provider: string, tool: CompanyBoxMetaTool) {
-  return `marketplace.${provider}.operations.${tool}`;
+  return `marketplace.${provider}.${companyBoxMetaSuffix(tool)}`;
 }
 
 function parseCompanyBoxMetaTool(toolName: string) {
-  const match = /^marketplace\.([a-z0-9][a-z0-9-]{0,127})\.operations\.(search|describe|call)$/u.exec(toolName);
-  return match ? { provider: match[1]!, tool: match[2] as CompanyBoxMetaTool } : null;
+  const match = /^marketplace\.([a-z0-9][a-z0-9-]{0,127})\.(operations\.(search|describe|call)|approvals\.status)$/u.exec(toolName);
+  if (!match) return null;
+  return { provider: match[1]!, tool: (match[3] ?? "status") as CompanyBoxMetaTool };
 }
 
 const COMPANY_BOX_META_SCHEMAS: Record<CompanyBoxMetaTool, Record<string, unknown>> = {
@@ -2151,6 +2227,12 @@ const COMPANY_BOX_META_SCHEMAS: Record<CompanyBoxMetaTool, Record<string, unknow
       operation: { type: "string", description: "Operation key from operations.search." },
       arguments: { type: "object", description: "Arguments matching operations.describe's inputSchema." },
     },
+    additionalProperties: false,
+  },
+  status: {
+    type: "object",
+    required: ["approvalId"],
+    properties: { approvalId: { type: "string", description: "approvalId from an approval_pending reply." } },
     additionalProperties: false,
   },
 };
@@ -2249,7 +2331,7 @@ function agentCapabilitiesForWorkspace(
       pluginId: listing.pluginId,
       workspaceSlug,
       provider: listing.provider,
-      actionType: `${listing.provider}.operations.${tool}`,
+      actionType: `${listing.provider}.${companyBoxMetaSuffix(tool)}`,
       toolName: companyBoxMetaToolName(listing.provider, tool),
       description,
       requiredCapabilities:
@@ -2267,9 +2349,21 @@ function agentCapabilitiesForWorkspace(
       "describe",
       `${listing.displayName}: full input schema and documentation for one operation.`,
     );
+    const hasOutward =
+      companyBox.kind === "openapi"
+        ? companyBox.operations.some((operation) => operation.outward)
+        : companyBox.tools.some((tool) => tool.outward);
+    // Outward calls can be held for the owner; agents poll them here.
+    const statusTools = hasOutward
+      ? [metaTool("status", `${listing.displayName}: status and result of a call waiting for the owner's approval.`)]
+      : [];
     if (companyBox.exposure === "direct") {
       // Direct: one tool per operation, plus describe when a listed schema had to be truncated.
-      return perAction.some((entry) => "schemaTruncated" in entry) ? [...perAction, describeTool] : perAction;
+      return [
+        ...perAction,
+        ...(perAction.some((entry) => "schemaTruncated" in entry) ? [describeTool] : []),
+        ...statusTools,
+      ];
     }
     return [
       metaTool(
@@ -2281,6 +2375,7 @@ function agentCapabilitiesForWorkspace(
         "call",
         `${listing.displayName}: call one operation by key. Grants and approvals apply per operation.`,
       ),
+      ...statusTools,
     ];
   });
 }
@@ -2878,6 +2973,7 @@ export async function buildMarketplaceApp(
     };
     const usage = options.store.recordUsage({
       ...usageBase,
+      metadata: { ...usageBase.metadata, output: outputDigest(result) },
       status: "succeeded",
       error: null,
       output: result,
@@ -3052,7 +3148,14 @@ export async function buildMarketplaceApp(
         response,
       },
     };
-    const usage = options.store.recordUsage({ ...usageBase, status: "succeeded", error: null, output: result });
+    // The ledger keeps output shape plus the full output's size and sha256.
+    const usage = options.store.recordUsage({
+      ...usageBase,
+      metadata: { ...usageBase.metadata, output: outputDigest(result) },
+      status: "succeeded",
+      error: null,
+      output: result,
+    });
     options.store.recordEvent({
       type: "marketplace.execution.completed",
       traceId: input.traceId,
@@ -3063,6 +3166,163 @@ export async function buildMarketplaceApp(
       payload: { capability: input.capability, action: input.action.type, usageId: usage.id },
     });
     return { ok: true, traceId: input.traceId, result, usage, rules: input.rules };
+  };
+  /**
+   * Owner approval mode: hold an agent's outward Company Box call for the
+   * owner instead of refusing it. Arguments are validated, bounded and stored
+   * (never logged or audited); a repeat with the same idempotency key returns
+   * the held call's state or result.
+   */
+  const holdCompanyBoxCall = (input: {
+    listing: MarketplaceListing;
+    workspaceSlug: string;
+    actionKey: string;
+    capability: ConnectorCapability;
+    args: Record<string, unknown>;
+    agentId: string;
+    sourceKind: CompanyBoxApproval["sourceKind"];
+    sourceRef: string;
+    idempotencyKey: string | null;
+    traceId: string;
+  }): { status: number; body: Record<string, unknown> } => {
+    const fingerprint = approvalFingerprint(input.actionKey, input.args);
+    if (input.idempotencyKey) {
+      const existing = options.store.findCompanyBoxApprovalByKey({
+        workspaceSlug: input.workspaceSlug,
+        agentId: input.agentId,
+        idempotencyKey: input.idempotencyKey,
+      });
+      if (existing) {
+        return existing.fingerprint === fingerprint && existing.pluginId === input.listing.pluginId
+          ? approvalReply(existing)
+          : { status: 409, body: { ok: false, error: "approval_idempotency_conflict" } };
+      }
+    }
+    if (Buffer.byteLength(JSON.stringify(input.args)) > COMPANY_BOX_APPROVAL_MAX_ARGUMENT_BYTES) {
+      return { status: 413, body: { ok: false, error: "approval_arguments_too_large" } };
+    }
+    const entry = companyBoxEntryForListing(companyBox, input.listing, input.workspaceSlug);
+    if (entry?.kind === "openapi") {
+      const operation = entry.byKey.get(input.actionKey);
+      try {
+        if (!operation) throw new OpenApiCallError("openapi_argument_invalid", "Unknown operation.");
+        validateOpenApiArguments(operation.operation, input.args, runtimeAuthFor(entry.entry.auth));
+      } catch (error) {
+        if (!(error instanceof OpenApiCallError)) throw error;
+        return {
+          status: 400,
+          body: {
+            ok: false,
+            error: error.code,
+            ...(error.detail.field ? { field: error.detail.field } : {}),
+            ...(error.detail.reason ? { reason: error.detail.reason } : {}),
+          },
+        };
+      }
+    }
+    const approval = options.store.createCompanyBoxApproval({
+      workspaceSlug: input.workspaceSlug,
+      pluginId: input.listing.pluginId,
+      actionKey: input.actionKey,
+      capability: input.capability,
+      agentId: input.agentId,
+      sourceKind: input.sourceKind,
+      sourceRef: input.sourceRef,
+      idempotencyKey: input.idempotencyKey,
+      fingerprint,
+      arguments: input.args,
+      argumentsPreview: approvalPreview(input.args),
+      expiresAt: new Date(Date.now() + COMPANY_BOX_APPROVAL_TTL_MS).toISOString(),
+    });
+    options.store.recordAudit({
+      workspaceSlug: input.workspaceSlug,
+      pluginId: input.listing.pluginId,
+      eventType: "marketplace.company_box.approval.requested",
+      actorId: `agent:${input.agentId}`,
+      metadata: {
+        governance: "owner",
+        approvalId: approval.id,
+        actionKey: input.actionKey,
+        agentId: input.agentId,
+        sourceKind: input.sourceKind,
+        expiresAt: approval.expiresAt,
+      },
+    });
+    options.store.recordEvent({
+      type: "marketplace.execution.held",
+      traceId: input.traceId,
+      workspaceSlug: input.workspaceSlug,
+      pluginId: input.listing.pluginId,
+      actorId: `agent:${input.agentId}`,
+      payload: { approvalId: approval.id, action: input.actionKey, capability: input.capability },
+    });
+    return approvalReply(approval);
+  };
+  /** Run an approved held call once, against live state, and store its outcome. */
+  const runApprovedCompanyBoxCall = async (
+    approval: CompanyBoxApproval,
+    request: FastifyRequest,
+    reply: FastifyReply,
+    operatorId: string,
+  ): Promise<CompanyBoxApproval> => {
+    const traceId = traceIdFrom(request);
+    const fail = (error: string) =>
+      options.store.finishCompanyBoxApproval({ id: approval.id, state: "failed", error });
+    try {
+      const authorityActive =
+        approval.sourceKind === "agent-grant"
+          ? options.store.getAgentConnectorGrant(approval.sourceRef)?.state === "active"
+          : options.store.getMarketplaceAgentConsentById(approval.sourceRef)?.state === "active";
+      if (!authorityActive) return fail("approval_authority_revoked");
+      const listing = options.store.getListingForWorkspace(approval.pluginId, approval.workspaceSlug);
+      const published = listing
+        ? resolvePublishedAgentAction({
+            store: options.store,
+            workspaceSlug: approval.workspaceSlug,
+            pluginId: approval.pluginId,
+            actionKey: approval.actionKey,
+          })
+        : null;
+      if (!listing || !published || published.capability !== approval.capability) {
+        return fail("approval_target_unavailable");
+      }
+      const risk = companyBoxRiskForAction(companyBox, listing, approval.workspaceSlug, approval.actionKey);
+      const rules = await enforceRules({
+        reply,
+        workspaceSlug: approval.workspaceSlug,
+        operation: "execute",
+        capability: approval.capability,
+        pluginId: approval.pluginId,
+        actorId: operatorId,
+        payload: { approvalId: approval.id, agentId: approval.agentId, actionKey: approval.actionKey, traceId },
+        actor: principalActor(request),
+        ...(risk ? { risk } : {}),
+        ...governed,
+      });
+      if ("ok" in rules && rules.ok === false) return fail(String(rules.error));
+      const common = {
+        reply,
+        listing,
+        workspaceSlug: approval.workspaceSlug,
+        capability: approval.capability,
+        action: { ...approval.arguments, type: approval.actionKey },
+        actorId: `agent:${approval.agentId}`,
+        traceId,
+        rules,
+        runId: null,
+        sessionId: null,
+        agentGrantId: approval.sourceKind === "agent-grant" ? approval.sourceRef : null,
+      };
+      const outcome: Record<string, unknown> = listingIsCompanyBoxOpenApi(listing)
+        ? await executeCompanyBoxAction({ ...common, risk })
+        : await executeCustomMcpAction(common);
+      return outcome.ok === true
+        ? options.store.finishCompanyBoxApproval({ id: approval.id, state: "succeeded", result: outcome.result })
+        : fail(typeof outcome.error === "string" ? outcome.error : "approval_execution_failed");
+    } catch (error) {
+      fail("approval_execution_failed");
+      throw error;
+    }
   };
   const composioCatalogSyncByWorkspace = new Map<
     string,
@@ -4280,6 +4540,126 @@ export async function buildMarketplaceApp(
     },
     callOperation: callCompanyBoxOperation,
     refreshMcp: refreshCustomMcpConnector,
+  });
+
+  // Company Box approvals: outward calls held for the workspace owner.
+  const ownerApprovalView = (approval: CompanyBoxApproval) => {
+    const listing = options.store.getListingForWorkspace(approval.pluginId, approval.workspaceSlug);
+    const entry = listing ? companyBoxEntryForListing(companyBox, listing, approval.workspaceSlug) : null;
+    const operation = entry?.kind === "openapi" ? entry.byKey.get(approval.actionKey) : null;
+    const tool = listing && !operation ? customMcpToolForAction(listing, approval.actionKey) : null;
+    return {
+      id: approval.id,
+      pluginId: approval.pluginId,
+      app: listing?.displayName ?? approval.pluginId,
+      actionKey: approval.actionKey,
+      operation: operation
+        ? { title: operation.title, method: operation.method.toUpperCase(), path: operation.path }
+        : { title: tool?.title ?? tool?.name ?? approval.actionKey, method: null, path: null },
+      capability: approval.capability,
+      agentId: approval.agentId,
+      argumentsPreview: approval.argumentsPreview,
+      state: approval.state,
+      createdAt: approval.createdAt,
+      expiresAt: approval.expiresAt,
+      decidedAt: approval.decidedAt,
+      decidedBy: approval.decidedBy,
+      error: approval.error,
+      ...(approval.state === "succeeded" ? { result: approval.result } : {}),
+    };
+  };
+  const ownedApproval = (request: FastifyRequest, reply: FastifyReply) => {
+    const gate = customMcpOperator(request, reply);
+    if ("error" in gate) return { response: gate.error } as const;
+    const { approvalId } = request.params as { approvalId: string };
+    const approval = options.store.getCompanyBoxApproval(approvalId);
+    if (!approval || approval.workspaceSlug !== gate.principal.organizationId) {
+      reply.code(404);
+      return { response: { ok: false, error: "approval_not_found" } } as const;
+    }
+    return { principal: gate.principal, approval } as const;
+  };
+  const notPending = (reply: FastifyReply, approvalId: string) => {
+    const current = options.store.getCompanyBoxApproval(approvalId)!;
+    reply.code(409);
+    return {
+      ok: false,
+      error: current.state === "expired" ? "approval_expired" : "approval_not_pending",
+      approval: ownerApprovalView(current),
+    };
+  };
+
+  app.get("/api/marketplace/company-box/approvals", async (request, reply) => {
+    const gate = customMcpOperator(request, reply);
+    if ("error" in gate) return gate.error;
+    const query = z
+      .object({
+        state: z.enum(["pending", "executing", "succeeded", "failed", "denied", "expired"]).optional(),
+        limit: z.coerce.number().int().min(1).max(500).default(100),
+        workspaceSlug: z.string().optional(),
+        actorId: z.string().optional(),
+      })
+      .parse(request.query);
+    const workspaceSlug = gate.principal.organizationId;
+    return {
+      ok: true,
+      workspaceSlug,
+      pendingCount: options.store.listCompanyBoxApprovals({ workspaceSlug, state: "pending", limit: 500 }).length,
+      approvals: options.store
+        .listCompanyBoxApprovals({ workspaceSlug, state: query.state, limit: query.limit })
+        .map(ownerApprovalView),
+    };
+  });
+
+  app.post("/api/marketplace/company-box/approvals/:approvalId/approve", async (request, reply) => {
+    const owned = ownedApproval(request, reply);
+    if ("response" in owned) return owned.response;
+    const { principal, approval } = owned;
+    // Exactly once: only the request that moves it out of `pending` runs it.
+    const claimed = options.store.decideCompanyBoxApproval({
+      id: approval.id,
+      workspaceSlug: principal.organizationId,
+      decision: "approve",
+      decidedBy: principal.id,
+    });
+    if (!claimed) return notPending(reply, approval.id);
+    const finished = await runApprovedCompanyBoxCall(claimed, request, reply, principal.id);
+    reply.code(200);
+    options.store.recordAudit({
+      workspaceSlug: finished.workspaceSlug,
+      pluginId: finished.pluginId,
+      eventType: "marketplace.company_box.approval.approved",
+      actorId: principal.id,
+      metadata: {
+        approvalId: finished.id,
+        actionKey: finished.actionKey,
+        agentId: finished.agentId,
+        outcome: finished.state,
+        ...(finished.error ? { error: finished.error } : {}),
+      },
+    });
+    return { ok: finished.state === "succeeded", approval: ownerApprovalView(finished) };
+  });
+
+  app.post("/api/marketplace/company-box/approvals/:approvalId/deny", async (request, reply) => {
+    const owned = ownedApproval(request, reply);
+    if ("response" in owned) return owned.response;
+    const { principal, approval } = owned;
+    const denied = options.store.decideCompanyBoxApproval({
+      id: approval.id,
+      workspaceSlug: principal.organizationId,
+      decision: "deny",
+      decidedBy: principal.id,
+    });
+    if (!denied) return notPending(reply, approval.id);
+    options.store.recordAudit({
+      workspaceSlug: denied.workspaceSlug,
+      pluginId: denied.pluginId,
+      eventType: "marketplace.company_box.approval.denied",
+      actorId: principal.id,
+      metadata: { approvalId: denied.id, actionKey: denied.actionKey, agentId: denied.agentId },
+    });
+    return { ok: true, approval: ownerApprovalView(denied) };
   });
 
   const capabilityProjectionHandler = async (request: { headers: Record<string, unknown>; query: unknown }, reply: FastifyReply) => {
@@ -6232,6 +6612,28 @@ export async function buildMarketplaceApp(
         };
       }
       const risk = companyBoxRiskForAction(companyBox, listing, input.workspaceSlug, input.action.type);
+      if (
+        governanceMode === "owner" &&
+        risk?.outward &&
+        scopedGrant &&
+        companyBoxEntryForListing(companyBox, listing, input.workspaceSlug)
+      ) {
+        const { type: _type, ...args } = effectiveAction;
+        const held = holdCompanyBoxCall({
+          listing,
+          workspaceSlug: input.workspaceSlug,
+          actionKey: input.action.type,
+          capability: input.capability,
+          args,
+          agentId: scopedGrant.agentId,
+          sourceKind: "agent-grant",
+          sourceRef: scopedGrant.id,
+          idempotencyKey: input.idempotencyKey ?? null,
+          traceId,
+        });
+        reply.code(held.status);
+        return { ...held.body, traceId };
+      }
       const rules = await enforceRules({
         reply,
         workspaceSlug: input.workspaceSlug,
@@ -6600,6 +7002,27 @@ export async function buildMarketplaceApp(
         });
       }
       const runtimeRisk = companyBoxRiskForAction(companyBox, listing, organizationId, input.selection.actionKey);
+      if (
+        governanceMode === "owner" &&
+        runtimeRisk?.outward &&
+        companyBoxEntryForListing(companyBox, listing, organizationId)
+      ) {
+        const { type: _type, ...args } = scopedAction.action;
+        const held = holdCompanyBoxCall({
+          listing,
+          workspaceSlug: organizationId,
+          actionKey: input.selection.actionKey,
+          capability: consent.capability,
+          args,
+          agentId: consent.agentId,
+          sourceKind: "runtime-lease",
+          sourceRef: consent.id,
+          idempotencyKey: input.idempotencyKey,
+          traceId,
+        });
+        reply.code(held.status);
+        return { ...held.body, schema: 1, traceId };
+      }
       const rules = await enforceRules({
         reply,
         workspaceSlug: organizationId,
@@ -7087,6 +7510,8 @@ export async function buildMarketplaceApp(
         input: z.record(z.unknown()).default({}),
         grantId: z.string().trim().min(1).optional(),
         resourceRef: z.string().trim().min(1).optional(),
+        /** Repeating a held outward call with the same key returns its approval state or result. */
+        idempotencyKey: IdempotencyKeySchema.optional(),
       })
       .parse(request.body);
     // Company Box meta tools: search/describe read the published operation
@@ -7104,6 +7529,26 @@ export async function buildMarketplaceApp(
       if (!metaListing || !entry) {
         reply.code(404);
         return { ok: false, error: "agent_tool_not_found" };
+      }
+      if (meta.tool === "status") {
+        // Only the agent that made the call can read its approval.
+        const target = z.object({ approvalId: z.string().trim().min(1).max(100) }).strict().safeParse(body.input);
+        if (!target.success) {
+          reply.code(400);
+          return { ok: false, error: "validation_failed" };
+        }
+        const approval = options.store.getCompanyBoxApproval(target.data.approvalId);
+        if (!approval || approval.workspaceSlug !== body.workspaceSlug || approval.pluginId !== metaListing.pluginId) {
+          reply.code(404);
+          return { ok: false, error: "approval_not_found" };
+        }
+        const scope = await verifyPortalScope({ request, reply, requiredCapability: approval.capability });
+        if (!scope.ok) return { ok: false, error: scope.error };
+        if (scope.scope.agentId !== approval.agentId || scope.scope.organizationId !== approval.workspaceSlug) {
+          reply.code(404);
+          return { ok: false, error: "approval_not_found" };
+        }
+        return { ok: true, ...agentApprovalView(approval) };
       }
       const published = publishedAgentActionsForListing({
         store: options.store,
@@ -7229,6 +7674,7 @@ export async function buildMarketplaceApp(
         ...(grant
           ? { agentGrantId: grant.id, resourceRef: grant.resourceRef }
           : {}),
+        ...(body.idempotencyKey ? { idempotencyKey: body.idempotencyKey } : {}),
         action: { ...actionInput, type: actionType },
       },
     });

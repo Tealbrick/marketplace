@@ -8,6 +8,7 @@ import {
   deriveOperationActionKeys,
   inlineDefs,
   OPENAPI_ACTION_KEY_PATTERN,
+  operationGroup,
   operationInputSchema,
   operationRisk,
   OpenApiSpecError,
@@ -203,5 +204,23 @@ describe("schema bounds and risk", () => {
     expect(operationRisk(op("put", "/campaigns/{id}/send", "sendCampaign"), patterns)).toMatchObject({ capability: "connector.dispatch", outward: true });
     expect(operationRisk(op("post", "/campaigns/{id}/test"), patterns)).toMatchObject({ outward: true });
     expect(operationRisk(op("post", "/cache", "purgeCache"), patterns)).toMatchObject({ capability: "connector.admin", destructive: true });
+  });
+
+  it("treats `reads` matches as read-class unless also outward or destructive", () => {
+    const patterns = { outward: ["sendDigest"], destructive: ["purgeSearch"], reads: ["search*", "POST /graphql", "sendDigest", "purgeSearch", "DELETE /cache/{key}"] };
+    expect(operationRisk(op("post", "/notes/search", "searchNotes"), patterns)).toEqual({ capability: "connector.observe", write: false, outward: false, destructive: false });
+    expect(operationRisk(op("post", "/graphql"), patterns)).toEqual({ capability: "connector.observe", write: false, outward: false, destructive: false });
+    // Also listed as outward / destructive: those flags still apply.
+    expect(operationRisk(op("post", "/digest", "sendDigest"), patterns)).toEqual({ capability: "connector.observe", write: false, outward: true, destructive: false });
+    expect(operationRisk(op("post", "/search/purge", "purgeSearch"), patterns)).toEqual({ capability: "connector.admin", write: true, outward: false, destructive: true });
+    // A DELETE marked read-class is not destructive unless listed there.
+    expect(operationRisk(op("delete", "/cache/{key}"), patterns)).toEqual({ capability: "connector.observe", write: false, outward: false, destructive: false });
+    expect(operationRisk(op("post", "/notes", "createNote"), patterns)).toMatchObject({ capability: "connector.dispatch", write: true });
+  });
+
+  it("groups operations by first tag, else first path segment", () => {
+    expect(operationGroup({ tags: ["Mailing Lists"], path: "/lists" })).toBe("mailing-lists");
+    expect(operationGroup({ tags: [], path: "/{org}/campaigns/{id}" })).toBe("campaigns");
+    expect(operationGroup({ tags: [], path: "/" })).toBe("general");
   });
 });

@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Dialog from "@radix-ui/react-dialog";
-import { AlertTriangle, Boxes, Check, KeyRound, LoaderCircle, PlugZap, Send, Settings2, Trash2, Undo2, X } from "lucide-react";
+import { AlertTriangle, Boxes, Check, CircleSlash, Hourglass, KeyRound, LoaderCircle, PlugZap, Send, Settings2, Trash2, Undo2, X } from "lucide-react";
 import { Button, IconButton, Tag } from "@tealbrick/ui";
 
-import { ApiError, getCompanyBox, removeCompanyBoxEntry, setupCompanyBoxEntry, testCompanyBoxEntry } from "./api";
+import { ApiError, decideCompanyBoxApproval, getCompanyBox, getCompanyBoxApprovals, removeCompanyBoxEntry, setupCompanyBoxEntry, testCompanyBoxEntry } from "./api";
 import { errorCopy } from "./copy";
-import type { CompanyBoxCredentialKey, CompanyBoxEntry, CompanyBoxResult } from "./types";
+import type { CompanyBoxApproval, CompanyBoxCredentialKey, CompanyBoxEntry, CompanyBoxResult } from "./types";
 import { formatWhen, InlineError, StatePanel, statusLabel, statusTone } from "./ui";
 
 const SOURCE_LABEL: Record<CompanyBoxEntry["source"], string> = { openapi: "REST API", mcp: "MCP server" };
@@ -122,6 +122,60 @@ function EntryCard({ entry, onSetup, onChanged, onNotice }: { entry: CompanyBoxE
   </article>;
 }
 
+const APPROVAL_STATE_LABEL: Record<CompanyBoxApproval["state"], string> = {
+  pending: "Waiting",
+  executing: "Running",
+  succeeded: "Approved · ran",
+  failed: "Approved · failed",
+  denied: "Denied",
+  expired: "Expired",
+};
+
+function ApprovalRow({ approval, onDecided }: { approval: CompanyBoxApproval; onDecided: (notice: string) => void }) {
+  const decide = useMutation({
+    mutationFn: (decision: "approve" | "deny") => decideCompanyBoxApproval(approval.id, decision),
+    onSuccess: (result, decision) =>
+      onDecided(
+        decision === "deny"
+          ? `Denied ${approval.operation.title} for ${approval.agentId}.`
+          : result.approval.state === "succeeded"
+            ? `Approved and ran ${approval.operation.title}.`
+            : `Approved, but ${approval.operation.title} failed: ${failureCopy(result.approval.error ?? undefined).title}.`,
+      ),
+  });
+  const pending = approval.state === "pending";
+  return <div className="company-box-approval" aria-label={`${approval.app}: ${approval.operation.title}`}>
+    <div>
+      <strong>{approval.app} · {approval.operation.title}</strong>
+      {approval.operation.method && <code>{approval.operation.method} {approval.operation.path}</code>}
+      <p>Requested by <strong>{approval.agentId}</strong> {formatWhen(approval.createdAt)}{pending ? ` · expires ${formatWhen(approval.expiresAt)}` : ""}</p>
+      <pre className="company-box-approval__args">{approval.argumentsPreview}</pre>
+      {decide.error && <InlineError error={decide.error} />}
+    </div>
+    {pending ? <div className="dialog-actions">
+      <Button size="small" tone="primary" disabled={decide.isPending} onClick={() => decide.mutate("approve")}>{decide.isPending && decide.variables === "approve" ? <LoaderCircle className="spin" size={14} /> : <Check size={14} />}Approve</Button>
+      <Button size="small" disabled={decide.isPending} onClick={() => decide.mutate("deny")}><CircleSlash size={14} />Deny</Button>
+    </div> : <Tag tone={approval.state === "succeeded" ? "success" : approval.state === "failed" || approval.state === "denied" ? "danger" : "default"}>{APPROVAL_STATE_LABEL[approval.state]}</Tag>}
+  </div>;
+}
+
+/** Outward calls agents asked for; each runs once, only after you approve it. */
+function ApprovalsPanel({ onNotice }: { onNotice: (notice: string) => void }) {
+  const queryClient = useQueryClient();
+  const approvals = useQuery({ queryKey: ["company-box-approvals"], queryFn: () => getCompanyBoxApprovals(), retry: false, refetchInterval: 30_000 });
+  const items = approvals.data?.approvals ?? [];
+  const pending = items.filter((approval) => approval.state === "pending");
+  const recent = items.filter((approval) => approval.state !== "pending").slice(0, 10);
+  const decided = (notice: string) => { onNotice(notice); void queryClient.invalidateQueries({ queryKey: ["company-box-approvals"] }); };
+  if (approvals.error) return <InlineError error={approvals.error} />;
+  if (!items.length) return null;
+  return <section className="company-box-approvals" aria-labelledby="company-box-approvals-heading">
+    <div className="section-heading"><div><p className="eyebrow">Needs you</p><h3 id="company-box-approvals-heading"><Hourglass size={15} aria-hidden="true" /> Approvals</h3></div><Tag tone={pending.length ? "warning" : "default"} aria-label={`${pending.length} waiting`}>{pending.length}</Tag></div>
+    {pending.length ? pending.map((approval) => <ApprovalRow key={approval.id} approval={approval} onDecided={decided} />) : <p className="muted-detail">Nothing waiting.</p>}
+    {recent.length > 0 && <details><summary>Recent decisions</summary>{recent.map((approval) => <ApprovalRow key={approval.id} approval={approval} onDecided={decided} />)}</details>}
+  </section>;
+}
+
 export function CompanyBoxSection({ onChanged }: { onChanged: () => void }) {
   const queryClient = useQueryClient();
   const list = useQuery({ queryKey: ["company-box"], queryFn: getCompanyBox, retry: false });
@@ -134,6 +188,7 @@ export function CompanyBoxSection({ onChanged }: { onChanged: () => void }) {
     <div className="section-heading"><div><p className="eyebrow">Your self-hosted apps</p><h2 id="company-box-heading">{list.data?.collection.label ?? "Company Box"}</h2></div>{entries.length > 0 && <Tag>{entries.length} apps</Tag>}</div>
     <p className="section-copy">{list.data?.collection.description ?? "Your self-hosted apps, whole."} Outward actions <Send size={12} aria-hidden="true" /> always wait for your approval.</p>
     {notice && <p className="inline-success" role="status"><Check size={14} />{notice}</p>}
+    <ApprovalsPanel onNotice={setNotice} />
     {list.error ? <StatePanel error={list.error} onRetry={() => void list.refetch()} /> : list.isLoading ? <p className="muted">Loading Company Box…</p> : entries.length ? <div className="custom-connector-list">{entries.map((entry) => <EntryCard key={entry.id} entry={entry} onSetup={() => { setNotice(null); setSetupId(entry.id); }} onChanged={changed} onNotice={setNotice} />)}</div> : <div className="collection-empty compact"><Boxes /><h3>No apps in the Company Box yet</h3><p>Apps appear here once their catalog entries ship with this Marketplace.</p></div>}
     {list.data && list.data.unavailable.length > 0 && <p className="muted-row">{list.data.unavailable.length} {list.data.unavailable.length === 1 ? "entry is" : "entries are"} hidden because {list.data.unavailable.length === 1 ? "it fails" : "they fail"} the coverage check.</p>}
     <SetupDialog

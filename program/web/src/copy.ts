@@ -169,6 +169,12 @@ export function errorCopy(error: Error): ErrorCopy {
       return errorCopy(new ApiError(code, status, { error: "company_box_base_url_not_allowed" }));
     case "owner_approval_required_for_outward":
       return { title: "This sends something outside your workspace", detail: "Outward actions such as sending or publishing need your approval each time. Run it yourself from Marketplace, or connect approvals.", reference };
+    case "approval_not_pending":
+      return { title: "This request was already decided", detail: "Someone approved or denied it, or it ran. Refresh to see what happened.", reference };
+    case "approval_expired":
+      return { title: "This request expired", detail: "Requests wait 7 days for approval. The agent can ask again.", reference };
+    case "approval_not_found":
+      return { title: "Request not found", detail: "It may belong to another workspace or was removed. Refresh and try again.", reference };
     case "agent_action_not_published":
       return { title: "This action isn't available to agents right now", detail: "The connector may have been removed or disconnected, or the action was turned off. Refresh and choose an action from the list.", reference };
     case "agent_action_account_mismatch":

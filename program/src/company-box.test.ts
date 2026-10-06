@@ -4,13 +4,15 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { companyBoxListing, loadCompanyBoxCatalog, searchAgentOperations } from "./company-box.js";
+import { companyBoxListing, companyBoxMcpToolRisk, loadCompanyBoxCatalog, searchAgentOperations } from "./company-box.js";
 import {
   companyBoxCoverageMarkdown,
   companyBoxCoverageReport,
   runCompanyBoxCoverageCli,
 } from "./company-box-coverage.js";
 import { sha256Hex } from "./openapi-adapter.js";
+import { SqliteMarketplaceStore } from "./store.js";
+import { boundedStoredOutput, outputDigest } from "./usage-ledger.js";
 
 const FIXTURES = path.join(import.meta.dirname, "testing", "company-box");
 const roots: string[] = [];
@@ -67,6 +69,17 @@ describe("Company Box catalog", () => {
     expect(JSON.stringify(listing.manifest)).not.toContain("$defs");
     expect(notes.byKey.get("company-box-notes.share-note")).toMatchObject({ outward: true, capability: "connector.dispatch" });
     expect(notes.byKey.get("company-box-notes.delete-note")).toMatchObject({ destructive: true, capability: "connector.admin" });
+  });
+
+  it("applies reads patterns to entries and MCP tools, and warns on unmatched ones", () => {
+    const root = catalogWith({ entry: "notes", change: (entry) => (entry.reads = ["createFolder", "nothingMatches*"]) });
+    const notes = loadCompanyBoxCatalog(root).openApiForPluginId("company-box-notes")!;
+    expect(notes.byKey.get("company-box-notes.create-folder")).toMatchObject({ capability: "connector.observe", write: false, outward: false });
+    expect(notes.warnings).toContain('reads pattern "nothingMatches*" matches no operation.');
+    expect(notes.byKey.get("company-box-notes.create-folder")?.group).toBe("folders");
+    const entry = { outward: [], destructive: [], reads: ["search_*"] };
+    expect(companyBoxMcpToolRisk(entry, { name: "search_issues", annotations: { readOnlyHint: false } }, "search-issues")).toMatchObject({ capability: "connector.observe", write: false });
+    expect(companyBoxMcpToolRisk(entry, { name: "create_issue" }, "create-issue")).toMatchObject({ capability: "connector.dispatch" });
   });
 
   it("paginates search instead of truncating", () => {
@@ -162,5 +175,43 @@ describe("Company Box coverage", () => {
     const failing = catalogWith({ entry: "notes", change: (entry) => (entry.excluded = [{ operation: "reindexAll", reason: " " }]) });
     expect(runCompanyBoxCoverageCli(["--dir", failing, "--no-write"], { dir: passing }, () => undefined)).toBe(1);
     expect(runCompanyBoxCoverageCli(["--bogus"], { dir: passing }, () => undefined)).toBe(2);
+  });
+});
+
+describe("stored output bounds", () => {
+  it("keeps outputs up to 64 KB and a size + sha256 marker beyond", () => {
+    const small = { ok: true };
+    expect(boundedStoredOutput(small)).toMatchObject({ output: small, truncated: false, bytes: 11 });
+    const large = { text: "z".repeat(70_000) };
+    const bounded = boundedStoredOutput(large);
+    expect(bounded.truncated).toBe(true);
+    expect(bounded.output).toEqual({ truncated: true, bytes: outputDigest(large).bytes, sha256: outputDigest(large).sha256 });
+
+    const root = mkdtempSync(path.join(os.tmpdir(), "company-box-approval-store-"));
+    roots.push(root);
+    const store = new SqliteMarketplaceStore(path.join(root, "m.sqlite"));
+    try {
+      const approval = store.createCompanyBoxApproval({
+        workspaceSlug: "ws",
+        pluginId: "company-box-notes",
+        actionKey: "company-box-notes.share-note",
+        capability: "connector.dispatch",
+        agentId: "agent-1",
+        sourceKind: "agent-grant",
+        sourceRef: "grant-1",
+        idempotencyKey: null,
+        fingerprint: "f",
+        arguments: { path: { id: "1" } },
+        argumentsPreview: "{}",
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      });
+      expect(store.decideCompanyBoxApproval({ id: approval.id, workspaceSlug: "other", decision: "approve", decidedBy: "x" })).toBeNull();
+      expect(store.decideCompanyBoxApproval({ id: approval.id, workspaceSlug: "ws", decision: "approve", decidedBy: "owner" })?.state).toBe("executing");
+      expect(store.decideCompanyBoxApproval({ id: approval.id, workspaceSlug: "ws", decision: "approve", decidedBy: "owner" })).toBeNull();
+      const finished = store.finishCompanyBoxApproval({ id: approval.id, state: "succeeded", result: large });
+      expect(finished.result).toEqual({ truncated: true, bytes: outputDigest(large).bytes, sha256: outputDigest(large).sha256 });
+    } finally {
+      store.close();
+    }
   });
 });

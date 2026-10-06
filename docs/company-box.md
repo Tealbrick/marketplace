@@ -60,6 +60,7 @@ Two kinds of entry:
   "healthOperation": "getHealth",                // openapi: a GET needing no arguments
   "outward": ["sendCampaign*", "POST /tx"],      // operations that reach people/systems outside
   "destructive": ["purge*"],                     // destructive beyond DELETE (optional)
+  "reads": ["searchSubscribers", "POST /graphql"], // POST/PUT/… that only read (optional)
   "exposure": "auto",                            // "auto" | "direct" | "discovery"
   "excluded": [
     { "operation": "POST /maintenance/vacuum", "reason": "Locks the database; run it from the app." }
@@ -69,8 +70,12 @@ Two kinds of entry:
 
 - Operation references are an `operationId` or `METHOD /path` exactly as in the
   spec. For `mcp` entries they are tool names.
-- `outward` / `destructive` patterns use `*` wildcards, case-insensitive, and
-  match the `operationId` or `METHOD /path` (tool name for MCP).
+- `outward` / `destructive` / `reads` patterns use `*` wildcards,
+  case-insensitive, and match the `operationId` or `METHOD /path` (tool name
+  for MCP).
+- `reads` marks non-GET operations that only read (search endpoints, GraphQL
+  queries) as read-class: they grant as `connector.observe` and are never
+  outward or destructive unless also listed in those patterns.
 - `auth` decides the credential fields the install form asks for: `header` →
   token, `basic` → username + password, `query` → API key. `mcp` entries cannot
   use `query` (keys never go in URLs).
@@ -100,8 +105,12 @@ runtime; a listing whose entry disappears keeps its row but publishes no actions
   depending on spec order: the member with the lowest `METHOD /path` keeps the
   key, the others get `-<6 hex of sha256("METHOD /path")>`. Keys follow the
   custom MCP `ACTION_KEY_PATTERN` and stay ≤ 128 chars.
-- **Capability**: GET/HEAD/OPTIONS → `connector.observe`; any other method →
-  `connector.dispatch`; DELETE or a `destructive` match → `connector.admin`.
+- **Capability**: GET/HEAD/OPTIONS or a `reads` match → `connector.observe`;
+  any other method → `connector.dispatch`; DELETE (unless in `reads`) or a
+  `destructive` match → `connector.admin`.
+- **Group**: each catalog action carries a stable `group` for Portal grouping:
+  the operation's first tag, else its first literal path segment (kebab case),
+  else `general`; MCP entries use the entry id.
 - **Arguments** are grouped by location:
   `{ "path": {…}, "query": {…}, "header": {…}, "body": … }`. Parameter names live
   inside their group, so a real `user_id` query parameter never collides with
@@ -129,6 +138,12 @@ to individually. The agent tool surface (`/api/agent/capabilities`,
   - `marketplace.<pluginId>.operations.describe` — `{ operation }`, full schema and docs;
   - `marketplace.<pluginId>.operations.call` — `{ operation, arguments }`.
 
+Connectors with outward operations also list
+`marketplace.<pluginId>.approvals.status` (`{ approvalId }`) in both modes.
+For MCP entries, `describe` serves the pinned snapshot's full input schema when
+it is larger than 16 KB (the live listing keeps 16 KB), marked
+`schemaSource: "snapshot"`.
+
 In both modes grants, action bindings, capability bindings and approvals apply
 to the **underlying operation key**: an agent granted only reads can search and
 describe everything but can only call reads. Nothing is truncated; large lists
@@ -139,13 +154,31 @@ paginate.
 Each execute carries a declared risk `{ write, outward, destructive }` into
 governance (the same gate every connector execute uses):
 
-- **Rules connected**: Rules receives it as `payload.risk`; a Rules `review`
-  decision holds the call (`rules_review_required`) until approved.
+- **Rules connected**: Rules receives it as `payload.risk` and Marketplace
+  trusts its decision. A Rules `review` holds the call
+  (`rules_review_required`) in the Rules approvals queue; a Rules policy that
+  allows outward calls lets them run. Write the policy accordingly.
 - **Owner approval mode** (no Rules): reads, writes and destructive operations
   follow the agent's Portal-attested grant or consent (destructive ones are
-  flagged in the audit trail). Outward operations are refused for agents and
-  services (`owner_approval_required_for_outward`); the owner can run them from
-  their own Marketplace session, which is the approval.
+  flagged in the audit trail). Outward operations from an agent are **held**
+  in Marketplace's approval queue:
+  - the call answers `202 { status: "approval_pending", approvalId, expiresAt }`
+    after its arguments are validated; arguments (≤ 32 KB) are stored for the
+    owner and never logged, audited or returned to the agent;
+  - the owner sees it under Connections → Company Box → Approvals (count badge
+    on Connections) with app, operation, agent and an argument preview, and
+    approves or denies it (`POST /api/marketplace/company-box/approvals/<id>/approve|deny`,
+    operator session only);
+  - approval runs the call **exactly once** against live state (the grant or
+    consent must still be active and the action still published), records the
+    result (bounded to 64 KB, else size + sha256) and audit; denial is recorded
+    and the call never runs; pending requests expire after 7 days;
+  - the agent polls `approvals.status`, or repeats the call with the same
+    `idempotencyKey` to get the state or result (a different payload with the
+    same key is refused). Only the requesting agent can read an approval.
+  Services without an agent identity still cannot run outward calls
+  (`owner_approval_required_for_outward`); the owner's own session runs them
+  directly.
 
 ## Install, credentials and connection test
 
@@ -164,6 +197,13 @@ governance (the same gate every connector execute uses):
   (applying exclusions, no 200-tool cap) and record drift against the snapshot.
 - `POST …/test` re-runs the check; `DELETE /api/marketplace/company-box/<id>`
   uninstalls, deletes credentials and revokes agent grants and consents.
+
+## Usage evidence
+
+The usage ledger stores input/output shapes, not payloads. Company Box and
+custom MCP executions also record the full output's byte length and sha256
+(`metadata.output`). Stored approval results are capped at 64 KB, keeping the
+size and sha256 of anything larger.
 
 ## Runtime limits
 
