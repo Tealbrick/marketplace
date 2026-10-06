@@ -2177,7 +2177,7 @@ describe("Marketplace Program", () => {
       ok: false,
       error: "connector_execution_not_supported",
       executionOwner: "native",
-      supportedExecutionOwners: ["composio", "mcp"],
+      supportedExecutionOwners: ["composio", "mcp", "openapi"],
     });
 
     const ledgerResponse = await app.inject({

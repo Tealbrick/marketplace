@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "id": "notes",
+  "displayName": "Notes",
+  "description": "Fixture: a small self-hosted notes app. Hand-written spec for tests.",
+  "category": "Knowledge",
+  "app": { "version": "2.4.0", "homepage": "https://notes.example.test", "license": "MIT" },
+  "source": "openapi",
+  "openapi": { "spec": "openapi.json", "sha256": "3ae1f111bd27df2db8ea3b1536e4a93f94197034f1dd9902cc2c7911174e704d" },
+  "auth": { "type": "header", "name": "Authorization", "prefix": "Bearer ", "label": "API token" },
+  "baseUrlExample": "https://notes.your-tailnet.ts.net",
+  "healthOperation": "getHealth",
+  "outward": ["shareNote"],
+  "exposure": "auto",
+  "excluded": [
+    { "operation": "reindexAll", "reason": "Maintenance job that locks the app for minutes; run it from the app's admin screen." }
+  ]
+}

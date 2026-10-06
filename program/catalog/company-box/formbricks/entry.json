@@ -1,0 +1,88 @@
+{
+  "schema": 1,
+  "id": "formbricks",
+  "displayName": "Formbricks",
+  "description": "Self-hosted surveys and feedback: the management API in all three current generations (v1 surveys, responses, contacts, action classes and webhooks; v2 responses, contacts, webhooks, teams and users; v3 surveys, workflows, tags and feedback records) plus the public client API. Publishing, webhooks, response writes and membership changes are held for approval.",
+  "category": "Forms",
+  "app": {
+    "version": "6.0.2",
+    "homepage": "https://formbricks.com",
+    "license": "AGPL-3.0 (enterprise features separately licensed)",
+    "specSource": "https://github.com/formbricks/formbricks/tree/6.0.2/docs"
+  },
+  "source": "openapi",
+  "openapi": {
+    "spec": "openapi.json",
+    "basePath": "",
+    "overlay": {
+      "file": "overlay.json",
+      "sha256": "5cf9d53fb8dc51328508576d1149954b003f43985f092b8d3064b46bbd9d37b3"
+    },
+    "sha256": "2a9166ffe36bdd669fd4bee60647c759ad2be185536c3981de135b35edc71d44"
+  },
+  "auth": {
+    "type": "header",
+    "name": "x-api-key",
+    "label": "API key"
+  },
+  "baseUrlExample": "https://neuu.your-tailnet.ts.net:8511",
+  "healthOperation": "me",
+  "outward": [
+    "POST /api/v1/management/surveys",
+    "PUT /api/v1/management/surveys/{surveyId}",
+    "POST /api/v1/management/responses",
+    "PUT /api/v1/management/responses/{responseId}",
+    "POST /api/v1/management/storage",
+    "POST /api/v1/webhooks",
+    "POST /api/v1/client/{workspaceId}/responses",
+    "PUT /api/v1/client/{workspaceId}/responses/{responseId}",
+    "createResponse",
+    "updateResponse",
+    "createWebhook",
+    "updateWebhook",
+    "createUser",
+    "updateUser",
+    "createTeam",
+    "updateTeam",
+    "deleteTeam",
+    "createWorkspaceTeam",
+    "updateWorkspaceTeam",
+    "deleteWorkspaceTeam",
+    "POST /api/v2/client/{workspaceId}/responses",
+    "PUT /api/v2/client/{workspaceId}/responses/{responseId}",
+    "createSurveyV3",
+    "patchSurveyV3",
+    "enableWorkflowV3"
+  ],
+  "destructive": [
+    "mergeTagsV3"
+  ],
+  "reads": [
+    "validateSurveyV3",
+    "testWorkflowV3",
+    "searchFeedbackRecordsV3"
+  ],
+  "exposure": "auto",
+  "excluded": [
+    {
+      "operation": "GET /api/responses",
+      "reason": "Legacy root-level responses API; fully superseded by GET /api/v2/management/responses, which this entry exposes with the same fields."
+    },
+    {
+      "operation": "POST /api/responses",
+      "reason": "Legacy root-level responses API; fully superseded by POST /api/v2/management/responses, which this entry exposes with the same fields."
+    },
+    {
+      "operation": "GET /api/responses/{id}",
+      "reason": "Legacy root-level responses API; fully superseded by GET /api/v2/management/responses/{id}, which this entry exposes with the same fields."
+    },
+    {
+      "operation": "PUT /api/responses/{id}",
+      "reason": "Legacy root-level responses API; fully superseded by PUT /api/v2/management/responses/{id}, which this entry exposes with the same fields."
+    },
+    {
+      "operation": "DELETE /api/responses/{id}",
+      "reason": "Legacy root-level responses API; fully superseded by DELETE /api/v2/management/responses/{id}, which this entry exposes with the same fields."
+    }
+  ]
+}

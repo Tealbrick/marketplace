@@ -392,3 +392,74 @@ export interface CustomConnectorPatch {
   /** string = replace, null = remove, omitted = keep. */
   secretHeaders?: Record<string, string | null>;
 }
+
+export type CompanyBoxCredentialKey = "token" | "username" | "password" | "apiKey";
+
+/** One Company Box entry and this workspace's state. Credential values are never included. */
+export interface CompanyBoxEntry {
+  id: string;
+  displayName: string;
+  description: string;
+  category: string | null;
+  source: "openapi" | "mcp";
+  appVersion: string;
+  homepage: string | null;
+  baseUrlExample: string | null;
+  auth: { type: "none" | "header" | "basic" | "query"; fields: Array<{ key: CompanyBoxCredentialKey; label: string; secret: boolean }> };
+  coverage: { unit: "operations" | "tools"; total: number; exposed: number; excluded: number };
+  exposure: "direct" | "discovery";
+  outward: number;
+  destructive: number;
+  healthOperation: string | null;
+  pluginId: string | null;
+  installed: boolean;
+  connection: { state: PluginConnection["state"]; detail: string; updatedAt: string; baseUrl: string | null } | null;
+  credentials: Array<{ key: CompanyBoxCredentialKey; label: string; secret: boolean; configured: boolean; fingerprint?: string }>;
+}
+
+export interface CompanyBoxResponse {
+  ok: true;
+  workspaceSlug: string;
+  collection: { id: string; label: string; description: string };
+  secretStoreAvailable: boolean;
+  entries: CompanyBoxEntry[];
+  unavailable: Array<{ id: string; code: string }>;
+}
+
+export interface CompanyBoxSetup {
+  baseUrl: string;
+  /** Omitted keys keep the saved value. */
+  credentials?: Partial<Record<CompanyBoxCredentialKey, string>>;
+}
+
+export interface CompanyBoxResult {
+  ok: boolean;
+  error?: string;
+  entry: CompanyBoxEntry;
+}
+
+/** An agent's outward call held for the owner. Full arguments stay on the server. */
+export interface CompanyBoxApproval {
+  id: string;
+  pluginId: string;
+  app: string;
+  actionKey: string;
+  operation: { title: string; method: string | null; path: string | null };
+  capability: ConnectorCapabilityName;
+  agentId: string;
+  argumentsPreview: string;
+  state: "pending" | "executing" | "succeeded" | "failed" | "denied" | "expired";
+  createdAt: string;
+  expiresAt: string;
+  decidedAt: string | null;
+  decidedBy: string | null;
+  error: string | null;
+  result?: unknown;
+}
+
+export interface CompanyBoxApprovalsResponse {
+  ok: true;
+  workspaceSlug: string;
+  pendingCount: number;
+  approvals: CompanyBoxApproval[];
+}

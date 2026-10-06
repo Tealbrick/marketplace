@@ -17,6 +17,7 @@ import type {
   ActionBinding,
   AgentConnectorGrant,
   CapabilityBinding,
+  CompanyBoxApproval,
   ComposioImportRecord,
   ConnectorCapability,
   ConnectorConnection,
@@ -32,7 +33,7 @@ import type {
   MarketplaceRuntimeOperation,
   WorkspacePluginInstall,
 } from "./types.js";
-import { shapeOf } from "./usage-ledger.js";
+import { boundedStoredOutput, shapeOf } from "./usage-ledger.js";
 import { compatDebugEnabled } from "./legacy-ids.js";
 
 export const MARKETPLACE_TABLES = [
@@ -57,6 +58,7 @@ export const MARKETPLACE_TABLES = [
   "promotion_candidate",
   "health_event",
   "audit_event",
+  "company_box_approval",
 ] as const;
 
 type JsonRecord = Record<string, unknown>;
@@ -454,6 +456,31 @@ function usageFromRow(row: Record<string, unknown>): ConnectorUsageLedgerEntry {
         ? null
         : jsonParse<JsonRecord>(String(row.metadata), {}),
     createdAt: String(row.created_at),
+  };
+}
+
+function companyBoxApprovalFromRow(row: Record<string, unknown>): CompanyBoxApproval {
+  return {
+    id: String(row.id),
+    workspaceSlug: String(row.workspace_slug),
+    pluginId: String(row.plugin_id),
+    actionKey: String(row.action_key),
+    capability: row.capability as CompanyBoxApproval["capability"],
+    agentId: String(row.agent_id),
+    sourceKind: row.source_kind as CompanyBoxApproval["sourceKind"],
+    sourceRef: String(row.source_ref),
+    idempotencyKey: row.idempotency_key === null ? null : String(row.idempotency_key),
+    fingerprint: String(row.fingerprint),
+    arguments: jsonParse<Record<string, unknown>>(String(row.arguments_json), {}),
+    argumentsPreview: String(row.arguments_preview),
+    state: row.state as CompanyBoxApproval["state"],
+    result: row.result_json === null ? null : jsonParse<unknown>(String(row.result_json), null),
+    error: row.error === null ? null : String(row.error),
+    decidedBy: row.decided_by === null ? null : String(row.decided_by),
+    decidedAt: row.decided_at === null ? null : String(row.decided_at),
+    expiresAt: String(row.expires_at),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
   };
 }
 
@@ -859,6 +886,30 @@ export class SqliteMarketplaceStore {
         created_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS company_box_approval (
+        id TEXT PRIMARY KEY,
+        workspace_slug TEXT NOT NULL,
+        plugin_id TEXT NOT NULL,
+        action_key TEXT NOT NULL,
+        capability TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        source_kind TEXT NOT NULL,
+        source_ref TEXT NOT NULL,
+        idempotency_key TEXT,
+        fingerprint TEXT NOT NULL,
+        arguments_json TEXT NOT NULL,
+        arguments_preview TEXT NOT NULL,
+        state TEXT NOT NULL,
+        result_json TEXT,
+        error TEXT,
+        decided_by TEXT,
+        decided_at TEXT,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(workspace_slug, agent_id, idempotency_key)
+      );
+
       CREATE TABLE IF NOT EXISTS audit_event (
         id TEXT PRIMARY KEY,
         workspace_slug TEXT,
@@ -1219,6 +1270,175 @@ export class SqliteMarketplaceStore {
       )
       .get(workspaceSlug, pluginId) as Record<string, unknown> | undefined;
     return row ? installFromRow(row) : null;
+  }
+
+  /** Store an agent's held outward call. Arguments are bounded by the caller. */
+  createCompanyBoxApproval(input: {
+    workspaceSlug: string;
+    pluginId: string;
+    actionKey: string;
+    capability: ConnectorCapability;
+    agentId: string;
+    sourceKind: CompanyBoxApproval["sourceKind"];
+    sourceRef: string;
+    idempotencyKey: string | null;
+    fingerprint: string;
+    arguments: Record<string, unknown>;
+    argumentsPreview: string;
+    expiresAt: string;
+  }): CompanyBoxApproval {
+    const id = createId("approval");
+    const timestamp = nowIso();
+    this.db
+      .prepare(
+        `INSERT INTO company_box_approval (
+          id, workspace_slug, plugin_id, action_key, capability, agent_id, source_kind, source_ref,
+          idempotency_key, fingerprint, arguments_json, arguments_preview, state, expires_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
+      )
+      .run(
+        id,
+        input.workspaceSlug,
+        input.pluginId,
+        input.actionKey,
+        input.capability,
+        input.agentId,
+        input.sourceKind,
+        input.sourceRef,
+        input.idempotencyKey,
+        input.fingerprint,
+        JSON.stringify(input.arguments),
+        input.argumentsPreview,
+        input.expiresAt,
+        timestamp,
+        timestamp,
+      );
+    return this.getCompanyBoxApproval(id)!;
+  }
+
+  countPendingCompanyBoxApprovals(input: { workspaceSlug: string; agentId: string }): number {
+    this.expireCompanyBoxApprovals();
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM company_box_approval
+         WHERE workspace_slug = ? AND agent_id = ? AND state = 'pending'`,
+      )
+      .get(input.workspaceSlug, input.agentId) as { count: number };
+    return Number(row.count);
+  }
+
+  /** Pending approvals past their expiry become `expired`. */
+  private expireCompanyBoxApprovals() {
+    const timestamp = nowIso();
+    this.db
+      .prepare(
+        `UPDATE company_box_approval SET state = 'expired', updated_at = ?
+         WHERE state = 'pending' AND expires_at <= ?`,
+      )
+      .run(timestamp, timestamp);
+  }
+
+  getCompanyBoxApproval(id: string): CompanyBoxApproval | null {
+    this.expireCompanyBoxApprovals();
+    const row = this.db
+      .prepare("SELECT * FROM company_box_approval WHERE id = ?")
+      .get(id) as Record<string, unknown> | undefined;
+    return row ? companyBoxApprovalFromRow(row) : null;
+  }
+
+  findCompanyBoxApprovalByKey(input: {
+    workspaceSlug: string;
+    agentId: string;
+    idempotencyKey: string;
+  }): CompanyBoxApproval | null {
+    this.expireCompanyBoxApprovals();
+    const row = this.db
+      .prepare(
+        `SELECT * FROM company_box_approval
+         WHERE workspace_slug = ? AND agent_id = ? AND idempotency_key = ?`,
+      )
+      .get(input.workspaceSlug, input.agentId, input.idempotencyKey) as Record<string, unknown> | undefined;
+    return row ? companyBoxApprovalFromRow(row) : null;
+  }
+
+  listCompanyBoxApprovals(input: {
+    workspaceSlug: string;
+    state?: CompanyBoxApproval["state"];
+    limit?: number;
+  }): CompanyBoxApproval[] {
+    this.expireCompanyBoxApprovals();
+    return (
+      this.db
+        .prepare(
+          `SELECT * FROM company_box_approval
+           WHERE workspace_slug = ? AND (? IS NULL OR state = ?)
+           ORDER BY created_at DESC LIMIT ?`,
+        )
+        .all(
+          input.workspaceSlug,
+          input.state ?? null,
+          input.state ?? null,
+          Math.max(1, Math.min(input.limit ?? 100, 500)),
+        ) as Record<string, unknown>[]
+    ).map(companyBoxApprovalFromRow);
+  }
+
+  /**
+   * Atomically move a live pending approval to `executing` (approve) or
+   * `denied`. Returns null when it was not pending (already decided, expired,
+   * or in another workspace), which makes approval exactly-once.
+   */
+  decideCompanyBoxApproval(input: {
+    id: string;
+    workspaceSlug: string;
+    decision: "approve" | "deny";
+    decidedBy: string;
+  }): CompanyBoxApproval | null {
+    this.expireCompanyBoxApprovals();
+    const timestamp = nowIso();
+    const result = this.db
+      .prepare(
+        `UPDATE company_box_approval
+         SET state = ?, decided_by = ?, decided_at = ?, updated_at = ?
+         WHERE id = ? AND workspace_slug = ? AND state = 'pending' AND expires_at > ?`,
+      )
+      .run(
+        input.decision === "approve" ? "executing" : "denied",
+        input.decidedBy,
+        timestamp,
+        timestamp,
+        input.id,
+        input.workspaceSlug,
+        timestamp,
+      );
+    return Number(result.changes) === 1 ? this.getCompanyBoxApproval(input.id) : null;
+  }
+
+  finishCompanyBoxApproval(input: {
+    id: string;
+    state: "succeeded" | "failed";
+    result?: unknown;
+    error?: string | null;
+  }): CompanyBoxApproval {
+    const stored = input.result === undefined ? null : boundedStoredOutput(input.result).output;
+    this.db
+      .prepare(
+        `UPDATE company_box_approval SET state = ?, result_json = ?, error = ?, updated_at = ?
+         WHERE id = ? AND state = 'executing'`,
+      )
+      .run(input.state, stored === null ? null : JSON.stringify(stored), input.error ?? null, nowIso(), input.id);
+    return this.getCompanyBoxApproval(input.id)!;
+  }
+
+  /** Every workspace's install row for one plugin (global listings). */
+  listInstallsForPlugin(pluginId: string): WorkspacePluginInstall[] {
+    return (
+      this.db
+        .prepare(
+          "SELECT * FROM workspace_plugin_install WHERE plugin_id = ? ORDER BY workspace_slug ASC",
+        )
+        .all(pluginId) as Record<string, unknown>[]
+    ).map(installFromRow);
   }
 
   requireInstall(

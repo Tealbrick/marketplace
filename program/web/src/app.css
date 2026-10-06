@@ -425,6 +425,23 @@ code, .mono { font-family: var(--dg-font-mono); overflow-wrap: anywhere; }
 .header-row input:not([type="checkbox"]) { font-size: 13px; }
 .header-row .confirm-check { margin: 0; white-space: nowrap; }
 .header-row .confirm-check input { width: auto; flex: none; }
+.company-box-dialog .header-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto; }
+.company-box-dialog .header-row > span:first-child { color: var(--dg-text-muted); font-size: 13px; }
+.company-box { margin-top: 28px; }
+.company-box-approvals { display: grid; min-width: 0; gap: 10px; margin-bottom: 16px; border: 1px solid var(--dg-line-strong); border-radius: var(--dg-radius-md); padding: 14px; background: var(--dg-panel); }
+.company-box-approvals h3 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 15px; }
+.company-box-approval { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 12px; border-top: 1px solid var(--dg-line); padding-top: 10px; }
+.company-box-approval > div:first-child { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.company-box-approval code { color: var(--dg-text-subtle); font-size: 11px; overflow-wrap: anywhere; }
+.company-box-approval p { margin: 0; color: var(--dg-text-muted); font-size: 12px; }
+.company-box-approval__args { max-height: 96px; margin: 4px 0 0; overflow: auto; border-radius: var(--dg-radius-sm); padding: 6px 8px; background: var(--dg-canvas); font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.args-view { margin: 0; padding: 0 0 0 10px; list-style-position: inside; font-size: 11px; }
+.args-view > div { display: grid; grid-template-columns: minmax(80px, max-content) minmax(0, 1fr); gap: 6px; }
+.args-view dt { color: var(--dg-text-muted); font-family: var(--dg-font-mono); }
+.args-view dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.args-truncated { color: var(--dg-warning, #b7791f); font-size: 11px; }
+.nav-badge { margin-left: auto; min-width: 18px; border-radius: 9px; padding: 0 6px; background: var(--dg-warning, #b7791f); color: #fff; font-size: 11px; line-height: 18px; text-align: center; }
+@media (max-width: 640px) { .company-box-approval { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 600px) {
   .custom-connector > header { grid-template-columns: 34px minmax(0, 1fr); }
   .custom-connector__tags { grid-column: 1 / -1; justify-content: flex-start; }

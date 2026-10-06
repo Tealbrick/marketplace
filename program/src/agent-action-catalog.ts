@@ -1,3 +1,7 @@
+import {
+  companyBoxOperationSummary,
+  listingIsCompanyBoxOpenApi,
+} from "./company-box.js";
 import { resolveActionRequirement } from "./connectors.js";
 import {
   customMcpManifest,
@@ -66,6 +70,8 @@ export type AgentActionCatalogEntry = {
   accounts: AgentActionCatalogAccount[];
   allowedArguments: string[] | null;
   toolName: string;
+  /** Company Box only: stable grouping key (first tag / path segment / entry id). */
+  group?: string;
 };
 
 export type AgentActionCatalogStore = Pick<
@@ -123,8 +129,9 @@ export function listingIsAgentCustomMcp(
 
 /**
  * Whether Marketplace can execute this listing's actions on behalf of an
- * agent in `workspaceSlug`: Composio-backed listings, and operator custom
- * MCP connectors owned by that workspace. Another workspace's custom
+ * agent in `workspaceSlug`: Composio-backed listings, operator custom MCP
+ * connectors owned by that workspace, and Company Box REST connectors
+ * (global listings, configured per workspace). Another workspace's custom
  * connector is never executable.
  */
 export function listingExecutableForAgents(
@@ -133,7 +140,8 @@ export function listingExecutableForAgents(
 ) {
   return (
     listing.executionOwner === "composio" ||
-    listingIsAgentCustomMcp(listing, workspaceSlug)
+    listingIsAgentCustomMcp(listing, workspaceSlug) ||
+    listingIsCompanyBoxOpenApi(listing)
   );
 }
 
@@ -149,6 +157,11 @@ export function agentAccountIdForConnection(input: {
   connection: ConnectorConnection | null | undefined;
 }) {
   if (input.connection?.state !== "connected") return undefined;
+  if (listingIsCompanyBoxOpenApi(input.listing)) {
+    // Company Box connectors authenticate with workspace credentials held by
+    // Marketplace: the connector itself is the account, like custom MCP.
+    return CUSTOM_MCP_AGENT_ACCOUNT_ID;
+  }
   if (listingIsAgentCustomMcp(input.listing, input.workspaceSlug)) {
     return customMcpManifest(input.listing).lastRefresh?.ok === true
       ? CUSTOM_MCP_AGENT_ACCOUNT_ID
@@ -260,7 +273,8 @@ function entriesForListing(input: {
     return [];
   }
   const customMcp = listingIsAgentCustomMcp(listing, workspaceSlug);
-  const label = customMcp ? listing.displayName : accountLabel(connection);
+  const openApi = listingIsCompanyBoxOpenApi(listing);
+  const label = customMcp || openApi ? listing.displayName : accountLabel(connection);
   const account: AgentActionCatalogAccount = label
     ? { accountId, label }
     : { accountId };
@@ -291,6 +305,28 @@ function entriesForListing(input: {
     if (!selectionShapeIsValid({ pluginId: listing.pluginId, actionKey, resourceKind })) {
       return [];
     }
+    if (openApi) {
+      const operation = companyBoxOperationSummary(listing, actionKey);
+      if (!operation) return [];
+      return [
+        {
+          pluginId: listing.pluginId,
+          pluginName: listing.displayName,
+          provider: listing.provider,
+          actionKey,
+          label: operation.title,
+          description: operation.summary,
+          capability: requirement.capability,
+          resourceKind,
+          mode: "connected-account" as const,
+          accounts: [account],
+          // Arguments are grouped by location; parameter names live inside.
+          allowedArguments: [...operation.args],
+          toolName: operation.ref,
+          group: operation.group ?? "general",
+        },
+      ];
+    }
     if (customMcp) {
       const mcpTool = customMcpToolForAction(listing, actionKey);
       if (!mcpTool) return [];
@@ -312,6 +348,9 @@ function entriesForListing(input: {
               ? allowedArgumentNames(Object.keys(properties))
               : null,
           toolName: mcpTool.name,
+          ...(customMcpManifest(listing).companyBox
+            ? { group: customMcpManifest(listing).companyBox!.entryId }
+            : {}),
         },
       ];
     }
@@ -369,6 +408,20 @@ export function publishedAgentActionCatalog(input: {
         left.label.localeCompare(right.label) ||
         left.actionKey.localeCompare(right.actionKey),
     );
+}
+
+/** Every published action of one listing (used by Company Box search). */
+export function publishedAgentActionsForListing(input: {
+  store: AgentActionCatalogStore;
+  workspaceSlug: string;
+  listing: MarketplaceListing;
+}): AgentActionCatalogEntry[] {
+  return entriesForListing({
+    store: input.store,
+    workspaceSlug: input.workspaceSlug,
+    listing: input.listing,
+    enabledCapabilities: enabledCapabilityKeys(input.store, input.workspaceSlug),
+  });
 }
 
 export function resolvePublishedAgentAction(input: {

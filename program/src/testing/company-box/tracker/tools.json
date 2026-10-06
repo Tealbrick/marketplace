@@ -1,0 +1,28 @@
+{
+  "server": { "name": "fake-mcp", "version": "1.0.0" },
+  "capturedAt": "2026-10-06T00:00:00Z",
+  "tools": [
+    {
+      "name": "echo",
+      "title": "Echo",
+      "description": "Echo the arguments back.",
+      "inputSchema": { "type": "object", "properties": { "message": { "type": "string" } } },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "create_issue",
+      "description": "Create an issue.",
+      "inputSchema": { "type": "object", "properties": { "title": { "type": "string" } } }
+    },
+    {
+      "name": "Delete Everything!",
+      "description": "Destructive fixture tool.",
+      "annotations": { "readOnlyHint": false, "destructiveHint": true }
+    },
+    {
+      "name": "fail_tool",
+      "description": "Always reports a tool error.",
+      "annotations": { "readOnlyHint": false, "destructiveHint": false }
+    }
+  ]
+}

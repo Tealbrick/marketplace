@@ -1,0 +1,160 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "Notes API", "version": "2.4.0" },
+  "servers": [{ "url": "https://notes.example.test/api/v1" }],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Health check",
+        "tags": ["system"],
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/notes": {
+      "parameters": [
+        { "$ref": "#/components/parameters/RequestId" }
+      ],
+      "get": {
+        "operationId": "listNotes",
+        "summary": "List notes",
+        "description": "List notes visible to the token, newest first.",
+        "tags": ["notes"],
+        "parameters": [
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100 } },
+          { "name": "tag", "in": "query", "schema": { "type": "array", "items": { "type": "string" } } },
+          { "name": "user_id", "in": "query", "description": "Filter by author.", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Notes" } }
+      },
+      "post": {
+        "operationId": "createNote",
+        "summary": "Create a note",
+        "tags": ["notes"],
+        "requestBody": { "$ref": "#/components/requestBodies/NoteBody" },
+        "responses": { "201": { "description": "Created" } }
+      }
+    },
+    "/notes/{id}": {
+      "parameters": [
+        { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "get": {
+        "operationId": "getNote",
+        "summary": "Get a note",
+        "tags": ["notes"],
+        "responses": { "200": { "description": "Note" } }
+      },
+      "patch": {
+        "operationId": "updateNote",
+        "summary": "Update a note",
+        "tags": ["notes"],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NotePatch" } } }
+        },
+        "responses": { "200": { "description": "Updated" } }
+      },
+      "delete": {
+        "operationId": "deleteNote",
+        "summary": "Delete a note",
+        "tags": ["notes"],
+        "responses": { "204": { "description": "Deleted" } }
+      }
+    },
+    "/notes/{id}/share": {
+      "post": {
+        "operationId": "shareNote",
+        "summary": "Email a note to someone",
+        "tags": ["notes", "sharing"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email"],
+                "properties": { "email": { "type": "string", "format": "email" }, "message": { "type": "string" } }
+              }
+            }
+          }
+        },
+        "responses": { "202": { "description": "Queued" } }
+      }
+    },
+    "/notes/{id}/attachment": {
+      "get": {
+        "summary": "Download the note attachment",
+        "tags": ["notes"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Bytes", "content": { "application/octet-stream": {} } } }
+      }
+    },
+    "/folders": {
+      "get": {
+        "operationId": "listFolders",
+        "summary": "List the folder tree",
+        "tags": ["folders"],
+        "responses": { "200": { "description": "Folders" } }
+      },
+      "post": {
+        "operationId": "createFolder",
+        "summary": "Create a folder (with optional children)",
+        "tags": ["folders"],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Folder" } } }
+        },
+        "responses": { "201": { "description": "Created" } }
+      }
+    },
+    "/admin/reindex": {
+      "post": {
+        "operationId": "reindexAll",
+        "summary": "Rebuild the search index",
+        "tags": ["system"],
+        "responses": { "202": { "description": "Started" } }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "RequestId": { "name": "X-Request-Id", "in": "header", "schema": { "type": "string" } }
+    },
+    "requestBodies": {
+      "NoteBody": {
+        "required": true,
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NoteInput" } } }
+      }
+    },
+    "schemas": {
+      "NoteInput": {
+        "type": "object",
+        "required": ["title"],
+        "properties": {
+          "title": { "type": "string", "maxLength": 200 },
+          "body": { "type": "string" },
+          "tags": { "type": "array", "items": { "$ref": "#/components/schemas/Tag" } }
+        }
+      },
+      "NotePatch": {
+        "type": "object",
+        "properties": { "title": { "type": "string" }, "body": { "type": "string" } }
+      },
+      "Tag": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+      "Folder": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string" },
+          "children": { "type": "array", "items": { "$ref": "#/components/schemas/Folder" } }
+        }
+      }
+    }
+  }
+}

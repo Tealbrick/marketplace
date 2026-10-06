@@ -51,8 +51,35 @@ import {
 import {
   callMcpTool,
   listMcpTools,
+  MCP_MAX_TOOLS,
   McpRemoteError,
 } from "./mcp-remote-client.js";
+import {
+  companyBoxCatalogDir,
+  companyBoxDirectMaxOperations,
+  companyBoxListing,
+  companyBoxManifest,
+  companyBoxMcpToolRisk,
+  listingIsCompanyBoxOpenApi,
+  loadCompanyBoxCatalog,
+  retiredCompanyBoxListing,
+  runtimeAuthFor,
+  searchAgentOperations,
+  type AgentOperation,
+  type CompanyBoxCatalog,
+  type CompiledMcpEntry,
+  type CompiledOpenApiEntry,
+} from "./company-box.js";
+import {
+  callOpenApiOperation,
+  OpenApiCallError,
+  companyBoxMaxUploadBytes,
+  validateOpenApiArguments,
+} from "./openapi-http.js";
+import { registerCompanyBoxRoutes } from "./company-box-routes.js";
+import { OPENAPI_TOOL_SCHEMA_MAX_BYTES } from "./openapi-adapter.js";
+import { outputDigest } from "./usage-ledger.js";
+import { tailnetHealth } from "./tailnet.js";
 import {
   checkMcpUrlSyntax,
   McpUrlPolicyError,
@@ -83,6 +110,7 @@ import {
   governanceModeFor,
   ownerGovernedDecision,
   type GovernanceActor,
+  type GovernedActionRisk,
   type GovernanceMode,
 } from "./governance.js";
 import { MARKETPLACE_VERSION } from "./version.js";
@@ -107,6 +135,7 @@ import {
   listingExecutableForAgents,
   MARKETPLACE_AGENT_ACTION_CATALOG_CONTRACT_VERSION,
   publishedAgentActionCatalog,
+  publishedAgentActionsForListing,
   resolvePublishedAgentAction,
   selectionCapability,
   type AgentActionCatalogEntry,
@@ -137,6 +166,7 @@ import {
 } from "./rules-readiness.js";
 import type {
   AgentConnectorGrant,
+  CompanyBoxApproval,
   ConnectorCapability,
   MarketplaceGatewayRegistrySnapshot,
   MarketplaceListing,
@@ -152,7 +182,7 @@ const WorkspaceQuerySchema = z.object({
 const CardsSummaryQuerySchema = WorkspaceQuerySchema.extend({
   search: z.string().trim().max(200).default(""),
   source: z
-    .enum(["all", "native", "activepieces", "composio", "nango", "mcp"])
+    .enum(["all", "native", "activepieces", "composio", "nango", "mcp", "openapi"])
     .default("all"),
   installed: z
     .enum(["true", "false"])
@@ -386,7 +416,11 @@ const ExecuteInputSchema = z.object({
   sessionId: z.string().trim().min(1).optional().nullable(),
   agentGrantId: z.string().trim().min(1).optional(),
   resourceRef: z.string().trim().min(1).optional(),
+  /** Company Box: deduplicates held outward calls per agent. */
+  idempotencyKey: z.string().regex(/^[A-Za-z0-9_-]{8,100}$/u).optional(),
 });
+
+const IdempotencyKeySchema = z.string().regex(/^[A-Za-z0-9_-]{8,100}$/u);
 
 const AgentGrantInputSchema = z.object({
   workspaceSlug: z.string().trim().min(1),
@@ -613,6 +647,12 @@ export type BuildMarketplaceAppOptions = {
   portalInstanceProof?: string | null;
   portalRuntimeScopeVerifier?: PortalRuntimeScopeVerifier;
   rules?: RulesReadinessConfiguration;
+  /** Company Box catalog directory (default MARKETPLACE_COMPANY_BOX_DIR or program/catalog/company-box). */
+  companyBoxCatalogDir?: string;
+  /** Pre-compiled Company Box catalog (tests); wins over companyBoxCatalogDir. */
+  companyBoxCatalog?: CompanyBoxCatalog;
+  /** Outbound fetch for Company Box REST apps (tests inject a fake); defaults to mcpFetch. */
+  companyBoxFetch?: typeof fetch;
 };
 
 type RulesGateInput = {
@@ -626,6 +666,8 @@ type RulesGateInput = {
   payload: Record<string, unknown>;
   /** Authenticated actor resolved from the request principal or Portal attestation. */
   actor: GovernanceActor | null;
+  /** Declared risk of an execute; Rules receives it as `payload.risk`. */
+  risk?: GovernedActionRisk;
   governance: GovernanceMode;
   rulesClient?: RulesClient;
   store: SqliteMarketplaceStore;
@@ -694,6 +736,7 @@ async function enforceRules(input: RulesGateInput) {
       capability: input.capability,
       pluginId: input.pluginId,
       actor: input.actor,
+      ...(input.risk ? { risk: input.risk } : {}),
     });
     // Audit the decision basis only: never the action payload or secrets.
     input.store.recordAudit({
@@ -714,6 +757,7 @@ async function enforceRules(input: RulesGateInput) {
           ? { attestation: input.actor.attestation }
           : {}),
         ...(owner.effect === "allow" ? { basis: owner.basis } : {}),
+        ...(input.risk ? { risk: input.risk } : {}),
       },
     });
     if (owner.effect === "allow") {
@@ -749,7 +793,7 @@ async function enforceRules(input: RulesGateInput) {
     capability: input.capability,
     pluginId: input.pluginId,
     actorId: input.actorId,
-    payload: input.payload,
+    payload: input.risk ? { ...input.payload, risk: input.risk } : input.payload,
   });
   if (decision.effect === "allow") {
     return decision;
@@ -1201,25 +1245,32 @@ function listingIsWorkspaceCustomMcp(
   );
 }
 
-/** Composio listings, and custom MCP connectors with tools, can run actions. */
+/** Composio listings, and custom MCP / Company Box connectors with tools, can run actions. */
 function listingLaunchSupported(
   listing: MarketplaceListing,
   workspaceSlug: string,
 ) {
   return (
     listing.executionOwner === "composio" ||
-    (listingIsWorkspaceCustomMcp(listing, workspaceSlug) &&
+    ((listingIsWorkspaceCustomMcp(listing, workspaceSlug) ||
+      listingIsCompanyBoxOpenApi(listing)) &&
       listing.actions.length > 0)
   );
 }
 
-/** Custom MCP connectors are "connected" only after a successful refresh. */
+/**
+ * Custom MCP connectors are "connected" only after a successful refresh;
+ * Company Box connectors only after a passing connection test.
+ */
 function listingConnected(input: {
   listing: MarketplaceListing;
   workspaceSlug: string;
   connectionState: string | undefined;
 }) {
-  if (listingIsWorkspaceCustomMcp(input.listing, input.workspaceSlug)) {
+  if (
+    listingIsWorkspaceCustomMcp(input.listing, input.workspaceSlug) ||
+    listingIsCompanyBoxOpenApi(input.listing)
+  ) {
     return input.connectionState === "connected";
   }
   return (
@@ -1947,14 +1998,258 @@ function enableComposioConnector(input: {
   });
 }
 
+/** Company Box entry backing a listing (REST adapter or official MCP server), if any. */
+function companyBoxEntryForListing(
+  catalog: CompanyBoxCatalog,
+  listing: MarketplaceListing,
+  workspaceSlug: string,
+): CompiledOpenApiEntry | CompiledMcpEntry | null {
+  if (listingIsCompanyBoxOpenApi(listing)) {
+    return catalog.openApiForPluginId(listing.pluginId);
+  }
+  if (listingIsWorkspaceCustomMcp(listing, workspaceSlug)) {
+    const entryId = customMcpManifest(listing).companyBox?.entryId;
+    const entry = entryId ? catalog.get(entryId) : null;
+    return entry?.kind === "mcp" && entry.errors.length === 0 ? entry : null;
+  }
+  return null;
+}
+
+const CompanyBoxSearchSchema = z
+  .object({
+    query: z.string().max(200).optional(),
+    tag: z.string().max(100).optional(),
+    capability: z.enum(["connector.observe", "connector.dispatch", "connector.admin"]).optional(),
+    cursor: z.string().max(20).optional(),
+    limit: z.number().int().min(1).max(100).optional(),
+  })
+  .strict();
+
+const CompanyBoxOperationInputSchema = z
+  .object({
+    operation: z.string().trim().min(1).max(200),
+    arguments: z.record(z.unknown()).optional(),
+  })
+  .strict();
+
+function mcpToolRisk(entry: CompiledMcpEntry, listing: MarketplaceListing, actionKey: string) {
+  const tool = customMcpToolForAction(listing, actionKey);
+  return tool
+    ? companyBoxMcpToolRisk(entry.entry, tool, actionKey.slice(listing.provider.length + 1))
+    : null;
+}
+
+/** Declared risk for one Company Box action; undefined for other connectors. */
+function companyBoxRiskForAction(
+  catalog: CompanyBoxCatalog,
+  listing: MarketplaceListing,
+  workspaceSlug: string,
+  actionKey: string,
+): GovernedActionRisk | undefined {
+  const entry = companyBoxEntryForListing(catalog, listing, workspaceSlug);
+  if (!entry) {
+    // A retired or broken REST entry: fail toward approval, never toward silence.
+    return listingIsCompanyBoxOpenApi(listing) ? { write: true, outward: true, destructive: false } : undefined;
+  }
+  const risk = entry.kind === "openapi" ? entry.byKey.get(actionKey) : mcpToolRisk(entry, listing, actionKey);
+  return risk ? { write: risk.write, outward: risk.outward, destructive: risk.destructive } : undefined;
+}
+
+function companyBoxAgentOperation(
+  entry: CompiledOpenApiEntry | CompiledMcpEntry,
+  listing: MarketplaceListing,
+  published: AgentActionCatalogEntry,
+): AgentOperation & { method?: string; path?: string } {
+  if (entry.kind === "openapi") {
+    const operation = entry.byKey.get(published.actionKey)!;
+    return {
+      key: operation.key,
+      title: operation.title,
+      summary: operation.summary,
+      tags: operation.tags,
+      group: operation.group,
+      capability: operation.capability,
+      outward: operation.outward,
+      destructive: operation.destructive,
+      method: operation.method.toUpperCase(),
+      path: operation.path,
+    };
+  }
+  const risk = mcpToolRisk(entry, listing, published.actionKey);
+  return {
+    key: published.actionKey,
+    title: published.label,
+    summary: published.description.slice(0, 300),
+    tags: [],
+    group: published.group ?? entry.entry.id,
+    capability: published.capability,
+    outward: risk?.outward ?? false,
+    destructive: risk?.destructive ?? false,
+  };
+}
+
+function describeCompanyBoxOperation(
+  entry: CompiledOpenApiEntry | CompiledMcpEntry,
+  listing: MarketplaceListing,
+  key: string,
+) {
+  if (entry.kind === "openapi") {
+    const operation = entry.byKey.get(key)!;
+    return {
+      key: operation.key,
+      ref: operation.ref,
+      operationId: operation.operationId,
+      method: operation.method.toUpperCase(),
+      path: operation.path,
+      title: operation.title,
+      description: operation.description,
+      tags: operation.tags,
+      group: operation.group,
+      deprecated: operation.deprecated,
+      capability: operation.capability,
+      risk: { write: operation.write, outward: operation.outward, destructive: operation.destructive },
+      arguments: operation.argumentGroups,
+      contentType: operation.operation.requestBody?.contentType ?? null,
+      inputSchema: operation.inputSchema,
+    };
+  }
+  const tool = customMcpToolForAction(listing, key)!;
+  const risk = mcpToolRisk(entry, listing, key);
+  // The live schema is kept up to 16 KB; beyond that, serve the pinned
+  // snapshot's full schema instead of a bare object.
+  const snapshot = entry.tools.find((candidate) => candidate.name === tool.name);
+  const fromSnapshot = Boolean(snapshot?.inputSchema && snapshot.inputSchemaBytes > OPENAPI_TOOL_SCHEMA_MAX_BYTES);
+  return {
+    key,
+    ref: tool.name,
+    title: tool.title ?? tool.name,
+    description: tool.description ?? "",
+    group: entry.entry.id,
+    capability: tool.capability,
+    risk: risk ? { write: risk.write, outward: risk.outward, destructive: risk.destructive } : null,
+    inputSchema: fromSnapshot ? snapshot!.inputSchema : tool.inputSchema,
+    schemaSource: fromSnapshot ? "snapshot" : "server",
+  };
+}
+
+/** Held outward calls expire after 7 days; their arguments are bounded. */
+const COMPANY_BOX_APPROVAL_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const COMPANY_BOX_APPROVAL_MAX_ARGUMENT_BYTES = 32 * 1024;
+const COMPANY_BOX_APPROVAL_PREVIEW_CHARS = 400;
+const COMPANY_BOX_APPROVAL_MAX_PENDING_PER_AGENT = 50;
+
+function approvalFingerprint(actionKey: string, args: Record<string, unknown>) {
+  return createHash("sha256").update(stableJson({ actionKey, args })).digest("hex");
+}
+
+function approvalPreview(args: Record<string, unknown>) {
+  const json = JSON.stringify(args);
+  return json.length > COMPANY_BOX_APPROVAL_PREVIEW_CHARS
+    ? `${json.slice(0, COMPANY_BOX_APPROVAL_PREVIEW_CHARS - 1)}…`
+    : json;
+}
+
+const APPROVAL_STATUS: Record<CompanyBoxApproval["state"], string> = {
+  pending: "approval_pending",
+  executing: "executing",
+  succeeded: "succeeded",
+  failed: "failed",
+  denied: "denied",
+  expired: "expired",
+};
+
+/** What the requesting agent sees: never the arguments. */
+function agentApprovalView(approval: CompanyBoxApproval) {
+  return {
+    approvalId: approval.id,
+    status: APPROVAL_STATUS[approval.state],
+    actionKey: approval.actionKey,
+    expiresAt: approval.expiresAt,
+    ...(approval.state === "succeeded" ? { result: approval.result } : {}),
+    ...(approval.error ? { error: approval.error } : {}),
+  };
+}
+
+/** HTTP reply for a held call (first request, or a repeat with the same idempotency key). */
+function approvalReply(approval: CompanyBoxApproval): { status: number; body: Record<string, unknown> } {
+  const view = agentApprovalView(approval);
+  switch (approval.state) {
+    case "succeeded":
+      return { status: 200, body: { ok: true, ...view } };
+    case "failed":
+      return { status: 502, body: { ok: false, ...view, error: approval.error ?? "approval_execution_failed" } };
+    case "denied":
+      return { status: 403, body: { ok: false, ...view, error: "approval_denied" } };
+    case "expired":
+      return { status: 410, body: { ok: false, ...view, error: "approval_expired" } };
+    default:
+      return { status: 202, body: { ok: false, ...view } };
+  }
+}
+
+const COMPANY_BOX_META_TOOLS = ["search", "describe", "call", "status"] as const;
+type CompanyBoxMetaTool = (typeof COMPANY_BOX_META_TOOLS)[number];
+
+/** `operations.search|describe|call`, and `approvals.status` for held outward calls. */
+function companyBoxMetaSuffix(tool: CompanyBoxMetaTool) {
+  return tool === "status" ? "approvals.status" : `operations.${tool}`;
+}
+
+function companyBoxMetaToolName(provider: string, tool: CompanyBoxMetaTool) {
+  return `marketplace.${provider}.${companyBoxMetaSuffix(tool)}`;
+}
+
+function parseCompanyBoxMetaTool(toolName: string) {
+  const match = /^marketplace\.([a-z0-9][a-z0-9-]{0,127})\.(operations\.(search|describe|call)|approvals\.status)$/u.exec(toolName);
+  if (!match) return null;
+  return { provider: match[1]!, tool: (match[3] ?? "status") as CompanyBoxMetaTool };
+}
+
+const COMPANY_BOX_META_SCHEMAS: Record<CompanyBoxMetaTool, Record<string, unknown>> = {
+  search: {
+    type: "object",
+    properties: {
+      query: { type: "string", maxLength: 200, description: "Keywords matched against key, title, summary and tags." },
+      tag: { type: "string", maxLength: 100 },
+      capability: { type: "string", enum: ["connector.observe", "connector.dispatch", "connector.admin"] },
+      cursor: { type: "string", description: "nextCursor from the previous page." },
+      limit: { type: "integer", minimum: 1, maximum: 100, default: 25 },
+    },
+    additionalProperties: false,
+  },
+  describe: {
+    type: "object",
+    required: ["operation"],
+    properties: { operation: { type: "string", description: "Operation key from operations.search." } },
+    additionalProperties: false,
+  },
+  call: {
+    type: "object",
+    required: ["operation"],
+    properties: {
+      operation: { type: "string", description: "Operation key from operations.search." },
+      arguments: { type: "object", description: "Arguments matching operations.describe's inputSchema." },
+    },
+    additionalProperties: false,
+  },
+  status: {
+    type: "object",
+    required: ["approvalId"],
+    properties: { approvalId: { type: "string", description: "approvalId from an approval_pending reply." } },
+    additionalProperties: false,
+  },
+};
+
 function agentCapabilitiesForWorkspace(
   store: SqliteMarketplaceStore,
   workspaceSlug: string,
+  catalog: CompanyBoxCatalog,
 ) {
   const enabledBindings = store.listEnabledBindings(workspaceSlug);
   return store.listListingsForWorkspace(workspaceSlug).flatMap((listing) => {
     const customMcp = listingIsWorkspaceCustomMcp(listing, workspaceSlug);
-    if (listing.executionOwner !== "composio" && !customMcp) {
+    const openApi = listingIsCompanyBoxOpenApi(listing);
+    if (listing.executionOwner !== "composio" && !customMcp && !openApi) {
       return [];
     }
     if (!store.isRegistered(listing.pluginId)) {
@@ -1974,7 +2269,11 @@ function agentCapabilitiesForWorkspace(
     ) {
       return [];
     }
-    return listing.actions.flatMap((action) => {
+    const companyBox = companyBoxEntryForListing(catalog, listing, workspaceSlug);
+    if (openApi && !companyBox) {
+      return [];
+    }
+    const perAction = listing.actions.flatMap((action) => {
       if (
         !store.isActionEnabled({
           workspaceSlug,
@@ -1996,23 +2295,91 @@ function agentCapabilitiesForWorkspace(
       if (!matchingBinding) {
         return [];
       }
+      const operation =
+        companyBox?.kind === "openapi" ? (companyBox.byKey.get(action) ?? null) : null;
+      if (openApi && !operation) {
+        return [];
+      }
+      const toolName = toolNameForAction(listing.provider, action);
       return [
         {
           pluginId: listing.pluginId,
           workspaceSlug,
           provider: listing.provider,
           actionType: action,
-          toolName: toolNameForAction(listing.provider, action),
-          description: customMcp
-            ? `${listing.displayName}: ${customMcpToolForAction(listing, action)?.description ?? action}`
-            : `${listing.displayName}: ${action}`,
+          toolName,
+          description: operation
+            ? `${listing.displayName}: ${operation.title}`
+            : customMcp
+              ? `${listing.displayName}: ${customMcpToolForAction(listing, action)?.description ?? action}`
+              : `${listing.displayName}: ${action}`,
           requiredCapabilities: [requirement.capability],
           runtimeSource: listing.executionOwner,
           connectionState: connection?.state ?? null,
-          endpoint: `/api/agent/tools/${toolNameForAction(listing.provider, action)}`,
+          endpoint: `/api/agent/tools/${toolName}`,
+          ...(operation
+            ? {
+                inputSchema: operation.toolSchema,
+                ...(operation.schemaTruncated ? { schemaTruncated: true } : {}),
+                risk: { write: operation.write, outward: operation.outward, destructive: operation.destructive },
+              }
+            : {}),
         },
       ];
     });
+    if (!companyBox || perAction.length === 0) {
+      return perAction;
+    }
+    const metaTool = (tool: CompanyBoxMetaTool, description: string) => ({
+      pluginId: listing.pluginId,
+      workspaceSlug,
+      provider: listing.provider,
+      actionType: `${listing.provider}.${companyBoxMetaSuffix(tool)}`,
+      toolName: companyBoxMetaToolName(listing.provider, tool),
+      description,
+      requiredCapabilities:
+        tool === "call"
+          ? [...new Set(perAction.flatMap((entry) => entry.requiredCapabilities))]
+          : [],
+      runtimeSource: listing.executionOwner,
+      connectionState: connection?.state ?? null,
+      endpoint: `/api/agent/tools/${companyBoxMetaToolName(listing.provider, tool)}`,
+      inputSchema: COMPANY_BOX_META_SCHEMAS[tool],
+      exposure: companyBox.exposure,
+      operationCount: perAction.length,
+    });
+    const describeTool = metaTool(
+      "describe",
+      `${listing.displayName}: full input schema and documentation for one operation.`,
+    );
+    const hasOutward =
+      companyBox.kind === "openapi"
+        ? companyBox.operations.some((operation) => operation.outward)
+        : companyBox.tools.some((tool) => tool.outward);
+    // Outward calls can be held for the owner; agents poll them here.
+    const statusTools = hasOutward
+      ? [metaTool("status", `${listing.displayName}: status and result of a call waiting for the owner's approval.`)]
+      : [];
+    if (companyBox.exposure === "direct") {
+      // Direct: one tool per operation, plus describe when a listed schema had to be truncated.
+      return [
+        ...perAction,
+        ...(perAction.some((entry) => "schemaTruncated" in entry) ? [describeTool] : []),
+        ...statusTools,
+      ];
+    }
+    return [
+      metaTool(
+        "search",
+        `${listing.displayName}: search all ${perAction.length} operations by keyword, tag or capability. Paginated.`,
+      ),
+      describeTool,
+      metaTool(
+        "call",
+        `${listing.displayName}: call one operation by key. Grants and approvals apply per operation.`,
+      ),
+      ...statusTools,
+    ];
   });
 }
 
@@ -2250,6 +2617,42 @@ export async function buildMarketplaceApp(
   const providerEnvironment = () => providerSettings.environment();
   const frontend = await registerMarketplaceFrontend(app);
   const environment = options.environment ?? process.env;
+  const companyBox =
+    options.companyBoxCatalog ??
+    loadCompanyBoxCatalog(options.companyBoxCatalogDir ?? companyBoxCatalogDir(environment), {
+      directMaxOperations: companyBoxDirectMaxOperations(environment),
+    });
+  for (const failure of [
+    ...companyBox.loadErrors,
+    ...companyBox.entries
+      .filter((entry) => entry.errors.length > 0)
+      .map((entry) => ({ entry: entry.entry.id, code: "company_box_coverage_failed", message: entry.errors.join("; ") })),
+  ]) {
+    console.error(JSON.stringify({ event: "marketplace.company_box.entry_unusable", ...failure }));
+  }
+  // Company Box REST listings are global (configured per workspace). Seed the
+  // usable ones; a listing whose entry disappeared or broke keeps its row
+  // (installs and grants stay inspectable) but publishes no actions.
+  for (const entry of companyBox.usable()) {
+    if (entry.kind !== "openapi") continue;
+    const listing = companyBoxListing(entry, options.store.getListing(entry.pluginId)?.createdAt);
+    options.store.upsertListing(listing);
+    // A re-pinned spec may add operations: bind them where the entry is installed.
+    for (const install of options.store.listInstallsForPlugin(entry.pluginId)) {
+      if (install.lifecycle === "installed") {
+        bindCustomMcpForWorkspace(options.store, install.workspaceSlug, listing);
+      }
+    }
+  }
+  for (const listing of options.store.listListings()) {
+    if (
+      listingIsCompanyBoxOpenApi(listing) &&
+      !companyBox.openApiForPluginId(listing.pluginId) &&
+      listing.actions.length > 0
+    ) {
+      options.store.upsertListing(retiredCompanyBoxListing(listing));
+    }
+  }
   const rulesConfiguration = options.rules;
   const portalConfiguration = resolvePortalRuntimeConfiguration({
     env: environment,
@@ -2546,7 +2949,9 @@ export async function buildMarketplaceApp(
         502,
         error instanceof McpRemoteError && error.code === "mcp_rpc_error"
           ? "mcp_tool_failed"
-          : "mcp_unreachable",
+          : error instanceof McpRemoteError && error.code === "tailnet_unavailable"
+            ? "tailnet_unavailable"
+            : "mcp_unreachable",
       );
     }
     if (output.isError) {
@@ -2573,6 +2978,7 @@ export async function buildMarketplaceApp(
     };
     const usage = options.store.recordUsage({
       ...usageBase,
+      metadata: { ...usageBase.metadata, output: outputDigest(result) },
       status: "succeeded",
       error: null,
       output: result,
@@ -2591,6 +2997,384 @@ export async function buildMarketplaceApp(
       },
     });
     return { ok: true, traceId: input.traceId, result, usage, rules: input.rules };
+  };
+  const companyBoxFetch = options.companyBoxFetch ?? options.mcpFetch;
+  const maxUploadBytes = companyBoxMaxUploadBytes(environment);
+  // Execute routes carry base64 uploads: decoded cap × 4/3 plus room for JSON.
+  const uploadBodyLimit = Math.max(1024 * 1024, Math.ceil((maxUploadBytes * 4) / 3) + 256 * 1024);
+  /**
+   * Base URL (connection metadata) and decrypted credentials for a Company
+   * Box REST connector. Throws ConnectorSecretStoreUnavailableError.
+   */
+  const companyBoxOpenApiTarget = (listing: MarketplaceListing, workspaceSlug: string) => {
+    const entry = companyBox.openApiForPluginId(listing.pluginId);
+    if (!entry) return { ok: false as const, error: "company_box_entry_unavailable" };
+    const connection = options.store.getConnection(workspaceSlug, listing.pluginId);
+    const baseUrl = typeof connection?.metadata.baseUrl === "string" ? connection.metadata.baseUrl : "";
+    if (!baseUrl) return { ok: false as const, error: "connector_not_connected" };
+    return {
+      ok: true as const,
+      entry,
+      baseUrl,
+      credentials: options.store.readConnectorSecretValues({ workspaceSlug, pluginId: listing.pluginId }),
+    };
+  };
+  const callCompanyBoxOperation = (
+    target: { entry: CompiledOpenApiEntry; baseUrl: string; credentials: Record<string, string> },
+    key: string,
+    args: Record<string, unknown>,
+  ) => {
+    const operation = target.entry.byKey.get(key);
+    if (!operation) {
+      throw new OpenApiCallError("openapi_argument_invalid", "Unknown operation.", { field: "operation" });
+    }
+    return callOpenApiOperation({
+      baseUrl: target.baseUrl,
+      apiBasePath: target.entry.apiBasePath,
+      operation: operation.operation,
+      validateArguments: operation.validateArguments,
+      maxUploadBytes,
+      args,
+      auth: runtimeAuthFor(target.entry.entry.auth),
+      credentials: target.credentials,
+      fetchImpl: companyBoxFetch,
+      lookup: options.mcpLookup,
+      env: environment,
+    });
+  };
+  const companyBoxFailureStatus = (error: OpenApiCallError) =>
+    error.code === "openapi_argument_invalid" || error.code === "openapi_base_url_not_allowed"
+      ? 400
+      : error.code === "openapi_upload_too_large"
+        ? 413
+      : error.code === "openapi_credentials_missing"
+        ? 409
+        : error.code === "tailnet_unavailable"
+          ? 503
+        : error.code === "openapi_timeout"
+          ? 504
+          : 502;
+  const logCompanyBoxFailure = (input: { event: string; pluginId: string; workspaceSlug: string; error: unknown }) => {
+    // Codes and statuses only: never URLs (query auth), headers or bodies.
+    const failure = input.error instanceof OpenApiCallError ? input.error : null;
+    console.error(
+      JSON.stringify({
+        event: input.event,
+        pluginId: input.pluginId,
+        workspaceSlug: input.workspaceSlug,
+        code: failure?.code ?? "unexpected",
+        status: failure?.detail.status ?? null,
+        reason: failure?.detail.reason ?? null,
+        name: input.error instanceof Error ? input.error.name : typeof input.error,
+      }),
+    );
+  };
+  const executeCompanyBoxAction = async (input: {
+    reply: FastifyReply;
+    listing: MarketplaceListing;
+    workspaceSlug: string;
+    capability: ConnectorCapability;
+    action: Record<string, unknown> & { type: string };
+    actorId: string;
+    traceId: string;
+    rules: Awaited<ReturnType<typeof enforceRules>>;
+    risk: GovernedActionRisk | undefined;
+    runId: string | null;
+    sessionId: string | null;
+    agentGrantId: string | null;
+  }) => {
+    const { listing, workspaceSlug } = input;
+    const pluginId = listing.pluginId;
+    const rulesDecisionId =
+      "decisionId" in input.rules ? (input.rules.decisionId ?? null) : null;
+    const usageBase = {
+      workspaceSlug,
+      pluginId,
+      provider: listing.provider,
+      sourceExecutor: listing.executionOwner,
+      sourceActionKey: input.action.type,
+      productCapabilityKey: `connector.${listing.executionOwner}.${listing.provider}.${input.action.type}`,
+      scopesUsed: [input.capability],
+      runId: input.runId,
+      sessionId: input.sessionId,
+      metadata: {
+        rules: input.rules,
+        ...(input.risk ? { risk: input.risk } : {}),
+        ...(input.agentGrantId ? { agentGrantId: input.agentGrantId } : {}),
+      },
+      input: input.action,
+    };
+    const fail = (status: number, error: string, extra: Record<string, unknown> = {}) => {
+      const usage = options.store.recordUsage({ ...usageBase, status: "failed", error, output: null });
+      options.store.recordEvent({
+        type: "marketplace.execution.failed",
+        traceId: input.traceId,
+        workspaceSlug,
+        pluginId,
+        actorId: input.actorId,
+        rulesDecisionId,
+        payload: { capability: input.capability, action: input.action.type, usageId: usage.id, error },
+      });
+      input.reply.code(status);
+      return { ok: false, traceId: input.traceId, error, ...extra, usage };
+    };
+    let target: ReturnType<typeof companyBoxOpenApiTarget>;
+    try {
+      target = companyBoxOpenApiTarget(listing, workspaceSlug);
+    } catch (error) {
+      if (error instanceof ConnectorSecretStoreUnavailableError) {
+        return fail(503, "connector_secret_store_unavailable");
+      }
+      throw error;
+    }
+    if (!target.ok) return fail(409, target.error);
+    const operation = target.entry.byKey.get(input.action.type);
+    if (!operation) {
+      input.reply.code(400);
+      return { ok: false, traceId: input.traceId, error: "unknown_connector_action" };
+    }
+    const { type: _type, ...args } = input.action;
+    let response: Awaited<ReturnType<typeof callOpenApiOperation>>;
+    try {
+      response = await callCompanyBoxOperation(target, operation.key, args);
+    } catch (error) {
+      if (!(error instanceof OpenApiCallError)) throw error;
+      logCompanyBoxFailure({ event: "marketplace.company_box.execute_failed", pluginId, workspaceSlug, error });
+      return fail(companyBoxFailureStatus(error), error.code, {
+        ...(error.detail.field ? { field: error.detail.field } : {}),
+        ...(error.detail.reason ? { reason: error.detail.reason } : {}),
+        ...(error.detail.status
+          ? { upstream: { status: error.detail.status, ...(error.detail.body === undefined ? {} : { body: error.detail.body }) } }
+          : {}),
+      });
+    }
+    const result = {
+      pluginId,
+      workspaceSlug,
+      provider: listing.provider,
+      capability: input.capability,
+      actionType: input.action.type,
+      performedAt: new Date().toISOString(),
+      simulated: false,
+      summary: `Ran ${operation.title} on ${listing.displayName}.`,
+      details: {
+        operation: { key: operation.key, method: operation.method.toUpperCase(), path: operation.path },
+        response,
+      },
+    };
+    // The ledger keeps output shape plus the full output's size and sha256.
+    const usage = options.store.recordUsage({
+      ...usageBase,
+      metadata: { ...usageBase.metadata, output: outputDigest(result) },
+      status: "succeeded",
+      error: null,
+      output: result,
+    });
+    options.store.recordEvent({
+      type: "marketplace.execution.completed",
+      traceId: input.traceId,
+      workspaceSlug,
+      pluginId,
+      actorId: input.actorId,
+      rulesDecisionId,
+      payload: { capability: input.capability, action: input.action.type, usageId: usage.id },
+    });
+    return { ok: true, traceId: input.traceId, result, usage, rules: input.rules };
+  };
+  /**
+   * Owner approval mode: hold an agent's outward Company Box call for the
+   * owner instead of refusing it. Arguments are validated, bounded and stored
+   * (never logged or audited); a repeat with the same idempotency key returns
+   * the held call's state or result.
+   */
+  const holdCompanyBoxCall = (input: {
+    listing: MarketplaceListing;
+    workspaceSlug: string;
+    actionKey: string;
+    capability: ConnectorCapability;
+    args: Record<string, unknown>;
+    agentId: string;
+    sourceKind: CompanyBoxApproval["sourceKind"];
+    sourceRef: string;
+    idempotencyKey: string | null;
+    traceId: string;
+  }): { status: number; body: Record<string, unknown> } => {
+    const fingerprint = approvalFingerprint(input.actionKey, input.args);
+    if (input.idempotencyKey) {
+      const existing = options.store.findCompanyBoxApprovalByKey({
+        workspaceSlug: input.workspaceSlug,
+        agentId: input.agentId,
+        idempotencyKey: input.idempotencyKey,
+      });
+      if (existing) {
+        return existing.fingerprint === fingerprint && existing.pluginId === input.listing.pluginId
+          ? approvalReply(existing)
+          : { status: 409, body: { ok: false, error: "approval_idempotency_conflict" } };
+      }
+    }
+    if (
+      options.store.countPendingCompanyBoxApprovals({ workspaceSlug: input.workspaceSlug, agentId: input.agentId }) >=
+      COMPANY_BOX_APPROVAL_MAX_PENDING_PER_AGENT
+    ) {
+      return {
+        status: 429,
+        body: {
+          ok: false,
+          error: "approval_queue_full",
+          detail: `This agent already has ${COMPANY_BOX_APPROVAL_MAX_PENDING_PER_AGENT} calls waiting for approval.`,
+        },
+      };
+    }
+    if (Buffer.byteLength(JSON.stringify(input.args)) > COMPANY_BOX_APPROVAL_MAX_ARGUMENT_BYTES) {
+      // Held calls keep their arguments verbatim for the owner; nothing is
+      // truncated, so uploads that do not fit are refused outright.
+      return {
+        status: 413,
+        body: {
+          ok: false,
+          error: "approval_args_too_large",
+          detail: `Outward calls wait for approval with their arguments stored in full, up to ${COMPANY_BOX_APPROVAL_MAX_ARGUMENT_BYTES} bytes. Send a smaller file, or upload it with a non-outward operation first and reference it.`,
+        },
+      };
+    }
+    const entry = companyBoxEntryForListing(companyBox, input.listing, input.workspaceSlug);
+    if (entry?.kind === "openapi") {
+      const operation = entry.byKey.get(input.actionKey);
+      try {
+        if (!operation) throw new OpenApiCallError("openapi_argument_invalid", "Unknown operation.");
+        validateOpenApiArguments(operation.operation, input.args, runtimeAuthFor(entry.entry.auth), operation.validateArguments, maxUploadBytes);
+      } catch (error) {
+        if (!(error instanceof OpenApiCallError)) throw error;
+        return {
+          status: 400,
+          body: {
+            ok: false,
+            error: error.code,
+            ...(error.detail.field ? { field: error.detail.field } : {}),
+            ...(error.detail.reason ? { reason: error.detail.reason } : {}),
+          },
+        };
+      }
+    }
+    let approval: CompanyBoxApproval;
+    try {
+      approval = options.store.createCompanyBoxApproval({
+      workspaceSlug: input.workspaceSlug,
+      pluginId: input.listing.pluginId,
+      actionKey: input.actionKey,
+      capability: input.capability,
+      agentId: input.agentId,
+      sourceKind: input.sourceKind,
+      sourceRef: input.sourceRef,
+      idempotencyKey: input.idempotencyKey,
+      fingerprint,
+      arguments: input.args,
+      argumentsPreview: approvalPreview(input.args),
+      expiresAt: new Date(Date.now() + COMPANY_BOX_APPROVAL_TTL_MS).toISOString(),
+      });
+    } catch (error) {
+      // A concurrent hold with the same idempotency key won the insert.
+      const existing = input.idempotencyKey
+        ? options.store.findCompanyBoxApprovalByKey({
+            workspaceSlug: input.workspaceSlug,
+            agentId: input.agentId,
+            idempotencyKey: input.idempotencyKey,
+          })
+        : null;
+      if (!existing) throw error;
+      return existing.fingerprint === fingerprint && existing.pluginId === input.listing.pluginId
+        ? approvalReply(existing)
+        : { status: 409, body: { ok: false, error: "approval_idempotency_conflict" } };
+    }
+    options.store.recordAudit({
+      workspaceSlug: input.workspaceSlug,
+      pluginId: input.listing.pluginId,
+      eventType: "marketplace.company_box.approval.requested",
+      actorId: `agent:${input.agentId}`,
+      metadata: {
+        governance: "owner",
+        approvalId: approval.id,
+        actionKey: input.actionKey,
+        agentId: input.agentId,
+        sourceKind: input.sourceKind,
+        expiresAt: approval.expiresAt,
+      },
+    });
+    options.store.recordEvent({
+      type: "marketplace.execution.held",
+      traceId: input.traceId,
+      workspaceSlug: input.workspaceSlug,
+      pluginId: input.listing.pluginId,
+      actorId: `agent:${input.agentId}`,
+      payload: { approvalId: approval.id, action: input.actionKey, capability: input.capability },
+    });
+    return approvalReply(approval);
+  };
+  /** Run an approved held call once, against live state, and store its outcome. */
+  const runApprovedCompanyBoxCall = async (
+    approval: CompanyBoxApproval,
+    request: FastifyRequest,
+    reply: FastifyReply,
+    operatorId: string,
+  ): Promise<CompanyBoxApproval> => {
+    const traceId = traceIdFrom(request);
+    const fail = (error: string) =>
+      options.store.finishCompanyBoxApproval({ id: approval.id, state: "failed", error });
+    try {
+      const authorityActive =
+        approval.sourceKind === "agent-grant"
+          ? options.store.getAgentConnectorGrant(approval.sourceRef)?.state === "active"
+          : options.store.getMarketplaceAgentConsentById(approval.sourceRef)?.state === "active";
+      if (!authorityActive) return fail("approval_authority_revoked");
+      const listing = options.store.getListingForWorkspace(approval.pluginId, approval.workspaceSlug);
+      const published = listing
+        ? resolvePublishedAgentAction({
+            store: options.store,
+            workspaceSlug: approval.workspaceSlug,
+            pluginId: approval.pluginId,
+            actionKey: approval.actionKey,
+          })
+        : null;
+      if (!listing || !published || published.capability !== approval.capability) {
+        return fail("approval_target_unavailable");
+      }
+      const risk = companyBoxRiskForAction(companyBox, listing, approval.workspaceSlug, approval.actionKey);
+      const rules = await enforceRules({
+        reply,
+        workspaceSlug: approval.workspaceSlug,
+        operation: "execute",
+        capability: approval.capability,
+        pluginId: approval.pluginId,
+        actorId: operatorId,
+        payload: { approvalId: approval.id, agentId: approval.agentId, actionKey: approval.actionKey, traceId },
+        actor: principalActor(request),
+        ...(risk ? { risk } : {}),
+        ...governed,
+      });
+      if ("ok" in rules && rules.ok === false) return fail(String(rules.error));
+      const common = {
+        reply,
+        listing,
+        workspaceSlug: approval.workspaceSlug,
+        capability: approval.capability,
+        action: { ...approval.arguments, type: approval.actionKey },
+        actorId: `agent:${approval.agentId}`,
+        traceId,
+        rules,
+        runId: null,
+        sessionId: null,
+        agentGrantId: approval.sourceKind === "agent-grant" ? approval.sourceRef : null,
+      };
+      const outcome: Record<string, unknown> = listingIsCompanyBoxOpenApi(listing)
+        ? await executeCompanyBoxAction({ ...common, risk })
+        : await executeCustomMcpAction(common);
+      return outcome.ok === true
+        ? options.store.finishCompanyBoxApproval({ id: approval.id, state: "succeeded", result: outcome.result })
+        : fail(typeof outcome.error === "string" ? outcome.error : "approval_execution_failed");
+    } catch (error) {
+      fail("approval_execution_failed");
+      throw error;
+    }
   };
   const composioCatalogSyncByWorkspace = new Map<
     string,
@@ -2902,6 +3686,8 @@ export async function buildMarketplaceApp(
     ok: true,
     service: "marketplace",
     status: "healthy",
+    // disabled | connected | unavailable; never addresses, names or keys.
+    tailnet: await tailnetHealth(environment),
     time: new Date().toISOString(),
   }));
 
@@ -3074,6 +3860,7 @@ export async function buildMarketplaceApp(
     version: MARKETPLACE_VERSION,
     rules: await probeRulesConnection(),
     governance: governanceMode,
+    tailnet: await tailnetHealth(environment),
     checkedAt: new Date().toISOString(),
   }));
 
@@ -3472,6 +4259,18 @@ export async function buildMarketplaceApp(
     } catch (error) {
       return customMcpInputFailure(reply, error);
     }
+    // Secrets stay with the origin they were entered for: moving the server
+    // to another origin requires replacing (or removing) every secret header.
+    if (new URL(manifest.url).origin !== url.origin) {
+      const kept = options.store
+        .listConnectorSecrets({ workspaceSlug, pluginId })
+        .map((secret) => secret.name)
+        .filter((name) => !secretChanges.has(name));
+      if (kept.length) {
+        reply.code(400);
+        return { ok: false, error: "custom_mcp_secrets_required_for_new_origin", secretHeaders: kept };
+      }
+    }
     const writesSecrets = [...secretChanges.values()].some((value) => value !== null);
     if (writesSecrets && !options.store.connectorSecretStoreAvailable()) {
       reply.code(503);
@@ -3598,29 +4397,22 @@ export async function buildMarketplaceApp(
     return { ok: true, pluginId, deleted: true };
   });
 
-  app.post("/api/marketplace/connectors/custom/:pluginId/refresh", async (request, reply) => {
-    const gate = customMcpOperator(request, reply);
-    if ("error" in gate) return gate.error;
-    const { principal } = gate;
-    const workspaceSlug = principal.organizationId;
-    const { pluginId } = request.params as { pluginId: string };
-    const current = ownedCustomMcp(pluginId, workspaceSlug);
-    if (!current) {
-      reply.code(404);
-      return { ok: false, error: "plugin_not_found" };
-    }
-    const rules = await enforceRules({
-      reply,
-      workspaceSlug,
-      operation: "custom-mcp.refresh",
-      capability: "connector.admin",
-      pluginId,
-      actorId: principal.id,
-      payload: { transport: customMcpManifest(current).transport },
-      actor: principalActor(request),
-        ...governed,
-    });
-    if (!("effect" in rules)) return rules;
+  /**
+   * Connect to a custom MCP server, load its tools, and publish them. Shared
+   * by the custom connector refresh route and Company Box `mcp` entries
+   * (which apply the entry's exclusions, risk patterns and no 200-tool cap).
+   */
+  const refreshCustomMcpConnector = async (input: {
+    reply: FastifyReply;
+    current: MarketplaceListing;
+    workspaceSlug: string;
+    actorId: string;
+    rulesDecisionId: string | null;
+  }) => {
+    const { reply, current, workspaceSlug } = input;
+    const pluginId = current.pluginId;
+    const companyBoxEntry = companyBoxEntryForListing(companyBox, current, workspaceSlug);
+    const companyBoxMcp = companyBoxEntry?.kind === "mcp" ? companyBoxEntry : null;
     let connection: ReturnType<typeof customMcpConnection>;
     try {
       connection = customMcpConnection(current, workspaceSlug);
@@ -3635,8 +4427,22 @@ export async function buildMarketplaceApp(
     const at = new Date().toISOString();
     let errorCode: string | null = null;
     let remoteTools: Awaited<ReturnType<typeof listMcpTools>> = [];
+    let liveTools: Awaited<ReturnType<typeof listMcpTools>> = [];
     try {
-      remoteTools = await listMcpTools(connection);
+      // Company Box entries expose the whole toolkit: page through every tool
+      // (bounded by the client's page limit) instead of the 200-tool default.
+      remoteTools = await listMcpTools(connection, companyBoxMcp ? 10_000 : MCP_MAX_TOOLS);
+      liveTools = remoteTools;
+      if (companyBoxMcp) {
+        // Only tools in the pinned snapshot are exposed; a tool the server
+        // added since stays unusable (reported as notInSnapshot) until the
+        // entry is re-pinned and reviewed.
+        remoteTools = remoteTools.filter(
+          (tool) =>
+            !companyBoxMcp.excludedToolNames.has(tool.name) &&
+            companyBoxMcp.tools.some((pinned) => pinned.name === tool.name),
+        );
+      }
     } catch (error) {
       logCustomMcpFailure({ event: "marketplace.custom_mcp.refresh_failed", pluginId, workspaceSlug, error });
       errorCode = error instanceof McpRemoteError ? error.code : "mcp_protocol_error";
@@ -3666,7 +4472,18 @@ export async function buildMarketplaceApp(
     let listing: MarketplaceListing;
     if (errorCode === null) {
       try {
-        const tools = toolRecordsFromRemote(latest.provider, remoteTools);
+        const tools = toolRecordsFromRemote(latest.provider, remoteTools).map((tool) =>
+          companyBoxMcp
+            ? {
+                ...tool,
+                capability: companyBoxMcpToolRisk(
+                  companyBoxMcp.entry,
+                  tool,
+                  tool.action.slice(latest.provider.length + 1),
+                ).capability,
+              }
+            : tool,
+        );
         listing = rebuild({ tools, lastRefresh: { at, ok: true, errorCode: null } });
       } catch (error) {
         logCustomMcpFailure({ event: "marketplace.custom_mcp.refresh_failed", pluginId, workspaceSlug, error });
@@ -3685,7 +4502,31 @@ export async function buildMarketplaceApp(
         backend: "mcp",
         state: "connected",
         detail: `Connected. ${listing.actions.length} tool${listing.actions.length === 1 ? "" : "s"} available.`,
-        metadata: { lastRefreshAt: at, toolCount: listing.actions.length },
+        metadata: {
+          lastRefreshAt: at,
+          toolCount: listing.actions.length,
+          ...(companyBoxMcp
+            ? {
+                companyBox: {
+                  entryId: companyBoxMcp.entry.id,
+                  snapshotTools: companyBoxMcp.tools.length,
+                  // Drift between the pinned snapshot and the live server.
+                  missingFromServer: companyBoxMcp.tools
+                    .filter((tool) => !remoteTools.some((remote) => remote.name === tool.name))
+                    .map((tool) => tool.name)
+                    .slice(0, 50),
+                  notInSnapshot: liveTools
+                    .filter(
+                      (remote) =>
+                        !companyBoxMcp.tools.some((tool) => tool.name === remote.name) &&
+                        !companyBoxMcp.excludedToolNames.has(remote.name),
+                    )
+                    .map((remote) => remote.name)
+                    .slice(0, 50),
+                },
+              }
+            : {}),
+        },
       });
       if (options.store.getInstall(workspaceSlug, pluginId)?.lifecycle === "installed") {
         bindCustomMcpForWorkspace(options.store, workspaceSlug, listing);
@@ -3707,8 +4548,8 @@ export async function buildMarketplaceApp(
       workspaceSlug,
       pluginId,
       eventType: "marketplace.custom_mcp.refreshed",
-      actorId: principal.id,
-      rulesDecisionId: rules.decisionId,
+      actorId: input.actorId,
+      rulesDecisionId: input.rulesDecisionId,
       metadata: {
         ok: errorCode === null,
         errorCode,
@@ -3722,6 +4563,190 @@ export async function buildMarketplaceApp(
       return { ok: false, error: errorCode, connector: view };
     }
     return { ok: true, connector: view };
+  };
+
+  app.post("/api/marketplace/connectors/custom/:pluginId/refresh", async (request, reply) => {
+    const gate = customMcpOperator(request, reply);
+    if ("error" in gate) return gate.error;
+    const { principal } = gate;
+    const workspaceSlug = principal.organizationId;
+    const { pluginId } = request.params as { pluginId: string };
+    const current = ownedCustomMcp(pluginId, workspaceSlug);
+    if (!current) {
+      reply.code(404);
+      return { ok: false, error: "plugin_not_found" };
+    }
+    const rules = await enforceRules({
+      reply,
+      workspaceSlug,
+      operation: "custom-mcp.refresh",
+      capability: "connector.admin",
+      pluginId,
+      actorId: principal.id,
+      payload: { transport: customMcpManifest(current).transport },
+      actor: principalActor(request),
+        ...governed,
+    });
+    if (!("effect" in rules)) return rules;
+    return refreshCustomMcpConnector({
+      reply,
+      current,
+      workspaceSlug,
+      actorId: principal.id,
+      rulesDecisionId: rules.decisionId ?? null,
+    });
+  });
+
+  registerCompanyBoxRoutes(app, {
+    store: options.store,
+    catalog: companyBox,
+    environment,
+    operator: customMcpOperator,
+    govern: async (input) => {
+      const rules = await enforceRules({
+        reply: input.reply,
+        workspaceSlug: input.workspaceSlug,
+        operation: input.operation,
+        capability: "connector.admin",
+        pluginId: input.pluginId,
+        actorId: input.actorId,
+        payload: input.payload,
+        actor: principalActor(input.request),
+        ...governed,
+      });
+      return "effect" in rules
+        ? { ok: true as const, decisionId: rules.decisionId ?? null }
+        : { ok: false as const, response: rules };
+    },
+    callOperation: callCompanyBoxOperation,
+    refreshMcp: refreshCustomMcpConnector,
+  });
+
+  // Company Box approvals: outward calls held for the workspace owner.
+  const ownerApprovalView = (approval: CompanyBoxApproval) => {
+    const listing = options.store.getListingForWorkspace(approval.pluginId, approval.workspaceSlug);
+    const entry = listing ? companyBoxEntryForListing(companyBox, listing, approval.workspaceSlug) : null;
+    const operation = entry?.kind === "openapi" ? entry.byKey.get(approval.actionKey) : null;
+    const tool = listing && !operation ? customMcpToolForAction(listing, approval.actionKey) : null;
+    return {
+      id: approval.id,
+      pluginId: approval.pluginId,
+      app: listing?.displayName ?? approval.pluginId,
+      actionKey: approval.actionKey,
+      operation: operation
+        ? { title: operation.title, method: operation.method.toUpperCase(), path: operation.path }
+        : { title: tool?.title ?? tool?.name ?? approval.actionKey, method: null, path: null },
+      capability: approval.capability,
+      agentId: approval.agentId,
+      argumentsPreview: approval.argumentsPreview,
+      state: approval.state,
+      createdAt: approval.createdAt,
+      expiresAt: approval.expiresAt,
+      decidedAt: approval.decidedAt,
+      decidedBy: approval.decidedBy,
+      error: approval.error,
+      ...(approval.state === "succeeded" ? { result: approval.result } : {}),
+    };
+  };
+  const ownedApproval = (request: FastifyRequest, reply: FastifyReply) => {
+    const gate = customMcpOperator(request, reply);
+    if ("error" in gate) return { response: gate.error } as const;
+    const { approvalId } = request.params as { approvalId: string };
+    const approval = options.store.getCompanyBoxApproval(approvalId);
+    if (!approval || approval.workspaceSlug !== gate.principal.organizationId) {
+      reply.code(404);
+      return { response: { ok: false, error: "approval_not_found" } } as const;
+    }
+    return { principal: gate.principal, approval } as const;
+  };
+  const notPending = (reply: FastifyReply, approvalId: string) => {
+    const current = options.store.getCompanyBoxApproval(approvalId)!;
+    reply.code(409);
+    return {
+      ok: false,
+      error: current.state === "expired" ? "approval_expired" : "approval_not_pending",
+      approval: ownerApprovalView(current),
+    };
+  };
+
+  app.get("/api/marketplace/company-box/approvals", async (request, reply) => {
+    const gate = customMcpOperator(request, reply);
+    if ("error" in gate) return gate.error;
+    const query = z
+      .object({
+        state: z.enum(["pending", "executing", "succeeded", "failed", "denied", "expired"]).optional(),
+        limit: z.coerce.number().int().min(1).max(500).default(100),
+        workspaceSlug: z.string().optional(),
+        actorId: z.string().optional(),
+      })
+      .parse(request.query);
+    const workspaceSlug = gate.principal.organizationId;
+    return {
+      ok: true,
+      workspaceSlug,
+      pendingCount: options.store.listCompanyBoxApprovals({ workspaceSlug, state: "pending", limit: 500 }).length,
+      approvals: options.store
+        .listCompanyBoxApprovals({ workspaceSlug, state: query.state, limit: query.limit })
+        .map(ownerApprovalView),
+    };
+  });
+
+  /** Owner-only: the full stored arguments (≤ 32 KB) for review before approving. */
+  app.get("/api/marketplace/company-box/approvals/:approvalId", async (request, reply) => {
+    const owned = ownedApproval(request, reply);
+    if ("response" in owned) return owned.response;
+    return { ok: true, approval: ownerApprovalView(owned.approval), arguments: owned.approval.arguments };
+  });
+
+  app.post("/api/marketplace/company-box/approvals/:approvalId/approve", async (request, reply) => {
+    const owned = ownedApproval(request, reply);
+    if ("response" in owned) return owned.response;
+    const { principal, approval } = owned;
+    // Exactly once: only the request that moves it out of `pending` runs it.
+    const claimed = options.store.decideCompanyBoxApproval({
+      id: approval.id,
+      workspaceSlug: principal.organizationId,
+      decision: "approve",
+      decidedBy: principal.id,
+    });
+    if (!claimed) return notPending(reply, approval.id);
+    const finished = await runApprovedCompanyBoxCall(claimed, request, reply, principal.id);
+    reply.code(200);
+    options.store.recordAudit({
+      workspaceSlug: finished.workspaceSlug,
+      pluginId: finished.pluginId,
+      eventType: "marketplace.company_box.approval.approved",
+      actorId: principal.id,
+      metadata: {
+        approvalId: finished.id,
+        actionKey: finished.actionKey,
+        agentId: finished.agentId,
+        outcome: finished.state,
+        ...(finished.error ? { error: finished.error } : {}),
+      },
+    });
+    return { ok: finished.state === "succeeded", approval: ownerApprovalView(finished) };
+  });
+
+  app.post("/api/marketplace/company-box/approvals/:approvalId/deny", async (request, reply) => {
+    const owned = ownedApproval(request, reply);
+    if ("response" in owned) return owned.response;
+    const { principal, approval } = owned;
+    const denied = options.store.decideCompanyBoxApproval({
+      id: approval.id,
+      workspaceSlug: principal.organizationId,
+      decision: "deny",
+      decidedBy: principal.id,
+    });
+    if (!denied) return notPending(reply, approval.id);
+    options.store.recordAudit({
+      workspaceSlug: denied.workspaceSlug,
+      pluginId: denied.pluginId,
+      eventType: "marketplace.company_box.approval.denied",
+      actorId: principal.id,
+      metadata: { approvalId: denied.id, actionKey: denied.actionKey, agentId: denied.agentId },
+    });
+    return { ok: true, approval: ownerApprovalView(denied) };
   });
 
   const capabilityProjectionHandler = async (request: { headers: Record<string, unknown>; query: unknown }, reply: FastifyReply) => {
@@ -4383,7 +5408,10 @@ export async function buildMarketplaceApp(
         return rules;
       }
       const install = options.store.install(input.workspaceSlug, pluginId);
-      if (listingIsWorkspaceCustomMcp(listing, input.workspaceSlug)) {
+      if (
+        listingIsWorkspaceCustomMcp(listing, input.workspaceSlug) ||
+        listingIsCompanyBoxOpenApi(listing)
+      ) {
         bindCustomMcpForWorkspace(options.store, input.workspaceSlug, listing);
       }
       options.store.recordEvent({
@@ -5483,6 +6511,7 @@ export async function buildMarketplaceApp(
 
   app.post(
     "/api/marketplace/plugins/:pluginId/execute",
+    { bodyLimit: uploadBodyLimit },
     async (request, reply) => {
       const { pluginId } = request.params as { pluginId: string };
       const input = ExecuteInputSchema.parse(request.body);
@@ -5550,6 +6579,7 @@ export async function buildMarketplaceApp(
         return { ok: false, error: "plugin_not_found" };
       }
       const customMcp = listingIsWorkspaceCustomMcp(listing, input.workspaceSlug);
+      const openApi = listingIsCompanyBoxOpenApi(listing);
       const install = options.store.getInstall(input.workspaceSlug, pluginId);
       if (!install || !install.enabled || install.lifecycle !== "installed") {
         reply.code(409);
@@ -5645,7 +6675,7 @@ export async function buildMarketplaceApp(
         }
         effectiveAction = { ...scopedAction.action, type: input.action.type };
       }
-      if (listing.executionOwner !== "composio" && !customMcp) {
+      if (listing.executionOwner !== "composio" && !customMcp && !openApi) {
         options.store.recordEvent({
           type: "marketplace.execution.unsupported",
           traceId,
@@ -5655,7 +6685,7 @@ export async function buildMarketplaceApp(
           payload: {
             executionOwner: listing.executionOwner,
             action: input.action.type,
-            supportedExecutionOwners: ["composio", "mcp"],
+            supportedExecutionOwners: ["composio", "mcp", "openapi"],
           },
         });
         reply.code(501);
@@ -5664,10 +6694,33 @@ export async function buildMarketplaceApp(
           traceId,
           error: "connector_execution_not_supported",
           executionOwner: listing.executionOwner,
-          supportedExecutionOwners: ["composio", "mcp"],
+          supportedExecutionOwners: ["composio", "mcp", "openapi"],
           detail:
             "This launch profile executes Composio-backed tools and the workspace's own custom MCP connectors only. Native, Activepieces, Nango, and Hub MCP execution are unavailable rather than simulated.",
         };
+      }
+      const risk = companyBoxRiskForAction(companyBox, listing, input.workspaceSlug, input.action.type);
+      if (
+        governanceMode === "owner" &&
+        risk?.outward &&
+        scopedGrant &&
+        companyBoxEntryForListing(companyBox, listing, input.workspaceSlug)
+      ) {
+        const { type: _type, ...args } = effectiveAction;
+        const held = holdCompanyBoxCall({
+          listing,
+          workspaceSlug: input.workspaceSlug,
+          actionKey: input.action.type,
+          capability: input.capability,
+          args,
+          agentId: scopedGrant.agentId,
+          sourceKind: "agent-grant",
+          sourceRef: scopedGrant.id,
+          idempotencyKey: input.idempotencyKey ?? null,
+          traceId,
+        });
+        reply.code(held.status);
+        return { ...held.body, traceId };
       }
       const rules = await enforceRules({
         reply,
@@ -5676,6 +6729,7 @@ export async function buildMarketplaceApp(
         capability: input.capability,
         pluginId,
         actorId: effectiveActorId,
+        ...(risk ? { risk } : {}),
         payload: {
           ...(request.body as Record<string, unknown>),
           action: effectiveAction,
@@ -5711,6 +6765,22 @@ export async function buildMarketplaceApp(
         return { ...rules, traceId };
       }
 
+      if (openApi) {
+        return executeCompanyBoxAction({
+          reply,
+          listing,
+          workspaceSlug: input.workspaceSlug,
+          capability: input.capability,
+          action: effectiveAction,
+          actorId: effectiveActorId,
+          traceId,
+          rules,
+          risk,
+          runId: input.runId ?? null,
+          sessionId: input.sessionId ?? null,
+          agentGrantId: scopedGrant?.id ?? null,
+        });
+      }
       if (customMcp) {
         return executeCustomMcpAction({
           reply,
@@ -6019,6 +7089,28 @@ export async function buildMarketplaceApp(
           error: scopedAction.error,
         });
       }
+      const runtimeRisk = companyBoxRiskForAction(companyBox, listing, organizationId, input.selection.actionKey);
+      if (
+        governanceMode === "owner" &&
+        runtimeRisk?.outward &&
+        companyBoxEntryForListing(companyBox, listing, organizationId)
+      ) {
+        const { type: _type, ...args } = scopedAction.action;
+        const held = holdCompanyBoxCall({
+          listing,
+          workspaceSlug: organizationId,
+          actionKey: input.selection.actionKey,
+          capability: consent.capability,
+          args,
+          agentId: consent.agentId,
+          sourceKind: "runtime-lease",
+          sourceRef: consent.id,
+          idempotencyKey: input.idempotencyKey,
+          traceId,
+        });
+        reply.code(held.status);
+        return { ...held.body, schema: 1, traceId };
+      }
       const rules = await enforceRules({
         reply,
         workspaceSlug: organizationId,
@@ -6026,6 +7118,7 @@ export async function buildMarketplaceApp(
         capability: consent.capability,
         pluginId: consent.pluginId,
         actorId: `agent:${consent.agentId}`,
+        ...(runtimeRisk ? { risk: runtimeRisk } : {}),
         payload: {
           contractVersion: MARKETPLACE_PORTAL_HANDOFF_CONTRACT_VERSION,
           phase: "execute",
@@ -6068,6 +7161,32 @@ export async function buildMarketplaceApp(
       // their outbound connection before reserving the idempotency key so a
       // missing secret store never leaves an operation needing reconciliation.
       let mcpConnection: ReturnType<typeof customMcpConnection> | null = null;
+      let openApiTarget: Extract<ReturnType<typeof companyBoxOpenApiTarget>, { ok: true }> | null = null;
+      if (listingIsCompanyBoxOpenApi(listing)) {
+        let target: ReturnType<typeof companyBoxOpenApiTarget>;
+        try {
+          target = companyBoxOpenApiTarget(listing, organizationId);
+        } catch (error) {
+          if (!(error instanceof ConnectorSecretStoreUnavailableError)) throw error;
+          reply.code(503);
+          return runtimeResponse({ ok: false, traceId, error: "connector_secret_store_unavailable" });
+        }
+        if (!target.ok) {
+          reply.code(409);
+          return runtimeResponse({ ok: false, traceId, error: "runtime_connection_unavailable" });
+        }
+        const operation = target.entry.byKey.get(input.selection.actionKey);
+        const { type: _type, ...args } = scopedAction.action;
+        try {
+          if (!operation) throw new OpenApiCallError("openapi_argument_invalid", "Unknown operation.");
+          validateOpenApiArguments(operation.operation, args, runtimeAuthFor(target.entry.entry.auth), operation.validateArguments, maxUploadBytes);
+        } catch (error) {
+          if (!(error instanceof OpenApiCallError)) throw error;
+          reply.code(400);
+          return runtimeResponse({ ok: false, traceId, error: "provider_argument_invalid" });
+        }
+        openApiTarget = target;
+      }
       if (listingIsWorkspaceCustomMcp(listing, organizationId)) {
         try {
           mcpConnection = customMcpConnection(listing, organizationId);
@@ -6122,12 +7241,25 @@ export async function buildMarketplaceApp(
               : "runtime_operation_reconciliation_required",
         });
       }
-      const toolName = mcpConnection
+      const toolName = mcpConnection || openApiTarget
         ? published.toolName
         : composioToolNameForAction(listing, input.selection.actionKey);
       try {
         let providerOutput: unknown;
-        if (mcpConnection) {
+        if (openApiTarget) {
+          const { type: _type, ...args } = scopedAction.action;
+          try {
+            providerOutput = await callCompanyBoxOperation(openApiTarget, input.selection.actionKey, args);
+          } catch (error) {
+            logCompanyBoxFailure({
+              event: "marketplace.company_box.runtime_failed",
+              pluginId: listing.pluginId,
+              workspaceSlug: organizationId,
+              error,
+            });
+            throw new Error(error instanceof OpenApiCallError ? error.code : "openapi_unreachable");
+          }
+        } else if (mcpConnection) {
           const { type: _type, ...args } = scopedAction.action;
           const output = await callMcpTool(mcpConnection, toolName, args);
           if (output.isError) {
@@ -6160,7 +7292,7 @@ export async function buildMarketplaceApp(
           actionType: input.selection.actionKey,
           performedAt: new Date().toISOString(),
           simulated: false,
-          summary: mcpConnection
+          summary: mcpConnection || openApiTarget
             ? `Ran ${toolName} on ${listing.displayName}.`
             : `Executed ${toolName} through Composio.`,
           details: { toolName, result: runtimeSafeProviderResult(providerOutput) },
@@ -6422,6 +7554,7 @@ export async function buildMarketplaceApp(
     const capabilities = agentCapabilitiesForWorkspace(
       options.store,
       query.workspaceSlug,
+      companyBox,
     );
     if (!query.grantId) {
       return { workspaceSlug: query.workspaceSlug, capabilities };
@@ -6455,7 +7588,7 @@ export async function buildMarketplaceApp(
     };
   });
 
-  app.post("/api/agent/tools/:toolName", async (request, reply) => {
+  app.post("/api/agent/tools/:toolName", { bodyLimit: uploadBodyLimit }, async (request, reply) => {
     const { toolName } = request.params as { toolName: string };
     const body = z
       .object({
@@ -6465,9 +7598,88 @@ export async function buildMarketplaceApp(
         input: z.record(z.unknown()).default({}),
         grantId: z.string().trim().min(1).optional(),
         resourceRef: z.string().trim().min(1).optional(),
+        /** Repeating a held outward call with the same key returns its approval state or result. */
+        idempotencyKey: IdempotencyKeySchema.optional(),
       })
       .parse(request.body);
-    const actionType = actionForTool(toolName);
+    // Company Box meta tools: search/describe read the published operation
+    // list; call resolves to one operation key, so grants, bindings and
+    // approvals apply to that operation exactly as for a direct tool.
+    const meta = parseCompanyBoxMetaTool(toolName);
+    let actionType = meta ? null : actionForTool(toolName);
+    let actionInput = body.input;
+    if (meta) {
+      const metaListing = options.store.getListingForWorkspace(body.pluginId, body.workspaceSlug);
+      const entry =
+        metaListing && metaListing.provider === meta.provider
+          ? companyBoxEntryForListing(companyBox, metaListing, body.workspaceSlug)
+          : null;
+      if (!metaListing || !entry) {
+        reply.code(404);
+        return { ok: false, error: "agent_tool_not_found" };
+      }
+      if (meta.tool === "status") {
+        // Only the agent that made the call can read its approval.
+        const target = z.object({ approvalId: z.string().trim().min(1).max(100) }).strict().safeParse(body.input);
+        if (!target.success) {
+          reply.code(400);
+          return { ok: false, error: "validation_failed" };
+        }
+        const approval = options.store.getCompanyBoxApproval(target.data.approvalId);
+        if (!approval || approval.workspaceSlug !== body.workspaceSlug || approval.pluginId !== metaListing.pluginId) {
+          reply.code(404);
+          return { ok: false, error: "approval_not_found" };
+        }
+        const scope = await verifyPortalScope({ request, reply, requiredCapability: approval.capability });
+        if (!scope.ok) return { ok: false, error: scope.error };
+        if (scope.scope.agentId !== approval.agentId || scope.scope.organizationId !== approval.workspaceSlug) {
+          reply.code(404);
+          return { ok: false, error: "approval_not_found" };
+        }
+        return { ok: true, ...agentApprovalView(approval) };
+      }
+      const published = publishedAgentActionsForListing({
+        store: options.store,
+        workspaceSlug: body.workspaceSlug,
+        listing: metaListing,
+      });
+      if (published.length === 0) {
+        reply.code(404);
+        return { ok: false, error: "agent_tool_not_available" };
+      }
+      const operations = published.map((published) => companyBoxAgentOperation(entry, metaListing, published));
+      if (meta.tool === "search") {
+        const search = CompanyBoxSearchSchema.safeParse(body.input);
+        if (!search.success) {
+          reply.code(400);
+          return { ok: false, error: "validation_failed" };
+        }
+        return {
+          ok: true,
+          pluginId: metaListing.pluginId,
+          exposure: entry.exposure,
+          ...searchAgentOperations(operations, search.data),
+        };
+      }
+      const target = CompanyBoxOperationInputSchema.safeParse(body.input);
+      if (!target.success) {
+        reply.code(400);
+        return { ok: false, error: "validation_failed" };
+      }
+      if (!operations.some((operation) => operation.key === target.data.operation)) {
+        reply.code(404);
+        return { ok: false, error: "company_box_operation_not_found" };
+      }
+      if (meta.tool === "describe") {
+        return {
+          ok: true,
+          pluginId: metaListing.pluginId,
+          operation: describeCompanyBoxOperation(entry, metaListing, target.data.operation),
+        };
+      }
+      actionType = target.data.operation;
+      actionInput = target.data.arguments ?? {};
+    }
     if (!actionType) {
       reply.code(404);
       return { ok: false, error: "agent_tool_not_found" };
@@ -6513,14 +7725,17 @@ export async function buildMarketplaceApp(
         return { ok: false, error: "resource_mismatch" };
       }
     }
-    const available = agentCapabilitiesForWorkspace(
-      options.store,
-      body.workspaceSlug,
-    ).some(
-      (capability) =>
-        capability.toolName === toolName &&
-        capability.pluginId === body.pluginId,
-    );
+    const available =
+      meta !== null ||
+      agentCapabilitiesForWorkspace(
+        options.store,
+        body.workspaceSlug,
+        companyBox,
+      ).some(
+        (capability) =>
+          capability.toolName === toolName &&
+          capability.pluginId === body.pluginId,
+      );
     if (!available) {
       reply.code(404);
       return { ok: false, error: "agent_tool_not_available" };
@@ -6547,7 +7762,8 @@ export async function buildMarketplaceApp(
         ...(grant
           ? { agentGrantId: grant.id, resourceRef: grant.resourceRef }
           : {}),
-        action: { ...body.input, type: actionType },
+        ...(body.idempotencyKey ? { idempotencyKey: body.idempotencyKey } : {}),
+        action: { ...actionInput, type: actionType },
       },
     });
     reply.code(injected.statusCode);

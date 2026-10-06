@@ -19,6 +19,7 @@ import {
   McpUrlPolicyError,
   type McpLookup,
 } from "./mcp-url-policy.js";
+import { routeOutbound, tailnetAwareFetch, TailnetUnavailableError } from "./tailnet.js";
 import { MARKETPLACE_VERSION } from "./version.js";
 
 export type McpTransport = "streamable-http" | "sse";
@@ -39,7 +40,8 @@ export type McpRemoteErrorCode =
   | "mcp_protocol_error"
   | "mcp_response_too_large"
   | "mcp_rpc_error"
-  | "custom_mcp_url_not_allowed";
+  | "custom_mcp_url_not_allowed"
+  | "tailnet_unavailable";
 
 export class McpRemoteError extends Error {
   constructor(
@@ -575,13 +577,18 @@ export class McpRemoteClient {
     let url: URL;
     try {
       url = await assertMcpUrlAllowed(options.url, { env: options.env, lookup: options.lookup });
+      routeOutbound(url, options.env);
     } catch (error) {
+      if (error instanceof TailnetUnavailableError) {
+        throw new McpRemoteError("tailnet_unavailable", error.message);
+      }
       if (error instanceof McpUrlPolicyError) {
         throw new McpRemoteError("custom_mcp_url_not_allowed", error.message, { reason: error.reason });
       }
       throw error;
     }
-    const fetchImpl = options.fetchImpl ?? fetch;
+    // Tailnet hosts go through the tailnet proxy when one is configured.
+    const fetchImpl = tailnetAwareFetch(options.env, options.fetchImpl, options.lookup);
     const maxBytes = options.maxBodyBytes ?? MCP_MAX_BODY_BYTES;
     const connectMs = options.timeouts?.connectMs ?? MCP_CONNECT_TIMEOUT_MS;
     let session: McpTransportSession;

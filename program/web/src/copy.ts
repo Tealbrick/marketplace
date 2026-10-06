@@ -145,6 +145,46 @@ export function errorCopy(error: Error): ErrorCopy {
       return { title: "The MCP server's response was too large", detail: "Marketplace accepts responses up to 2 MB. Ask the server owner to reduce the response size.", reference };
     case "mcp_tool_failed":
       return { title: "The tool reported an error", detail: "The MCP server ran the tool but it failed. Check the arguments and try again.", reference };
+    case "company_box_base_url_not_allowed":
+      return { title: "That app address isn't allowed", detail: "Use the app's https:// address on your tailnet (*.ts.net) or the public internet. Local, private-network and cloud metadata addresses are blocked, and keys don't belong in the address.", reference };
+    case "company_box_credentials_required":
+      return { title: "Credentials are missing", detail: "Fill in every credential field when you first set up an app or move it to a new address. Saved credentials are never sent to a different host.", reference };
+    case "company_box_credential_unknown":
+    case "company_box_credential_invalid":
+      return { title: "A credential isn't valid", detail: "Paste the value exactly as the app shows it, without line breaks.", reference };
+    case "company_box_entry_unavailable":
+      return { title: "This app's catalog entry is broken", detail: "Its pinned spec failed the coverage check, so it can't be set up. Ask your administrator to fix the entry.", reference };
+    case "company_box_not_set_up":
+      return { title: "Set this app up first", detail: "Add its address and credentials, then test the connection.", reference };
+    case "openapi_auth_rejected":
+      return { title: "The app didn't accept the credentials", detail: "Check the token or password, replace it, and test again.", reference };
+    case "openapi_unreachable":
+    case "openapi_timeout":
+      return { title: "Couldn't reach the app", detail: "Check the address and that Marketplace can reach your tailnet, then test again.", reference };
+    case "openapi_http_error":
+      return { title: "The app returned an error", detail: "Check that the address points at the app (not a proxy login page), then test again.", reference };
+    case "openapi_response_too_large":
+      return { title: "The app's response was too large", detail: "Marketplace accepts responses up to 2 MB.", reference };
+    case "openapi_base_url_not_allowed":
+      return errorCopy(new ApiError(code, status, { error: "company_box_base_url_not_allowed" }));
+    case "tailnet_unavailable":
+      return { title: "The tailnet is unavailable", detail: "Marketplace couldn't join your tailnet, so apps on *.ts.net can't be reached. Check the TS_AUTHKEY on the Marketplace service and its logs.", reference };
+    case "owner_approval_required_for_outward":
+      return { title: "This sends something outside your workspace", detail: "Outward actions such as sending or publishing need your approval each time. Run it yourself from Marketplace, or connect approvals.", reference };
+    case "approval_args_too_large":
+      return { title: "Too large to hold for approval", detail: "Outward calls are stored in full while they wait for you, up to 32 KB. Send a smaller file, or upload it with a non-outward operation first.", reference };
+    case "openapi_upload_too_large":
+      return { title: "The file is too large", detail: "Uploads are limited per call (25 MB by default).", reference };
+    case "approval_queue_full":
+      return { title: "Too many requests are waiting", detail: "This agent already has 50 calls waiting for approval. Approve or deny some first.", reference };
+    case "custom_mcp_secrets_required_for_new_origin":
+      return { title: "Enter the secrets again for the new address", detail: "Saved secrets stay with the server they were entered for. Replace or remove each secret header when you change the server's address.", reference };
+    case "approval_not_pending":
+      return { title: "This request was already decided", detail: "Someone approved or denied it, or it ran. Refresh to see what happened.", reference };
+    case "approval_expired":
+      return { title: "This request expired", detail: "Requests wait 7 days for approval. The agent can ask again.", reference };
+    case "approval_not_found":
+      return { title: "Request not found", detail: "It may belong to another workspace or was removed. Refresh and try again.", reference };
     case "agent_action_not_published":
       return { title: "This action isn't available to agents right now", detail: "The connector may have been removed or disconnected, or the action was turned off. Refresh and choose an action from the list.", reference };
     case "agent_action_account_mismatch":

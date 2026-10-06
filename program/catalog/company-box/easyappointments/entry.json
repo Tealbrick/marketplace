@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "id": "easyappointments",
+  "displayName": "Easy!Appointments",
+  "description": "Self-hosted appointment booking: appointments, customers, services, providers, availabilities, blocked periods and webhooks. Booking changes email customers and providers, so they are held for approval.",
+  "category": "Scheduling",
+  "app": {
+    "version": "1.6.0",
+    "homepage": "https://easyappointments.org",
+    "license": "GPL-3.0",
+    "specSource": "https://raw.githubusercontent.com/alextselegidis/easyappointments/1.6.0/openapi.yml"
+  },
+  "source": "openapi",
+  "openapi": {
+    "spec": "openapi.json",
+    "sha256": "2827831e11421f6bd22bc85f9af848cc4916c8dce7c921df063da244f2660962"
+  },
+  "auth": {
+    "type": "header",
+    "name": "Authorization",
+    "prefix": "Bearer ",
+    "label": "API token"
+  },
+  "baseUrlExample": "https://neuu.your-tailnet.ts.net:8515",
+  "healthOperation": "GET /services",
+  "outward": [
+    "POST /appointments",
+    "PUT /appointments/{appointmentId}",
+    "DELETE /appointments/{appointmentId}",
+    "POST /webhooks",
+    "PUT /webhooks/{webhookId}"
+  ],
+  "destructive": [],
+  "exposure": "auto",
+  "excluded": [
+    {
+      "operation": "GET /admins",
+      "reason": "Administrator accounts and their credentials: creating or changing an admin is a privilege escalation, so this stays in the app's own admin screens."
+    },
+    {
+      "operation": "POST /admins",
+      "reason": "Administrator accounts and their credentials: creating or changing an admin is a privilege escalation, so this stays in the app's own admin screens."
+    },
+    {
+      "operation": "GET /admins/{adminId}",
+      "reason": "Administrator accounts and their credentials: creating or changing an admin is a privilege escalation, so this stays in the app's own admin screens."
+    },
+    {
+      "operation": "PUT /admins/{adminId}",
+      "reason": "Administrator accounts and their credentials: creating or changing an admin is a privilege escalation, so this stays in the app's own admin screens."
+    },
+    {
+      "operation": "DELETE /admins/{adminId}",
+      "reason": "Administrator accounts and their credentials: creating or changing an admin is a privilege escalation, so this stays in the app's own admin screens."
+    },
+    {
+      "operation": "GET /settings",
+      "reason": "Instance settings include the API token, SMTP credentials and integration secrets; changing them reconfigures the whole instance, so this stays in the app's own settings screen."
+    },
+    {
+      "operation": "GET /settings/{settingName}",
+      "reason": "Instance settings include the API token, SMTP credentials and integration secrets; changing them reconfigures the whole instance, so this stays in the app's own settings screen."
+    },
+    {
+      "operation": "PUT /settings/{settingName}",
+      "reason": "Instance settings include the API token, SMTP credentials and integration secrets; changing them reconfigures the whole instance, so this stays in the app's own settings screen."
+    }
+  ]
+}
