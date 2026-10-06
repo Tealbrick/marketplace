@@ -1,7 +1,5 @@
 node_modules/
 dist/
-!plugin/hermes/gateway-dashboard/marketplace-hub/dashboard/dist/
-!plugin/hermes/gateway-dashboard/marketplace-hub/dashboard/dist/index.js
 web-dist/
 .output/
 coverage/

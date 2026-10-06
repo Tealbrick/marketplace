@@ -22,7 +22,6 @@ import type {
   ConnectorCapability,
   ConnectorConnection,
   CredentialRef,
-  AgentSessionCorrelation,
   ConnectorUsageLedgerEntry,
   MarketplaceBrokerGrant,
   MarketplaceAgentConsent,
@@ -484,35 +483,6 @@ function companyBoxApprovalFromRow(row: Record<string, unknown>): CompanyBoxAppr
   };
 }
 
-function sessionCorrelationFromRow(
-  row: Record<string, unknown>,
-): AgentSessionCorrelation {
-  return {
-    id: String(row.id),
-    workspaceSlug: String(row.workspace_slug),
-    appThreadId: String(row.app_thread_id),
-    provider: String(row.provider),
-    providerInstanceId: String(row.provider_instance_id),
-    remoteSessionId: String(row.remote_session_id),
-    hermesLiveSessionId:
-      row.hermes_live_session_id === null
-        ? null
-        : String(row.hermes_live_session_id),
-    hermesStoredSessionId:
-      row.hermes_stored_session_id === null
-        ? null
-        : String(row.hermes_stored_session_id),
-    profile: row.profile === null ? null : String(row.profile),
-    runtimeMode: row.runtime_mode === null ? null : String(row.runtime_mode),
-    cwd: row.cwd === null ? null : String(row.cwd),
-    source: String(row.source),
-    eventType: String(row.event_type),
-    metadata: jsonParse<JsonRecord>(String(row.metadata), {}),
-    firstSeenAt: String(row.first_seen_at),
-    lastSeenAt: String(row.last_seen_at),
-  };
-}
-
 function brokerGrantFromRow(
   row: Record<string, unknown>,
 ): MarketplaceBrokerGrant {
@@ -823,6 +793,8 @@ export class SqliteMarketplaceStore {
         created_at TEXT NOT NULL
       );
 
+      -- Retired feature: no code reads or writes this table any more. It is
+      -- kept so existing databases and the table inventory stay unchanged.
       CREATE TABLE IF NOT EXISTS agent_session_correlation (
         id TEXT PRIMARY KEY,
         workspace_slug TEXT NOT NULL,
@@ -926,7 +898,7 @@ export class SqliteMarketplaceStore {
       "ALTER TABLE marketplace_listing ADD COLUMN runtime_sources_json TEXT NOT NULL DEFAULT '[]'",
     );
     // Operator-created custom connectors are owned by one workspace; seeded
-    // and Hub-registered listings stay global (NULL).
+    // listings stay global (NULL).
     this.addColumnIfMissing(
       "ALTER TABLE marketplace_listing ADD COLUMN workspace_slug TEXT",
     );
@@ -1601,121 +1573,6 @@ export class SqliteMarketplaceStore {
         Math.max(1, Math.min(input.limit ?? 100, 500)),
       ) as Record<string, unknown>[];
     return rows.map(usageFromRow);
-  }
-
-  recordSessionCorrelation(input: {
-    workspaceSlug: string;
-    appThreadId: string;
-    provider: string;
-    providerInstanceId: string;
-    remoteSessionId: string;
-    hermesLiveSessionId?: string | null;
-    hermesStoredSessionId?: string | null;
-    profile?: string | null;
-    runtimeMode?: string | null;
-    cwd?: string | null;
-    source?: string;
-    eventType?: string;
-    metadata?: JsonRecord;
-  }): AgentSessionCorrelation {
-    const timestamp = nowIso();
-    const id = createId("agent_session");
-    this.db
-      .prepare(
-        `INSERT INTO agent_session_correlation (
-          id, workspace_slug, app_thread_id, provider, provider_instance_id,
-          remote_session_id, hermes_live_session_id, hermes_stored_session_id,
-          profile, runtime_mode, cwd, source, event_type, metadata,
-          first_seen_at, last_seen_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(workspace_slug, app_thread_id, provider_instance_id, remote_session_id)
-        DO UPDATE SET
-          hermes_live_session_id = excluded.hermes_live_session_id,
-          hermes_stored_session_id = COALESCE(excluded.hermes_stored_session_id, hermes_stored_session_id),
-          profile = COALESCE(excluded.profile, profile),
-          runtime_mode = COALESCE(excluded.runtime_mode, runtime_mode),
-          cwd = COALESCE(excluded.cwd, cwd),
-          source = excluded.source,
-          event_type = excluded.event_type,
-          metadata = excluded.metadata,
-          last_seen_at = excluded.last_seen_at`,
-      )
-      .run(
-        id,
-        input.workspaceSlug,
-        input.appThreadId,
-        input.provider,
-        input.providerInstanceId,
-        input.remoteSessionId,
-        input.hermesLiveSessionId ?? null,
-        input.hermesStoredSessionId ?? null,
-        input.profile ?? null,
-        input.runtimeMode ?? null,
-        input.cwd ?? null,
-        input.source ?? "doppelganger-app",
-        input.eventType ?? "session.observed",
-        JSON.stringify(input.metadata ?? {}),
-        timestamp,
-        timestamp,
-      );
-    return this.requireSessionCorrelation({
-      workspaceSlug: input.workspaceSlug,
-      appThreadId: input.appThreadId,
-      providerInstanceId: input.providerInstanceId,
-      remoteSessionId: input.remoteSessionId,
-    });
-  }
-
-  requireSessionCorrelation(input: {
-    workspaceSlug: string;
-    appThreadId: string;
-    providerInstanceId: string;
-    remoteSessionId: string;
-  }): AgentSessionCorrelation {
-    const row = this.db
-      .prepare(
-        `SELECT * FROM agent_session_correlation
-         WHERE workspace_slug = ?
-           AND app_thread_id = ?
-           AND provider_instance_id = ?
-           AND remote_session_id = ?`,
-      )
-      .get(
-        input.workspaceSlug,
-        input.appThreadId,
-        input.providerInstanceId,
-        input.remoteSessionId,
-      ) as Record<string, unknown> | undefined;
-    if (!row) {
-      throw new Error(`Missing session correlation for ${input.appThreadId}`);
-    }
-    return sessionCorrelationFromRow(row);
-  }
-
-  listSessionCorrelations(input: {
-    workspaceSlug: string;
-    appThreadId?: string;
-    remoteSessionId?: string;
-    limit?: number;
-  }): AgentSessionCorrelation[] {
-    const rows = this.db
-      .prepare(
-        `SELECT * FROM agent_session_correlation
-         WHERE workspace_slug = ?
-           AND (? IS NULL OR app_thread_id = ?)
-           AND (? IS NULL OR remote_session_id = ?)
-         ORDER BY last_seen_at DESC
-         LIMIT ?`,
-      )
-      .all(
-        input.workspaceSlug,
-        input.appThreadId ?? null,
-        input.appThreadId ?? null,
-        input.remoteSessionId ?? null,
-        input.remoteSessionId ?? null,
-        Math.max(1, Math.min(input.limit ?? 100, 500)),
-      ) as Record<string, unknown>[];
-    return rows.map(sessionCorrelationFromRow);
   }
 
   createBrokerGrant(input: {

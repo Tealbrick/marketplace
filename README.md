@@ -42,8 +42,8 @@ private repository history.
   adapter boundaries and fail closed when their runtime is not configured or
   accepted for execution.
 
-The schemas under `contracts/`, the extension manifest, and the Hermes adapter
-describe typed integration boundaries. Hosts and other miniapps must use the
+The schemas under `contracts/` and the extension manifest describe typed
+integration boundaries. Hosts and other miniapps must use the
 authenticated Program API; they must not read Marketplace SQLite state or
 provider secrets directly.
 
@@ -52,7 +52,7 @@ provider secrets directly.
 Set `MARKETPLACE_ORGANIZATION_ID` for the deployment-owned organization. The
 operator exchanges `MARKETPLACE_OPERATOR_ACCESS_TOKEN` for a short-lived
 HttpOnly session. Browser mutations require same-origin and CSRF proof.
-Cross-app, Agent, and host projection routes use the server-only
+Cross-app and Agent service routes use the server-only
 `MARKETPLACE_INTERNAL_AUTH_TOKEN` or a separately scoped Portal lease. Browser
 input such as workspace, actor, or agent labels is never treated as authority.
 
@@ -85,13 +85,13 @@ Requires Node `>=22.22.0` and pnpm `>=9.15.4`.
 
 ```sh
 pnpm --dir program install --frozen-lockfile
-TEALBRICK_MICROAPPS_ROOT="$PWD" pnpm --dir program test
+pnpm --dir program test
 pnpm --dir program typecheck
 pnpm --dir program build:miniapp
 ```
 
 Tealbrick environment variables use the `TEALBRICK_` prefix
-(`TEALBRICK_MICROAPPS_ROOT`, `TEALBRICK_DEBUG`, `TEALBRICK_RUNTIME_FILE`,
+(`TEALBRICK_DEBUG`, `TEALBRICK_RUNTIME_FILE`,
 `TEALBRICK_PRODUCT_WORKSPACE_DIR`, `TEALBRICK_MARKETPLACE_INTERNAL_AUTH_TOKEN`,
 `TEALBRICK_APP_HOME`). The old `DOPPELGANGER_*` names
 are deprecated aliases that still work and log a one-time warning. Without an
