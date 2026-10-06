@@ -1,0 +1,40 @@
+{
+  "paths": {
+    "/api/v1/management/surveys/{surveyId}/singleUseIds": {
+      "get": {
+        "parameters": [
+          {
+            "example": "{{apiKey}}",
+            "in": "header",
+            "name": "x-api-key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "surveyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Number of links to generate.",
+            "example": 10,
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "maximum": 5000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

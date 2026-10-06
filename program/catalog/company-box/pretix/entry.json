@@ -75,7 +75,9 @@
     "teams_invites.create",
     "webhooks.create",
     "webhooks.replace",
-    "webhooks.update"
+    "webhooks.update",
+    "invoices.transmit",
+    "invoices.transmit_organizer"
   ],
   "destructive": [
     "checkinrpc.annul",
@@ -94,6 +96,13 @@
     "shredders.shred",
     "invoices.regenerate_organizer",
     "invoices.reissue_organizer"
+  ],
+  "reads": [
+    "exporters.run",
+    "exporters.run_organizer",
+    "shredders.export",
+    "ticketpdfrenderer.render_batch",
+    "orderpositions.price_calc"
   ],
   "exposure": "auto",
   "excluded": []

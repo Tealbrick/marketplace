@@ -13,7 +13,11 @@
   "openapi": {
     "spec": "openapi.json",
     "basePath": "/api",
-    "sha256": "55be5cc2905bc7e15f5633a35cb0ff016b087afdce7e6ea449bcf7a40cd6d233"
+    "overlay": {
+      "file": "overlay.json",
+      "sha256": "551fd079d89089006189087873f1a32c6300423683a87a21291333f19008368a"
+    },
+    "sha256": "99b086f30dcbe3f03b210f7e1e87bf9f1f4a1488e17653473379d31c7901c657"
   },
   "auth": {
     "type": "header",

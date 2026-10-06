@@ -7,10 +7,10 @@ Status: **pass** — 5 entries, 664/680 operations exposed, 16 excluded with a r
 | Entry | Source | App version | Exposed | Excluded | Exposure | Outward | Destructive | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Easy!Appointments (`easyappointments`) | openapi | 1.6.0 | 51/59 | 8 | direct | 5 | 10 | pass |
-| Formbricks (`formbricks`) | openapi | 6.0.2 | 108/113 | 5 | discovery | 26 | 15 | pass |
+| Formbricks (`formbricks`) | openapi | 6.0.2 | 108/113 | 5 | discovery | 25 | 15 | pass |
 | Listmonk (`listmonk`) | openapi | 6.2.0 | 104/107 | 3 | discovery | 9 | 31 | pass |
 | Postiz (`postiz`) | openapi | 2.24.x (inferred) | 31/31 | 0 | direct | 13 | 3 | pass |
-| Pretix (`pretix`) | openapi | 2026.8.0 | 370/370 | 0 | discovery | 51 | 55 | pass |
+| Pretix (`pretix`) | openapi | 2026.8.0 | 370/370 | 0 | discovery | 53 | 55 | pass |
 
 ## Easy!Appointments (`easyappointments`)
 
@@ -87,7 +87,9 @@ Pinned spec sha256 `2827831e11421f6bd22bc85f9af848cc4916c8dce7c921df063da244f266
 
 ## Formbricks (`formbricks`)
 
-Pinned spec sha256 `d67e3eea1aaa67bb2227f44b4da8bab5b3ca262925b4cfe5c4588b5b7236b040`.
+Pinned spec sha256 `2a9166ffe36bdd669fd4bee60647c759ad2be185536c3981de135b35edc71d44`.
+
+- Warning: 26 declared credential parameter(s) dropped; Marketplace sets the credential itself.
 
 | Operation | Status | Reason |
 | --- | --- | --- |
@@ -176,7 +178,7 @@ Pinned spec sha256 `d67e3eea1aaa67bb2227f44b4da8bab5b3ca262925b4cfe5c4588b5b7236
 | GET /api/v3/surveys (`getSurveysV3`) | `company-box-formbricks.get-surveys-v3` | connector.observe |  |
 | POST /api/v3/surveys (`createSurveyV3`) | `company-box-formbricks.create-survey-v3` | connector.dispatch | outward |
 | POST /api/v3/surveys/generate (`generateSurveyV3`) | `company-box-formbricks.generate-survey-v3` | connector.dispatch |  |
-| POST /api/v3/surveys/validate (`validateSurveyV3`) | `company-box-formbricks.validate-survey-v3` | connector.dispatch |  |
+| POST /api/v3/surveys/validate (`validateSurveyV3`) | `company-box-formbricks.validate-survey-v3` | connector.observe |  |
 | GET /api/v3/surveys/{surveyId} (`getSurveyV3`) | `company-box-formbricks.get-survey-v3` | connector.observe |  |
 | DELETE /api/v3/surveys/{surveyId} (`deleteSurveyV3`) | `company-box-formbricks.delete-survey-v3` | connector.admin | destructive |
 | PATCH /api/v3/surveys/{surveyId} (`patchSurveyV3`) | `company-box-formbricks.patch-survey-v3` | connector.dispatch | outward |
@@ -194,7 +196,7 @@ Pinned spec sha256 `d67e3eea1aaa67bb2227f44b4da8bab5b3ca262925b4cfe5c4588b5b7236
 | POST /api/v3/workflows/{workflowId}/disable (`disableWorkflowV3`) | `company-box-formbricks.disable-workflow-v3` | connector.dispatch |  |
 | POST /api/v3/workflows/{workflowId}/archive (`archiveWorkflowV3`) | `company-box-formbricks.archive-workflow-v3` | connector.dispatch |  |
 | POST /api/v3/workflows/{workflowId}/unarchive (`unarchiveWorkflowV3`) | `company-box-formbricks.unarchive-workflow-v3` | connector.dispatch |  |
-| POST /api/v3/workflows/{workflowId}/test (`testWorkflowV3`) | `company-box-formbricks.test-workflow-v3` | connector.dispatch | outward |
+| POST /api/v3/workflows/{workflowId}/test (`testWorkflowV3`) | `company-box-formbricks.test-workflow-v3` | connector.observe |  |
 | GET /api/v3/action-classes (`listActionClassesV3`) | `company-box-formbricks.list-action-classes-v3` | connector.observe |  |
 | GET /api/v3/contact-attribute-keys (`listContactAttributeKeysV3`) | `company-box-formbricks.list-contact-attribute-keys-v3` | connector.observe |  |
 | GET /api/v3/tags (`listTagsV3`) | `company-box-formbricks.list-tags-v3` | connector.observe |  |
@@ -204,7 +206,7 @@ Pinned spec sha256 `d67e3eea1aaa67bb2227f44b4da8bab5b3ca262925b4cfe5c4588b5b7236
 | GET /api/v3/feedbackRecords (`listFeedbackRecordsV3`) | `company-box-formbricks.list-feedback-records-v3` | connector.observe |  |
 | POST /api/v3/feedbackRecords (`createFeedbackRecordV3`) | `company-box-formbricks.create-feedback-record-v3` | connector.dispatch |  |
 | DELETE /api/v3/feedbackRecords (`deleteFeedbackRecordsByUserV3`) | `company-box-formbricks.delete-feedback-records-by-user-v3` | connector.admin | destructive |
-| POST /api/v3/feedbackRecords/search/semantic (`searchFeedbackRecordsV3`) | `company-box-formbricks.search-feedback-records-v3` | connector.dispatch |  |
+| POST /api/v3/feedbackRecords/search/semantic (`searchFeedbackRecordsV3`) | `company-box-formbricks.search-feedback-records-v3` | connector.observe |  |
 | GET /api/v3/feedbackRecords/{id} (`getFeedbackRecordV3`) | `company-box-formbricks.get-feedback-record-v3` | connector.observe |  |
 | DELETE /api/v3/feedbackRecords/{id} (`deleteFeedbackRecordV3`) | `company-box-formbricks.delete-feedback-record-v3` | connector.admin | destructive |
 | PATCH /api/v3/feedbackRecords/{id} (`updateFeedbackRecordV3`) | `company-box-formbricks.update-feedback-record-v3` | connector.dispatch |  |
@@ -220,7 +222,7 @@ Pinned spec sha256 `a60f2ccff80a50b73bf9e2c139b62e1e24d9131c2ce000ed53a1ccfa416e
 | --- | --- | --- |
 | streamEvents | excluded | Endless server-sent-events stream; the REST adapter returns one bounded response and cannot hold a stream open. |
 | logout | excluded | Destroys a browser session cookie; API users authenticate with a token and have no session to end. |
-| previewTemplateById | excluded | The spec declares a form body on a GET, which HTTP clients cannot send; render a template preview with POST /api/templates/preview instead. |
+| previewTemplateById | excluded | auto: GET/HEAD operation with a request body; bodies are not sent on GET |
 
 <details><summary>Exposed operations</summary>
 
@@ -244,11 +246,11 @@ Pinned spec sha256 `a60f2ccff80a50b73bf9e2c139b62e1e24d9131c2ce000ed53a1ccfa416e
 | PUT /api/campaigns/{id}/archive (`updateCampaignArchiveById`) | `company-box-listmonk.update-campaign-archive-by-id` | connector.dispatch |  |
 | POST /api/campaigns/{id}/content (`createCampaignContentById`) | `company-box-listmonk.create-campaign-content-by-id` | connector.dispatch |  |
 | GET /api/campaigns/{id}/preview (`previewCampaignById`) | `company-box-listmonk.preview-campaign-by-id` | connector.observe |  |
-| POST /api/campaigns/{id}/preview (`updatePreviewCampaignById`) | `company-box-listmonk.update-preview-campaign-by-id` | connector.dispatch |  |
-| POST /api/campaigns/{id}/preview/archive (`previewCampaignArchive`) | `company-box-listmonk.preview-campaign-archive` | connector.dispatch |  |
+| POST /api/campaigns/{id}/preview (`updatePreviewCampaignById`) | `company-box-listmonk.update-preview-campaign-by-id` | connector.observe |  |
+| POST /api/campaigns/{id}/preview/archive (`previewCampaignArchive`) | `company-box-listmonk.preview-campaign-archive` | connector.observe |  |
 | PUT /api/campaigns/{id}/status (`updateCampaignStatusById`) | `company-box-listmonk.update-campaign-status-by-id` | connector.admin | outward, destructive |
 | POST /api/campaigns/{id}/test (`testCampaignById`) | `company-box-listmonk.test-campaign-by-id` | connector.dispatch | outward |
-| POST /api/campaigns/{id}/text (`previewCampaignTextById`) | `company-box-listmonk.preview-campaign-text-by-id` | connector.dispatch |  |
+| POST /api/campaigns/{id}/text (`previewCampaignTextById`) | `company-box-listmonk.preview-campaign-text-by-id` | connector.observe |  |
 | GET /api/config (`getServerConfig`) | `company-box-listmonk.get-server-config` | connector.observe |  |
 | GET /api/dashboard/charts (`getDashboardCharts`) | `company-box-listmonk.get-dashboard-charts` | connector.observe |  |
 | GET /api/dashboard/counts (`getDashboardCounts`) | `company-box-listmonk.get-dashboard-counts` | connector.observe |  |
@@ -312,7 +314,7 @@ Pinned spec sha256 `a60f2ccff80a50b73bf9e2c139b62e1e24d9131c2ce000ed53a1ccfa416e
 | POST /api/subscribers/{id}/optin (`subscriberSendOptinById`) | `company-box-listmonk.subscriber-send-optin-by-id` | connector.dispatch | outward |
 | GET /api/templates (`getTemplates`) | `company-box-listmonk.get-templates` | connector.observe |  |
 | POST /api/templates (`createTemplate`) | `company-box-listmonk.create-template` | connector.dispatch |  |
-| POST /api/templates/preview (`previewTemplate`) | `company-box-listmonk.preview-template` | connector.dispatch |  |
+| POST /api/templates/preview (`previewTemplate`) | `company-box-listmonk.preview-template` | connector.observe |  |
 | GET /api/templates/{id} (`getTemplateById`) | `company-box-listmonk.get-template-by-id` | connector.observe |  |
 | PUT /api/templates/{id} (`updateTemplateById`) | `company-box-listmonk.update-template-by-id` | connector.dispatch |  |
 | DELETE /api/templates/{id} (`deleteTemplateById`) | `company-box-listmonk.delete-template-by-id` | connector.admin | destructive |
@@ -335,7 +337,7 @@ Pinned spec sha256 `a60f2ccff80a50b73bf9e2c139b62e1e24d9131c2ce000ed53a1ccfa416e
 
 ## Postiz (`postiz`)
 
-Pinned spec sha256 `55be5cc2905bc7e15f5633a35cb0ff016b087afdce7e6ea449bcf7a40cd6d233`.
+Pinned spec sha256 `99b086f30dcbe3f03b210f7e1e87bf9f1f4a1488e17653473379d31c7901c657`.
 
 <details><summary>Exposed operations</summary>
 
@@ -474,7 +476,7 @@ Pinned spec sha256 `3e7071d2dd213c86da7af33a8f5363946d1c62a9df52f5aba202031553eb
 | DELETE /api/v1/organizers/{organizer}/events/{event}/discounts/{id}/ (`discounts.delete`) | `company-box-pretix.discounts-delete` | connector.admin | destructive |
 | PATCH /api/v1/organizers/{organizer}/events/{event}/discounts/{id}/ (`discounts.update`) | `company-box-pretix.discounts-update` | connector.dispatch |  |
 | GET /api/v1/organizers/{organizer}/events/{event}/exporters/ (`exporters.list`) | `company-box-pretix.exporters-list` | connector.observe |  |
-| POST /api/v1/organizers/{organizer}/events/{event}/exporters/{identifier}/run/ (`exporters.run`) | `company-box-pretix.exporters-run` | connector.dispatch |  |
+| POST /api/v1/organizers/{organizer}/events/{event}/exporters/{identifier}/run/ (`exporters.run`) | `company-box-pretix.exporters-run` | connector.observe |  |
 | GET /api/v1/organizers/{organizer}/events/{event}/exporters/{id}/ (`exporters.get`) | `company-box-pretix.exporters-get` | connector.observe |  |
 | GET /api/v1/organizers/{organizer}/events/{event}/exporters/{id}/download/{asyncid}/{cfid}/ (`exporters.download`) | `company-box-pretix.exporters-download` | connector.observe |  |
 | GET /api/v1/organizers/{organizer}/events/{event}/invoices/ (`invoices.list`) | `company-box-pretix.invoices-list` | connector.observe |  |
@@ -483,7 +485,7 @@ Pinned spec sha256 `3e7071d2dd213c86da7af33a8f5363946d1c62a9df52f5aba202031553eb
 | POST /api/v1/organizers/{organizer}/events/{event}/invoices/{number}/regenerate/ (`invoices.regenerate`) | `company-box-pretix.invoices-regenerate` | connector.admin | outward, destructive |
 | POST /api/v1/organizers/{organizer}/events/{event}/invoices/{number}/reissue/ (`invoices.reissue`) | `company-box-pretix.invoices-reissue` | connector.admin | outward, destructive |
 | POST /api/v1/organizers/{organizer}/events/{event}/invoices/{number}/retransmit/ (`invoices.retransmit`) | `company-box-pretix.invoices-retransmit` | connector.dispatch | outward |
-| POST /api/v1/organizers/{organizer}/events/{event}/invoices/{number}/transmit/ (`invoices.transmit`) | `company-box-pretix.invoices-transmit` | connector.dispatch |  |
+| POST /api/v1/organizers/{organizer}/events/{event}/invoices/{number}/transmit/ (`invoices.transmit`) | `company-box-pretix.invoices-transmit` | connector.dispatch | outward |
 | GET /api/v1/organizers/{organizer}/events/{event}/item_meta_properties/ (`item_meta_properties.list`) | `company-box-pretix.item-meta-properties-list` | connector.observe |  |
 | POST /api/v1/organizers/{organizer}/events/{event}/item_meta_properties/ (`item_meta_properties.create`) | `company-box-pretix.item-meta-properties-create` | connector.dispatch |  |
 | GET /api/v1/organizers/{organizer}/events/{event}/item_meta_properties/{id}/ (`item_meta_properties.get`) | `company-box-pretix.item-meta-properties-get` | connector.observe |  |
@@ -530,7 +532,7 @@ Pinned spec sha256 `3e7071d2dd213c86da7af33a8f5363946d1c62a9df52f5aba202031553eb
 | GET /api/v1/organizers/{organizer}/events/{event}/orderpositions/{id}/answer/{question}/ (`orderpositions.answer`) | `company-box-pretix.orderpositions-answer` | connector.observe |  |
 | GET /api/v1/organizers/{organizer}/events/{event}/orderpositions/{id}/download/{output}/ (`orderpositions.download`) | `company-box-pretix.orderpositions-download` | connector.observe |  |
 | GET /api/v1/organizers/{organizer}/events/{event}/orderpositions/{id}/pdf_image/{key}/ (`orderpositions.pdf_image`) | `company-box-pretix.orderpositions-pdf-image` | connector.observe |  |
-| POST /api/v1/organizers/{organizer}/events/{event}/orderpositions/{id}/price_calc/ (`orderpositions.price_calc`) | `company-box-pretix.orderpositions-price-calc` | connector.dispatch |  |
+| POST /api/v1/organizers/{organizer}/events/{event}/orderpositions/{id}/price_calc/ (`orderpositions.price_calc`) | `company-box-pretix.orderpositions-price-calc` | connector.observe |  |
 | POST /api/v1/organizers/{organizer}/events/{event}/orderpositions/{id}/printlog/ (`orderpositions.printlog`) | `company-box-pretix.orderpositions-printlog` | connector.dispatch |  |
 | POST /api/v1/organizers/{organizer}/events/{event}/orderpositions/{id}/regenerate_secrets/ (`orderpositions.regenerate_secrets`) | `company-box-pretix.orderpositions-regenerate-secrets` | connector.admin | outward, destructive |
 | POST /api/v1/organizers/{organizer}/events/{event}/orderpositions/{id}/remove_block/ (`orderpositions.remove_block`) | `company-box-pretix.orderpositions-remove-block` | connector.dispatch |  |
@@ -609,7 +611,7 @@ Pinned spec sha256 `3e7071d2dd213c86da7af33a8f5363946d1c62a9df52f5aba202031553eb
 | PATCH /api/v1/organizers/{organizer}/events/{event}/settings/ (`settings.update`) | `company-box-pretix.settings-update` | connector.dispatch | outward |
 | GET /api/v1/organizers/{organizer}/events/{event}/shredders/ (`shredders.list`) | `company-box-pretix.shredders-list` | connector.observe |  |
 | GET /api/v1/organizers/{organizer}/events/{event}/shredders/download/{asyncid}/{cfid}/ (`shredders.download`) | `company-box-pretix.shredders-download` | connector.observe |  |
-| POST /api/v1/organizers/{organizer}/events/{event}/shredders/export/ (`shredders.export`) | `company-box-pretix.shredders-export` | connector.dispatch |  |
+| POST /api/v1/organizers/{organizer}/events/{event}/shredders/export/ (`shredders.export`) | `company-box-pretix.shredders-export` | connector.observe |  |
 | POST /api/v1/organizers/{organizer}/events/{event}/shredders/shred/{id1}/{id2}/ (`shredders.shred`) | `company-box-pretix.shredders-shred` | connector.admin | outward, destructive |
 | GET /api/v1/organizers/{organizer}/events/{event}/shredders/status/{asyncid}/{cfid}/ (`shredders.status`) | `company-box-pretix.shredders-status` | connector.observe |  |
 | GET /api/v1/organizers/{organizer}/events/{event}/shredders/{id}/ (`shredders.get`) | `company-box-pretix.shredders-get` | connector.observe |  |
@@ -640,7 +642,7 @@ Pinned spec sha256 `3e7071d2dd213c86da7af33a8f5363946d1c62a9df52f5aba202031553eb
 | DELETE /api/v1/organizers/{organizer}/events/{event}/ticketlayouts/{id}/ (`ticketlayouts.delete`) | `company-box-pretix.ticketlayouts-delete` | connector.admin | destructive |
 | PATCH /api/v1/organizers/{organizer}/events/{event}/ticketlayouts/{id}/ (`ticketlayouts.update`) | `company-box-pretix.ticketlayouts-update` | connector.dispatch |  |
 | GET /api/v1/organizers/{organizer}/events/{event}/ticketpdfrenderer/download/{asyncid}/{cfid}/ (`ticketpdfrenderer.download`) | `company-box-pretix.ticketpdfrenderer-download` | connector.observe |  |
-| POST /api/v1/organizers/{organizer}/events/{event}/ticketpdfrenderer/render_batch/ (`ticketpdfrenderer.render_batch`) | `company-box-pretix.ticketpdfrenderer-render-batch` | connector.dispatch |  |
+| POST /api/v1/organizers/{organizer}/events/{event}/ticketpdfrenderer/render_batch/ (`ticketpdfrenderer.render_batch`) | `company-box-pretix.ticketpdfrenderer-render-batch` | connector.observe |  |
 | GET /api/v1/organizers/{organizer}/events/{event}/transactions/ (`transactions.list`) | `company-box-pretix.transactions-list` | connector.observe |  |
 | GET /api/v1/organizers/{organizer}/events/{event}/transactions/{id}/ (`transactions.get`) | `company-box-pretix.transactions-get` | connector.observe |  |
 | GET /api/v1/organizers/{organizer}/events/{event}/vouchers/ (`vouchers.list`) | `company-box-pretix.vouchers-list` | connector.observe |  |
@@ -658,7 +660,7 @@ Pinned spec sha256 `3e7071d2dd213c86da7af33a8f5363946d1c62a9df52f5aba202031553eb
 | PATCH /api/v1/organizers/{organizer}/events/{event}/waitinglistentries/{id}/ (`waitinglistentries.update`) | `company-box-pretix.waitinglistentries-update` | connector.dispatch |  |
 | POST /api/v1/organizers/{organizer}/events/{event}/waitinglistentries/{id}/send_voucher/ (`waitinglistentries.send_voucher`) | `company-box-pretix.waitinglistentries-send-voucher` | connector.dispatch | outward |
 | GET /api/v1/organizers/{organizer}/exporters/ (`exporters.list_organizer`) | `company-box-pretix.exporters-list-organizer` | connector.observe |  |
-| POST /api/v1/organizers/{organizer}/exporters/{identifier}/run/ (`exporters.run_organizer`) | `company-box-pretix.exporters-run-organizer` | connector.dispatch |  |
+| POST /api/v1/organizers/{organizer}/exporters/{identifier}/run/ (`exporters.run_organizer`) | `company-box-pretix.exporters-run-organizer` | connector.observe |  |
 | GET /api/v1/organizers/{organizer}/exporters/{id}/ (`exporters.get_organizer`) | `company-box-pretix.exporters-get-organizer` | connector.observe |  |
 | GET /api/v1/organizers/{organizer}/exporters/{id}/download/{asyncid}/{cfid}/ (`exporters.download_organizer`) | `company-box-pretix.exporters-download-organizer` | connector.observe |  |
 | GET /api/v1/organizers/{organizer}/giftcards/ (`giftcards.list`) | `company-box-pretix.giftcards-list` | connector.observe |  |
@@ -676,7 +678,7 @@ Pinned spec sha256 `3e7071d2dd213c86da7af33a8f5363946d1c62a9df52f5aba202031553eb
 | POST /api/v1/organizers/{organizer}/invoices/{number}/regenerate/ (`invoices.regenerate_organizer`) | `company-box-pretix.invoices-regenerate-organizer` | connector.admin | outward, destructive |
 | POST /api/v1/organizers/{organizer}/invoices/{number}/reissue/ (`invoices.reissue_organizer`) | `company-box-pretix.invoices-reissue-organizer` | connector.admin | outward, destructive |
 | POST /api/v1/organizers/{organizer}/invoices/{number}/retransmit/ (`invoices.retransmit_organizer`) | `company-box-pretix.invoices-retransmit-organizer` | connector.dispatch | outward |
-| POST /api/v1/organizers/{organizer}/invoices/{number}/transmit/ (`invoices.transmit_organizer`) | `company-box-pretix.invoices-transmit-organizer` | connector.dispatch |  |
+| POST /api/v1/organizers/{organizer}/invoices/{number}/transmit/ (`invoices.transmit_organizer`) | `company-box-pretix.invoices-transmit-organizer` | connector.dispatch | outward |
 | GET /api/v1/organizers/{organizer}/memberships/ (`memberships.list`) | `company-box-pretix.memberships-list` | connector.observe |  |
 | POST /api/v1/organizers/{organizer}/memberships/ (`memberships.create`) | `company-box-pretix.memberships-create` | connector.dispatch |  |
 | GET /api/v1/organizers/{organizer}/memberships/{id}/ (`memberships.get`) | `company-box-pretix.memberships-get` | connector.observe |  |

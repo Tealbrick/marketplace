@@ -46,15 +46,17 @@
     "manageSubscriberListsByQuery",
     "manageBlocklistSubscribersById"
   ],
+  "reads": [
+    "updatePreviewCampaignById",
+    "previewCampaignTextById",
+    "previewCampaignArchive",
+    "previewTemplate"
+  ],
   "exposure": "auto",
   "excluded": [
     {
       "operation": "streamEvents",
       "reason": "Endless server-sent-events stream; the REST adapter returns one bounded response and cannot hold a stream open."
-    },
-    {
-      "operation": "previewTemplateById",
-      "reason": "The spec declares a form body on a GET, which HTTP clients cannot send; render a template preview with POST /api/templates/preview instead."
     },
     {
       "operation": "logout",

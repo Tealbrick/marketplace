@@ -8,4 +8,5 @@
 - Outward (held for approval): appointment create/update/delete (customer and provider emails, calendar sync) and webhook create/update (outbound HTTP to arbitrary URLs). DELETE operations are also destructive.
 - Auth: `Authorization: Bearer <api-token>`; token is generated in Settings > API in the app. Basic auth with an admin login exists upstream but is not offered.
 - Base URL at install: the app origin. The adapter appends the spec's `/index.php/api/v1` prefix. Deployed on the `neuu` node behind tailscale serve: `https://neuu.<tailnet>.ts.net:8515`. If the instance serves clean URLs without `index.php`, confirm before install.
+- Reads: none. Every POST/PUT/DELETE changes data (the availability lookup is already a GET).
 - Health: `GET /services`.

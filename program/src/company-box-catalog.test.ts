@@ -17,6 +17,7 @@ import {
   loadCompanyBoxCatalog,
   type CompiledOpenApiEntry,
 } from "./company-box.js";
+import { compileArgumentValidator } from "./openapi-validate.js";
 import { companyBoxCoverageReport } from "./company-box-coverage.js";
 import { MARKETPLACE_OPERATOR_SESSION_COOKIE, MarketplaceOperatorSessionManager } from "./operator-auth.js";
 import { SqliteMarketplaceStore } from "./store.js";
@@ -36,6 +37,7 @@ type Expectation = {
   exposed: number;
   excluded: number;
   outward: number;
+  reads: string[];
   exposure: "direct" | "discovery";
   auth: Record<string, unknown>;
   credentials: Record<string, string>;
@@ -50,6 +52,7 @@ const EXPECTED: Record<string, Expectation> = {
     exposed: 51,
     excluded: 8,
     outward: 5,
+    reads: [],
     exposure: "direct",
     auth: { type: "header", name: "Authorization", prefix: "Bearer " },
     credentials: { token: SECRET },
@@ -60,7 +63,8 @@ const EXPECTED: Record<string, Expectation> = {
     total: 113,
     exposed: 108,
     excluded: 5,
-    outward: 26,
+    outward: 25,
+    reads: ["POST /api/v3/surveys/validate", "POST /api/v3/workflows/{workflowId}/test", "POST /api/v3/feedbackRecords/search/semantic"],
     exposure: "discovery",
     auth: { type: "header", name: "x-api-key" },
     credentials: { token: SECRET },
@@ -72,6 +76,7 @@ const EXPECTED: Record<string, Expectation> = {
     exposed: 104,
     excluded: 3,
     outward: 9,
+    reads: ["POST /api/campaigns/{id}/preview", "POST /api/campaigns/{id}/preview/archive", "POST /api/campaigns/{id}/text", "POST /api/templates/preview"],
     exposure: "discovery",
     auth: { type: "basic" },
     credentials: { username: USER, password: SECRET },
@@ -83,6 +88,7 @@ const EXPECTED: Record<string, Expectation> = {
     exposed: 31,
     excluded: 0,
     outward: 13,
+    reads: [],
     exposure: "direct",
     auth: { type: "header", name: "Authorization" },
     credentials: { token: SECRET },
@@ -93,7 +99,8 @@ const EXPECTED: Record<string, Expectation> = {
     total: 370,
     exposed: 370,
     excluded: 0,
-    outward: 51,
+    outward: 53,
+    reads: ["POST /api/v1/organizers/{organizer}/events/{event}/exporters/{identifier}/run/", "POST /api/v1/organizers/{organizer}/events/{event}/orderpositions/{id}/price_calc/", "POST /api/v1/organizers/{organizer}/events/{event}/shredders/export/", "POST /api/v1/organizers/{organizer}/events/{event}/ticketpdfrenderer/render_batch/", "POST /api/v1/organizers/{organizer}/exporters/{identifier}/run/"],
     exposure: "discovery",
     auth: { type: "header", name: "Authorization", prefix: "Token " },
     credentials: { token: SECRET },
@@ -144,7 +151,10 @@ describe("shipped Company Box catalog", () => {
         ok: true,
       });
       expect(entry.exposed + entry.excluded, `${id} exposed + excluded`).toBe(specTotal);
-      expect(entry.warnings, `${id} warnings`).toEqual([]);
+      // Formbricks v1 declares the API key as a header parameter; the engine drops it and warns.
+      expect(entry.warnings, `${id} warnings`).toEqual(
+        id === "formbricks" ? ["26 declared credential parameter(s) dropped; Marketplace sets the credential itself."] : [],
+      );
       expect(compiled.entry.auth).toMatchObject(expected.auth);
       expect(compiled.healthOperation, `${id} health`).toMatchObject({ method: "get" });
       expect(compiled.entry.healthOperation).toBe(expected.health);
@@ -166,6 +176,31 @@ describe("shipped Company Box catalog", () => {
         if (operation.method === "get") expect(operation.capability).toBe("connector.observe");
       }
     }
+  });
+
+  it("marks only read-only POST operations as reads, never outward or destructive", () => {
+    for (const [id, expected] of Object.entries(EXPECTED)) {
+      const compiled = catalog.get(id) as CompiledOpenApiEntry;
+      const reads = compiled.operations.filter((operation) => operation.method !== "get" && operation.capability === "connector.observe");
+      expect(reads.map((operation) => `${operation.method.toUpperCase()} ${operation.path}`).sort(), id).toEqual([...expected.reads].sort());
+      for (const operation of reads) {
+        expect(operation, `${id} ${operation.ref}`).toMatchObject({ write: false, outward: false, destructive: false });
+        expect(operation.method, `${id} ${operation.ref}`).toBe("post");
+      }
+    }
+  });
+
+  it("keeps upstream specs pristine and applies overlays only where needed", () => {
+    const withOverlay = catalog.entries.filter((entry) => entry.kind === "openapi" && entry.entry.openapi?.overlay).map((entry) => entry.entry.id);
+    expect(withOverlay.sort()).toEqual(["formbricks", "postiz"]);
+    const postizSpec = readFileSync(path.join(DEFAULT_COMPANY_BOX_CATALOG_DIR, "postiz", "openapi.json"), "utf8");
+    expect(postizSpec).not.toContain("x-company-box-supplement");
+    const postiz = catalog.get("postiz") as CompiledOpenApiEntry;
+    expect(postiz.byKey.get("company-box-postiz.public-integrations-controller-create-post")?.argumentGroups).toContain("body");
+    expect(postiz.byKey.get("company-box-postiz.public-integrations-controller-upload-simple")?.argumentGroups).toContain("body");
+    const listmonk = catalog.get("listmonk") as CompiledOpenApiEntry;
+    expect(listmonk.coverage.find((item) => item.ref === "previewTemplateById")).toMatchObject({ status: "excluded", auto: true });
+    expect(listmonk.entry.excluded.map((exclusion) => exclusion.operation).sort()).toEqual(["logout", "streamEvents"]);
   });
 
   it("excludes only Easy!Appointments admin and settings operations", () => {
@@ -243,67 +278,122 @@ function isRecord(value: unknown): value is JsonSchemaLike {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+/** True when `value` satisfies `schema` under the engine's own argument validator. */
+function satisfies(schema: unknown, value: unknown, defs: Record<string, unknown>) {
+  try {
+    return compileArgumentValidator({ ...(schema as JsonSchemaLike), $defs: defs } as never)(value as never).ok;
+  } catch {
+    return false;
+  }
+}
+
 /** Smallest value that satisfies a described schema (required members only). */
 function synth(schema: unknown, defs: Record<string, unknown>, depth = 0): unknown {
-  if (!isRecord(schema) || depth > 8) return {};
+  if (!isRecord(schema) || depth > 10) return {};
   if (typeof schema.$ref === "string") {
     return synth(defs[schema.$ref.replace(/^#\/\$defs\//u, "")], defs, depth + 1);
   }
   if ("const" in schema) return schema.const;
   if (Array.isArray(schema.enum) && schema.enum.length) return schema.enum[0];
-  if (Array.isArray(schema.allOf)) {
-    const parts = schema.allOf.map((part) => synth(part, defs, depth + 1));
-    return parts.every(isRecord) ? Object.assign({}, ...parts) : parts[0];
-  }
+  const parts: unknown[] = [];
+  if (Array.isArray(schema.allOf)) parts.push(...schema.allOf.map((part) => synth(part, defs, depth + 1)));
   for (const key of ["oneOf", "anyOf"] as const) {
     const options = schema[key];
-    if (Array.isArray(options) && options.length) {
-      const nonNull = options.find((option) => !(isRecord(option) && option.type === "null")) ?? options[0];
-      return synth(nonNull, defs, depth + 1);
-    }
+    if (!Array.isArray(options) || !options.length) continue;
+    const candidates = options.map((option) => synth(option, defs, depth + 1));
+    const index = candidates.findIndex((candidate, at) => satisfies(options[at], candidate, defs));
+    parts.push(candidates[index >= 0 ? index : 0]);
   }
   const declared = Array.isArray(schema.type) ? schema.type.find((type) => type !== "null") : schema.type;
-  const type = declared ?? (isRecord(schema.properties) ? "object" : undefined);
+  const type = declared ?? (isRecord(schema.properties) ? "object" : parts.length ? undefined : undefined);
+  let own: unknown;
   switch (type) {
     case "object": {
       const properties = isRecord(schema.properties) ? schema.properties : {};
       const required = Array.isArray(schema.required) ? (schema.required as string[]) : [];
-      return Object.fromEntries(required.map((name) => [name, synth(properties[name], defs, depth + 1)]));
+      const names = [...required];
+      const minProperties = typeof schema.minProperties === "number" ? schema.minProperties : 0;
+      for (const name of Object.keys(properties)) {
+        if (names.length >= minProperties) break;
+        if (!names.includes(name)) names.push(name);
+      }
+      own = Object.fromEntries(names.map((name) => [name, synth(properties[name], defs, depth + 1)]));
+      break;
     }
     case "array": {
       const minItems = typeof schema.minItems === "number" ? schema.minItems : 0;
-      return Array.from({ length: Math.min(minItems, 1) }, () => synth(schema.items, defs, depth + 1));
+      own = Array.from({ length: Math.min(minItems, 2) }, () => synth(schema.items, defs, depth + 1));
+      break;
     }
     case "integer":
-    case "number":
-      return typeof schema.minimum === "number" ? Math.max(schema.minimum, 1) : 7;
+    case "number": {
+      const minimum = typeof schema.minimum === "number" ? schema.minimum : undefined;
+      const maximum = typeof schema.maximum === "number" ? schema.maximum : undefined;
+      own = Math.min(Math.max(7, minimum ?? 7), maximum ?? Number.POSITIVE_INFINITY);
+      break;
+    }
     case "boolean":
-      return true;
+      own = true;
+      break;
     case "string": {
       switch (schema.format) {
         case "binary":
-          return { base64: Buffer.from("hello").toString("base64"), filename: "file.txt", contentType: "text/plain" };
+          // The argument validator asserts type string for binary properties (see report: object file values are refused).
+          own = "hello";
+          break;
         case "date-time":
-          return "2026-10-06T00:00:00Z";
+          own = "2026-10-06T00:00:00Z";
+          break;
         case "date":
-          return "2026-10-06";
+          own = "2026-10-06";
+          break;
         case "email":
-          return "person@example.test";
+          own = "person@example.test";
+          break;
         case "uri":
         case "url":
-          return "https://example.test/x";
+          own = "https://example.test/x";
+          break;
         case "uuid":
-          return "00000000-0000-4000-8000-000000000001";
-        default:
-          return typeof schema.maxLength === "number" ? "x".repeat(Math.min(3, schema.maxLength)) : "7";
+          own = "00000000-0000-4000-8000-000000000001";
+          break;
+        default: {
+          const minLength = typeof schema.minLength === "number" ? schema.minLength : 1;
+          own = "7".padEnd(Math.max(minLength, 1), "x");
+          if (typeof schema.maxLength === "number") own = (own as string).slice(0, schema.maxLength);
+        }
       }
+      break;
     }
     default:
-      return "7";
+      own = parts.length ? undefined : "7";
   }
+  if (!parts.length) return own;
+  const objects = [own, ...parts].filter(isRecord);
+  return objects.length ? Object.assign({}, ...objects) : (parts[0] ?? own);
 }
 
-function argumentsFor(inputSchema: JsonSchemaLike) {
+const RAW_SPECS = new Map<string, { paths: Record<string, Record<string, { requestBody?: { content?: Record<string, { example?: unknown; examples?: Record<string, { value?: unknown }> }> } }>> }>();
+function rawSpec(id: string) {
+  if (!RAW_SPECS.has(id)) {
+    RAW_SPECS.set(id, JSON.parse(readFileSync(path.join(DEFAULT_COMPANY_BOX_CATALOG_DIR, id, "openapi.json"), "utf8")));
+  }
+  return RAW_SPECS.get(id)!;
+}
+
+/** The first documented example body of an operation, when the spec has one. */
+function exampleBody(id: string, operation: { method: string; path: string }) {
+  const content = rawSpec(id).paths[operation.path]?.[operation.method]?.requestBody?.content ?? {};
+  for (const media of Object.values(content)) {
+    if (media.example !== undefined) return media.example;
+    const first = Object.values(media.examples ?? {}).find((candidate) => candidate.value !== undefined);
+    if (first) return first.value;
+  }
+  return undefined;
+}
+
+/** Minimal arguments for an operation; falls back to its documented example body for schemas too intricate to synthesize. */
+function argumentsFor(id: string, operation: { method: string; path: string }, inputSchema: JsonSchemaLike) {
   const defs = isRecord(inputSchema.$defs) ? inputSchema.$defs : {};
   const properties = isRecord(inputSchema.properties) ? inputSchema.properties : {};
   const required = Array.isArray(inputSchema.required) ? (inputSchema.required as string[]) : [];
@@ -320,6 +410,10 @@ function argumentsFor(inputSchema: JsonSchemaLike) {
       value = Object.fromEntries(Object.entries(value).filter(([, child]) => typeof child !== "object"));
     }
     args.body = value;
+  }
+  if (!satisfies(inputSchema, args, defs) && required.includes("body")) {
+    const example = exampleBody(id, operation);
+    if (example !== undefined) args.body = example;
   }
   return args;
 }
@@ -440,10 +534,12 @@ describe.each(Object.keys(EXPECTED))("agent path: %s", (id) => {
         `marketplace.${f.plugin}.operations.search`,
         `marketplace.${f.plugin}.operations.describe`,
         `marketplace.${f.plugin}.operations.call`,
+        `marketplace.${f.plugin}.approvals.status`,
       ]);
       expect(f.tools[0]).toMatchObject({ exposure: "discovery", operationCount: expected.exposed });
     } else {
-      expect(f.tools).toHaveLength(expected.exposed);
+      expect(f.tools).toHaveLength(expected.exposed + 1);
+      expect(f.tools.at(-1)?.toolName).toBe(`marketplace.${f.plugin}.approvals.status`);
       expect(f.tools.every((entry) => !entry.toolName.includes(".operations."))).toBe(true);
     }
 
@@ -475,7 +571,7 @@ describe.each(Object.keys(EXPECTED))("agent path: %s", (id) => {
       expect(described.statusCode, `${key}: ${described.body}`).toBe(200);
       const inputSchema = described.json().operation.inputSchema as JsonSchemaLike;
       expect(inputSchema).toMatchObject({ type: "object" });
-      const called = await f.call(key, argumentsFor(inputSchema), await f.grant(key));
+      const called = await f.call(key, argumentsFor(id, operation, inputSchema), await f.grant(key));
       expect(called.statusCode, `${key}: ${called.body}`).toBe(200);
       expect(called.json().result.details.operation.key).toBe(key);
       const seen = f.rest.requests.at(-1)!;
@@ -498,23 +594,29 @@ describe.each(Object.keys(EXPECTED))("agent path: %s", (id) => {
   }, 240_000);
 
   for (const mode of ["review", "owner"] as const) {
-    it(`holds every outward operation (${mode === "review" ? "Rules review" : "owner approval"})`, async () => {
+    it(`holds every outward operation (${mode === "review" ? "Rules review" : "approval queue"})`, async () => {
       const f = await fixture(id, mode);
       const outward = compiled.operations.filter((operation) => operation.outward);
       expect(outward).toHaveLength(expected.outward);
       const before = f.rest.requests.length;
+      let pending = 0;
       for (const operation of outward) {
         const described = await f.tool(`marketplace.${f.plugin}.operations.describe`, { operation: operation.key });
         expect(described.json().operation.risk).toMatchObject({ outward: true });
-        const held = await f.call(operation.key, argumentsFor(described.json().operation.inputSchema), await f.grant(operation.key));
+        const held = await f.call(operation.key, argumentsFor(id, operation, described.json().operation.inputSchema), await f.grant(operation.key));
         if (mode === "review") {
           expect(held.statusCode, `${operation.key}: ${held.body}`).toBe(409);
           expect(held.json()).toMatchObject({ error: "rules_review_required" });
+        } else if (held.statusCode === 202) {
+          expect(held.json()).toMatchObject({ ok: false, status: "approval_pending", approvalId: expect.any(String) });
+          pending += 1;
         } else {
-          expect(held.statusCode, `${operation.key}: ${held.body}`).toBe(403);
-          expect(held.json()).toMatchObject({ error: "owner_approval_required_for_outward" });
+          // The per-agent approval queue is bounded; a full queue still refuses the call.
+          expect(held.statusCode, `${operation.key}: ${held.body}`).toBe(429);
+          expect(held.json()).toMatchObject({ error: "approval_queue_full" });
         }
       }
+      if (mode === "owner") expect(pending).toBe(Math.min(outward.length, 50));
       expect(f.rest.requests.length).toBe(before);
       if (mode === "review") {
         const reviewed = f.rulesCalls.filter((call) => (call.payload.risk as { outward?: boolean } | undefined)?.outward);

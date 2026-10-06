@@ -598,17 +598,19 @@
       "displayName": "Formbricks",
       "source": "openapi",
       "appVersion": "6.0.2",
-      "pinnedSha256": "d67e3eea1aaa67bb2227f44b4da8bab5b3ca262925b4cfe5c4588b5b7236b040",
+      "pinnedSha256": "2a9166ffe36bdd669fd4bee60647c759ad2be185536c3981de135b35edc71d44",
       "exposure": "discovery",
       "total": 113,
       "exposed": 108,
       "excluded": 5,
       "failed": 0,
-      "outward": 26,
+      "outward": 25,
       "destructive": 15,
       "ok": true,
       "errors": [],
-      "warnings": [],
+      "warnings": [
+        "26 declared credential parameter(s) dropped; Marketplace sets the credential itself."
+      ],
       "items": [
         {
           "ref": "POST /api/v1/client/{workspaceId}/displays",
@@ -1366,7 +1368,7 @@
           "path": "/api/v3/surveys/validate",
           "status": "exposed",
           "key": "company-box-formbricks.validate-survey-v3",
-          "capability": "connector.dispatch",
+          "capability": "connector.observe",
           "outward": false,
           "destructive": false
         },
@@ -1546,8 +1548,8 @@
           "path": "/api/v3/workflows/{workflowId}/test",
           "status": "exposed",
           "key": "company-box-formbricks.test-workflow-v3",
-          "capability": "connector.dispatch",
-          "outward": true,
+          "capability": "connector.observe",
+          "outward": false,
           "destructive": false
         },
         {
@@ -1646,7 +1648,7 @@
           "path": "/api/v3/feedbackRecords/search/semantic",
           "status": "exposed",
           "key": "company-box-formbricks.search-feedback-records-v3",
-          "capability": "connector.dispatch",
+          "capability": "connector.observe",
           "outward": false,
           "destructive": false
         },
@@ -1930,7 +1932,7 @@
           "path": "/api/campaigns/{id}/preview",
           "status": "exposed",
           "key": "company-box-listmonk.update-preview-campaign-by-id",
-          "capability": "connector.dispatch",
+          "capability": "connector.observe",
           "outward": false,
           "destructive": false
         },
@@ -1940,7 +1942,7 @@
           "path": "/api/campaigns/{id}/preview/archive",
           "status": "exposed",
           "key": "company-box-listmonk.preview-campaign-archive",
-          "capability": "connector.dispatch",
+          "capability": "connector.observe",
           "outward": false,
           "destructive": false
         },
@@ -1970,7 +1972,7 @@
           "path": "/api/campaigns/{id}/text",
           "status": "exposed",
           "key": "company-box-listmonk.preview-campaign-text-by-id",
-          "capability": "connector.dispatch",
+          "capability": "connector.observe",
           "outward": false,
           "destructive": false
         },
@@ -2624,7 +2626,7 @@
           "path": "/api/templates/preview",
           "status": "exposed",
           "key": "company-box-listmonk.preview-template",
-          "capability": "connector.dispatch",
+          "capability": "connector.observe",
           "outward": false,
           "destructive": false
         },
@@ -2673,7 +2675,8 @@
           "method": "GET",
           "path": "/api/templates/{id}/preview",
           "status": "excluded",
-          "reason": "The spec declares a form body on a GET, which HTTP clients cannot send; render a template preview with POST /api/templates/preview instead."
+          "reason": "auto: GET/HEAD operation with a request body; bodies are not sent on GET",
+          "auto": true
         },
         {
           "ref": "transactWithSubscriber",
@@ -2812,7 +2815,7 @@
       "displayName": "Postiz",
       "source": "openapi",
       "appVersion": "2.24.x (inferred)",
-      "pinnedSha256": "55be5cc2905bc7e15f5633a35cb0ff016b087afdce7e6ea449bcf7a40cd6d233",
+      "pinnedSha256": "99b086f30dcbe3f03b210f7e1e87bf9f1f4a1488e17653473379d31c7901c657",
       "exposure": "direct",
       "total": 31,
       "exposed": 31,
@@ -3147,7 +3150,7 @@
       "exposed": 370,
       "excluded": 0,
       "failed": 0,
-      "outward": 51,
+      "outward": 53,
       "destructive": 55,
       "ok": true,
       "errors": [],
@@ -4069,7 +4072,7 @@
           "path": "/api/v1/organizers/{organizer}/events/{event}/exporters/{identifier}/run/",
           "status": "exposed",
           "key": "company-box-pretix.exporters-run",
-          "capability": "connector.dispatch",
+          "capability": "connector.observe",
           "outward": false,
           "destructive": false
         },
@@ -4160,7 +4163,7 @@
           "status": "exposed",
           "key": "company-box-pretix.invoices-transmit",
           "capability": "connector.dispatch",
-          "outward": false,
+          "outward": true,
           "destructive": false
         },
         {
@@ -4629,7 +4632,7 @@
           "path": "/api/v1/organizers/{organizer}/events/{event}/orderpositions/{id}/price_calc/",
           "status": "exposed",
           "key": "company-box-pretix.orderpositions-price-calc",
-          "capability": "connector.dispatch",
+          "capability": "connector.observe",
           "outward": false,
           "destructive": false
         },
@@ -5419,7 +5422,7 @@
           "path": "/api/v1/organizers/{organizer}/events/{event}/shredders/export/",
           "status": "exposed",
           "key": "company-box-pretix.shredders-export",
-          "capability": "connector.dispatch",
+          "capability": "connector.observe",
           "outward": false,
           "destructive": false
         },
@@ -5729,7 +5732,7 @@
           "path": "/api/v1/organizers/{organizer}/events/{event}/ticketpdfrenderer/render_batch/",
           "status": "exposed",
           "key": "company-box-pretix.ticketpdfrenderer-render-batch",
-          "capability": "connector.dispatch",
+          "capability": "connector.observe",
           "outward": false,
           "destructive": false
         },
@@ -5909,7 +5912,7 @@
           "path": "/api/v1/organizers/{organizer}/exporters/{identifier}/run/",
           "status": "exposed",
           "key": "company-box-pretix.exporters-run-organizer",
-          "capability": "connector.dispatch",
+          "capability": "connector.observe",
           "outward": false,
           "destructive": false
         },
@@ -6090,7 +6093,7 @@
           "status": "exposed",
           "key": "company-box-pretix.invoices-transmit-organizer",
           "capability": "connector.dispatch",
-          "outward": false,
+          "outward": true,
           "destructive": false
         },
         {

@@ -978,15 +978,6 @@
         "parameters": [
           {
             "in": "path",
-            "name": "workspaceId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "Workspace id. Added by Marketplace: missing from the upstream spec."
-          },
-          {
-            "in": "path",
             "name": "responseId",
             "required": true,
             "schema": {
@@ -1602,7 +1593,17 @@
     "/api/v1/management/action-classes": {
       "get": {
         "description": "Fetches all the action classes available in the workspace",
-        "parameters": [],
+        "parameters": [
+          {
+            "example": "{{apiKey}}",
+            "in": "header",
+            "name": "x-Api-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -1786,7 +1787,17 @@
       },
       "post": {
         "description": "Create Action Class from the UI or from the API! You can read more about them [here](https://formbricks.com/docs/in-app-surveys/actions).",
-        "parameters": [],
+        "parameters": [
+          {
+            "example": "{{apiKey}}",
+            "in": "header",
+            "name": "x-api-key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -2036,6 +2047,15 @@
         "description": "Deletes an existing action class",
         "parameters": [
           {
+            "example": "{{apiKey}}",
+            "in": "header",
+            "name": "x-api-key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "in": "path",
             "name": "actionClassId",
             "required": true,
@@ -2237,6 +2257,15 @@
         "description": "Fetch an Action Class by it's ID",
         "parameters": [
           {
+            "example": "{{apiKey}}",
+            "in": "header",
+            "name": "x-Api-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "in": "path",
             "name": "actionClassId",
             "required": true,
@@ -2385,7 +2414,17 @@
     "/api/v1/management/contact-attribute-keys": {
       "get": {
         "description": "Retrieve a list of all contact attribute keys defined in the current workspace",
-        "parameters": [],
+        "parameters": [
+          {
+            "example": "{{apiKey}}",
+            "in": "header",
+            "name": "x-api-key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -2462,6 +2501,15 @@
       "get": {
         "description": "Retrieve a specific contact attribute key by its ID. This returns detailed information about how a particular attribute is defined in your workspace.",
         "parameters": [
+          {
+            "example": "{{apiKey}}",
+            "in": "header",
+            "name": "x-api-key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "The ID of the contact attribute key to retrieve",
             "in": "path",
@@ -2606,7 +2654,17 @@
     "/api/v1/management/contact-attributes": {
       "get": {
         "description": "Retrieve a list of all contact attributes in the current workspace",
-        "parameters": [],
+        "parameters": [
+          {
+            "example": "{{apiKey}}",
+            "in": "header",
+            "name": "x-api-key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -2679,7 +2737,17 @@
     "/api/v1/management/contacts": {
       "get": {
         "description": "Retrieve a list of all contacts for the current workspace",
-        "parameters": [],
+        "parameters": [
+          {
+            "example": "{{apiKey}}",
+            "in": "header",
+            "name": "x-api-key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -2759,6 +2827,15 @@
       "get": {
         "description": "Retrieve a specific contact by its ID",
         "parameters": [
+          {
+            "example": "{{apiKey}}",
+            "in": "header",
+            "name": "x-api-key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "The ID of the contact to retrieve",
             "in": "path",
@@ -2856,7 +2933,17 @@
     "/api/v1/management/me": {
       "get": {
         "description": "Fetches the product associated with the passed API key",
-        "parameters": [],
+        "parameters": [
+          {
+            "example": "{{apiKey}}",
+            "in": "header",
+            "name": "x-api-key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -3057,6 +3144,15 @@
       "get": {
         "description": "Pass the surveyId as a Query Parameter & only fetch responses for a specific survey that you have access to.",
         "parameters": [
+          {
+            "example": "{{apiKey}}",
+            "in": "header",
+            "name": "x-api-key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "The ID of the survey to fetch responses for",
             "example": "{{surveyId}}",
@@ -3491,7 +3587,17 @@
       },
       "post": {
         "description": "Create a user response using the management API. This will trigger the response pipeline, including webhooks, integrations, follow-up emails, and other configured actions.",
-        "parameters": [],
+        "parameters": [
+          {
+            "example": "{{apiKey}}",
+            "in": "header",
+            "name": "x-api-key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -3719,6 +3825,15 @@
         "description": "Delete a response with its ID",
         "parameters": [
           {
+            "example": "{{apiKey}}",
+            "in": "header",
+            "name": "x-api-key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "in": "path",
             "name": "responseId",
             "required": true,
@@ -3887,6 +4002,15 @@
         "description": "Fetch the entire response object based on its ID",
         "parameters": [
           {
+            "example": "{{apiKey}}",
+            "in": "header",
+            "name": "x-api-key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "in": "path",
             "name": "responseId",
             "required": true,
@@ -4054,6 +4178,15 @@
       "put": {
         "description": "Update an existing user response with new data. This will trigger the response pipeline, including webhooks, integrations, follow-up emails (if the response is marked as finished), and other configured actions.",
         "parameters": [
+          {
+            "example": "{{apiKey}}",
+            "in": "header",
+            "name": "x-api-key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "in": "path",
             "name": "responseId",
@@ -4246,7 +4379,17 @@
     "/api/v1/management/storage": {
       "post": {
         "description": "API endpoint for uploading public files. Uploaded files are public and accessible by anyone. This endpoint requires authentication and enforces a hard limit of 5 MB for all uploads. It accepts a JSON body with fileName, fileType, workspaceId, and optionally allowedFileExtensions to restrict file types. On success, it returns a signed URL for uploading the file to S3.",
-        "parameters": [],
+        "parameters": [
+          {
+            "example": "{{apiKey}}",
+            "in": "header",
+            "name": "x-api-key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -4441,7 +4584,17 @@
     "/api/v1/management/surveys": {
       "get": {
         "description": "Fetches all existing surveys. Each survey includes both `questions` (the legacy structure) and `blocks` (the newer structure). `questions` is always derived from `blocks` for backwards compatibility, so integrations may read either field.",
-        "parameters": [],
+        "parameters": [
+          {
+            "example": "{{apiKey}}",
+            "in": "header",
+            "name": "x-api-key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -4677,7 +4830,17 @@
       },
       "post": {
         "description": "Create a survey with granular settings, questions, their types, welcomeCard, thankYouCard, languages, etc right from this API. We'd however recommend you to do this via our Formbricks App with the UI for a better visual experience.",
-        "parameters": [],
+        "parameters": [
+          {
+            "example": "{{apiKey}}",
+            "in": "header",
+            "name": "x-api-key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -5256,6 +5419,15 @@
         "description": "Delete a Survey by its ID. Please use this only when extrememly necessary.",
         "parameters": [
           {
+            "example": "{{apiKey}}",
+            "in": "header",
+            "name": "x-api-key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "in": "path",
             "name": "surveyId",
             "required": true,
@@ -5561,6 +5733,15 @@
         "description": "Fetch a survey object based on its ID. The response includes both `questions` (the legacy structure) and `blocks` (the newer structure). `questions` is always derived from `blocks` for backwards compatibility, so integrations may read either field.",
         "parameters": [
           {
+            "example": "{{apiKey}}",
+            "in": "header",
+            "name": "x-api-key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "in": "path",
             "name": "surveyId",
             "required": true,
@@ -5803,6 +5984,15 @@
       "put": {
         "description": "Update an existing survey with new properties. This is also what we'd recommend you to do from the UI for a better visual feedback.",
         "parameters": [
+          {
+            "example": "{{apiKey}}",
+            "in": "header",
+            "name": "x-api-key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "in": "path",
             "name": "surveyId",
@@ -6114,6 +6304,15 @@
         "description": "Generates multiple single use survey links for a survey based on its id.",
         "parameters": [
           {
+            "example": "{{apiKey}}",
+            "in": "header",
+            "name": "x-api-key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "in": "path",
             "name": "surveyId",
             "required": true,
@@ -6288,7 +6487,17 @@
     "/api/v1/webhooks": {
       "get": {
         "description": "Retrieve a list of all webhooks for the current workspace",
-        "parameters": [],
+        "parameters": [
+          {
+            "example": "{{apiKey}}",
+            "in": "header",
+            "name": "x-api-key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -6396,7 +6605,17 @@
       },
       "post": {
         "description": "Create a new webhook right from the API and see it active right away!",
-        "parameters": [],
+        "parameters": [
+          {
+            "example": "{{apiKey}}",
+            "in": "header",
+            "name": "x-api-key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -6535,6 +6754,15 @@
       "delete": {
         "description": "Delete an existing webhook by provifding it's ID. It will immediately apply and not trigger again.",
         "parameters": [
+          {
+            "example": "{{apiKey}}",
+            "in": "header",
+            "name": "x-api-key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "in": "path",
             "name": "webhookId",
@@ -6688,6 +6916,15 @@
       "get": {
         "description": "Get a specific webhook object based on its ID",
         "parameters": [
+          {
+            "example": "{{apiKey}}",
+            "in": "header",
+            "name": "x-api-key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "in": "path",
             "name": "webhookId",
