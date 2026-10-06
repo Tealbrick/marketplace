@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { composioPolicyFor, composioToolPolicy } from "./composio-policy.js";
 import type {
   ConnectorCapability,
   ConnectorKind,
@@ -181,6 +182,10 @@ export type ComposioListingTool = {
    * tool record carried one. Used as the agent argument allowlist.
    */
   inputArguments?: string[];
+  /** From the toolkit's Composio policy: reaches outside the workspace. */
+  outward?: "always" | "unlessQuiet";
+  /** From the toolkit's Composio policy: destructive (needs connector.admin). */
+  destructive?: true;
 };
 
 export function normalizeConnectorSlug(value: string) {
@@ -597,7 +602,11 @@ function normalizeComposioTool(
   }
   const actionSuffix = actionSuffixFromToolName(rawToolName, toolkit);
   const action = `${toolkit}.${actionSuffix}`;
-  const capability = inferConnectorCapabilityFromAction(action);
+  const inferred = inferConnectorCapabilityFromAction(action);
+  // A curated toolkit policy pins outward, destructive and write tools.
+  const policy = composioPolicyFor(toolkit);
+  const governed = policy ? composioToolPolicy(policy, rawToolName, inferred) : null;
+  const capability = governed?.capability ?? inferred;
   const inputArguments = composioToolInputArguments(record);
   return [
     {
@@ -610,8 +619,62 @@ function normalizeComposioTool(
       description: stringValue(record.description) ?? "",
       capability,
       ...(inputArguments ? { inputArguments } : {}),
+      ...(governed?.outward ? { outward: governed.outward } : {}),
+      ...(governed?.destructive ? { destructive: true as const } : {}),
     },
   ];
+}
+
+/**
+ * Re-apply the toolkit's Composio policy to a stored listing (listings
+ * imported before the policy existed, or before it changed). Returns null
+ * when nothing changes.
+ */
+export function applyComposioPolicyToListing(listing: MarketplaceListing): MarketplaceListing | null {
+  if (listing.source !== "composio") return null;
+  const policy = composioPolicyFor(listing.provider);
+  const composio = recordValue(listing.manifest.composio);
+  const tools = Array.isArray(composio?.tools) ? composio.tools : [];
+  if (!policy || !tools.length) return null;
+  const requirements = { ...(recordValue(listing.manifest.actionRequirements) ?? {}) };
+  let changed = false;
+  const nextTools = tools.map((value) => {
+    const tool = recordValue(value);
+    const toolName = stringValue(tool?.toolName);
+    const action = stringValue(tool?.action);
+    if (!tool || !toolName || !action) return value;
+    const governed = composioToolPolicy(policy, toolName, inferConnectorCapabilityFromAction(action));
+    const next: Record<string, unknown> = { ...tool, capability: governed.capability };
+    delete next.outward;
+    delete next.destructive;
+    if (governed.outward) next.outward = governed.outward;
+    if (governed.destructive) next.destructive = true;
+    const requirement = recordValue(requirements[action]);
+    if (requirement && requirement.capability !== governed.capability) {
+      requirements[action] = { ...requirement, capability: governed.capability };
+      changed = true;
+    }
+    if (JSON.stringify(next) !== JSON.stringify(tool)) changed = true;
+    return next;
+  });
+  if (!changed) return null;
+  const capabilities = [
+    ...new Set(
+      Object.values(requirements)
+        .map((requirement) => recordValue(requirement)?.capability)
+        .filter((capability): capability is ConnectorCapability => CAPABILITIES.has(capability as ConnectorCapability)),
+    ),
+  ].sort() as ConnectorCapability[];
+  return {
+    ...listing,
+    capabilities,
+    manifest: {
+      ...listing.manifest,
+      actionRequirements: requirements,
+      composio: { ...composio, tools: nextTools },
+    },
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 function composioToolInputArguments(record: ComposioToolRecord) {

@@ -1,0 +1,328 @@
+{
+  "schema": 1,
+  "toolkit": "googlecalendar",
+  "api": "Google Calendar API v3",
+  "provenance": {
+    "discovery": "https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest",
+    "revision": "20260925",
+    "sha256": "15c04b7d9d83dde41dc2b5c1b274ccc396caffde5cbe01ccfa208c7909bc6bb0",
+    "retrievedAt": "2026-10-06",
+    "note": "Methods are every resources.*.methods entry of the discovery document. Revision 20260925 added calendars.transferOwnership (38 methods; 37 before it)."
+  },
+  "methods": [
+    {
+      "id": "calendar.acl.delete",
+      "httpMethod": "DELETE",
+      "path": "calendars/{calendarId}/acl/{ruleId}",
+      "tools": [
+        "GOOGLECALENDAR_ACL_DELETE"
+      ]
+    },
+    {
+      "id": "calendar.acl.get",
+      "httpMethod": "GET",
+      "path": "calendars/{calendarId}/acl/{ruleId}",
+      "tools": [
+        "GOOGLECALENDAR_ACL_GET"
+      ]
+    },
+    {
+      "id": "calendar.acl.insert",
+      "httpMethod": "POST",
+      "path": "calendars/{calendarId}/acl",
+      "tools": [
+        "GOOGLECALENDAR_ACL_INSERT"
+      ]
+    },
+    {
+      "id": "calendar.acl.list",
+      "httpMethod": "GET",
+      "path": "calendars/{calendarId}/acl",
+      "tools": [
+        "GOOGLECALENDAR_ACL_LIST"
+      ]
+    },
+    {
+      "id": "calendar.acl.patch",
+      "httpMethod": "PATCH",
+      "path": "calendars/{calendarId}/acl/{ruleId}",
+      "tools": [
+        "GOOGLECALENDAR_ACL_PATCH"
+      ]
+    },
+    {
+      "id": "calendar.acl.update",
+      "httpMethod": "PUT",
+      "path": "calendars/{calendarId}/acl/{ruleId}",
+      "tools": [
+        "GOOGLECALENDAR_ACL_UPDATE"
+      ]
+    },
+    {
+      "id": "calendar.acl.watch",
+      "httpMethod": "POST",
+      "path": "calendars/{calendarId}/acl/watch",
+      "tools": [
+        "GOOGLECALENDAR_ACL_WATCH"
+      ]
+    },
+    {
+      "id": "calendar.calendarList.delete",
+      "httpMethod": "DELETE",
+      "path": "users/me/calendarList/{calendarId}",
+      "tools": [
+        "GOOGLECALENDAR_CALENDAR_LIST_DELETE"
+      ]
+    },
+    {
+      "id": "calendar.calendarList.get",
+      "httpMethod": "GET",
+      "path": "users/me/calendarList/{calendarId}",
+      "tools": [
+        "GOOGLECALENDAR_CALENDAR_LIST_GET"
+      ]
+    },
+    {
+      "id": "calendar.calendarList.insert",
+      "httpMethod": "POST",
+      "path": "users/me/calendarList",
+      "tools": [
+        "GOOGLECALENDAR_CALENDAR_LIST_INSERT"
+      ]
+    },
+    {
+      "id": "calendar.calendarList.list",
+      "httpMethod": "GET",
+      "path": "users/me/calendarList",
+      "tools": [
+        "GOOGLECALENDAR_LIST_CALENDARS"
+      ]
+    },
+    {
+      "id": "calendar.calendarList.patch",
+      "httpMethod": "PATCH",
+      "path": "users/me/calendarList/{calendarId}",
+      "tools": [
+        "GOOGLECALENDAR_CALENDAR_LIST_PATCH"
+      ]
+    },
+    {
+      "id": "calendar.calendarList.update",
+      "httpMethod": "PUT",
+      "path": "users/me/calendarList/{calendarId}",
+      "tools": [
+        "GOOGLECALENDAR_CALENDAR_LIST_UPDATE"
+      ]
+    },
+    {
+      "id": "calendar.calendarList.watch",
+      "httpMethod": "POST",
+      "path": "users/me/calendarList/watch",
+      "tools": [
+        "GOOGLECALENDAR_CALENDAR_LIST_WATCH"
+      ]
+    },
+    {
+      "id": "calendar.calendars.clear",
+      "httpMethod": "POST",
+      "path": "calendars/{calendarId}/clear",
+      "tools": [
+        "GOOGLECALENDAR_CLEAR_CALENDAR"
+      ]
+    },
+    {
+      "id": "calendar.calendars.delete",
+      "httpMethod": "DELETE",
+      "path": "calendars/{calendarId}",
+      "tools": [
+        "GOOGLECALENDAR_CALENDARS_DELETE"
+      ]
+    },
+    {
+      "id": "calendar.calendars.get",
+      "httpMethod": "GET",
+      "path": "calendars/{calendarId}",
+      "tools": [
+        "GOOGLECALENDAR_GET_CALENDAR"
+      ]
+    },
+    {
+      "id": "calendar.calendars.insert",
+      "httpMethod": "POST",
+      "path": "calendars",
+      "tools": [
+        "GOOGLECALENDAR_CREATE_CALENDAR",
+        "GOOGLECALENDAR_DUPLICATE_CALENDAR"
+      ]
+    },
+    {
+      "id": "calendar.calendars.patch",
+      "httpMethod": "PATCH",
+      "path": "calendars/{calendarId}",
+      "tools": [
+        "GOOGLECALENDAR_PATCH_CALENDAR"
+      ]
+    },
+    {
+      "id": "calendar.calendars.transferOwnership",
+      "httpMethod": "POST",
+      "path": "calendars/{calendarId}/transferOwnership"
+    },
+    {
+      "id": "calendar.calendars.update",
+      "httpMethod": "PUT",
+      "path": "calendars/{calendarId}",
+      "tools": [
+        "GOOGLECALENDAR_CALENDARS_UPDATE"
+      ]
+    },
+    {
+      "id": "calendar.channels.stop",
+      "httpMethod": "POST",
+      "path": "channels/stop",
+      "tools": [
+        "GOOGLECALENDAR_CHANNELS_STOP"
+      ]
+    },
+    {
+      "id": "calendar.colors.get",
+      "httpMethod": "GET",
+      "path": "colors",
+      "tools": [
+        "GOOGLECALENDAR_COLORS_GET"
+      ]
+    },
+    {
+      "id": "calendar.events.delete",
+      "httpMethod": "DELETE",
+      "path": "calendars/{calendarId}/events/{eventId}",
+      "tools": [
+        "GOOGLECALENDAR_DELETE_EVENT"
+      ]
+    },
+    {
+      "id": "calendar.events.get",
+      "httpMethod": "GET",
+      "path": "calendars/{calendarId}/events/{eventId}",
+      "tools": [
+        "GOOGLECALENDAR_EVENTS_GET"
+      ]
+    },
+    {
+      "id": "calendar.events.import",
+      "httpMethod": "POST",
+      "path": "calendars/{calendarId}/events/import",
+      "tools": [
+        "GOOGLECALENDAR_EVENTS_IMPORT"
+      ]
+    },
+    {
+      "id": "calendar.events.insert",
+      "httpMethod": "POST",
+      "path": "calendars/{calendarId}/events",
+      "tools": [
+        "GOOGLECALENDAR_CREATE_EVENT"
+      ]
+    },
+    {
+      "id": "calendar.events.instances",
+      "httpMethod": "GET",
+      "path": "calendars/{calendarId}/events/{eventId}/instances",
+      "tools": [
+        "GOOGLECALENDAR_EVENTS_INSTANCES"
+      ]
+    },
+    {
+      "id": "calendar.events.list",
+      "httpMethod": "GET",
+      "path": "calendars/{calendarId}/events",
+      "tools": [
+        "GOOGLECALENDAR_EVENTS_LIST",
+        "GOOGLECALENDAR_FIND_EVENT",
+        "GOOGLECALENDAR_EVENTS_LIST_ALL_CALENDARS",
+        "GOOGLECALENDAR_SYNC_EVENTS"
+      ]
+    },
+    {
+      "id": "calendar.events.move",
+      "httpMethod": "POST",
+      "path": "calendars/{calendarId}/events/{eventId}/move",
+      "tools": [
+        "GOOGLECALENDAR_EVENTS_MOVE"
+      ]
+    },
+    {
+      "id": "calendar.events.patch",
+      "httpMethod": "PATCH",
+      "path": "calendars/{calendarId}/events/{eventId}",
+      "tools": [
+        "GOOGLECALENDAR_PATCH_EVENT",
+        "GOOGLECALENDAR_REMOVE_ATTENDEE"
+      ]
+    },
+    {
+      "id": "calendar.events.quickAdd",
+      "httpMethod": "POST",
+      "path": "calendars/{calendarId}/events/quickAdd",
+      "tools": [
+        "GOOGLECALENDAR_QUICK_ADD"
+      ]
+    },
+    {
+      "id": "calendar.events.update",
+      "httpMethod": "PUT",
+      "path": "calendars/{calendarId}/events/{eventId}",
+      "tools": [
+        "GOOGLECALENDAR_UPDATE_EVENT"
+      ]
+    },
+    {
+      "id": "calendar.events.watch",
+      "httpMethod": "POST",
+      "path": "calendars/{calendarId}/events/watch",
+      "tools": [
+        "GOOGLECALENDAR_EVENTS_WATCH"
+      ]
+    },
+    {
+      "id": "calendar.freebusy.query",
+      "httpMethod": "POST",
+      "path": "freeBusy",
+      "tools": [
+        "GOOGLECALENDAR_FREE_BUSY_QUERY",
+        "GOOGLECALENDAR_FIND_FREE_SLOTS"
+      ]
+    },
+    {
+      "id": "calendar.settings.get",
+      "httpMethod": "GET",
+      "path": "users/me/settings/{setting}",
+      "tools": [
+        "GOOGLECALENDAR_SETTINGS_GET"
+      ]
+    },
+    {
+      "id": "calendar.settings.list",
+      "httpMethod": "GET",
+      "path": "users/me/settings",
+      "tools": [
+        "GOOGLECALENDAR_SETTINGS_LIST",
+        "GOOGLECALENDAR_LIST_SETTINGS"
+      ]
+    },
+    {
+      "id": "calendar.settings.watch",
+      "httpMethod": "POST",
+      "path": "users/me/settings/watch",
+      "tools": [
+        "GOOGLECALENDAR_SETTINGS_WATCH"
+      ]
+    }
+  ],
+  "unmapped": [
+    {
+      "method": "calendar.calendars.transferOwnership",
+      "reason": "Added in discovery revision 20260925; the Composio googlecalendar toolkit (50 tools, 2026-10-06) has no tool for it yet. Transfer ownership in Google Calendar directly."
+    }
+  ]
+}

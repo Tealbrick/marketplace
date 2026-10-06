@@ -35,6 +35,9 @@ import {
   operationInputSchema,
   operationPatternMatches,
   operationRisk,
+  parameterNeedsArgument,
+  READ_METHODS,
+  READS_DOWNGRADABLE_METHODS,
   OPENAPI_DESCRIPTION_MAX,
   OPENAPI_SUMMARY_MAX,
   OPENAPI_TITLE_MAX,
@@ -45,7 +48,7 @@ import {
   type OpenApiDocument,
   type OpenApiOperation,
 } from "./openapi-adapter.js";
-import type { OpenApiAuth } from "./openapi-http.js";
+import { reservedParameterName, type OpenApiAuth } from "./openapi-http.js";
 import type { ConnectorCapability, MarketplaceListing } from "./types.js";
 
 export const COMPANY_BOX_COLLECTION = {
@@ -460,6 +463,26 @@ function compileOpenApi(
     const key = keys[position]!;
     const risk = operationRisk(operation, patterns);
     try {
+      const reserved = operation.parameters.find(
+        (parameter) =>
+          (parameter.in === "header" || parameter.in === "query") &&
+          reservedParameterName(parameter.name, runtimeAuthFor(entry.auth)),
+      );
+      if (reserved) {
+        throw new Error(`Parameter ${reserved.in} ${reserved.name} is a reserved name (method override or credential).`);
+      }
+      const overwrite = operation.parameters.find(
+        (parameter) => parameter.in === "header" && parameter.name.toLowerCase() === "overwrite",
+      );
+      if (overwrite && "default" in overwrite.schema && overwrite.schema.default !== "F") {
+        throw new Error("An Overwrite header default must be F; overwriting must be asked for explicitly.");
+      }
+      const destination = operation.parameters.find(
+        (parameter) => parameter.in === "header" && parameter.name.toLowerCase() === "destination",
+      );
+      if (destination && !destination.destinationTemplate) {
+        throw new Error("A Destination header needs x-destination-template; Marketplace never forwards a caller-supplied URL.");
+      }
       const inputSchema = operationInputSchema(operation, document.defs);
       const tool = boundedToolSchema(inputSchema);
       const validateArguments = compileArgumentValidator(inputSchema);
@@ -517,15 +540,28 @@ function compileOpenApi(
       }
     }
   }
+  for (const pattern of entry.reads) {
+    for (const operation of document.operations) {
+      if (
+        operationPatternMatches(pattern, operation) &&
+        !READ_METHODS.has(operation.method) &&
+        !READS_DOWNGRADABLE_METHODS.has(operation.method)
+      ) {
+        warnings.push(
+          `reads pattern "${pattern}" ignored for ${operationIdentity(operation.method, operation.path)}: only POST can be read-class.`,
+        );
+      }
+    }
+  }
   const byKey = new Map(operations.map((operation) => [operation.key, operation]));
   const health = entry.healthOperation
     ? (operations.find((operation) => exclusionMatches(entry.healthOperation!, operation.operation)) ?? null)
     : null;
   if (!health) {
     errors.push(`healthOperation "${entry.healthOperation}" is not an exposed operation.`);
-  } else if (health.method !== "get") {
-    errors.push(`healthOperation "${entry.healthOperation}" must be a GET operation.`);
-  } else if (health.operation.parameters.some((parameter) => parameter.required) || health.operation.requestBody?.required) {
+  } else if (!READ_METHODS.has(health.method)) {
+    errors.push(`healthOperation "${entry.healthOperation}" must be a read (GET, HEAD, PROPFIND, …) operation.`);
+  } else if (health.operation.parameters.some(parameterNeedsArgument) || health.operation.requestBody?.required) {
     errors.push(`healthOperation "${entry.healthOperation}" must not need arguments.`);
   }
   const apiBasePath = (entry.openapi!.basePath ?? document.basePath).replace(/\/+$/u, "");

@@ -1,0 +1,64 @@
+{
+  "schema": 1,
+  "toolkit": "googlecalendar",
+  "version": "2026-10-06",
+  "reviewedAgainst": "googlecalendar.tools.json",
+  "notes": "Outward: reaches people outside the workspace (attendee notifications, calendar sharing) or registers an external webhook. Event tools that notify attendees are outward unless the call is quiet: send_updates/sendUpdates explicitly \"none\", no attendees, and send_notifications not true. Tools with no way to turn notifications off are always outward. Writes: tools whose names do not reveal they write (patch, insert, move, watch, stop, duplicate, batch, clear) are pinned to at least connector.dispatch. BATCH_EVENTS is destructive as well: one batch can delete events.",
+  "outward": {
+    "always": [
+      "GOOGLECALENDAR_BATCH_EVENTS",
+      "GOOGLECALENDAR_EVENTS_IMPORT",
+      "GOOGLECALENDAR_REMOVE_ATTENDEE",
+      "GOOGLECALENDAR_ACL_INSERT",
+      "GOOGLECALENDAR_ACL_UPDATE",
+      "GOOGLECALENDAR_ACL_PATCH",
+      "GOOGLECALENDAR_*_WATCH"
+    ],
+    "unlessQuiet": [
+      "GOOGLECALENDAR_CREATE_EVENT",
+      "GOOGLECALENDAR_UPDATE_EVENT",
+      "GOOGLECALENDAR_PATCH_EVENT",
+      "GOOGLECALENDAR_QUICK_ADD",
+      "GOOGLECALENDAR_EVENTS_MOVE",
+      "GOOGLECALENDAR_DELETE_EVENT"
+    ],
+    "quiet": {
+      "argument": [
+        "send_updates",
+        "sendUpdates"
+      ],
+      "equals": "none",
+      "unlessPresent": [
+        "attendees"
+      ],
+      "unlessTrue": [
+        "send_notifications",
+        "sendNotifications"
+      ]
+    }
+  },
+  "destructive": [
+    "GOOGLECALENDAR_BATCH_EVENTS",
+    "GOOGLECALENDAR_CALENDARS_DELETE",
+    "GOOGLECALENDAR_CLEAR_CALENDAR",
+    "GOOGLECALENDAR_ACL_DELETE",
+    "GOOGLECALENDAR_CALENDAR_LIST_DELETE",
+    "GOOGLECALENDAR_DELETE_EVENT"
+  ],
+  "writes": [
+    "GOOGLECALENDAR_ACL_INSERT",
+    "GOOGLECALENDAR_ACL_PATCH",
+    "GOOGLECALENDAR_*_WATCH",
+    "GOOGLECALENDAR_BATCH_EVENTS",
+    "GOOGLECALENDAR_CALENDAR_LIST_INSERT",
+    "GOOGLECALENDAR_CALENDAR_LIST_PATCH",
+    "GOOGLECALENDAR_CHANNELS_STOP",
+    "GOOGLECALENDAR_DUPLICATE_CALENDAR",
+    "GOOGLECALENDAR_EVENTS_MOVE",
+    "GOOGLECALENDAR_PATCH_CALENDAR",
+    "GOOGLECALENDAR_PATCH_EVENT"
+  ],
+  "reads": [
+    "GOOGLECALENDAR_SYNC_EVENTS"
+  ]
+}

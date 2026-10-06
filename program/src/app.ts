@@ -7,6 +7,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z, ZodError } from "zod";
 
 import {
+  applyComposioPolicyToListing,
   buildComposioCatalogListing,
   buildComposioListingFromTools,
   composioToolNameForAction,
@@ -77,6 +78,7 @@ import {
   validateOpenApiArguments,
 } from "./openapi-http.js";
 import { registerCompanyBoxRoutes } from "./company-box-routes.js";
+import { composioCallIsOutward, composioPolicyFor, composioToolPolicy } from "./composio-policy.js";
 import { OPENAPI_TOOL_SCHEMA_MAX_BYTES } from "./openapi-adapter.js";
 import { outputDigest } from "./usage-ledger.js";
 import { tailnetHealth } from "./tailnet.js";
@@ -168,6 +170,7 @@ import type {
   AgentConnectorGrant,
   CompanyBoxApproval,
   ConnectorCapability,
+  ConnectorConnection,
   MarketplaceGatewayRegistrySnapshot,
   MarketplaceListing,
   MarketplacePortalGrantRequest,
@@ -2040,12 +2043,38 @@ function mcpToolRisk(entry: CompiledMcpEntry, listing: MarketplaceListing, actio
 }
 
 /** Declared risk for one Company Box action; undefined for other connectors. */
+/** The toolkit policy for a Composio listing, if one is curated. */
+function composioPolicyForListing(listing: MarketplaceListing) {
+  return listing.executionOwner === "composio" ? composioPolicyFor(listing.provider) : null;
+}
+
+/** Listings whose outward agent calls can be held for the owner. */
+function holdableListing(catalog: CompanyBoxCatalog, listing: MarketplaceListing, workspaceSlug: string) {
+  return Boolean(companyBoxEntryForListing(catalog, listing, workspaceSlug) || composioPolicyForListing(listing));
+}
+
+/**
+ * Declared risk for one governed action: Company Box operations and tools,
+ * and Composio tools of toolkits with a curated policy (outward may depend
+ * on the call's arguments). Undefined for everything else.
+ */
 function companyBoxRiskForAction(
   catalog: CompanyBoxCatalog,
   listing: MarketplaceListing,
   workspaceSlug: string,
   actionKey: string,
+  args?: Record<string, unknown>,
 ): GovernedActionRisk | undefined {
+  const policy = composioPolicyForListing(listing);
+  if (policy) {
+    const toolSlug = composioToolNameForAction(listing, actionKey);
+    const governed = composioToolPolicy(policy, toolSlug, resolveActionRequirement(listing, actionKey)?.capability ?? "connector.dispatch");
+    return {
+      write: governed.capability !== "connector.observe",
+      outward: composioCallIsOutward(policy, toolSlug, args),
+      destructive: governed.destructive,
+    };
+  }
   const entry = companyBoxEntryForListing(catalog, listing, workspaceSlug);
   if (!entry) {
     // A retired or broken REST entry: fail toward approval, never toward silence.
@@ -2643,6 +2672,12 @@ export async function buildMarketplaceApp(
         bindCustomMcpForWorkspace(options.store, install.workspaceSlug, listing);
       }
     }
+  }
+  // Curated Composio toolkit policies also apply to listings imported
+  // before the policy (or its current version) existed.
+  for (const listing of options.store.listListings()) {
+    const governed = applyComposioPolicyToListing(listing);
+    if (governed) options.store.upsertListing(governed);
   }
   for (const listing of options.store.listListings()) {
     if (
@@ -3270,7 +3305,7 @@ export async function buildMarketplaceApp(
       fingerprint,
       arguments: input.args,
       argumentsPreview: approvalPreview(input.args),
-      expiresAt: new Date(Date.now() + COMPANY_BOX_APPROVAL_TTL_MS).toISOString(),
+      ttlMs: COMPANY_BOX_APPROVAL_TTL_MS,
       });
     } catch (error) {
       // A concurrent hold with the same idempotency key won the insert.
@@ -3338,7 +3373,7 @@ export async function buildMarketplaceApp(
       if (!listing || !published || published.capability !== approval.capability) {
         return fail("approval_target_unavailable");
       }
-      const risk = companyBoxRiskForAction(companyBox, listing, approval.workspaceSlug, approval.actionKey);
+      const risk = companyBoxRiskForAction(companyBox, listing, approval.workspaceSlug, approval.actionKey, approval.arguments);
       const rules = await enforceRules({
         reply,
         workspaceSlug: approval.workspaceSlug,
@@ -3367,7 +3402,12 @@ export async function buildMarketplaceApp(
       };
       const outcome: Record<string, unknown> = listingIsCompanyBoxOpenApi(listing)
         ? await executeCompanyBoxAction({ ...common, risk })
-        : await executeCustomMcpAction(common);
+        : listing.executionOwner === "composio"
+          ? await executeComposioAction({
+              ...common,
+              connection: options.store.getConnection(approval.workspaceSlug, approval.pluginId),
+            })
+          : await executeCustomMcpAction(common);
       return outcome.ok === true
         ? options.store.finishCompanyBoxApproval({ id: approval.id, state: "succeeded", result: outcome.result })
         : fail(typeof outcome.error === "string" ? outcome.error : "approval_execution_failed");
@@ -3375,6 +3415,129 @@ export async function buildMarketplaceApp(
       fail("approval_execution_failed");
       throw error;
     }
+  };
+  /** Run one Composio tool for a governed, already-authorized action. */
+  const executeComposioAction = async (input: {
+    reply: FastifyReply;
+    listing: MarketplaceListing;
+    workspaceSlug: string;
+    capability: ConnectorCapability;
+    action: Record<string, unknown> & { type: string };
+    actorId: string;
+    traceId: string;
+    rules: Awaited<ReturnType<typeof enforceRules>>;
+    runId: string | null;
+    sessionId: string | null;
+    agentGrantId: string | null;
+    connection: ConnectorConnection | null;
+  }) => {
+      const toolName = composioToolNameForAction(input.listing, input.action.type);
+      let providerResult: { summary: string; details: Record<string, unknown> };
+      try {
+        const providerOutput = await executeComposioTool({
+            toolName,
+            arguments: { ...input.action, type: undefined },
+            connectedAccountId: connectedAccountIdFromConnection(input.connection),
+            userId:
+              typeof input.connection?.metadata.userId === "string"
+                ? input.connection.metadata.userId
+                : undefined,
+            env: providerEnvironment(),
+            fetchImpl: options.providerFetch,
+        });
+        providerResult = {
+          summary: `Executed ${toolName} through Composio.`,
+          details: {
+            toolName,
+            result: providerOutput,
+          },
+        };
+      } catch (error) {
+          const usage = options.store.recordUsage({
+            workspaceSlug: input.workspaceSlug,
+            pluginId: input.listing.pluginId,
+            provider: input.listing.provider,
+            sourceExecutor: input.listing.executionOwner,
+            sourceActionKey: input.action.type,
+            productCapabilityKey: `connector.${input.listing.executionOwner}.${input.listing.provider}.${input.action.type}`,
+            scopesUsed: [input.capability],
+            status: "failed",
+            runId: input.runId,
+            sessionId: input.sessionId,
+            error: error instanceof Error ? error.message : String(error),
+            metadata: {
+              rules: input.rules,
+              ...(input.agentGrantId ? { agentGrantId: input.agentGrantId } : {}),
+            },
+            input: input.action,
+            output: null,
+          });
+          options.store.recordEvent({
+            type: "marketplace.execution.failed",
+            traceId: input.traceId,
+            workspaceSlug: input.workspaceSlug,
+            pluginId: input.listing.pluginId,
+            actorId: input.actorId,
+            rulesDecisionId: "decisionId" in input.rules ? (input.rules.decisionId ?? null) : null,
+            payload: {
+              capability: input.capability,
+              action: input.action.type,
+              usageId: usage.id,
+            },
+          });
+          input.reply.code(502);
+        return {
+          ok: false,
+          traceId: input.traceId,
+          error: "composio_execute_failed",
+          detail: error instanceof Error ? error.message : String(error),
+          usage,
+        };
+      }
+      const result = {
+        pluginId: input.listing.pluginId,
+        workspaceSlug: input.workspaceSlug,
+        provider: input.listing.provider,
+        capability: input.capability,
+        actionType: input.action.type,
+        performedAt: new Date().toISOString(),
+        simulated: false,
+        summary: providerResult.summary,
+        details: providerResult.details,
+      };
+      const usage = options.store.recordUsage({
+        workspaceSlug: input.workspaceSlug,
+        pluginId: input.listing.pluginId,
+        provider: input.listing.provider,
+        sourceExecutor: input.listing.executionOwner,
+        sourceActionKey: input.action.type,
+        productCapabilityKey: `connector.${input.listing.executionOwner}.${input.listing.provider}.${input.action.type}`,
+        scopesUsed: [input.capability],
+        status: "succeeded",
+        runId: input.runId,
+        sessionId: input.sessionId,
+        error: null,
+        metadata: {
+          rules: input.rules,
+          ...(input.agentGrantId ? { agentGrantId: input.agentGrantId } : {}),
+        },
+        input: input.action,
+        output: result,
+      });
+      options.store.recordEvent({
+        type: "marketplace.execution.completed",
+        traceId: input.traceId,
+        workspaceSlug: input.workspaceSlug,
+        pluginId: input.listing.pluginId,
+        actorId: input.actorId,
+        rulesDecisionId: "decisionId" in input.rules ? (input.rules.decisionId ?? null) : null,
+        payload: {
+          capability: input.capability,
+          action: input.action.type,
+          usageId: usage.id,
+        },
+      });
+      return { ok: true, traceId: input.traceId, result, usage, rules: input.rules };
   };
   const composioCatalogSyncByWorkspace = new Map<
     string,
@@ -4628,6 +4791,12 @@ export async function buildMarketplaceApp(
     const entry = listing ? companyBoxEntryForListing(companyBox, listing, approval.workspaceSlug) : null;
     const operation = entry?.kind === "openapi" ? entry.byKey.get(approval.actionKey) : null;
     const tool = listing && !operation ? customMcpToolForAction(listing, approval.actionKey) : null;
+    const composioTool =
+      listing?.executionOwner === "composio"
+        ? (recordValue(listing.manifest.composio)?.tools as Array<Record<string, unknown>> | undefined)?.find(
+            (candidate) => candidate.action === approval.actionKey,
+          )
+        : undefined;
     return {
       id: approval.id,
       pluginId: approval.pluginId,
@@ -4635,7 +4804,15 @@ export async function buildMarketplaceApp(
       actionKey: approval.actionKey,
       operation: operation
         ? { title: operation.title, method: operation.method.toUpperCase(), path: operation.path }
-        : { title: tool?.title ?? tool?.name ?? approval.actionKey, method: null, path: null },
+        : {
+            title:
+              tool?.title ??
+              tool?.name ??
+              (typeof composioTool?.displayName === "string" ? composioTool.displayName : null) ??
+              approval.actionKey,
+            method: null,
+            path: null,
+          },
       capability: approval.capability,
       agentId: approval.agentId,
       argumentsPreview: approval.argumentsPreview,
@@ -6699,12 +6876,13 @@ export async function buildMarketplaceApp(
             "This launch profile executes Composio-backed tools and the workspace's own custom MCP connectors only. Native, Activepieces, Nango, and Hub MCP execution are unavailable rather than simulated.",
         };
       }
-      const risk = companyBoxRiskForAction(companyBox, listing, input.workspaceSlug, input.action.type);
+      const { type: _riskType, ...riskArgs } = effectiveAction;
+      const risk = companyBoxRiskForAction(companyBox, listing, input.workspaceSlug, input.action.type, riskArgs);
       if (
         governanceMode === "owner" &&
         risk?.outward &&
         scopedGrant &&
-        companyBoxEntryForListing(companyBox, listing, input.workspaceSlug)
+        holdableListing(companyBox, listing, input.workspaceSlug)
       ) {
         const { type: _type, ...args } = effectiveAction;
         const held = holdCompanyBoxCall({
@@ -6797,113 +6975,20 @@ export async function buildMarketplaceApp(
         });
       }
 
-      const toolName = composioToolNameForAction(listing, input.action.type);
-      let providerResult: { summary: string; details: Record<string, unknown> };
-      try {
-        const providerOutput = await executeComposioTool({
-            toolName,
-            arguments: { ...effectiveAction, type: undefined },
-            connectedAccountId: connectedAccountIdFromConnection(connection),
-            userId:
-              typeof connection?.metadata.userId === "string"
-                ? connection.metadata.userId
-                : undefined,
-            env: providerEnvironment(),
-            fetchImpl: options.providerFetch,
-        });
-        providerResult = {
-          summary: `Executed ${toolName} through Composio.`,
-          details: {
-            toolName,
-            result: providerOutput,
-          },
-        };
-      } catch (error) {
-          const usage = options.store.recordUsage({
-            workspaceSlug: input.workspaceSlug,
-            pluginId,
-            provider: listing.provider,
-            sourceExecutor: listing.executionOwner,
-            sourceActionKey: input.action.type,
-            productCapabilityKey: `connector.${listing.executionOwner}.${listing.provider}.${input.action.type}`,
-            scopesUsed: [input.capability],
-            status: "failed",
-            runId: input.runId ?? null,
-            sessionId: input.sessionId ?? null,
-            error: error instanceof Error ? error.message : String(error),
-            metadata: {
-              rules,
-              ...(scopedGrant ? { agentGrantId: scopedGrant.id } : {}),
-            },
-            input: effectiveAction,
-            output: null,
-          });
-          options.store.recordEvent({
-            type: "marketplace.execution.failed",
-            traceId,
-            workspaceSlug: input.workspaceSlug,
-            pluginId,
-            actorId: effectiveActorId,
-            rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
-            payload: {
-              capability: input.capability,
-              action: input.action.type,
-              usageId: usage.id,
-            },
-          });
-          reply.code(502);
-        return {
-          ok: false,
-          traceId,
-          error: "composio_execute_failed",
-          detail: error instanceof Error ? error.message : String(error),
-          usage,
-        };
-      }
-      const result = {
-        pluginId,
+      return executeComposioAction({
+        reply,
+        listing,
         workspaceSlug: input.workspaceSlug,
-        provider: listing.provider,
         capability: input.capability,
-        actionType: input.action.type,
-        performedAt: new Date().toISOString(),
-        simulated: false,
-        summary: providerResult.summary,
-        details: providerResult.details,
-      };
-      const usage = options.store.recordUsage({
-        workspaceSlug: input.workspaceSlug,
-        pluginId,
-        provider: listing.provider,
-        sourceExecutor: listing.executionOwner,
-        sourceActionKey: input.action.type,
-        productCapabilityKey: `connector.${listing.executionOwner}.${listing.provider}.${input.action.type}`,
-        scopesUsed: [input.capability],
-        status: "succeeded",
+        action: effectiveAction,
+        actorId: effectiveActorId,
+        traceId,
+        rules,
         runId: input.runId ?? null,
         sessionId: input.sessionId ?? null,
-        error: null,
-        metadata: {
-          rules,
-          ...(scopedGrant ? { agentGrantId: scopedGrant.id } : {}),
-        },
-        input: effectiveAction,
-        output: result,
+        agentGrantId: scopedGrant?.id ?? null,
+        connection,
       });
-      options.store.recordEvent({
-        type: "marketplace.execution.completed",
-        traceId,
-        workspaceSlug: input.workspaceSlug,
-        pluginId,
-        actorId: effectiveActorId,
-        rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
-        payload: {
-          capability: input.capability,
-          action: input.action.type,
-          usageId: usage.id,
-        },
-      });
-      return { ok: true, traceId, result, usage, rules };
     },
   );
 
@@ -7089,11 +7174,12 @@ export async function buildMarketplaceApp(
           error: scopedAction.error,
         });
       }
-      const runtimeRisk = companyBoxRiskForAction(companyBox, listing, organizationId, input.selection.actionKey);
+      const { type: _runtimeType, ...runtimeArgs } = scopedAction.action;
+      const runtimeRisk = companyBoxRiskForAction(companyBox, listing, organizationId, input.selection.actionKey, runtimeArgs);
       if (
         governanceMode === "owner" &&
         runtimeRisk?.outward &&
-        companyBoxEntryForListing(companyBox, listing, organizationId)
+        holdableListing(companyBox, listing, organizationId)
       ) {
         const { type: _type, ...args } = scopedAction.action;
         const held = holdCompanyBoxCall({

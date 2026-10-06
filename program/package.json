@@ -22,7 +22,8 @@
     "test": "vitest run && vitest run --config web/vitest.config.ts",
     "test:e2e": "pnpm run build:web && playwright test --config web/playwright.config.ts",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "company-box:coverage": "tsx scripts/company-box-coverage.ts"
+    "company-box:coverage": "tsx scripts/company-box-coverage.ts",
+    "composio:coverage": "tsx scripts/composio-coverage.ts"
   },
   "dependencies": {
     "@fastify/static": "^8.3.0",

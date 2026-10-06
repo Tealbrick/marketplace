@@ -161,7 +161,7 @@ describe("Company Box coverage", () => {
   it("requires a safe GET health operation", () => {
     const root = catalogWith({ entry: "notes", change: (entry) => (entry.healthOperation = "createNote") });
     expect(companyBoxCoverageReport(root).entries.find((entry) => entry.id === "notes")!.errors).toEqual([
-      'healthOperation "createNote" must be a GET operation.',
+      'healthOperation "createNote" must be a read (GET, HEAD, PROPFIND, …) operation.',
     ]);
   });
 
@@ -204,7 +204,7 @@ describe("stored output bounds", () => {
         fingerprint: "f",
         arguments: { path: { id: "1" } },
         argumentsPreview: "{}",
-        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        ttlMs: 60_000,
       });
       expect(store.decideCompanyBoxApproval({ id: approval.id, workspaceSlug: "other", decision: "approve", decidedBy: "x" })).toBeNull();
       expect(store.decideCompanyBoxApproval({ id: approval.id, workspaceSlug: "ws", decision: "approve", decidedBy: "owner" })?.state).toBe("executing");

@@ -74,9 +74,11 @@ Two kinds of entry:
 - `outward` / `destructive` / `reads` patterns use `*` wildcards,
   case-insensitive, and match the `operationId` or `METHOD /path` (tool name
   for MCP).
-- `reads` marks non-GET operations that only read (search or query
-  endpoints) as read-class: they grant as `connector.observe` and are never
-  outward or destructive unless also listed in those patterns. **Never mark a
+- `reads` marks POST (or QUERY) operations that only read (search or query
+  endpoints) as read-class; it never downgrades PUT, PATCH, DELETE or WebDAV
+  writes (such matches are ignored and reported as coverage warnings).
+  Read-class operations grant as `connector.observe` and are never outward or
+  destructive unless also listed in those patterns. **Never mark a
   GraphQL endpoint as read**: the same `POST /graphql` carries mutations, and a
   read grant would let an agent run them.
 - `auth` decides the credential fields the install form asks for: `header` →
@@ -93,6 +95,17 @@ Two kinds of entry:
   `Authorization` for basic, or the query key) is dropped: Marketplace sets it.
 - A `{param}` used in a path template but never declared becomes a required
   string path parameter.
+- OpenAPI 3.0 `nullable: true` on a schema with no `type` (typical next to
+  `oneOf` / `anyOf`) is rewritten as `anyOf: [schema, { type: "null" }]`, because
+  Ajv refuses `nullable` without `type`.
+- A GET cannot be gated per query parameter: if a GET has query switches that
+  change state (changedetection's `recheck`, `paused`, `muted`), drop those
+  parameters in the overlay so a read grant stays read-only.
+- When the upstream spec omits routes the app really serves, add them to the
+  overlay (new `paths` entries) and mark each operation `x-source: code`, with
+  an `x-code-route` naming the route and controller it came from (Chatwoot:
+  296 routes read from `config/routes.rb` and checked against the controllers).
+  Say in `PROVENANCE.md` how the routes were derived and which were left out.
 - A GET/HEAD operation that declares a request body is **auto-excluded**
   (`status: excluded`, `auto: true`, reason `auto: …`): bodies on GET are
   dropped or refused by servers and proxies, so sending it would not do what
@@ -227,6 +240,61 @@ custom MCP executions also record the full output's byte length and sha256
 (`metadata.output`). Stored approval results are capped at 64 KB, keeping the
 size and sha256 of anything larger.
 
+## WebDAV and other spec extensions
+
+OpenAPI has no slot for WebDAV methods, so a spec declares them as Operation
+Objects under `x-<method>` keys of a path item, next to the normal methods:
+
+```jsonc
+"/remote.php/dav/files/{user}/{path}": {
+  "parameters": [
+    { "name": "user", "in": "path", "required": true, "schema": { "type": "string" } },
+    { "name": "path", "in": "path", "required": true, "x-multi-segment": true, "schema": { "type": "string" } }
+  ],
+  "get": { "operationId": "downloadFile" },
+  "x-propfind": {
+    "operationId": "listFolder",
+    "parameters": [{ "name": "Depth", "in": "header", "schema": { "type": "string", "default": "1" } }],
+    "requestBody": { "content": { "application/xml": { "schema": { "type": "string" } } } }
+  },
+  "x-move": {
+    "operationId": "moveFile",
+    "parameters": [
+      { "name": "Destination", "in": "header", "required": true, "schema": { "type": "string" },
+        "x-destination-template": "/remote.php/dav/files/{user}/{Destination}" },
+      { "name": "Overwrite", "in": "header", "schema": { "type": "string", "default": "F" } }
+    ]
+  }
+}
+```
+
+- Supported keys: `x-propfind`, `x-proppatch`, `x-mkcol`, `x-move`, `x-copy`,
+  `x-report`, `x-lock`, `x-unlock`. They count in coverage, take action keys
+  like any operation (`propfind-…` without an operationId), and can be
+  excluded as `PROPFIND /path`.
+- PROPFIND and REPORT are reads (`connector.observe`); PROPPATCH, MKCOL,
+  LOCK and UNLOCK are writes. MOVE is always destructive (`connector.admin`).
+  COPY is destructive unless its `Overwrite` header is fixed with
+  `const: "F"` (without the header, WebDAV overwrites). An `Overwrite`
+  `default` other than `F` fails coverage. Multistatus (207) XML is returned
+  as text.
+- `x-multi-segment: true` on a path parameter lets its value span `/`
+  (`Documents/Q3 report/notes.md`). Each segment is percent-encoded on its own;
+  one leading and trailing `/` is ignored; empty, `.` and `..` segments
+  (also `%2e`-encoded), backslashes and encoded slashes are refused. Other path
+  parameters stay single-segment.
+- `Destination` (MOVE/COPY) must declare `x-destination-template`, a path
+  relative to the API base. Marketplace builds the header as the configured
+  base URL's origin and prefix plus that template; `{Destination}` takes the
+  caller's value as a relative multi-segment path, other `{name}`s take the
+  operation's path arguments. A caller-supplied URL is never forwarded, and a
+  `Destination` header without a template fails coverage.
+- `Overwrite` accepts only `T`/`F`, `Depth` only `0`, `1`, `infinity`.
+- A header parameter with a `default` or `const` that the agent omits is sent
+  with that value (e.g. `OCS-APIRequest: true`), and it is not required in the
+  schema agents see. A `healthOperation` may be any read (GET, HEAD,
+  PROPFIND, …) whose required parameters all have defaults or consts.
+
 ## File uploads
 
 In `multipart/form-data` bodies, every part declared as binary
@@ -257,7 +325,10 @@ arguments in full, so an outward upload over 32 KB is refused with
   `..` (also percent-encoded).
 - Parameter and query names `_method`, `x-http-method*`,
   `x-method-override*` and any case variant of the auth query key are always
-  refused. Objects explode into query keys only for object-typed parameters,
+  refused: a spec declaring one fails coverage for that operation, and the
+  executor checks every header it sends, defaults and consts included. A
+  header `const` is enforced when the request is built; values that cannot be
+  encoded (lone surrogates) are argument errors. Objects explode into query keys only for object-typed parameters,
   and only into declared keys.
 - Credentials belong to the origin they were entered for. Changing an entry's
   base URL (or an MCP connector's URL) to a new origin requires entering every

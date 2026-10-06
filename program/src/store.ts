@@ -1285,10 +1285,13 @@ export class SqliteMarketplaceStore {
     fingerprint: string;
     arguments: Record<string, unknown>;
     argumentsPreview: string;
-    expiresAt: string;
+    /** Lifetime from creation. Creation and expiry derive from one clock reading, so the span is exactly this. */
+    ttlMs: number;
   }): CompanyBoxApproval {
     const id = createId("approval");
-    const timestamp = nowIso();
+    const created = Date.now();
+    const timestamp = new Date(created).toISOString();
+    const expiresAt = new Date(created + input.ttlMs).toISOString();
     this.db
       .prepare(
         `INSERT INTO company_box_approval (
@@ -1309,7 +1312,7 @@ export class SqliteMarketplaceStore {
         input.fingerprint,
         JSON.stringify(input.arguments),
         input.argumentsPreview,
-        input.expiresAt,
+        expiresAt,
         timestamp,
         timestamp,
       );

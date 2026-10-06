@@ -26,7 +26,26 @@ export const OPENAPI_METHODS = [
   "patch",
   "trace",
 ] as const;
-export type OpenApiMethod = (typeof OPENAPI_METHODS)[number];
+
+/**
+ * WebDAV methods. OpenAPI has no slot for them, so a spec declares each as
+ * an Operation Object under an `x-<method>` key of the path item
+ * (`x-propfind`, `x-mkcol`, …).
+ */
+export const WEBDAV_METHODS = [
+  "propfind",
+  "proppatch",
+  "mkcol",
+  "move",
+  "copy",
+  "report",
+  "lock",
+  "unlock",
+] as const;
+export type OpenApiMethod = (typeof OPENAPI_METHODS)[number] | (typeof WEBDAV_METHODS)[number];
+
+/** Methods that only read (grant as connector.observe). */
+export const READ_METHODS: ReadonlySet<string> = new Set(["get", "head", "options", "propfind", "report"]);
 
 export type JsonSchema = Record<string, unknown>;
 
@@ -66,7 +85,32 @@ export type OpenApiParameter = {
   description?: string;
   style?: string;
   explode?: boolean;
+  /** Path only (`x-multi-segment: true`): the value may span `/`-separated segments. */
+  multiSegment?: boolean;
+  /**
+   * `Destination` header only (`x-destination-template`): a path template
+   * relative to the API base. The header is always built as base origin +
+   * prefix + this template; `{<header name>}` takes the caller's relative
+   * path (multi-segment), other `{name}`s the operation's path arguments.
+   */
+  destinationTemplate?: string;
 };
+
+/** A header param the agent may omit because the spec fixes or defaults it. */
+export function parameterDefault(parameter: Pick<OpenApiParameter, "schema">): unknown {
+  if ("const" in parameter.schema) return parameter.schema.const;
+  if ("default" in parameter.schema) return parameter.schema.default;
+  return undefined;
+}
+
+export function parameterHasDefault(parameter: Pick<OpenApiParameter, "in" | "schema">) {
+  return parameter.in === "header" && parameterDefault(parameter) !== undefined;
+}
+
+/** Required and not filled in by a default/const. */
+export function parameterNeedsArgument(parameter: Pick<OpenApiParameter, "in" | "schema" | "required">) {
+  return parameter.required && !parameterHasDefault(parameter);
+}
 
 export type OpenApiRequestBody = {
   required: boolean;
@@ -198,7 +242,20 @@ function rewriteSchema(context: SchemaContext, value: unknown, seen: Set<string>
   for (const [key, child] of Object.entries(record)) {
     out[key] = rewriteSchema(context, child, seen);
   }
-  return out;
+  return nullableWithoutType(out);
+}
+
+/**
+ * OpenAPI 3.0 `nullable: true` next to `oneOf` / `anyOf` / `allOf` / `enum`
+ * but no `type` is common in generated specs, yet Ajv refuses `nullable`
+ * without `type`. Rewrite it as `anyOf: [schema, { type: "null" }]`; a plain
+ * `nullable: false` is simply dropped. Property maps are untouched because a
+ * property called `nullable` holds a schema object, not a boolean.
+ */
+function nullableWithoutType(schema: Record<string, unknown>): Record<string, unknown> {
+  if (typeof schema.nullable !== "boolean" || "type" in schema) return schema;
+  const { nullable, ...rest } = schema;
+  return nullable ? { anyOf: [rest, { type: "null" }] } : rest;
 }
 
 function collectDefRefs(value: unknown, into: Set<string>) {
@@ -400,8 +457,10 @@ export function parseOpenApiDocument(raw: unknown): OpenApiDocument {
   for (const [path, rawItem] of Object.entries(paths)) {
     const item = derefObject(document, rawItem);
     if (!item) continue;
-    for (const method of OPENAPI_METHODS) {
-      const operation = recordValue(item[method]);
+    for (const method of [...OPENAPI_METHODS, ...WEBDAV_METHODS]) {
+      const operation = recordValue(
+        (WEBDAV_METHODS as readonly string[]).includes(method) ? item[`x-${method}`] : item[method],
+      );
       if (!operation) continue;
       const operationId = stringValue(operation.operationId);
       const parameters: OpenApiParameter[] = [];
@@ -451,11 +510,28 @@ export function parseOpenApiDocument(raw: unknown): OpenApiDocument {
                     {},
                 ),
               ) ?? {});
+        const lowerName = name.toLowerCase();
+        // WebDAV headers with fixed vocabularies are always validated.
+        const constrained =
+          location === "header" && lowerName === "overwrite"
+            ? { ...schema, type: "string", enum: ["T", "F"] }
+            : location === "header" && lowerName === "depth"
+              ? { ...schema, type: "string", enum: ["0", "1", "infinity"] }
+              : schema;
         parameters.push({
           name,
           in: location,
           required: location === "path" ? true : parameter.required === true,
-          schema,
+          schema:
+            location === "path" && parameter["x-multi-segment"] === true
+              ? { description: "A path; may contain / between segments (no empty, . or .. segments).", ...constrained, "x-multi-segment": true }
+              : location === "header" && lowerName === "destination"
+                ? { description: "Destination path relative to the app (not a URL); Marketplace builds the full address.", ...constrained }
+                : constrained,
+          ...(location === "path" && parameter["x-multi-segment"] === true ? { multiSegment: true } : {}),
+          ...(location === "header" && lowerName === "destination" && typeof parameter["x-destination-template"] === "string"
+            ? { destinationTemplate: parameter["x-destination-template"] }
+            : {}),
           ...(description ? { description } : {}),
           ...(typeof parameter.style === "string" ? { style: parameter.style } : {}),
           ...(typeof parameter.explode === "boolean" ? { explode: parameter.explode } : {}),
@@ -671,16 +747,35 @@ export type OperationRisk = {
  * as reaching people or systems outside the workspace; governance requires
  * approval for it.
  */
+/** Only these methods can be downgraded to read-class by `reads` patterns. */
+export const READS_DOWNGRADABLE_METHODS: ReadonlySet<string> = new Set(["post", "query"]);
+
+/**
+ * What Overwrite a COPY could send. Absent Overwrite means `T` (RFC 4918),
+ * so only a `const: "F"` makes a COPY non-destructive.
+ */
+function copyMayOverwrite(parameters: readonly OpenApiParameter[] | undefined) {
+  const overwrite = (parameters ?? []).find(
+    (parameter) => parameter.in === "header" && parameter.name.toLowerCase() === "overwrite",
+  );
+  return !(overwrite && overwrite.schema.const === "F");
+}
+
 export function operationRisk(
-  operation: Pick<OpenApiOperation, "operationId" | "method" | "path">,
+  operation: Pick<OpenApiOperation, "operationId" | "method" | "path"> & { parameters?: readonly OpenApiParameter[] },
   patterns: { outward: readonly string[]; destructive: readonly string[]; reads?: readonly string[] },
 ): OperationRisk {
-  const readMethod = ["get", "head", "options"].includes(operation.method);
+  const readMethod = READ_METHODS.has(operation.method);
+  // `reads` may only downgrade POST (and QUERY); PUT, PATCH, DELETE and
+  // WebDAV writes always stay writes (coverage warns about such patterns).
   const readClass =
-    !readMethod && (patterns.reads ?? []).some((pattern) => operationPatternMatches(pattern, operation));
+    READS_DOWNGRADABLE_METHODS.has(operation.method) &&
+    (patterns.reads ?? []).some((pattern) => operationPatternMatches(pattern, operation));
   const write = !readMethod && !readClass;
   const destructive =
-    (operation.method === "delete" && !readClass) ||
+    operation.method === "delete" ||
+    operation.method === "move" ||
+    (operation.method === "copy" && copyMayOverwrite(operation.parameters)) ||
     patterns.destructive.some((pattern) => operationPatternMatches(pattern, operation));
   const outward = patterns.outward.some((pattern) => operationPatternMatches(pattern, operation));
   return {
@@ -717,7 +812,7 @@ function groupSchema(parameters: readonly OpenApiParameter[]) {
           : parameter.schema,
       ]),
     ),
-    required: parameters.filter((parameter) => parameter.required).map((parameter) => parameter.name),
+    required: parameters.filter(parameterNeedsArgument).map((parameter) => parameter.name),
     additionalProperties: false,
   };
 }
@@ -743,7 +838,7 @@ export function operationInputSchema(
     const parameters = operation.parameters.filter((parameter) => parameter.in === location);
     if (!parameters.length) continue;
     properties[location] = groupSchema(parameters);
-    if (parameters.some((parameter) => parameter.required)) required.push(location);
+    if (parameters.some(parameterNeedsArgument)) required.push(location);
   }
   if (operation.requestBody) {
     properties.body = {
