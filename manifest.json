@@ -2,7 +2,7 @@
   "id": "marketplace",
   "name": "Teal Brick Marketplace",
   "kind": "full-on",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "First-party Teal Brick Marketplace mini-app for plugin catalog, credentials, Composio/MCP runtime sources, installs, provider health, capability bindings, execution, audit, and promotion candidates.",
   "system": {
     "required": true,
