@@ -1,0 +1,105 @@
+{
+  "schema": 1,
+  "id": "forgejo",
+  "displayName": "Forgejo",
+  "description": "Self-hosted Git forge: repositories, branches, files, issues, pull requests, reviews, releases, Actions, organizations, teams, users, packages and the admin API. Webhooks, mirrors, migrations, workflow dispatch, pull request merges, releases, invitations and user creation are held for approval.",
+  "category": "Development",
+  "app": {
+    "version": "13.0.5",
+    "homepage": "https://forgejo.org",
+    "license": "GPL-3.0",
+    "specSource": "https://codeberg.org/forgejo/forgejo/raw/tag/v13.0.5/templates/swagger/v1_json.tmpl"
+  },
+  "source": "openapi",
+  "openapi": {
+    "spec": "swagger.json",
+    "sha256": "f266cd74476051c4c45fb0ce6d5ef9a76aa10046a5b69c100257b6e16ce834de"
+  },
+  "auth": {
+    "type": "header",
+    "name": "Authorization",
+    "prefix": "token ",
+    "label": "Personal access token"
+  },
+  "baseUrlExample": "https://forge.your-domain.example",
+  "healthOperation": "getVersion",
+  "outward": [
+    "repoCreateHook",
+    "repoEditHook",
+    "repoTestHook",
+    "orgCreateHook",
+    "orgEditHook",
+    "userCreateHook",
+    "userEditHook",
+    "repoAddPushMirror",
+    "repoPushMirrorSync",
+    "repoMirrorSync",
+    "repoMigrate",
+    "DispatchWorkflow",
+    "repoMergePullRequest",
+    "repoCreateRelease",
+    "repoEditRelease",
+    "repoCreateReleaseAttachment",
+    "repoTransfer",
+    "repoAddCollaborator",
+    "orgAddTeamMember",
+    "adminCreateUser",
+    "userAddEmail"
+  ],
+  "destructive": [
+    "repoTransfer",
+    "repoConvert",
+    "repoMergePullRequest",
+    "adminEditUser",
+    "adminRenameUser",
+    "renameOrg"
+  ],
+  "reads": [
+    "renderMarkdown",
+    "renderMarkdownRaw",
+    "renderMarkup"
+  ],
+  "exposure": "auto",
+  "excluded": [
+    {
+      "operation": "adminCronRun",
+      "reason": "Runs a server maintenance task (repository garbage collection, cleanup, sync jobs) on the Forgejo host at once, for any task. Start tasks from the admin dashboard."
+    },
+    {
+      "operation": "adminCreateHook",
+      "reason": "Creates a server-wide (system) webhook that receives the events of every repository and organization. Too broad to hand to an agent; create it from the admin settings."
+    },
+    {
+      "operation": "adminEditHook",
+      "reason": "Edits a server-wide (system) webhook that receives the events of every repository and organization; change it from the admin settings."
+    },
+    {
+      "operation": "repoEditGitHook",
+      "reason": "Writes a server-side git hook script that the Forgejo host executes on every push to the repository: host code execution. Edit hooks over SSH or in the app."
+    },
+    {
+      "operation": "activitypubInstanceActorInbox",
+      "reason": "ActivityPub inbox for remote servers: it accepts HTTP-signature deliveries from federated actors, not API-token calls, so the connector cannot use it."
+    },
+    {
+      "operation": "activitypubRepositoryInbox",
+      "reason": "ActivityPub inbox for remote servers: it accepts HTTP-signature deliveries from federated actors, not API-token calls, so the connector cannot use it."
+    },
+    {
+      "operation": "activitypubPersonInbox",
+      "reason": "ActivityPub inbox for remote servers: it accepts HTTP-signature deliveries from federated actors, not API-token calls, so the connector cannot use it."
+    },
+    {
+      "operation": "userGetTokens",
+      "reason": "Token management requires the account password over HTTP Basic, and the connector authenticates with a token, so the call would always be refused; manage tokens in the app settings."
+    },
+    {
+      "operation": "userCreateToken",
+      "reason": "Token creation requires the account password over HTTP Basic, and the connector authenticates with a token, so the call would always be refused; create tokens in the app settings."
+    },
+    {
+      "operation": "userDeleteAccessToken",
+      "reason": "Token deletion requires the account password over HTTP Basic, and the connector authenticates with a token, so the call would always be refused; delete tokens in the app settings."
+    }
+  ]
+}

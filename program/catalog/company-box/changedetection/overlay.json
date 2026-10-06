@@ -1,0 +1,50 @@
+{
+  "paths": {
+    "/watch": {
+      "get": {
+        "parameters": [
+          {
+            "description": "Tag name to filter results",
+            "in": "query",
+            "name": "tag",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/watch/{uuid}": {
+      "get": {
+        "parameters": [
+          {
+            "description": "Web page change monitor (watch) unique ID",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/tag/{uuid}": {
+      "get": {
+        "parameters": [
+          {
+            "description": "Tag unique ID",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

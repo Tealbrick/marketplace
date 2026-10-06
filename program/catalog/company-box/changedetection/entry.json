@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "id": "changedetection",
+  "displayName": "changedetection.io",
+  "description": "Self-hosted web page change monitoring: watches, snapshots and diffs, tags, global notification URLs, search and bulk import. Anything that sets notification URLs, makes the server fetch new URLs or imports watches is held for approval.",
+  "category": "Monitoring",
+  "app": {
+    "version": "0.60.8",
+    "homepage": "https://changedetection.io",
+    "license": "Apache-2.0",
+    "specSource": "https://neuu.your-tailnet.ts.net:8513/api/v1/full-spec"
+  },
+  "source": "openapi",
+  "openapi": {
+    "spec": "openapi.json",
+    "basePath": "/api/v1",
+    "overlay": {
+      "file": "overlay.json",
+      "sha256": "32c509f4c56bcf15e7a9b1aeb15fb1ec2c5078faff66a885c8055299123a7ef8"
+    },
+    "sha256": "591e98eeab839e66bb1e0a781e71319734da33934471c5f35de1332e93e29e6e"
+  },
+  "auth": {
+    "type": "header",
+    "name": "x-api-key",
+    "label": "API key"
+  },
+  "baseUrlExample": "https://neuu.your-tailnet.ts.net:8513",
+  "healthOperation": "getSystemInfo",
+  "outward": [
+    "POST /watch",
+    "PUT /watch/{uuid}",
+    "POST /import",
+    "POST /notifications",
+    "PUT /notifications",
+    "POST /tag",
+    "PUT /tag/{uuid}"
+  ],
+  "destructive": [
+    "PUT /notifications"
+  ],
+  "exposure": "auto",
+  "excluded": []
+}

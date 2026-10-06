@@ -1,0 +1,13 @@
+# changedetection.io provenance
+
+- App: changedetection.io 0.60.8 (`ghcr.io/dgtlmoon/changedetection.io:0.60.8`, image revision `09881f8b26aa01a2be66c5f63daf54a79a42b6bd`, Apache-2.0), deployed on the `neuu` node at `https://neuu.<tailnet>.ts.net:8513`. Captured 2026-10-06.
+- Source: the instance's own `GET /api/v1/full-spec` (unauthenticated; the same document the running 0.60.8 serves), vendored byte for byte as `openapi.json`, sha256 `591e98eeab839e66bb1e0a781e71319734da33934471c5f35de1332e93e29e6e`. OpenAPI 3.1.0, `info.version` 0.1.9, 23 operations (GET 12, POST 4, PUT 3, DELETE 4).
+- Reconciled against the tag: `docs/api-spec.yaml` at tag 0.60.8 (sha256 `db9ddaff42036f1337843c57dc7cb2c771d20e57da34bcf8dcdc69ffc6c29761`) has the same 14 paths and 23 operations. The instance document adds the `processor_config_restock_diff` schema and two extra code samples on three operations. It was preferred because a YAML 1.1 reader turns the `DaySchedule.start_time` default `00:00` into the integer 0, so converting the tag file would not stay pristine.
+- The spec's `servers` block is a placeholder (`yourdomain.com`); the base path `/api/v1` is set in `entry.json` and the base URL at install is the app origin.
+- Operations: 23 total, 23 exposed, none excluded (includes `GET /full-spec`, harmless). Exposure: direct.
+- Overlay (`overlay.json`, sha256 `32c509f4c56bcf15e7a9b1aeb15fb1ec2c5078faff66a885c8055299123a7ef8`, pinned in `entry.json`): three GET operations double as writes through query switches, which a read grant must not reach, so the switches are removed from their parameter lists: `GET /watch` `recheck_all` (queues every watch for a fetch), `GET /watch/{uuid}` `recheck`, `paused` and `muted`, `GET /tag/{uuid}` `recheck` and `muted`. Pause and mute stay available through `PUT /watch/{uuid}` and `PUT /tag/{uuid}`. Consequence: there is no read-only way to trigger a recheck; the engine cannot gate one query parameter of a GET.
+- Outward (7, held): `POST /watch`, `PUT /watch/{uuid}` and `POST|PUT /tag` (they take `notification_urls` and make the server fetch arbitrary URLs), `POST /import` (imports a list of URLs to fetch), `POST /notifications` and `PUT /notifications` (change the global Apprise destinations that every alert goes to).
+- Destructive beyond DELETE: `PUT /notifications` (replaces all global notification URLs). The four DELETE operations (watch, watch history, tag, notifications) are admin-capability by rule.
+- Reads: none; every non-GET writes.
+- Auth: `x-api-key: <API key>` (Settings > API tab; one global key, no scopes).
+- Health: `GET /systeminfo`.

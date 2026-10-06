@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "id": "glitchtip",
+  "displayName": "GlitchTip",
+  "description": "Self-hosted error tracking and uptime monitoring: organizations, projects, issues and events, comments, releases, alerts, performance, logs and uptime monitors. Alerts and monitors that notify outside, member invitations, event ingestion, billing and imports are held for approval.",
+  "category": "Monitoring",
+  "app": {
+    "version": "6.2.3",
+    "homepage": "https://glitchtip.com",
+    "license": "MIT",
+    "specSource": "https://neuu.your-tailnet.ts.net:8520/api/openapi.json"
+  },
+  "source": "openapi",
+  "openapi": {
+    "spec": "openapi.json",
+    "basePath": "",
+    "sha256": "f8367c3b47e6b7bb7a9fbeab83cff92e30660b03391344842ac57ac71fb9d353"
+  },
+  "auth": {
+    "type": "header",
+    "name": "Authorization",
+    "prefix": "Bearer ",
+    "label": "API token"
+  },
+  "baseUrlExample": "https://neuu.your-tailnet.ts.net:8520",
+  "healthOperation": "apps_organizations_ext_api_list_organizations",
+  "outward": [
+    "POST /api/0/projects/*/alerts/",
+    "PUT /api/0/projects/*/alerts/*",
+    "POST /api/0/projects/*/alerts/*/test/",
+    "POST /api/0/organizations/*/members/",
+    "PUT /api/0/organizations/*/members/*",
+    "POST /api/0/organizations/*/members/*/set_owner/",
+    "POST /api/0/users/*/emails/",
+    "POST /api/0/users/*/emails/confirm/",
+    "POST /api/0/organizations/*/monitors/",
+    "PUT /api/0/organizations/*/monitors/*",
+    "POST /api/0/organizations/*/status-pages/",
+    "POST /api/*/store/",
+    "POST /api/*/security/",
+    "POST /api/embed/error-page/",
+    "POST /api/0/stripe/*",
+    "POST /api/0/import/",
+    "POST /api/0/wizard-set-token/"
+  ],
+  "destructive": [
+    "POST /api/0/organizations/*/members/*/set_owner/"
+  ],
+  "exposure": "auto",
+  "excluded": []
+}

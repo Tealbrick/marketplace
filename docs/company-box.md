@@ -93,6 +93,17 @@ Two kinds of entry:
   `Authorization` for basic, or the query key) is dropped: Marketplace sets it.
 - A `{param}` used in a path template but never declared becomes a required
   string path parameter.
+- OpenAPI 3.0 `nullable: true` on a schema with no `type` (typical next to
+  `oneOf` / `anyOf`) is rewritten as `anyOf: [schema, { type: "null" }]`, because
+  Ajv refuses `nullable` without `type`.
+- A GET cannot be gated per query parameter: if a GET has query switches that
+  change state (changedetection's `recheck`, `paused`, `muted`), drop those
+  parameters in the overlay so a read grant stays read-only.
+- When the upstream spec omits routes the app really serves, add them to the
+  overlay (new `paths` entries) and mark each operation `x-source: code`, with
+  an `x-code-route` naming the route and controller it came from (Chatwoot:
+  296 routes read from `config/routes.rb` and checked against the controllers).
+  Say in `PROVENANCE.md` how the routes were derived and which were left out.
 - A GET/HEAD operation that declares a request body is **auto-excluded**
   (`status: excluded`, `auto: true`, reason `auto: …`): bodies on GET are
   dropped or refused by servers and proxies, so sending it would not do what

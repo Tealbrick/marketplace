@@ -198,7 +198,20 @@ function rewriteSchema(context: SchemaContext, value: unknown, seen: Set<string>
   for (const [key, child] of Object.entries(record)) {
     out[key] = rewriteSchema(context, child, seen);
   }
-  return out;
+  return nullableWithoutType(out);
+}
+
+/**
+ * OpenAPI 3.0 `nullable: true` next to `oneOf` / `anyOf` / `allOf` / `enum`
+ * but no `type` is common in generated specs, yet Ajv refuses `nullable`
+ * without `type`. Rewrite it as `anyOf: [schema, { type: "null" }]`; a plain
+ * `nullable: false` is simply dropped. Property maps are untouched because a
+ * property called `nullable` holds a schema object, not a boolean.
+ */
+function nullableWithoutType(schema: Record<string, unknown>): Record<string, unknown> {
+  if (typeof schema.nullable !== "boolean" || "type" in schema) return schema;
+  const { nullable, ...rest } = schema;
+  return nullable ? { anyOf: [rest, { type: "null" }] } : rest;
 }
 
 function collectDefRefs(value: unknown, into: Set<string>) {
