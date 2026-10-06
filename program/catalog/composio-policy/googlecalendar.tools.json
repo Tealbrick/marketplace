@@ -1,0 +1,444 @@
+{
+  "schema": 1,
+  "toolkit": "googlecalendar",
+  "capturedAt": "2026-10-06",
+  "source": "composio tools list googlecalendar --limit 100",
+  "tools": [
+    {
+      "slug": "GOOGLECALENDAR_ACL_DELETE",
+      "name": "Delete ACL Rule",
+      "hints": [
+        "destructiveHint",
+        "idempotentHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_ACL_GET",
+      "name": "Get ACL Rule",
+      "hints": [
+        "readOnlyHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_ACL_INSERT",
+      "name": "Create ACL Rule",
+      "hints": [
+        "openWorldHint",
+        "createHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_ACL_LIST",
+      "name": "List ACL Rules",
+      "hints": [
+        "readOnlyHint",
+        "idempotentHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_ACL_PATCH",
+      "name": "Patch ACL Rule",
+      "hints": [
+        "updateHint",
+        "idempotentHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_ACL_UPDATE",
+      "name": "Update ACL Rule",
+      "hints": [
+        "updateHint",
+        "idempotentHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_ACL_WATCH",
+      "name": "Watch ACL Changes",
+      "hints": [
+        "openWorldHint",
+        "createHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_BATCH_EVENTS",
+      "name": "Batch Events",
+      "hints": [
+        "createHint",
+        "destructiveHint",
+        "updateHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_CALENDAR_LIST_DELETE",
+      "name": "Remove Calendar from List",
+      "hints": [
+        "destructiveHint",
+        "idempotentHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_CALENDAR_LIST_GET",
+      "name": "Get Single Calendar by ID",
+      "hints": [
+        "readOnlyHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_CALENDAR_LIST_INSERT",
+      "name": "Insert Calendar into List",
+      "hints": [
+        "openWorldHint",
+        "idempotentHint",
+        "createHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_CALENDAR_LIST_PATCH",
+      "name": "Patch Calendar List Entry",
+      "hints": [
+        "updateHint",
+        "idempotentHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_CALENDAR_LIST_UPDATE",
+      "name": "Update Calendar List Entry",
+      "hints": [
+        "updateHint",
+        "idempotentHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_CALENDAR_LIST_WATCH",
+      "name": "Watch Calendar List",
+      "hints": [
+        "openWorldHint",
+        "createHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_CALENDARS_DELETE",
+      "name": "Delete Calendar",
+      "hints": [
+        "destructiveHint",
+        "idempotentHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_CALENDARS_UPDATE",
+      "name": "Update Calendar",
+      "hints": [
+        "updateHint",
+        "idempotentHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_CHANNELS_STOP",
+      "name": "Stop Channel",
+      "hints": [
+        "idempotentHint",
+        "openWorldHint",
+        "updateHint",
+        "destructiveHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_CLEAR_CALENDAR",
+      "name": "Clear Calendar",
+      "hints": [
+        "destructiveHint",
+        "idempotentHint",
+        "openWorldHint",
+        "updateHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_COLORS_GET",
+      "name": "Get Color Definitions",
+      "hints": [
+        "readOnlyHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_CREATE_CALENDAR",
+      "name": "Create a new calendar",
+      "hints": [
+        "createHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_CREATE_EVENT",
+      "name": "Create Event",
+      "hints": [
+        "openWorldHint",
+        "createHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_DELETE_EVENT",
+      "name": "Delete event",
+      "hints": [
+        "destructiveHint",
+        "idempotentHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_DUPLICATE_CALENDAR",
+      "name": "Create a calendar",
+      "hints": [
+        "openWorldHint",
+        "createHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_EVENTS_GET",
+      "name": "Get Event",
+      "hints": [
+        "readOnlyHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_EVENTS_IMPORT",
+      "name": "Import Event",
+      "hints": [
+        "openWorldHint",
+        "createHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_EVENTS_INSTANCES",
+      "name": "Get Event Instances",
+      "hints": [
+        "readOnlyHint",
+        "idempotentHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_EVENTS_LIST",
+      "name": "List Events",
+      "hints": [
+        "readOnlyHint",
+        "idempotentHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_EVENTS_LIST_ALL_CALENDARS",
+      "name": "List Events from All Calendars",
+      "hints": [
+        "readOnlyHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_EVENTS_MOVE",
+      "name": "Move Event",
+      "hints": [
+        "updateHint",
+        "idempotentHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_EVENTS_WATCH",
+      "name": "Watch Events",
+      "hints": [
+        "openWorldHint",
+        "idempotentHint",
+        "createHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_FIND_EVENT",
+      "name": "Find event",
+      "hints": [
+        "readOnlyHint",
+        "idempotentHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_FIND_FREE_SLOTS",
+      "name": "Find free slots",
+      "hints": [
+        "readOnlyHint",
+        "idempotentHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_FREE_BUSY_QUERY",
+      "name": "Query Calendar Availability",
+      "hints": [
+        "readOnlyHint",
+        "idempotentHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_GET_CALENDAR",
+      "name": "Get Google Calendar",
+      "hints": [
+        "readOnlyHint",
+        "idempotentHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_GET_CALENDAR_PROFILE",
+      "name": "Get Calendar Profile (Deprecated)",
+      "hints": [
+        "readOnlyHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_GET_CURRENT_DATE_TIME",
+      "name": "Get current date and time",
+      "hints": [
+        "readOnlyHint",
+        "idempotentHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_GET_CURRENT_USER",
+      "name": "Get Current Google Calendar User",
+      "hints": [
+        "readOnlyHint",
+        "idempotentHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_LIST_BUILDINGS",
+      "name": "List Buildings",
+      "hints": [
+        "readOnlyHint",
+        "idempotentHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_LIST_CALENDAR_RESOURCES",
+      "name": "List Calendar Resources",
+      "hints": [
+        "readOnlyHint",
+        "idempotentHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_LIST_CALENDARS",
+      "name": "List Google Calendars",
+      "hints": [
+        "readOnlyHint",
+        "idempotentHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_LIST_SETTINGS",
+      "name": "List Calendar Settings (Deprecated)",
+      "hints": [
+        "readOnlyHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_PATCH_CALENDAR",
+      "name": "Patch Calendar",
+      "hints": [
+        "updateHint",
+        "idempotentHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_PATCH_EVENT",
+      "name": "Patch Event",
+      "hints": [
+        "updateHint",
+        "idempotentHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_QUICK_ADD",
+      "name": "Quick Add Event",
+      "hints": [
+        "openWorldHint",
+        "createHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_REMOVE_ATTENDEE",
+      "name": "Remove attendee from event",
+      "hints": [
+        "updateHint",
+        "idempotentHint",
+        "openWorldHint",
+        "destructiveHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_SETTINGS_GET",
+      "name": "Get Calendar Setting",
+      "hints": [
+        "readOnlyHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_SETTINGS_LIST",
+      "name": "List Settings",
+      "hints": [
+        "readOnlyHint",
+        "idempotentHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_SETTINGS_WATCH",
+      "name": "Watch Settings",
+      "hints": [
+        "openWorldHint",
+        "idempotentHint",
+        "createHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_SYNC_EVENTS",
+      "name": "Sync Events (Deprecated)",
+      "hints": [
+        "readOnlyHint",
+        "idempotentHint",
+        "openWorldHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_UPDATE_EVENT",
+      "name": "Update Google event",
+      "hints": [
+        "updateHint",
+        "idempotentHint",
+        "openWorldHint"
+      ]
+    }
+  ]
+}
