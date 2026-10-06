@@ -33,6 +33,8 @@ COPY --chown=node:node entrypoint.mjs ./entrypoint.mjs
 COPY --chown=node:node tailnet.mjs ./tailnet.mjs
 COPY --chown=node:node dist ./dist
 COPY --chown=node:node web-dist ./web-dist
+# Company Box catalog (vendored, sha256-pinned specs); resolved as ../catalog/company-box from dist.
+COPY --chown=node:node catalog ./catalog
 USER node
 EXPOSE 5314
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 CMD ["node", "-e", "fetch('http://127.0.0.1:5314/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
