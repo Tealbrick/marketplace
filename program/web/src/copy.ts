@@ -167,6 +167,8 @@ export function errorCopy(error: Error): ErrorCopy {
       return { title: "The app's response was too large", detail: "Marketplace accepts responses up to 2 MB.", reference };
     case "openapi_base_url_not_allowed":
       return errorCopy(new ApiError(code, status, { error: "company_box_base_url_not_allowed" }));
+    case "tailnet_unavailable":
+      return { title: "The tailnet is unavailable", detail: "Marketplace couldn't join your tailnet, so apps on *.ts.net can't be reached. Check the TS_AUTHKEY on the Marketplace service and its logs.", reference };
     case "owner_approval_required_for_outward":
       return { title: "This sends something outside your workspace", detail: "Outward actions such as sending or publishing need your approval each time. Run it yourself from Marketplace, or connect approvals.", reference };
     case "approval_not_pending":

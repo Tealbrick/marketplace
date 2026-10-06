@@ -16,6 +16,7 @@
  *   of every credential value before it is returned.
  */
 import { assertMcpUrlAllowed, McpUrlPolicyError, type McpLookup } from "./mcp-url-policy.js";
+import { routeOutbound, tailnetAwareFetch, TailnetUnavailableError } from "./tailnet.js";
 import type { OpenApiOperation, OpenApiParameter } from "./openapi-adapter.js";
 import { MARKETPLACE_VERSION } from "./version.js";
 
@@ -41,7 +42,8 @@ export type OpenApiErrorCode =
   | "openapi_timeout"
   | "openapi_auth_rejected"
   | "openapi_http_error"
-  | "openapi_response_too_large";
+  | "openapi_response_too_large"
+  | "tailnet_unavailable";
 
 export class OpenApiCallError extends Error {
   constructor(
@@ -464,7 +466,11 @@ export async function callOpenApiOperation(options: OpenApiCallOptions): Promise
   let base: URL;
   try {
     base = await assertMcpUrlAllowed(options.baseUrl, { env: options.env, lookup: options.lookup });
+    routeOutbound(base, options.env);
   } catch (error) {
+    if (error instanceof TailnetUnavailableError) {
+      throw new OpenApiCallError("tailnet_unavailable", error.message);
+    }
     if (error instanceof McpUrlPolicyError) {
       throw new OpenApiCallError("openapi_base_url_not_allowed", "The app address is not allowed.", {
         reason: error.reason,
@@ -476,7 +482,7 @@ export async function callOpenApiOperation(options: OpenApiCallOptions): Promise
   const secrets = credentialValues(options.credentials, options.auth);
   let response: Response;
   try {
-    response = await (options.fetchImpl ?? fetch)(request.url, {
+    response = await tailnetAwareFetch(options.env, options.fetchImpl)(request.url, {
       method: request.method,
       headers: request.headers,
       ...(request.body === undefined ? {} : { body: request.body }),

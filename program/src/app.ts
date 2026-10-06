@@ -78,6 +78,7 @@ import {
 import { registerCompanyBoxRoutes } from "./company-box-routes.js";
 import { OPENAPI_TOOL_SCHEMA_MAX_BYTES } from "./openapi-adapter.js";
 import { outputDigest } from "./usage-ledger.js";
+import { tailnetHealth } from "./tailnet.js";
 import {
   checkMcpUrlSyntax,
   McpUrlPolicyError,
@@ -2946,7 +2947,9 @@ export async function buildMarketplaceApp(
         502,
         error instanceof McpRemoteError && error.code === "mcp_rpc_error"
           ? "mcp_tool_failed"
-          : "mcp_unreachable",
+          : error instanceof McpRemoteError && error.code === "tailnet_unavailable"
+            ? "tailnet_unavailable"
+            : "mcp_unreachable",
       );
     }
     if (output.isError) {
@@ -3037,6 +3040,8 @@ export async function buildMarketplaceApp(
       ? 400
       : error.code === "openapi_credentials_missing"
         ? 409
+        : error.code === "tailnet_unavailable"
+          ? 503
         : error.code === "openapi_timeout"
           ? 504
           : 502;
@@ -3634,6 +3639,8 @@ export async function buildMarketplaceApp(
     ok: true,
     service: "marketplace",
     status: "healthy",
+    // disabled | connected | unavailable; never addresses, names or keys.
+    tailnet: await tailnetHealth(environment),
     time: new Date().toISOString(),
   }));
 
@@ -3806,6 +3813,7 @@ export async function buildMarketplaceApp(
     version: MARKETPLACE_VERSION,
     rules: await probeRulesConnection(),
     governance: governanceMode,
+    tailnet: await tailnetHealth(environment),
     checkedAt: new Date().toISOString(),
   }));
 

@@ -213,11 +213,53 @@ binary responses (returned base64). JSON and text responses are scrubbed of
 every credential value; upstream error bodies are returned bounded (4 KB) and
 scrubbed so agents can fix their calls. Logs carry codes and statuses only.
 
+## Tailnet reachability
+
+Company Box apps usually live on your tailnet. The Marketplace image can join
+it on its own (Railway or any container host); this is **off by default** and
+does nothing unless `TS_AUTHKEY` is set.
+
+1. In the Tailscale admin console create an auth key that is **ephemeral,
+   tagged and pre-authorized**, e.g. tagged `tag:tealbrick-marketplace`. Give
+   the tag an ACL that allows only the app hosts' serve ports, for example:
+
+   ```jsonc
+   "tagOwners": { "tag:tealbrick-marketplace": ["autogroup:admin"] },
+   "acls": [
+     { "action": "accept", "src": ["tag:tealbrick-marketplace"],
+       "dst": ["tag:company-apps:443", "tag:company-apps:8443"] }
+   ]
+   ```
+2. Set `TS_AUTHKEY` (and optionally `TS_HOSTNAME`, default
+   `tealbrick-marketplace`) on the Marketplace service.
+3. When installing an entry, use the app's
+   `https://<host>.<tailnet>.ts.net:<port>` address (from `tailscale serve`).
+
+What the image does when `TS_AUTHKEY` is set: it starts a pinned Tailscale
+(`tailscaled --tun=userspace-networking --state=mem:`, log upload disabled) as
+the unprivileged app user with an outbound HTTP proxy on `127.0.0.1:1055`,
+runs `tailscale up --hostname=… --accept-dns=false` with a bounded 30 s wait,
+and starts Marketplace as a child process **without** `TS_AUTHKEY` in its
+environment (the key goes to `tailscale up` through a 0600 file deleted right
+after; never argv, logs or health). Marketplace gets
+`MARKETPLACE_TAILNET_PROXY` and sends only `*.ts.net` hosts and
+100.64.0.0/10 addresses through it (HTTPS via CONNECT, TLS verified end to
+end); everything else stays direct. MagicDNS names resolve inside
+tailscaled, so the URL policy skips local DNS for `*.ts.net` in that mode;
+https-only and the private-range rules still apply. If the node does not come
+up, Marketplace still starts, logs a non-secret reason, and tailnet connectors
+answer `tailnet_unavailable`. `/healthz` and `/api/marketplace/health` report
+only `tailnet: "connected" | "unavailable" | "disabled"`.
+
+The image sources are `deploy/railway/image/` (Dockerfile, `entrypoint.mjs`,
+`tailnet.mjs`); the release cut copies them into `release/railway/`. Tailscale
+is pinned to 1.102.5 (linux/amd64) and the build fails unless the download
+matches the sha256 in the Dockerfile.
+
 ## Deployment prerequisites
 
-- **Tailnet reachability.** Marketplace's runtime must be able to reach the
-  tailnet (run it on a tailnet node or alongside a Tailscale sidecar with
-  MagicDNS for `*.ts.net`). Marketplace does not run `tailscaled` itself.
+- **Tailnet reachability.** Either set `TS_AUTHKEY` (above) or run
+  Marketplace somewhere that already reaches the tailnet with MagicDNS.
 - **Catalog files.** Entries are read at startup from
   `MARKETPLACE_COMPANY_BOX_DIR`, defaulting to `program/catalog/company-box`
   next to the program. Packaged builds must ship that directory.

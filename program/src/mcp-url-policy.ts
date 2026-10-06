@@ -1,6 +1,8 @@
 import { lookup as dnsLookup } from "node:dns/promises";
 import { isIP } from "node:net";
 
+import { tailnetResolvesHostname } from "./tailnet.js";
+
 /**
  * Outbound URL policy for operator-configured remote MCP servers.
  *
@@ -15,6 +17,10 @@ import { isIP } from "node:net";
  *   are the preferred way to reach private MCP servers.
  * - `MARKETPLACE_MCP_ALLOWED_ORIGINS` (comma list of exact origins, http
  *   allowed) bypasses the checks for fixtures and tests.
+ * - With the tailnet proxy configured (`MARKETPLACE_TAILNET_PROXY`),
+ *   `*.ts.net` names skip local DNS: they resolve inside tailscaled, and
+ *   local resolution fails in userspace networking mode. Every syntax rule
+ *   above still applies.
  */
 
 export type McpUrlPolicyReason =
@@ -194,6 +200,7 @@ export async function assertMcpUrlAllowed(
   if (allowlisted) return url;
   const hostname = url.hostname.replace(/^\[|\]$/gu, "");
   if (isIP(hostname)) return url;
+  if (tailnetResolvesHostname(hostname, options.env)) return url;
   let answers: ReadonlyArray<{ address: string }>;
   try {
     answers = await (options.lookup ?? defaultMcpLookup)(hostname);

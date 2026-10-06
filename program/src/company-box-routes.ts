@@ -224,7 +224,9 @@ export function registerCompanyBoxRoutes(app: FastifyInstance, deps: CompanyBoxR
         ? `Connected. ${entry.operations.length} operations available.`
         : result.errorCode === "openapi_auth_rejected"
           ? "The app rejected the credentials."
-          : "Marketplace couldn't reach the app.",
+          : result.errorCode === "tailnet_unavailable"
+            ? "The tailnet is unavailable, so Marketplace couldn't reach the app."
+            : "Marketplace couldn't reach the app.",
       metadata: {
         baseUrl,
         lastTestAt: at,
