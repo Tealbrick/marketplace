@@ -1,0 +1,155 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Nextcloud serverinfo API (hand-authored)",
+    "version": "3.0.0",
+    "x-source": "hand-authored",
+    "description": "Hand-authored from https://github.com/nextcloud/serverinfo/blob/stable31/README.md and the app's routes.php (serverinfo app 3.0.0, tag v31.0.14); the app publishes no OpenAPI document. The endpoints need an administrator account (or the app's monitoring token header, which this connector does not send)."
+  },
+  "paths": {
+    "/ocs/v2.php/apps/serverinfo/api/v1/info": {
+      "get": {
+        "operationId": "serverinfo-info",
+        "summary": "Server information (system, storage, shares, PHP, database, active users)",
+        "tags": [
+          "api"
+        ],
+        "externalDocs": {
+          "description": "serverinfo README",
+          "url": "https://github.com/nextcloud/serverinfo/blob/stable31/README.md"
+        },
+        "parameters": [
+          {
+            "name": "OCS-APIRequest",
+            "in": "header",
+            "required": true,
+            "description": "Required to be true for the API request to pass",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "name": "skipApps",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true
+            },
+            "description": "Omit app update information (listing app updates calls the app store)."
+          },
+          {
+            "name": "skipUpdate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true
+            },
+            "description": "Omit server update information."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not modified"
+          }
+        }
+      }
+    },
+    "/ocs/v2.php/apps/serverinfo/api/v1/basicdata": {
+      "get": {
+        "operationId": "serverinfo-basic-data",
+        "summary": "Server time, uptime and thermal zones",
+        "tags": [
+          "api"
+        ],
+        "externalDocs": {
+          "description": "serverinfo README",
+          "url": "https://github.com/nextcloud/serverinfo/blob/stable31/README.md"
+        },
+        "parameters": [
+          {
+            "name": "OCS-APIRequest",
+            "in": "header",
+            "required": true,
+            "description": "Required to be true for the API request to pass",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not modified"
+          }
+        }
+      }
+    },
+    "/ocs/v2.php/apps/serverinfo/api/v1/diskdata": {
+      "get": {
+        "operationId": "serverinfo-disk-data",
+        "summary": "Disk devices and usage",
+        "tags": [
+          "api"
+        ],
+        "externalDocs": {
+          "description": "serverinfo README",
+          "url": "https://github.com/nextcloud/serverinfo/blob/stable31/README.md"
+        },
+        "parameters": [
+          {
+            "name": "OCS-APIRequest",
+            "in": "header",
+            "required": true,
+            "description": "Required to be true for the API request to pass",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not modified"
+          }
+        }
+      }
+    }
+  },
+  "components": {}
+}

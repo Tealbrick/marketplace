@@ -2,13 +2,13 @@
   "schema": 1,
   "id": "nextcloud",
   "displayName": "Nextcloud",
-  "description": "Self-hosted Nextcloud 31 OCS API across every enabled app: sharing (public links, email and federated shares), users and groups, notifications, status, reminders, search, task processing, webhooks and more. Sharing, mail-sending, push notifications, webhooks and federation calls are held for approval. The WebDAV files layer (list, download, upload, move, copy, delete) is not covered yet; it needs engine support.",
+  "description": "Self-hosted Nextcloud 31: the OCS API of every enabled app (sharing, users and groups, notifications, status, search, webhooks, activity, server info) and WebDAV (files at any depth, chunked upload, trash bin, versions, system tags, comments). Sharing, mail, push, webhooks, comments and federation calls are held for approval; deletes and version restores are destructive.",
   "category": "Files",
   "app": {
     "version": "31.0.14",
     "homepage": "https://nextcloud.com",
     "license": "AGPL-3.0",
-    "specSource": "https://github.com/nextcloud/server/tree/v31.0.14 (core and apps/*/openapi*.json) merged with the notifications, recommendations, password_policy (v31.0.14) and user_oidc (v8.7.0) app specs"
+    "specSource": "https://github.com/nextcloud/server/tree/v31.0.14 (core and apps/*/openapi*.json) merged with the notifications, recommendations, password_policy (v31.0.14) and user_oidc (v8.7.0) app specs and hand-authored WebDAV, activity and serverinfo documents (sources/)"
   },
   "source": "openapi",
   "openapi": {
@@ -18,13 +18,13 @@
       "file": "overlay.json",
       "sha256": "5858c1b3ef16220325edd6a7b2efa6439cec019cffce45cc9ba78430337378f0"
     },
-    "sha256": "4349fbf2d3ef93556629af7a44011f0a4cc2cf4d0099e1c6fbf15b91654c4c2e"
+    "sha256": "dcf907e846db27b9e174ce6ac2ddd7ca41a2527ff076c27fe81a11b5a3c97836"
   },
   "auth": {
     "type": "basic"
   },
   "baseUrlExample": "https://neuu.your-tailnet.ts.net:8446",
-  "healthOperation": "get-status",
+  "healthOperation": "ocs-get-capabilities",
   "outward": [
     "shareapi-create-share",
     "shareapi-update-share",
@@ -46,13 +46,15 @@
     "direct-get-url",
     "webhooks-create",
     "webhooks-update",
-    "transfer_ownership-transfer"
+    "transfer_ownership-transfer",
+    "webdav-comments-create"
   ],
   "destructive": [
     "users-wipe-user-devices",
     "transfer_ownership-transfer",
     "two_factor_api-disable",
-    "users-disable-user"
+    "users-disable-user",
+    "webdav-versions-restore"
   ],
   "reads": [
     "reference_api-extract",

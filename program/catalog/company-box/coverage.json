@@ -3,8 +3,8 @@
   "ok": true,
   "totals": {
     "entries": 6,
-    "operations": 942,
-    "exposed": 906,
+    "operations": 984,
+    "exposed": 948,
     "excluded": 36
   },
   "entries": [
@@ -2815,14 +2815,14 @@
       "displayName": "Nextcloud",
       "source": "openapi",
       "appVersion": "31.0.14",
-      "pinnedSha256": "4349fbf2d3ef93556629af7a44011f0a4cc2cf4d0099e1c6fbf15b91654c4c2e",
+      "pinnedSha256": "dcf907e846db27b9e174ce6ac2ddd7ca41a2527ff076c27fe81a11b5a3c97836",
       "exposure": "discovery",
-      "total": 262,
-      "exposed": 242,
+      "total": 304,
+      "exposed": 284,
       "excluded": 20,
       "failed": 0,
-      "outward": 32,
-      "destructive": 29,
+      "outward": 33,
+      "destructive": 37,
       "ok": true,
       "errors": [],
       "warnings": [],
@@ -3168,6 +3168,36 @@
           "path": "/index.php/settings/admin/log/download",
           "status": "exposed",
           "key": "company-box-nextcloud.log-settings-download",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "activity-get-default",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/activity/api/v2/activity",
+          "status": "exposed",
+          "key": "company-box-nextcloud.activity-get-default",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "activity-list-filters",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/activity/api/v2/activity/filters",
+          "status": "exposed",
+          "key": "company-box-nextcloud.activity-list-filters",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "activity-get-filter",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/activity/api/v2/activity/{filter}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.activity-get-filter",
           "capability": "connector.observe",
           "outward": false,
           "destructive": false
@@ -3959,6 +3989,36 @@
           "path": "/ocs/v2.php/apps/recommendations/api/v1/recommendations/always",
           "status": "exposed",
           "key": "company-box-nextcloud.recommendation-always",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "serverinfo-basic-data",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/serverinfo/api/v1/basicdata",
+          "status": "exposed",
+          "key": "company-box-nextcloud.serverinfo-basic-data",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "serverinfo-disk-data",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/serverinfo/api/v1/diskdata",
+          "status": "exposed",
+          "key": "company-box-nextcloud.serverinfo-disk-data",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "serverinfo-info",
+          "method": "GET",
+          "path": "/ocs/v2.php/apps/serverinfo/api/v1/info",
+          "status": "exposed",
+          "key": "company-box-nextcloud.serverinfo-info",
           "capability": "connector.observe",
           "outward": false,
           "destructive": false
@@ -5376,6 +5436,366 @@
           "capability": "connector.observe",
           "outward": false,
           "destructive": false
+        },
+        {
+          "ref": "webdav-comments-create",
+          "method": "POST",
+          "path": "/remote.php/dav/comments/files/{fileId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-comments-create",
+          "capability": "connector.dispatch",
+          "outward": true,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-comments-list",
+          "method": "REPORT",
+          "path": "/remote.php/dav/comments/files/{fileId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-comments-list",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-comments-delete",
+          "method": "DELETE",
+          "path": "/remote.php/dav/comments/files/{fileId}/{commentId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-comments-delete",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "webdav-comments-update",
+          "method": "PROPPATCH",
+          "path": "/remote.php/dav/comments/files/{fileId}/{commentId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-comments-update",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-files-list-root",
+          "method": "PROPFIND",
+          "path": "/remote.php/dav/files/{user}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-files-list-root",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-files-search-report",
+          "method": "REPORT",
+          "path": "/remote.php/dav/files/{user}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-files-search-report",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-files-download",
+          "method": "GET",
+          "path": "/remote.php/dav/files/{user}/{path}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-files-download",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-files-upload",
+          "method": "PUT",
+          "path": "/remote.php/dav/files/{user}/{path}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-files-upload",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-files-delete",
+          "method": "DELETE",
+          "path": "/remote.php/dav/files/{user}/{path}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-files-delete",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "webdav-files-propfind",
+          "method": "PROPFIND",
+          "path": "/remote.php/dav/files/{user}/{path}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-files-propfind",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-files-proppatch",
+          "method": "PROPPATCH",
+          "path": "/remote.php/dav/files/{user}/{path}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-files-proppatch",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-files-mkcol",
+          "method": "MKCOL",
+          "path": "/remote.php/dav/files/{user}/{path}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-files-mkcol",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-files-move",
+          "method": "MOVE",
+          "path": "/remote.php/dav/files/{user}/{path}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-files-move",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-files-copy",
+          "method": "COPY",
+          "path": "/remote.php/dav/files/{user}/{path}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-files-copy",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-systemtags-create",
+          "method": "POST",
+          "path": "/remote.php/dav/systemtags",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-systemtags-create",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-systemtags-list",
+          "method": "PROPFIND",
+          "path": "/remote.php/dav/systemtags",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-systemtags-list",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-systemtags-file-tags",
+          "method": "PROPFIND",
+          "path": "/remote.php/dav/systemtags-relations/files/{fileId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-systemtags-file-tags",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-systemtags-assign",
+          "method": "PUT",
+          "path": "/remote.php/dav/systemtags-relations/files/{fileId}/{tagId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-systemtags-assign",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-systemtags-unassign",
+          "method": "DELETE",
+          "path": "/remote.php/dav/systemtags-relations/files/{fileId}/{tagId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-systemtags-unassign",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "webdav-systemtags-delete",
+          "method": "DELETE",
+          "path": "/remote.php/dav/systemtags/{tagId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-systemtags-delete",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "webdav-systemtags-get",
+          "method": "PROPFIND",
+          "path": "/remote.php/dav/systemtags/{tagId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-systemtags-get",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-systemtags-update",
+          "method": "PROPPATCH",
+          "path": "/remote.php/dav/systemtags/{tagId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-systemtags-update",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-trashbin-empty",
+          "method": "DELETE",
+          "path": "/remote.php/dav/trashbin/{user}/trash",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-trashbin-empty",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "webdav-trashbin-list",
+          "method": "PROPFIND",
+          "path": "/remote.php/dav/trashbin/{user}/trash",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-trashbin-list",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-trashbin-download",
+          "method": "GET",
+          "path": "/remote.php/dav/trashbin/{user}/trash/{item}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-trashbin-download",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-trashbin-delete",
+          "method": "DELETE",
+          "path": "/remote.php/dav/trashbin/{user}/trash/{item}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-trashbin-delete",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "webdav-trashbin-item-propfind",
+          "method": "PROPFIND",
+          "path": "/remote.php/dav/trashbin/{user}/trash/{item}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-trashbin-item-propfind",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-trashbin-restore",
+          "method": "MOVE",
+          "path": "/remote.php/dav/trashbin/{user}/trash/{item}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-trashbin-restore",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-uploads-abort",
+          "method": "DELETE",
+          "path": "/remote.php/dav/uploads/{user}/{uploadId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-uploads-abort",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
+        },
+        {
+          "ref": "webdav-uploads-list-chunks",
+          "method": "PROPFIND",
+          "path": "/remote.php/dav/uploads/{user}/{uploadId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-uploads-list-chunks",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-uploads-start",
+          "method": "MKCOL",
+          "path": "/remote.php/dav/uploads/{user}/{uploadId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-uploads-start",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-uploads-finish",
+          "method": "MOVE",
+          "path": "/remote.php/dav/uploads/{user}/{uploadId}/.file",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-uploads-finish",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-uploads-put-chunk",
+          "method": "PUT",
+          "path": "/remote.php/dav/uploads/{user}/{uploadId}/{chunkId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-uploads-put-chunk",
+          "capability": "connector.dispatch",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-versions-list",
+          "method": "PROPFIND",
+          "path": "/remote.php/dav/versions/{user}/versions/{fileId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-versions-list",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-versions-download",
+          "method": "GET",
+          "path": "/remote.php/dav/versions/{user}/versions/{fileId}/{versionId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-versions-download",
+          "capability": "connector.observe",
+          "outward": false,
+          "destructive": false
+        },
+        {
+          "ref": "webdav-versions-restore",
+          "method": "MOVE",
+          "path": "/remote.php/dav/versions/{user}/versions/{fileId}/{versionId}",
+          "status": "exposed",
+          "key": "company-box-nextcloud.webdav-versions-restore",
+          "capability": "connector.admin",
+          "outward": false,
+          "destructive": true
         },
         {
           "ref": "get-status",
