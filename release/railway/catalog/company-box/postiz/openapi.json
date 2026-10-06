@@ -1,0 +1,717 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Postiz Swagger file",
+    "description": "API description",
+    "version": "1.0",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [],
+  "paths": {
+    "/public/v1/upload": {
+      "post": {
+        "operationId": "PublicIntegrationsController_uploadSimple",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      }
+    },
+    "/public/v1/upload-from-url": {
+      "post": {
+        "operationId": "PublicIntegrationsController_uploadsFromUrl",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      }
+    },
+    "/public/v1/find-slot/{id}": {
+      "get": {
+        "operationId": "PublicIntegrationsController_findSlotIntegration",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      }
+    },
+    "/public/v1/posts": {
+      "get": {
+        "operationId": "PublicIntegrationsController_getPosts",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      },
+      "post": {
+        "operationId": "PublicIntegrationsController_createPost",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      }
+    },
+    "/public/v1/posts/{id}": {
+      "delete": {
+        "operationId": "PublicIntegrationsController_deletePost",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      }
+    },
+    "/public/v1/posts/group/{group}": {
+      "delete": {
+        "operationId": "PublicIntegrationsController_deletePostByGroup",
+        "parameters": [
+          {
+            "name": "group",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      }
+    },
+    "/public/v1/is-connected": {
+      "get": {
+        "operationId": "PublicIntegrationsController_getActiveIntegrations",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      }
+    },
+    "/public/v1/groups": {
+      "get": {
+        "operationId": "PublicIntegrationsController_listGroups",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      }
+    },
+    "/public/v1/integrations": {
+      "get": {
+        "operationId": "PublicIntegrationsController_listIntegration",
+        "parameters": [
+          {
+            "name": "group",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      }
+    },
+    "/public/v1/social/{integration}": {
+      "get": {
+        "operationId": "PublicIntegrationsController_getIntegrationUrl",
+        "parameters": [
+          {
+            "name": "integration",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "refresh",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      }
+    },
+    "/public/v1/users": {
+      "get": {
+        "operationId": "PublicIntegrationsController_listUsers",
+        "parameters": [
+          {
+            "name": "name",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      }
+    },
+    "/public/v1/debug/posts/{id}": {
+      "get": {
+        "operationId": "PublicIntegrationsController_getPostTimeline",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      }
+    },
+    "/public/v1/debug/account": {
+      "get": {
+        "operationId": "PublicIntegrationsController_getAccountOverview",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      }
+    },
+    "/public/v1/debug/channels": {
+      "get": {
+        "operationId": "PublicIntegrationsController_getChannelHealth",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      }
+    },
+    "/public/v1/debug/activity": {
+      "get": {
+        "operationId": "PublicIntegrationsController_getOrgActivity",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      }
+    },
+    "/public/v1/notifications": {
+      "get": {
+        "operationId": "PublicIntegrationsController_getNotifications",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      }
+    },
+    "/public/v1/generate-video": {
+      "post": {
+        "operationId": "PublicIntegrationsController_generateVideo",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      }
+    },
+    "/public/v1/video/function": {
+      "post": {
+        "operationId": "PublicIntegrationsController_videoFunction",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoFunctionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      }
+    },
+    "/public/v1/clipping": {
+      "post": {
+        "operationId": "PublicIntegrationsController_startClipping",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClippingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      },
+      "get": {
+        "operationId": "PublicIntegrationsController_getClippings",
+        "parameters": [
+          {
+            "name": "page",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      }
+    },
+    "/public/v1/clipping/{id}": {
+      "get": {
+        "operationId": "PublicIntegrationsController_getClipping",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      }
+    },
+    "/public/v1/integrations/{id}": {
+      "delete": {
+        "operationId": "PublicIntegrationsController_deleteChannel",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      }
+    },
+    "/public/v1/integration-settings/{id}": {
+      "get": {
+        "operationId": "PublicIntegrationsController_getIntegrationSettings",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      }
+    },
+    "/public/v1/posts/{id}/missing": {
+      "get": {
+        "operationId": "PublicIntegrationsController_getMissingContent",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      }
+    },
+    "/public/v1/posts/{id}/settings": {
+      "put": {
+        "operationId": "PublicIntegrationsController_updatePostSettings",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePostSettingsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      }
+    },
+    "/public/v1/posts/{id}/status": {
+      "put": {
+        "operationId": "PublicIntegrationsController_changePostStatus",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePostStatusDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      }
+    },
+    "/public/v1/posts/{id}/release-id": {
+      "put": {
+        "operationId": "PublicIntegrationsController_updateReleaseId",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      }
+    },
+    "/public/v1/analytics/{integration}": {
+      "get": {
+        "operationId": "PublicIntegrationsController_getAnalytics",
+        "parameters": [
+          {
+            "name": "integration",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "date",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      }
+    },
+    "/public/v1/analytics/post/{postId}": {
+      "get": {
+        "operationId": "PublicIntegrationsController_getPostAnalytics",
+        "parameters": [
+          {
+            "name": "postId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "date",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      }
+    },
+    "/public/v1/integration-trigger/{id}": {
+      "post": {
+        "operationId": "PublicIntegrationsController_triggerIntegrationTool",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Public API"
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ChangePostStatusDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "ClippingDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "UpdatePostSettingsDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "UploadDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "VideoDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "VideoFunctionDto": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  }
+}

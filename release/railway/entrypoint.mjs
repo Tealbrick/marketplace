@@ -1,4 +1,7 @@
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+
+import { launchMarketplace } from './tailnet.mjs';
 
 const APP_UID = 1000;
 const APP_GID = 1000;
@@ -82,4 +85,28 @@ if (uid === 0) {
   }
 }
 
-await import('./dist/marketplace-program.mjs');
+// Without TS_AUTHKEY this imports the app in-process exactly as before. With
+// it, tailscaled starts as this (already unprivileged) user and the app runs
+// as a child whose environment never contains TS_AUTHKEY.
+const launched = await launchMarketplace({
+  env: process.env,
+  importApp: () => import('./dist/marketplace-program.mjs'),
+  spawnApp: (env) =>
+    spawn(process.execPath, ['./dist/marketplace-program.mjs'], { env, stdio: 'inherit' }),
+});
+if (launched.mode === 'supervised') {
+  delete process.env.TS_AUTHKEY;
+  const { child, outcome } = launched;
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.on(signal, () => child.kill(signal));
+  }
+  child.once('exit', (code, signal) => {
+    if (outcome.state === 'connected') outcome.stop();
+    process.exit(code ?? (signal ? 1 : 0));
+  });
+  if (outcome.state === 'connected') {
+    outcome.daemon.once('exit', () => {
+      process.stderr.write('marketplace tailnet: tailscaled stopped; tailnet connectors now report tailnet_unavailable\n');
+    });
+  }
+}

@@ -1,11 +1,11 @@
-# Marketplace standalone 0.1.13 image
+# Marketplace standalone 0.1.14 image
 
-This bundle is the public Marketplace 0.1.13 release line and supersedes
-0.1.12 with owner approval mode when Rules is not wired.
+This bundle is the public Marketplace 0.1.14 release line and supersedes
+0.1.13 with the Company Box collection (full-API self-hosted app connectors, owner approval queue, optional tailnet egress).
 
-Source snapshot: `02685ac79cbd51c688e0b1799a058d873294ab82`
-Source archive SHA256: `6a40514efcc626fd1e375b1b1c1c1d7a934e115e5e17697ae7655e935e493079`
-Image: `ghcr.io/tealbrick/marketplace:0.1.13`
+Source snapshot: `7c9bc8acd4b6e102eca6d751983800b44d50821e`
+Source archive SHA256: `ae9571bea356f4a2113a435c17ca12a435b78466bf04bb775c277be42056be4f`
+Image: `ghcr.io/tealbrick/marketplace:0.1.14`
 
 ## Runtime contract
 
@@ -23,13 +23,22 @@ Image: `ghcr.io/tealbrick/marketplace:0.1.13`
   into the image or returned to browser code.
 
 The source-backed Railway path uses the fixed public release branch
-`release-marketplace-v0.1.13` (slash-free so the Railway template editor
+`release-marketplace-v0.1.14` (slash-free so the Railway template editor
 accepts it); its exact tag target, branch ruleset, and image
 digest are recorded in the successor receipt. Set the service root directory
 to `release/railway`, keep the Dockerfile entrypoint, and use the relay
 contract in `deploy/railway/recipe.json` and `deploy/railway/railway-blueprint.json`.
 GHCR is optional for the source-build path; no template ID or publication is
 implied by these files.
+
+## v0.1.14 Company Box disposition
+
+This successor merges Tealbrick/marketplace#16: the Company Box collection.
+- **Connectors:** each one exposes a self-hosted app's entire API from a vendored, sha256-pinned spec. The first five entries are Easy!Appointments, Postiz, Listmonk, Pretix and Formbricks: 664/680 operations exposed, 16 excluded with reasons, gated by `company-box:coverage`.
+- **Agent access:** each operation is classed read, write, outward or destructive and granted per agent. Outward agent calls wait in an owner approval queue when Rules is not wired.
+- **Credentials:** they stay in the encrypted store and are never sent to a changed origin.
+- **Image:** the image now ships `catalog/company-box` and pinned Tailscale 1.102.5 (sha256 `65e6d7f1…8d12`). Tailscale is inert unless `TS_AUTHKEY` is set. When it is set, `tailscaled` runs in userspace mode and the key never reaches the app process. Only `*.ts.net` and CGNAT traffic uses the tailnet proxy, and health reports `tailnet: connected|unavailable|disabled`.
+- **Upgrade and rollback:** with `TS_AUTHKEY` unset the runtime contract is unchanged. The `company_box_approval` table is created on start and is ignored by 0.1.13, so rollback to 0.1.13 needs no data change.
 
 ## v0.1.13 owner approval mode disposition
 
