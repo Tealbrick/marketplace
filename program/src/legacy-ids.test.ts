@@ -7,7 +7,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { buildMarketplaceApp } from "./app.js";
 import { loadConfig } from "./config.js";
-import { defaultMicroappsRoot } from "./extension-settings-projection.js";
 import {
   acceptedIds,
   compatDebugEnabled,
@@ -113,13 +112,6 @@ describe("TEALBRICK_* env with DOPPELGANGER_* fallback", () => {
       "DOPPELGANGER_PRODUCT_WORKSPACE_DIR",
       "DOPPELGANGER_MARKETPLACE_INTERNAL_AUTH_TOKEN",
     ]);
-  });
-
-  it("resolves the Micro-apps root from TEALBRICK_MICROAPPS_ROOT", async () => {
-    const root = await tempHome();
-    expect(() => defaultMicroappsRoot({ TEALBRICK_MICROAPPS_ROOT: root })).toThrow(
-      /^TEALBRICK_MICROAPPS_ROOT does not contain Extension manifests/u,
-    );
   });
 });
 

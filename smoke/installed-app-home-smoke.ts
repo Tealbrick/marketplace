@@ -31,14 +31,6 @@ async function copyInstalledPayload(installedRoot: string) {
       return !parts.includes("node_modules") && !parts.includes(".git") && !parts.includes(".turbo");
     },
   });
-  await cp(
-    path.resolve(sourceRoot, "..", ".sdk"),
-    path.resolve(installedRoot, "..", ".sdk"),
-    {
-      recursive: true,
-      filter: (entry) => !entry.split(path.sep).includes("node_modules"),
-    },
-  );
 }
 
 async function writeInstalledRegistry(registryPath: string) {
@@ -103,18 +95,6 @@ async function discoverInstalledMarketplace(input: { appHome: string; registryPa
   }
   if (!namespace.surfaces?.length || !namespace.settingsPanels?.length) {
     throw new Error("Installed Marketplace manifest did not expose extension surfaces/settings.");
-  }
-
-  const hermesManifest = await readFile(path.join(root, "plugin", "hermes", "plugin.yaml"), "utf8");
-  for (const required of [
-    "marketplace_agent_capabilities",
-    "marketplace_plugin_register",
-    "marketplace_plugin_execute",
-    "marketplace_debug_events",
-  ]) {
-    if (!hermesManifest.includes(required)) {
-      throw new Error(`Installed Hermes adapter manifest is missing ${required}.`);
-    }
   }
 
   return { entry, root, pluginManifest };

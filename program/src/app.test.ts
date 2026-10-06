@@ -127,41 +127,22 @@ describe("Marketplace Program", () => {
 
     const response = await app.inject({
       method: "GET",
-      url: "/api/marketplace/hub/records?workspaceSlug=default",
-      headers: { authorization: "Bearer projection-token" },
+      url: "/api/marketplace/cards/summary?workspaceSlug=default&limit=60",
     });
     expect(response.statusCode).toBe(200);
-    expect(requestedUrls).toHaveLength(3);
-    expect(response.json().pluginRecords).toEqual(
+    // Provider-health reachability probes are separate from catalog hydration.
+    expect(
+      requestedUrls.filter((url) => /\/(toolkits|connected_accounts)\?/u.test(url)),
+    ).toHaveLength(3);
+    expect(response.json().items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           pluginId: "composio-gmail",
           displayName: "Gmail",
-          iconUrl: "https://logos.composio.dev/api/gmail",
-          lifecycle: "available",
-          connection: expect.objectContaining({ state: "connected" }),
-          allowedActions: ["install"],
         }),
         expect.objectContaining({
           pluginId: "composio-slack",
           displayName: "Slack",
-          iconUrl: "https://logos.composio.dev/api/slack",
-          connection: expect.objectContaining({ state: "auth-required" }),
-          allowedActions: ["authenticate"],
-        }),
-      ]),
-    );
-    expect(response.json().actions).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          ownerRecordId: "plugin:composio-gmail",
-          operation: "install",
-          label: "Enable",
-        }),
-        expect.objectContaining({
-          ownerRecordId: "plugin:composio-slack",
-          operation: "authenticate",
-          label: "Connect",
         }),
       ]),
     );
@@ -464,8 +445,7 @@ describe("Marketplace Program", () => {
 
     const refreshed = await app.inject({
       method: "GET",
-      url: "/api/marketplace/hub/records?workspaceSlug=default",
-      headers: { authorization: "Bearer projection-token" },
+      url: "/api/marketplace/cards/summary?workspaceSlug=default&limit=60",
     });
     expect(refreshed.statusCode).toBe(200);
     expect(store.getListing("composio-1password")).toMatchObject({
@@ -488,7 +468,7 @@ describe("Marketplace Program", () => {
     });
 
     expect(connected.statusCode).toBe(200);
-    expect(requestedToolkits).toEqual(["_1password"]);
+    expect(requestedToolkits.filter(Boolean)).toEqual(["_1password"]);
     expect(authLinkUrls).toEqual([
       "https://backend.composio.dev/api/v3/connected_accounts/link",
     ]);
@@ -510,42 +490,6 @@ describe("Marketplace Program", () => {
         composio: { toolkit: "_1password" },
       },
       runtimeSources: [expect.objectContaining({ toolkitSlug: "_1password" })],
-    });
-
-    await app.close();
-    store.close();
-  });
-
-  it("protects and serves the registry-declared Extension settings projection", async () => {
-    const store = new SqliteMarketplaceStore(await tempDbPath());
-    const app = await buildMarketplaceApp({
-      store,
-      internalAuthToken: "projection-token",
-    });
-
-    const unauthorized = await app.inject({
-      method: "GET",
-      url: "/api/plugins/marketplace-hub/records",
-    });
-    expect(unauthorized.statusCode).toBe(401);
-
-    const response = await app.inject({
-      method: "GET",
-      url: "/api/plugins/marketplace-hub/records",
-      headers: { authorization: "Bearer projection-token" },
-    });
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({
-      host: {
-        entry: "capabilities",
-        tabs: ["skills", "plugins", "extensions"],
-      },
-      settingsSurfaces: expect.arrayContaining([
-        expect.objectContaining({
-          settingsSurfaceId: "marketplace.settings",
-          submitActionId: "extension:marketplace:configure",
-        }),
-      ]),
     });
 
     await app.close();
@@ -582,62 +526,6 @@ describe("Marketplace Program", () => {
     const store = new SqliteMarketplaceStore(await tempDbPath());
 
     expect(store.listTables().sort()).toEqual([...MARKETPLACE_TABLES].sort());
-
-    store.close();
-  });
-
-  it("records Agent thread to remote Hermes session correlations in Product storage", async () => {
-    const store = new SqliteMarketplaceStore(await tempDbPath());
-    const app = await buildMarketplaceApp({ store });
-
-    const recordResponse = await app.inject({
-      method: "POST",
-      url: "/api/marketplace/session-correlations",
-      headers: { "x-trace-id": "session-correlation-test" },
-      payload: {
-        workspaceSlug: "atlas",
-        appThreadId: "thread-dg-copyable",
-        providerInstanceId: "hermes",
-        hermesLiveSessionId: "live-1234",
-        hermesStoredSessionId: "20260630_111111_abcd",
-        profile: "max",
-        runtimeMode: "full-access",
-        cwd: "/tmp/marketplace-fixture",
-        eventType: "session.create",
-      },
-    });
-
-    expect(recordResponse.statusCode).toBe(201);
-    expect(recordResponse.json()).toMatchObject({
-      ok: true,
-      correlation: {
-        workspaceSlug: "atlas",
-        appThreadId: "thread-dg-copyable",
-        provider: "hermes",
-        providerInstanceId: "hermes",
-        remoteSessionId: "20260630_111111_abcd",
-        hermesLiveSessionId: "live-1234",
-        hermesStoredSessionId: "20260630_111111_abcd",
-        profile: "max",
-      },
-    });
-
-    const queryResponse = await app.inject({
-      method: "GET",
-      url: "/api/marketplace/session-correlations?workspaceSlug=atlas&appThreadId=thread-dg-copyable",
-    });
-
-    expect(queryResponse.statusCode).toBe(200);
-    expect(queryResponse.json()).toMatchObject({
-      correlations: [
-        {
-          appThreadId: "thread-dg-copyable",
-          remoteSessionId: "20260630_111111_abcd",
-          hermesLiveSessionId: "live-1234",
-          hermesStoredSessionId: "20260630_111111_abcd",
-        },
-      ],
-    });
 
     store.close();
   });

@@ -355,20 +355,6 @@ describe("custom MCP connector routes", () => {
     expect(store.getListing(pluginId)?.displayName).toBe("Issue Tracker");
   });
 
-  it("keeps Hub records consistent and refuses Hub edits of operator connectors", async () => {
-    const { server, operator, call } = await fixture();
-    const a = operator("ws-a");
-    const pluginId = (await call("POST", "/api/marketplace/connectors/custom", a, createBody(server.streamableUrl))).json().connector.pluginId as string;
-    const service = { authorization: `Bearer ${SERVICE}` };
-    const records = await call("GET", "/api/marketplace/hub/records", service);
-    expect(records.statusCode).toBe(200);
-    const record = records.json().pluginRecords.find((entry: { pluginId: string }) => entry.pluginId === pluginId);
-    expect(record).toMatchObject({ custom: false, adapter: { type: "mcp", mcp: { transport: "streamable-http", url: server.streamableUrl } } });
-    expect(JSON.stringify(record)).not.toContain(SECRET);
-    expect((await call("PATCH", `/api/marketplace/hub/plugins/${pluginId}`, service, { url: "https://evil.example/mcp" })).json()).toEqual({ ok: false, error: "plugin_managed_by_operator" });
-    expect((await call("DELETE", `/api/marketplace/hub/plugins/${pluginId}`, service)).json()).toEqual({ ok: false, error: "plugin_managed_by_operator" });
-  });
-
   it("blocks mutations and execution when Rules deny, need review, or are unavailable", async () => {
     const { server, rules, operator, call, store } = await fixture();
     const a = operator("ws-a");

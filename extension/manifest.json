@@ -6,17 +6,6 @@
   "hostSlots": ["settingsPanels", "surfaces", "dataTransports", "sidecars"],
   "programBaseUrlEnv": "MARKETPLACE_BASE_URL",
   "registryManifest": "../.codex-plugin/plugin.json",
-  "hdda": {
-    "registryFragment": "hdda/registry.fragment.json",
-    "gatewayAdapter": "../plugin/hermes/gateway-dashboard/marketplace-hub",
-    "capabilitiesProjection": {
-      "gatewayPluginId": "marketplace-hub",
-      "recordEndpoint": "/api/plugins/marketplace-hub/records",
-      "recordSchema": "doppelganger.marketplace.capabilities-host.v1",
-      "settingsSurfaceSchema": "doppelganger.capability-settings.v1"
-    },
-    "externalAuthDependency": "hdda-host-sdk:auth"
-  },
   "dependsOn": ["rules-approvals", "local-runtime-bridge"],
   "screens": [
     "Plugin Catalog",

@@ -266,21 +266,21 @@ describe("owner approval mode (no Rules configured)", () => {
     await f.close();
   });
 
-  it("allows owner-provisioned service administration via Hub routes, audited", async () => {
+  it("allows owner-provisioned service administration, audited", async () => {
     const f = await fixture();
     expect((await importGithub(f)).statusCode).toBe(201);
-    const reload = await f.app.inject({
+    const uninstall = await f.app.inject({
       method: "POST",
-      url: "/api/marketplace/hub/plugins/github-composio/lifecycle",
+      url: "/api/marketplace/plugins/github-composio/uninstall",
       headers: f.serviceHeaders,
-      payload: { workspaceSlug: "atlas", action: "reload" },
+      payload: { workspaceSlug: "atlas" },
     });
-    expect(reload.statusCode).toBeLessThan(300);
+    expect(uninstall.statusCode).toBeLessThan(300);
     const audit = governanceAudit(f.store, "atlas");
-    expect(audit.find((row) => row.metadata.operation === "hub.lifecycle.reload")).toMatchObject({
+    expect(audit.find((row) => row.metadata.operation === "uninstall")).toMatchObject({
       eventType: "marketplace.governance.owner_approved",
       actorId: "marketplace-service",
-      decisionId: "owner-governed:hub.lifecycle.reload:github-composio",
+      decisionId: "owner-governed:uninstall:github-composio",
       metadata: { actorKind: "service", basis: "service-admin" },
     });
     await f.close();

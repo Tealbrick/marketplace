@@ -11,7 +11,7 @@ export function buildMarketplaceOpenApi(baseUrl = "/") {
       title: "Teal Brick Marketplace API",
       version: MARKETPLACE_VERSION,
       description:
-        "Program-owned catalog, Rules-governed plugin lifecycle, provider connections, capability bindings, Composio execution, and audit. The launch profile treats every non-Composio source as catalog-only. Hub and cross-app service routes require an internal bearer credential that is never exposed to the browser.",
+        "Program-owned catalog, Rules-governed plugin lifecycle, provider connections, capability bindings, Composio execution, and audit. The launch profile treats every non-Composio source as catalog-only. Cross-app service routes require an internal bearer credential that is never exposed to the browser.",
     },
     servers: [{ url: baseUrl }],
     security: operatorSecurity,
@@ -20,7 +20,7 @@ export function buildMarketplaceOpenApi(baseUrl = "/") {
         bearerAuth: {
           type: "http",
           scheme: "bearer",
-          description: "Internal HDDA Host SDK or cross-app service credential.",
+          description: "Internal cross-app service credential.",
         },
         operatorSession: {
           type: "apiKey",
@@ -41,7 +41,6 @@ export function buildMarketplaceOpenApi(baseUrl = "/") {
       { name: "Provider settings" },
       { name: "Custom connectors" },
       { name: "Company Box" },
-      { name: "Hub service" },
       { name: "Agent" },
     ],
     paths: {
@@ -93,11 +92,9 @@ export function buildMarketplaceOpenApi(baseUrl = "/") {
       },
       "/api/settings/providers/composio/test": { post: { security: operatorSecurity, tags: ["Provider settings"], summary: "Check a Composio API key against the allowlisted Composio host", description: "Tests the saved key, or an unsaved key in the body, with one read-only request to an https://*.composio.dev base URL. The key is never returned. Records an audit event.", requestBody: { required: false, content: { "application/json": { schema: { type: "object", properties: { composioApiKey: { type: "string", writeOnly: true } } } } } }, responses: { "200": { description: "Key accepted" }, "400": { description: "No key, malformed key, or base URL not allowed" }, "422": { description: "Composio rejected the key" }, "502": { description: "Composio unreachable" } } } },
       "/api/settings/providers/composio/key": { delete: { security: operatorSecurity, tags: ["Provider settings"], summary: "Remove the Program-stored Composio API key", description: "Records an audit event. A key supplied by the deployment environment cannot be removed here (409).", responses: { "200": { description: "Removed (or already absent)" }, "409": { description: "Key managed by the deployment environment" } } } },
-      "/api/agent/capabilities": { get: { tags: ["Agent"], summary: "List enabled Composio and custom MCP tools currently projected to Agents", description: "Custom MCP connectors are projected after a successful tool refresh. Native, Activepieces, Nango, and Hub MCP records are catalog-only and are not projected as executable Agent tools in this launch profile.", parameters: [{ name: "workspaceSlug", in: "query", schema: { type: "string", default: "default" } }], responses: { "200": { description: "Capabilities" } } } },
+      "/api/agent/capabilities": { get: { tags: ["Agent"], summary: "List enabled Composio and custom MCP tools currently projected to Agents", description: "Custom MCP connectors are projected after a successful tool refresh. Native, Activepieces, Nango, and non-custom MCP records are catalog-only and are not projected as executable Agent tools in this launch profile.", parameters: [{ name: "workspaceSlug", in: "query", schema: { type: "string", default: "default" } }], responses: { "200": { description: "Capabilities" } } } },
       "/api/marketplace/v1/agent/action-catalog": { get: { security: [...operatorSecurity, ...bearerSecurity], tags: ["Agent"], summary: "List the agent actions this workspace currently publishes", description: "Contract doppelganger.marketplace.agent-action-catalog.v1. Returns { contractVersion, workspaceSlug, actions[] } where each action is { pluginId, pluginName, provider, actionKey, label, description, capability, resourceKind, mode: 'connected-account', accounts: [{ accountId, label? }], allowedArguments: string[] | null, toolName }. An action is listed only while its connector is registered, installed and enabled, executable for agents, connected, the action is enabled, and its capability binding is enabled. Portal selections, consents, grants and runtime calls resolve against this same live catalog. Secrets, connection metadata beyond the account id and label, and raw manifests are never returned. Operator sessions are scoped to their organization; the internal service bearer must pass workspaceSlug.", parameters: [{ name: "workspaceSlug", in: "query", required: false, description: "Must equal the caller's organization. Required for the service bearer.", schema: { type: "string" } }], responses: { "200": { description: "Published agent action catalog" }, "400": { description: "workspaceSlug missing for the service bearer" }, "401": { description: "Session or bearer required" }, "403": { description: "workspaceSlug belongs to a different organization" } } } },
       "/api/marketplace/broker/grants": { post: { security: bearerSecurity, tags: ["Execution"], summary: "Issue a single-use scoped Composio broker grant", description: "Internal services only. Grants are stored as token hashes, expire within at most 900 seconds, and are consumed atomically before provider dispatch.", requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["requesterMiniappId", "pluginId", "actionKeys"], properties: { requesterMiniappId: { type: "string" }, pluginId: { type: "string" }, actionKeys: { type: "array", minItems: 1, items: { type: "string" } }, ttlSeconds: { type: "integer", minimum: 1, maximum: 900, default: 300 } } } } } }, responses: { "201": { description: "Single-use grant issued" }, "400": { description: "Invalid scope or TTL" }, "401": { description: "Unauthorized" }, "403": { description: "Rules denied" } } } },
-      "/api/marketplace/hub/records": { get: { security: bearerSecurity, tags: ["Hub service"], summary: "Project normalized records to the HDDA Host SDK", responses: { "200": { description: "Projection" }, "401": { description: "Unauthorized" }, "503": { description: "Service auth unconfigured" } } } },
-      "/api/marketplace/hub/plugins/{pluginId}/lifecycle": { post: { security: bearerSecurity, tags: ["Hub service"], summary: "Internal Host SDK lifecycle including enable, disable, and reload", parameters: [{ name: "pluginId", in: "path", required: true, schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: jsonObject } } }, responses: { "200": { description: "Lifecycle changed" }, "401": { description: "Unauthorized" } } } },
       "/api/marketplace/v1/broker/composio/execute": { post: { security: bearerSecurity, tags: ["Execution"], summary: "Authenticated cross-app Composio broker execution", description: "Issues and consumes one internal single-use grant for this call; raw provider credentials are never returned.", requestBody: { required: true, content: { "application/json": { schema: jsonObject } } }, responses: { "200": { description: "Executed" }, "401": { description: "Unauthorized" }, "403": { description: "Rules denied" } } } },
     },
     "x-doppelganger-commands": [

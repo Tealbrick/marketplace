@@ -17,9 +17,7 @@
       "program",
       "contracts",
       "extension",
-      "plugin",
-      "smoke",
-      ".sdk"
+      "smoke"
     ]
   },
   "program": {
@@ -104,54 +102,10 @@
       "traceHeader": "x-trace-id"
     }
   },
-  "plugin": {
-    "path": "plugin/hermes",
-    "status": "candidate-adapter-manifest",
-    "tools": [
-      "marketplace_health",
-      "marketplace_status",
-      "marketplace_events",
-      "marketplace_catalog_list",
-      "marketplace_listing_get",
-      "marketplace_plugin_register",
-      "marketplace_plugin_unregister",
-      "marketplace_plugin_install",
-      "marketplace_plugin_uninstall",
-      "marketplace_cards",
-      "marketplace_provider_health",
-      "marketplace_connection_register",
-      "marketplace_composio_connection_start",
-      "marketplace_composio_oauth_callback",
-      "marketplace_capability_bind",
-      "marketplace_action_bind",
-      "marketplace_plugin_execute",
-      "marketplace_agent_capabilities",
-      "marketplace_audit_list",
-      "marketplace_debug_events",
-      "marketplace_debug_logs",
-      "marketplace_activepieces_catalog",
-      "marketplace_activepieces_scaffold",
-      "marketplace_composio_catalog",
-      "marketplace_composio_tools",
-      "marketplace_composio_import",
-      "marketplace_broker_grant",
-      "marketplace_broker_composio_execute"
-    ]
-  },
   "extension": {
     "path": "extension/app",
     "status": "registered-manifest-first",
-    "hostSlots": ["settingsPanels", "surfaces", "dataTransports", "sidecars"],
-    "hdda": {
-      "registryFragment": "extension/hdda/registry.fragment.json",
-      "gatewayAdapter": "plugin/hermes/gateway-dashboard/marketplace-hub",
-      "capabilitiesProjection": {
-        "gatewayPluginId": "marketplace-hub",
-        "recordEndpoint": "/api/plugins/marketplace-hub/records",
-        "recordSchema": "doppelganger.marketplace.capabilities-host.v1",
-        "settingsSurfaceSchema": "doppelganger.capability-settings.v1"
-      }
-    }
+    "hostSlots": ["settingsPanels", "surfaces", "dataTransports", "sidecars"]
   },
   "dependencies": ["rules-approvals", "local-runtime-bridge"],
   "sidecars": {

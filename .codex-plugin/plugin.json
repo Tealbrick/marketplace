@@ -27,18 +27,6 @@
       "systemRole": "doppelganger-plugins"
     },
     "dependencies": ["rules-approvals", "local-runtime-bridge"],
-    "hdda": {
-      "registryAuthority": "doppelganger-registry",
-      "registryFragment": "extension/hdda/registry.fragment.json",
-      "gatewayAdapter": "plugin/hermes/gateway-dashboard/marketplace-hub",
-      "capabilitiesProjection": {
-        "gatewayPluginId": "marketplace-hub",
-        "recordEndpoint": "/api/plugins/marketplace-hub/records",
-        "recordSchema": "doppelganger.marketplace.capabilities-host.v1",
-        "settingsSurfaceSchema": "doppelganger.capability-settings.v1"
-      },
-      "externalAuthDependency": "hdda-host-sdk:auth"
-    },
     "settingsPanels": [
       {
         "panelId": "marketplace",
@@ -78,7 +66,7 @@
               {
                 "id": "composio",
                 "title": "Composio provider",
-                "description": "Connect the Marketplace Program to Composio. The API key is stored by the remote Program and is never returned to Desktop or Hermes.",
+                "description": "Connect the Marketplace Program to Composio. The API key is stored by the remote Program and is never returned to Desktop or Agents.",
                 "fields": [
                   "composioApiKey",
                   "composioBaseUrl",
