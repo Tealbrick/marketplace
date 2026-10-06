@@ -1,0 +1,66 @@
+{
+  "schema": 1,
+  "id": "listmonk",
+  "displayName": "Listmonk",
+  "description": "Self-hosted newsletters and mailing lists: subscribers, lists, campaigns, templates, media, bounces, transactional email and instance administration. Anything that sends email, plus bulk deletes and settings changes, is held for approval or admin consent.",
+  "category": "Marketing",
+  "app": {
+    "version": "6.2.0",
+    "homepage": "https://listmonk.app",
+    "license": "AGPL-3.0",
+    "specSource": "https://raw.githubusercontent.com/knadh/listmonk/v6.2.0/docs/swagger/collections.yaml"
+  },
+  "source": "openapi",
+  "openapi": {
+    "spec": "openapi.json",
+    "basePath": "",
+    "sha256": "a60f2ccff80a50b73bf9e2c139b62e1e24d9131c2ce000ed53a1ccfa416e6228"
+  },
+  "auth": {
+    "type": "basic"
+  },
+  "baseUrlExample": "https://fedora-n150.your-tailnet.ts.net:8477",
+  "healthOperation": "getAboutInfo",
+  "outward": [
+    "updateCampaignStatusById",
+    "testCampaignById",
+    "handlePublicSubscription",
+    "testSMTPSettings",
+    "createSubscriber",
+    "updateSubscriberById",
+    "patchSubscriber",
+    "subscriberSendOptinById",
+    "transactWithSubscriber"
+  ],
+  "destructive": [
+    "reloadApp",
+    "blocklistBouncedSubscribers",
+    "updateCampaignStatusById",
+    "updateSettings",
+    "updateSettingByKey",
+    "manageBlocklistBySubscriberList",
+    "manageSubscriberLists",
+    "manageSubscriberListById",
+    "blocklistSubscribersQuery",
+    "deleteSubscriberByQuery",
+    "manageSubscriberListsByQuery",
+    "manageBlocklistSubscribersById"
+  ],
+  "reads": [
+    "updatePreviewCampaignById",
+    "previewCampaignTextById",
+    "previewCampaignArchive",
+    "previewTemplate"
+  ],
+  "exposure": "auto",
+  "excluded": [
+    {
+      "operation": "streamEvents",
+      "reason": "Endless server-sent-events stream; the REST adapter returns one bounded response and cannot hold a stream open."
+    },
+    {
+      "operation": "logout",
+      "reason": "Destroys a browser session cookie; API users authenticate with a token and have no session to end."
+    }
+  ]
+}
