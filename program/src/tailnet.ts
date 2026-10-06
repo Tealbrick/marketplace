@@ -14,7 +14,9 @@
  */
 import { connect } from "node:net";
 
-import { fetch as undiciFetch, ProxyAgent } from "undici";
+import { Agent, fetch as undiciFetch, ProxyAgent } from "undici";
+
+import { configuredMcpAllowedOrigins, policyCheckedLookup, type McpLookup } from "./mcp-url-policy.js";
 
 type Env = Record<string, string | undefined>;
 
@@ -106,32 +108,58 @@ function proxyAgent(proxyUrl: string) {
   return agent;
 }
 
+const pinnedAgents = new Map<McpLookup | undefined, Agent>();
+
+/** Direct connections re-check every resolved address at connect time. */
+function pinnedAgent(lookup?: McpLookup) {
+  let agent = pinnedAgents.get(lookup);
+  if (!agent) {
+    agent = new Agent({ connect: { lookup: policyCheckedLookup(lookup) as never } });
+    pinnedAgents.set(lookup, agent);
+  }
+  return agent;
+}
+
 /**
  * A fetch that sends tailnet hosts through the tailnet proxy and everything
- * else through `fetchImpl` (default: global fetch). Throws
- * TailnetUnavailableError for tailnet hosts when the tailnet is down.
+ * else direct through a DNS-pinned agent (or `fetchImpl` when one is
+ * injected, as tests do). Allowlisted fixture origins skip pinning exactly as
+ * they skip the URL policy. Throws TailnetUnavailableError for tailnet hosts
+ * when the tailnet is down.
  */
-export function tailnetAwareFetch(env: Env = process.env, fetchImpl?: typeof fetch): typeof fetch {
+export function tailnetAwareFetch(env: Env = process.env, fetchImpl?: typeof fetch, lookup?: McpLookup): typeof fetch {
   return (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
     const route = routeOutbound(url, env);
-    if (route.kind === "direct") return (fetchImpl ?? fetch)(input, init);
-    let body = init?.body;
-    const headers = new Headers(init?.headers);
-    if (body instanceof FormData) {
-      // Serialize multipart here: the proxied fetch is undici's own, and its
-      // FormData class differs from the global one.
-      const encoded = new Response(body);
-      headers.set("content-type", encoded.headers.get("content-type")!);
-      body = new Uint8Array(await encoded.arrayBuffer());
+    if (route.kind === "direct") {
+      if (fetchImpl || configuredMcpAllowedOrigins(env).has(url.origin)) return (fetchImpl ?? fetch)(input, init);
+      return (await undiciFetch(url, {
+        ...(init as Record<string, unknown>),
+        ...(await undiciBody(init)),
+        dispatcher: pinnedAgent(lookup),
+      } as Parameters<typeof undiciFetch>[1])) as unknown as Response;
     }
     return (await undiciFetch(url, {
       ...(init as Record<string, unknown>),
-      headers: Object.fromEntries(headers),
-      ...(body === undefined || body === null ? {} : { body }),
+      ...(await undiciBody(init)),
       dispatcher: proxyAgent(route.proxyUrl),
     } as Parameters<typeof undiciFetch>[1])) as unknown as Response;
   }) as typeof fetch;
+}
+
+/** Headers and body in a form undici's own fetch accepts (its FormData class differs). */
+async function undiciBody(init: RequestInit | undefined) {
+  let body = init?.body;
+  const headers = new Headers(init?.headers);
+  if (body instanceof FormData) {
+    const encoded = new Response(body);
+    headers.set("content-type", encoded.headers.get("content-type")!);
+    body = new Uint8Array(await encoded.arrayBuffer());
+  }
+  return {
+    headers: Object.fromEntries(headers),
+    ...(body === undefined || body === null ? {} : { body }),
+  };
 }
 
 let healthCache: { key: string; at: number; value: TailnetHealth } | null = null;

@@ -213,3 +213,37 @@ export async function assertMcpUrlAllowed(
   }
   return url;
 }
+
+type LookupCallback = (
+  error: NodeJS.ErrnoException | null,
+  address: string | Array<{ address: string; family: number }>,
+  family?: number,
+) => void;
+
+/**
+ * A `net.connect` lookup that re-checks every resolved address against the
+ * policy at connect time (DNS pinning): a name that passed the pre-flight
+ * check cannot rebind to a private or metadata address for the actual
+ * connection. In tailnet proxy mode the proxy dials, and MagicDNS resolution
+ * happens inside tailscaled.
+ */
+export function policyCheckedLookup(lookup: McpLookup = defaultMcpLookup) {
+  return (hostname: string, options: { all?: boolean } | number | undefined, callback: LookupCallback) => {
+    const all = typeof options === "object" && options !== null && options.all === true;
+    lookup(hostname).then(
+      (answers) => {
+        if (answers.length === 0) {
+          callback(Object.assign(new Error(`DNS lookup failed for ${hostname}`), { code: "ENOTFOUND" }), "");
+          return;
+        }
+        if (answers.some((answer) => isForbiddenMcpAddress(answer.address))) {
+          callback(Object.assign(new McpUrlPolicyError("address_not_allowed"), { code: "EADDRNOTAVAIL" }), "");
+          return;
+        }
+        if (all) callback(null, answers.map((answer) => ({ address: answer.address, family: answer.family })));
+        else callback(null, answers[0]!.address, answers[0]!.family);
+      },
+      (error: unknown) => callback(error as NodeJS.ErrnoException, ""),
+    );
+  };
+}

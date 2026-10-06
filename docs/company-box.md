@@ -46,7 +46,8 @@ Two kinds of entry:
   "openapi": {                                   // openapi entries
     "spec": "openapi.json",
     "sha256": "<64 hex>",
-    "basePath": "/api"                           // optional; default: Swagger basePath / first server path
+    "basePath": "/api",                          // optional; default: Swagger basePath / first server path
+    "overlay": { "file": "overlay.json", "sha256": "<64 hex>" } // optional JSON merge patch (RFC 7396)
   },
   "mcp": {                                       // mcp entries
     "urlTemplate": "{baseUrl}/mcp",
@@ -60,7 +61,7 @@ Two kinds of entry:
   "healthOperation": "getHealth",                // openapi: a GET needing no arguments
   "outward": ["sendCampaign*", "POST /tx"],      // operations that reach people/systems outside
   "destructive": ["purge*"],                     // destructive beyond DELETE (optional)
-  "reads": ["searchSubscribers", "POST /graphql"], // POST/PUT/… that only read (optional)
+  "reads": ["searchSubscribers", "POST /subscribers/query"], // POST/PUT/… that only read (optional)
   "exposure": "auto",                            // "auto" | "direct" | "discovery"
   "excluded": [
     { "operation": "POST /maintenance/vacuum", "reason": "Locks the database; run it from the app." }
@@ -73,12 +74,29 @@ Two kinds of entry:
 - `outward` / `destructive` / `reads` patterns use `*` wildcards,
   case-insensitive, and match the `operationId` or `METHOD /path` (tool name
   for MCP).
-- `reads` marks non-GET operations that only read (search endpoints, GraphQL
-  queries) as read-class: they grant as `connector.observe` and are never
-  outward or destructive unless also listed in those patterns.
+- `reads` marks non-GET operations that only read (search or query
+  endpoints) as read-class: they grant as `connector.observe` and are never
+  outward or destructive unless also listed in those patterns. **Never mark a
+  GraphQL endpoint as read**: the same `POST /graphql` carries mutations, and a
+  read grant would let an agent run them.
 - `auth` decides the credential fields the install form asks for: `header` →
   token, `basic` → username + password, `query` → API key. `mcp` entries cannot
   use `query` (keys never go in URLs).
+
+### Overlays and engine defaults
+
+- `openapi.overlay` is a JSON merge patch applied to the vendored spec before
+  parsing, pinned like the spec. Keep supplements (missing operationIds,
+  summaries, tags, removed operations via `null`) there instead of editing the
+  upstream file.
+- A declared parameter that carries the entry's credential (the auth header,
+  `Authorization` for basic, or the query key) is dropped: Marketplace sets it.
+- A `{param}` used in a path template but never declared becomes a required
+  string path parameter.
+- A GET/HEAD operation that declares a request body is **auto-excluded**
+  (`status: excluded`, `auto: true`, reason `auto: …`): bodies on GET are
+  dropped or refused by servers and proxies, so sending it would not do what
+  the spec says. To expose it, fix the method or body in an overlay.
 
 ## Coverage rules
 
@@ -166,8 +184,10 @@ governance (the same gate every connector execute uses):
     after its arguments are validated; arguments (≤ 32 KB) are stored for the
     owner and never logged, audited or returned to the agent;
   - the owner sees it under Connections → Company Box → Approvals (count badge
-    on Connections) with app, operation, agent and an argument preview, and
-    approves or denies it (`POST /api/marketplace/company-box/approvals/<id>/approve|deny`,
+    on Connections) with app, operation, agent and the **full** stored
+    arguments as a key-sorted view (long values are visibly marked as
+    truncated for display; `GET /api/marketplace/company-box/approvals/<id>`
+    returns them in full, owner session only), and approves or denies it (`POST /api/marketplace/company-box/approvals/<id>/approve|deny`,
     operator session only);
   - approval runs the call **exactly once** against live state (the grant or
     consent must still be active and the action still published), records the
@@ -175,7 +195,9 @@ governance (the same gate every connector execute uses):
     and the call never runs; pending requests expire after 7 days;
   - the agent polls `approvals.status`, or repeats the call with the same
     `idempotencyKey` to get the state or result (a different payload with the
-    same key is refused). Only the requesting agent can read an approval.
+    same key is refused; concurrent holds with one key share one approval).
+    Only the requesting agent can read an approval. Each agent can have at
+    most 50 calls waiting per workspace (`approval_queue_full`).
   Services without an agent identity still cannot run outward calls
   (`owner_approval_required_for_outward`); the owner's own session runs them
   directly.
@@ -204,6 +226,29 @@ The usage ledger stores input/output shapes, not payloads. Company Box and
 custom MCP executions also record the full output's byte length and sha256
 (`metadata.output`). Stored approval results are capped at 64 KB, keeping the
 size and sha256 of anything larger.
+
+## Request safety
+
+- Arguments are validated against the operation's full input schema (Ajv,
+  strict types, no coercion; argument groups are closed) before any request is
+  built.
+- Path values may not contain `/`, `\`, `%2f`, `%5c` (any case) or be `.` /
+  `..` (also percent-encoded).
+- Parameter and query names `_method`, `x-http-method*`,
+  `x-method-override*` and any case variant of the auth query key are always
+  refused. Objects explode into query keys only for object-typed parameters,
+  and only into declared keys.
+- Credentials belong to the origin they were entered for. Changing an entry's
+  base URL (or an MCP connector's URL) to a new origin requires entering every
+  credential again; stored ones are never sent to a new host. The generic
+  custom connector edit enforces the same rule for secret headers.
+- Direct connections pin DNS: every address resolved at connect time is
+  re-checked against the URL policy, so a name cannot rebind to a private or
+  metadata address after the pre-flight check. In tailnet proxy mode the proxy
+  dials and MagicDNS resolution happens inside tailscaled.
+- For `mcp` entries only tools in the pinned snapshot are exposed; tools the
+  live server added since are reported as `notInSnapshot` and stay unusable
+  until the entry is re-pinned.
 
 ## Runtime limits
 

@@ -4,7 +4,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { AlertTriangle, Boxes, Check, CircleSlash, Hourglass, KeyRound, LoaderCircle, PlugZap, Send, Settings2, Trash2, Undo2, X } from "lucide-react";
 import { Button, IconButton, Tag } from "@tealbrick/ui";
 
-import { ApiError, decideCompanyBoxApproval, getCompanyBox, getCompanyBoxApprovals, removeCompanyBoxEntry, setupCompanyBoxEntry, testCompanyBoxEntry } from "./api";
+import { ApiError, decideCompanyBoxApproval, getCompanyBox, getCompanyBoxApproval, getCompanyBoxApprovals, removeCompanyBoxEntry, setupCompanyBoxEntry, testCompanyBoxEntry } from "./api";
 import { errorCopy } from "./copy";
 import type { CompanyBoxApproval, CompanyBoxCredentialKey, CompanyBoxEntry, CompanyBoxResult } from "./types";
 import { formatWhen, InlineError, StatePanel, statusLabel, statusTone } from "./ui";
@@ -27,15 +27,25 @@ function failureCopy(code: string | undefined) {
 
 type CredentialMode = "keep" | "replace";
 
+function originOf(value: string | null | undefined) {
+  try {
+    return value ? new URL(value).origin : null;
+  } catch {
+    return null;
+  }
+}
+
 function SetupDialog({ entry, open, onOpenChange, secretStoreAvailable, onSaved }: { entry: CompanyBoxEntry | null; open: boolean; onOpenChange: (open: boolean) => void; secretStoreAvailable: boolean; onSaved: (result: CompanyBoxResult) => void }) {
   const [baseUrl, setBaseUrl] = useState("");
   const [values, setValues] = useState<Partial<Record<CompanyBoxCredentialKey, string>>>({});
   const [modes, setModes] = useState<Partial<Record<CompanyBoxCredentialKey, CredentialMode>>>({});
+  const savedOrigin = originOf(entry?.connection?.baseUrl);
+  const originChanged = Boolean(savedOrigin && originOf(baseUrl.trim()) && originOf(baseUrl.trim()) !== savedOrigin && entry?.credentials.some((field) => field.configured));
   const mutation = useMutation({
     mutationFn: () => {
       const credentials: Partial<Record<CompanyBoxCredentialKey, string>> = {};
       for (const field of entry!.credentials) {
-        const saved = field.configured && modes[field.key] !== "replace";
+        const saved = field.configured && modes[field.key] !== "replace" && !originChanged;
         if (!saved && values[field.key]) credentials[field.key] = values[field.key];
       }
       return setupCompanyBoxEntry(entry!.id, { baseUrl: baseUrl.trim(), ...(Object.keys(credentials).length ? { credentials } : {}) });
@@ -53,9 +63,10 @@ function SetupDialog({ entry, open, onOpenChange, secretStoreAvailable, onSaved 
     mutation.reset();
   }, [open, entry?.id]);
   if (!entry) return null;
+  // Saved credentials never follow the app to a new origin.
   // MCP entries send the credential fields together as one header.
   const together = entry.source === "mcp";
-  const anyReplacing = entry.credentials.some((field) => !field.configured || modes[field.key] === "replace");
+  const anyReplacing = originChanged || entry.credentials.some((field) => !field.configured || modes[field.key] === "replace");
   return <Dialog.Root open={open} onOpenChange={(next) => { if (!mutation.isPending) onOpenChange(next); }}>
     <Dialog.Portal><Dialog.Overlay className="dialog-overlay" /><Dialog.Content className="form-dialog custom-connector-dialog company-box-dialog">
       <header className="modal-header"><div><p className="eyebrow">Company Box</p><Dialog.Title>{entry.installed ? `Edit ${entry.displayName}` : `Set up ${entry.displayName}`}</Dialog.Title><Dialog.Description>Installs once for the workspace with its full API ({coverageLabel(entry)}). You choose which agents can use it in Agent grants.</Dialog.Description></div><Dialog.Close asChild><IconButton aria-label="Close setup dialog"><X size={17} /></IconButton></Dialog.Close></header>
@@ -65,8 +76,9 @@ function SetupDialog({ entry, open, onOpenChange, secretStoreAvailable, onSaved 
         {entry.credentials.length > 0 && <fieldset className="header-rows">
           <legend>Credentials</legend>
           <p className="muted-detail">Encrypted on the server and never shown again.</p>
+          {originChanged && <p className="inline-error" role="status"><AlertTriangle size={14} /><span>New address: enter the credentials again. Saved ones are never sent to a different host.</span></p>}
           {entry.credentials.map((field) => {
-            const saved = field.configured && modes[field.key] !== "replace";
+            const saved = field.configured && modes[field.key] !== "replace" && !originChanged;
             return saved ? <div className="header-row header-row--saved" key={field.key}>
               <span>{field.label}</span>
               <span className="header-row__saved"><KeyRound size={13} />Saved{field.fingerprint ? <> · <code>{field.fingerprint}</code></> : null}</span>
@@ -74,7 +86,7 @@ function SetupDialog({ entry, open, onOpenChange, secretStoreAvailable, onSaved 
             </div> : <div className="header-row" key={field.key}>
               <span>{field.label}</span>
               <input aria-label={field.label} type={field.secret ? "password" : "text"} autoComplete={field.secret ? "new-password" : "off"} value={values[field.key] ?? ""} onChange={(event) => setValues((current) => ({ ...current, [field.key]: event.target.value }))} required placeholder={field.secret ? "Secret value" : field.label} />
-              {field.configured ? <div className="dialog-actions"><Button size="small" type="button" onClick={() => { setModes((current) => together ? {} : { ...current, [field.key]: "keep" }); setValues((current) => together ? {} : { ...current, [field.key]: "" }); }}><Undo2 size={13} />Keep saved</Button></div> : <span />}
+              {field.configured && !originChanged ? <div className="dialog-actions"><Button size="small" type="button" onClick={() => { setModes((current) => together ? {} : { ...current, [field.key]: "keep" }); setValues((current) => together ? {} : { ...current, [field.key]: "" }); }}><Undo2 size={13} />Keep saved</Button></div> : <span />}
             </div>;
           })}
         </fieldset>}
@@ -131,7 +143,36 @@ const APPROVAL_STATE_LABEL: Record<CompanyBoxApproval["state"], string> = {
   expired: "Expired",
 };
 
+const DISPLAY_STRING_CHARS = 300;
+const DISPLAY_ARRAY_ITEMS = 50;
+const DISPLAY_DEPTH = 8;
+
+function Truncated({ children }: { children: string }) {
+  return <em className="args-truncated">{children}</em>;
+}
+
+/** Key-sorted view of the full stored arguments; display truncation is always marked. */
+export function ArgumentsView({ value, depth = 0 }: { value: unknown; depth?: number }) {
+  if (value === null || value === undefined) return <code>null</code>;
+  if (typeof value === "string") {
+    return value.length > DISPLAY_STRING_CHARS
+      ? <span><code>{JSON.stringify(value.slice(0, DISPLAY_STRING_CHARS))}</code> <Truncated>{`truncated for display: ${value.length.toLocaleString()} characters in full`}</Truncated></span>
+      : <code>{JSON.stringify(value)}</code>;
+  }
+  if (typeof value !== "object") return <code>{String(value)}</code>;
+  if (depth >= DISPLAY_DEPTH) return <Truncated>nested value truncated for display</Truncated>;
+  if (Array.isArray(value)) {
+    if (!value.length) return <code>[]</code>;
+    return <ol className="args-view" start={0}>{value.slice(0, DISPLAY_ARRAY_ITEMS).map((item, index) => <li key={index}><ArgumentsView value={item} depth={depth + 1} /></li>)}{value.length > DISPLAY_ARRAY_ITEMS && <li><Truncated>{`${value.length - DISPLAY_ARRAY_ITEMS} more items truncated for display`}</Truncated></li>}</ol>;
+  }
+  const entries = Object.entries(value as Record<string, unknown>).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
+  if (!entries.length) return <code>{"{}"}</code>;
+  return <dl className="args-view">{entries.map(([key, child]) => <div key={key}><dt>{key}</dt><dd><ArgumentsView value={child} depth={depth + 1} /></dd></div>)}</dl>;
+}
+
 function ApprovalRow({ approval, onDecided }: { approval: CompanyBoxApproval; onDecided: (notice: string) => void }) {
+  const pendingRow = approval.state === "pending";
+  const full = useQuery({ queryKey: ["company-box-approval", approval.id], queryFn: () => getCompanyBoxApproval(approval.id), enabled: pendingRow, retry: false });
   const decide = useMutation({
     mutationFn: (decision: "approve" | "deny") => decideCompanyBoxApproval(approval.id, decision),
     onSuccess: (result, decision) =>
@@ -149,11 +190,13 @@ function ApprovalRow({ approval, onDecided }: { approval: CompanyBoxApproval; on
       <strong>{approval.app} · {approval.operation.title}</strong>
       {approval.operation.method && <code>{approval.operation.method} {approval.operation.path}</code>}
       <p>Requested by <strong>{approval.agentId}</strong> {formatWhen(approval.createdAt)}{pending ? ` · expires ${formatWhen(approval.expiresAt)}` : ""}</p>
-      <pre className="company-box-approval__args">{approval.argumentsPreview}</pre>
+      {pendingRow
+        ? <div className="company-box-approval__args" aria-label="Arguments">{full.data ? <ArgumentsView value={full.data.arguments} /> : full.error ? <InlineError error={full.error} /> : <span className="muted-detail">Loading arguments…</span>}</div>
+        : <pre className="company-box-approval__args">{approval.argumentsPreview}</pre>}
       {decide.error && <InlineError error={decide.error} />}
     </div>
     {pending ? <div className="dialog-actions">
-      <Button size="small" tone="primary" disabled={decide.isPending} onClick={() => decide.mutate("approve")}>{decide.isPending && decide.variables === "approve" ? <LoaderCircle className="spin" size={14} /> : <Check size={14} />}Approve</Button>
+      <Button size="small" tone="primary" disabled={decide.isPending || !full.data} title={full.data ? undefined : "Review the arguments first"} onClick={() => decide.mutate("approve")}>{decide.isPending && decide.variables === "approve" ? <LoaderCircle className="spin" size={14} /> : <Check size={14} />}Approve</Button>
       <Button size="small" disabled={decide.isPending} onClick={() => decide.mutate("deny")}><CircleSlash size={14} />Deny</Button>
     </div> : <Tag tone={approval.state === "succeeded" ? "success" : approval.state === "failed" || approval.state === "denied" ? "danger" : "default"}>{APPROVAL_STATE_LABEL[approval.state]}</Tag>}
   </div>;

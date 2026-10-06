@@ -173,6 +173,21 @@ export function registerCompanyBoxRoutes(app: FastifyInstance, deps: CompanyBoxR
     };
   };
 
+  /** Origin the stored credentials were entered for. */
+  const storedOriginFor = (entry: CompiledCompanyBoxEntry, workspaceSlug: string, pluginId: string) => {
+    try {
+      if (entry.kind === "openapi") {
+        const baseUrl = store.getConnection(workspaceSlug, pluginId)?.metadata.baseUrl;
+        return typeof baseUrl === "string" && baseUrl ? new URL(baseUrl).origin : null;
+      }
+      const listing = store.getListingForWorkspace(pluginId, workspaceSlug);
+      const url = listing ? customMcpManifest(listing).url : "";
+      return url ? new URL(url).origin : null;
+    } catch {
+      return null;
+    }
+  };
+
   const usableEntry = (entryId: string, reply: FastifyReply) => {
     const entry = catalog.get(entryId);
     if (!entry) {
@@ -299,17 +314,28 @@ export function registerCompanyBoxRoutes(app: FastifyInstance, deps: CompanyBoxR
     const stored = new Set(
       existingPluginId ? store.listConnectorSecrets({ workspaceSlug, pluginId: existingPluginId }).map((secret) => secret.name) : [],
     );
+    // Stored credentials belong to the origin they were entered for. A new
+    // origin needs every credential again; nothing stored is ever sent to it.
+    const storedOrigin = existingPluginId ? storedOriginFor(entry, workspaceSlug, existingPluginId) : null;
+    const originChanged = storedOrigin !== null && storedOrigin !== origin && stored.size > 0;
     const missing = fields.filter((field) =>
-      entry.kind === "openapi"
-        ? !providedKeys.has(field.key) && !stored.has(field.key)
-        : // mcp: credentials compose one header, so they change together.
-          providedKeys.size > 0
-          ? !providedKeys.has(field.key)
-          : stored.size === 0,
+      originChanged
+        ? !providedKeys.has(field.key)
+        : entry.kind === "openapi"
+          ? !providedKeys.has(field.key) && !stored.has(field.key)
+          : // mcp: credentials compose one header, so they change together.
+            providedKeys.size > 0
+            ? !providedKeys.has(field.key)
+            : stored.size === 0,
     );
     if (missing.length) {
       reply.code(400);
-      return { ok: false, error: "company_box_credentials_required", fields: missing.map((field) => field.key) };
+      return {
+        ok: false,
+        error: "company_box_credentials_required",
+        fields: missing.map((field) => field.key),
+        ...(originChanged ? { reason: "origin_changed" } : {}),
+      };
     }
     if (provided.length && !store.connectorSecretStoreAvailable()) {
       reply.code(503);

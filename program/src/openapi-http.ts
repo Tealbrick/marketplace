@@ -18,6 +18,7 @@
 import { assertMcpUrlAllowed, McpUrlPolicyError, type McpLookup } from "./mcp-url-policy.js";
 import { routeOutbound, tailnetAwareFetch, TailnetUnavailableError } from "./tailnet.js";
 import type { OpenApiOperation, OpenApiParameter } from "./openapi-adapter.js";
+import type { ArgumentValidator } from "./openapi-validate.js";
 import { MARKETPLACE_VERSION } from "./version.js";
 
 export const OPENAPI_CALL_TIMEOUT_MS = 30_000;
@@ -86,6 +87,8 @@ export type OpenApiCallOptions = {
   timeoutMs?: number;
   maxResponseBytes?: number;
   maxBinaryBytes?: number;
+  /** Schema validator for the operation's arguments (run before any request is built). */
+  validateArguments?: ArgumentValidator;
 };
 
 const FORBIDDEN_HEADER_NAMES = new Set([
@@ -154,19 +157,43 @@ export function credentialValues(credentials: OpenApiCredentials, auth: OpenApiA
   return values;
 }
 
-/** Replace every credential value in `text` (and its URL-encoded form). */
+/**
+ * Every form a credential can take in a response: raw, URL-encoded (both
+ * encoders, `+` for spaces), JSON-escaped (with and without `\/`), and
+ * base64 / base64url.
+ */
+export function secretVariants(secret: string) {
+  const json = JSON.stringify(secret).slice(1, -1);
+  const forms = new Set([
+    secret,
+    encodeURIComponent(secret),
+    encodeURI(secret),
+    encodeURIComponent(secret).replace(/%20/gu, "+"),
+    json,
+    json.replace(/\//gu, "\\/"),
+    secret.replace(/\//gu, "\\/"),
+    Buffer.from(secret).toString("base64"),
+    Buffer.from(secret).toString("base64url"),
+    Buffer.from(secret).toString("base64").replace(/=+$/u, ""),
+  ]);
+  // Lower-case hex escapes from some encoders.
+  forms.add(encodeURIComponent(secret).replace(/%[0-9A-F]{2}/gu, (escape) => escape.toLowerCase()));
+  return [...forms].filter((form) => form.length >= 4).sort((left, right) => right.length - left.length);
+}
+
+/** Replace every credential value in `text`, in every encoding it may appear in. */
 export function scrubSecrets(text: string, secrets: readonly string[]) {
   let out = text;
   for (const secret of secrets) {
     if (!secret) continue;
-    for (const form of new Set([secret, encodeURIComponent(secret)])) {
+    for (const form of secretVariants(secret)) {
       out = out.split(form).join("[redacted]");
     }
   }
   return out;
 }
 
-function scrubDeep(value: unknown, secrets: readonly string[]): unknown {
+export function scrubDeep(value: unknown, secrets: readonly string[]): unknown {
   if (typeof value === "string") return scrubSecrets(value, secrets);
   if (Array.isArray(value)) return value.map((item) => scrubDeep(item, secrets));
   const record = recordValue(value);
@@ -196,7 +223,21 @@ function checkUnknown(group: string, supplied: Record<string, unknown>, known: M
   }
 }
 
-function appendQuery(search: URLSearchParams, parameter: OpenApiParameter, value: unknown) {
+/**
+ * Names that can re-target a request on common frameworks (method override)
+ * or smuggle a second API key; refused wherever a caller can set a name.
+ */
+export function reservedParameterName(name: string, auth: OpenApiAuth) {
+  const lower = name.toLowerCase();
+  return (
+    lower === "_method" ||
+    lower.startsWith("x-http-method") ||
+    lower.startsWith("x-method-override") ||
+    (auth.type === "query" && lower === auth.name.toLowerCase())
+  );
+}
+
+function appendQuery(search: URLSearchParams, parameter: OpenApiParameter, value: unknown, auth: OpenApiAuth) {
   const field = `query.${parameter.name}`;
   if (value === undefined || value === null) return;
   if (Array.isArray(value)) {
@@ -207,6 +248,14 @@ function appendQuery(search: URLSearchParams, parameter: OpenApiParameter, value
   }
   const record = recordValue(value);
   if (record) {
+    // Objects explode only for object-typed parameters, and only into keys
+    // the schema declares.
+    const properties = recordValue(parameter.schema.properties);
+    if (parameter.schema.type !== "object" || !properties) argumentError(field, "expected a scalar or array");
+    for (const key of Object.keys(record)) {
+      if (!(key in properties)) argumentError(`${field}.${key}`, "not declared by the operation");
+      if (reservedParameterName(key, auth)) argumentError(`${field}.${key}`, "reserved parameter name");
+    }
     if (parameter.style === "deepObject") {
       for (const [key, child] of Object.entries(record)) {
         search.append(`${parameter.name}[${key}]`, scalarString(child, field));
@@ -290,6 +339,10 @@ export function buildOpenApiRequest(options: Omit<OpenApiCallOptions, "fetchImpl
       argumentError(key, "arguments are grouped as path, query, header and body");
     }
   }
+  if (options.validateArguments) {
+    const validation = options.validateArguments(args);
+    if (!validation.ok) argumentError(validation.field, validation.reason);
+  }
   const pathArgs = groupArgs(args, "path");
   const queryArgs = groupArgs(args, "query");
   const headerArgs = groupArgs(args, "header");
@@ -299,12 +352,28 @@ export function buildOpenApiRequest(options: Omit<OpenApiCallOptions, "fetchImpl
   checkUnknown("path", pathArgs, pathParams);
   checkUnknown("query", queryArgs, queryParams);
   checkUnknown("header", headerArgs, headerParams);
+  for (const [group, supplied] of [["query", queryArgs], ["header", headerArgs], ["path", pathArgs]] as const) {
+    for (const name of Object.keys(supplied)) {
+      if (reservedParameterName(name, auth)) argumentError(`${group}.${name}`, "reserved parameter name");
+    }
+  }
 
   const renderedPath = operation.path.replace(/\{([^}]+)\}/gu, (_match, name: string) => {
     const value = pathArgs[name];
     if (value === undefined || value === null) argumentError(`path.${name}`, "required");
     const text = scalarString(value, `path.${name}`);
-    if (text === "" || text === "." || text === "..") argumentError(`path.${name}`, "not a valid path segment");
+    // No separators (raw or percent-encoded) and no dot segments, even ones
+    // a server would only see after decoding.
+    const decodedDots = text.replace(/%2e/giu, ".");
+    if (
+      text === "" ||
+      /[/\\]/u.test(text) ||
+      /%(2f|5c)/iu.test(text) ||
+      decodedDots === "." ||
+      decodedDots === ".."
+    ) {
+      argumentError(`path.${name}`, "not a valid path segment");
+    }
     return encodeURIComponent(text);
   });
   const prefix = base.pathname.replace(/\/+$/u, "");
@@ -318,7 +387,7 @@ export function buildOpenApiRequest(options: Omit<OpenApiCallOptions, "fetchImpl
     if (parameter.required && (queryArgs[name] === undefined || queryArgs[name] === null)) {
       argumentError(`query.${name}`, "required");
     }
-    appendQuery(url.searchParams, parameter, queryArgs[name]);
+    appendQuery(url.searchParams, parameter, queryArgs[name], auth);
   }
 
   const headers = new Headers();
@@ -355,7 +424,11 @@ export function buildOpenApiRequest(options: Omit<OpenApiCallOptions, "fetchImpl
   } else if (auth.type === "query") {
     const key = credentials.apiKey;
     if (!key) throw new OpenApiCallError("openapi_credentials_missing", "The connector has no API key configured.");
-    if (queryParams.has(auth.name)) argumentError(`query.${auth.name}`, "reserved for the API key");
+    for (const name of queryParams.keys()) {
+      if (name.toLowerCase() === auth.name.toLowerCase() && queryArgs[name] !== undefined) {
+        argumentError(`query.${name}`, "reserved for the API key");
+      }
+    }
     url.searchParams.set(auth.name, key);
   }
 
@@ -373,6 +446,7 @@ export function validateOpenApiArguments(
   operation: OpenApiCallOptions["operation"],
   args: Record<string, unknown>,
   auth: OpenApiAuth,
+  validateArguments?: ArgumentValidator,
 ) {
   buildOpenApiRequest(
     {
@@ -380,6 +454,7 @@ export function validateOpenApiArguments(
       operation,
       args,
       auth,
+      ...(validateArguments ? { validateArguments } : {}),
       credentials: { token: "validation", username: "validation", password: "validation", apiKey: "validation" },
     },
     new URL("https://validation.invalid"),
@@ -482,7 +557,7 @@ export async function callOpenApiOperation(options: OpenApiCallOptions): Promise
   const secrets = credentialValues(options.credentials, options.auth);
   let response: Response;
   try {
-    response = await tailnetAwareFetch(options.env, options.fetchImpl)(request.url, {
+    response = await tailnetAwareFetch(options.env, options.fetchImpl, options.lookup)(request.url, {
       method: request.method,
       headers: request.headers,
       ...(request.body === undefined ? {} : { body: request.body }),
@@ -505,12 +580,20 @@ export async function callOpenApiOperation(options: OpenApiCallOptions): Promise
   if (!response.ok) {
     let body: unknown;
     if (textual(contentType) && bytes.length) {
-      const text = scrubSecrets(bytes.toString("utf8").slice(0, MAX_ERROR_BODY_CHARS), secrets);
+      // Scrub the whole body first (escaped and encoded forms included), then
+      // the parsed values, and only then bound what is returned.
+      const text = scrubSecrets(bytes.toString("utf8"), secrets);
+      let parsed: unknown = text;
       try {
-        body = JSON.parse(text);
+        parsed = scrubDeep(JSON.parse(text), secrets);
       } catch {
-        body = text;
+        parsed = text;
       }
+      const serialized = typeof parsed === "string" ? parsed : JSON.stringify(parsed);
+      body =
+        serialized.length <= MAX_ERROR_BODY_CHARS
+          ? parsed
+          : `${serialized.slice(0, MAX_ERROR_BODY_CHARS - 14)}… [truncated]`;
     }
     const status = response.status;
     throw new OpenApiCallError(

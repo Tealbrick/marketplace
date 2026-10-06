@@ -142,6 +142,9 @@ describe("Company Box approvals panel", () => {
         const approvals = decided ? [{ ...pending, state: "succeeded", decidedBy: "owner" }] : [pending];
         return new Response(JSON.stringify({ ok: true, workspaceSlug: "ws", pendingCount: decided ? 0 : 1, approvals }), { status: 200 });
       }
+      if (url === "/api/marketplace/company-box/approvals/approval_1" && (!init?.method || init.method === "GET")) {
+        return new Response(JSON.stringify({ ok: true, approval: pending, arguments: { path: { id: "n1" }, body: { message: "z".repeat(1_000), email: "a@b.test" } } }), { status: 200 });
+      }
       if (url === "/api/marketplace/company-box/approvals/approval_1/approve" && init?.method === "POST") {
         decided = true;
         return new Response(JSON.stringify({ ok: true, approval: { ...pending, state: "succeeded" } }), { status: 200 });
@@ -152,7 +155,10 @@ describe("Company Box approvals panel", () => {
     render(createElement(QueryClientProvider, { client }, createElement(CompanyBoxSection, { onChanged: () => undefined })));
     expect(await screen.findByText("Notes · Email a note to someone")).toBeTruthy();
     expect(screen.getByText("agent-7")).toBeTruthy();
-    expect(screen.getByText(/a@b\.test/u)).toBeTruthy();
+    expect(await screen.findByText('"a@b.test"')).toBeTruthy();
+    expect(screen.getByText("truncated for display: 1,000 characters in full")).toBeTruthy();
+    // Keys are sorted: body before path, email before message.
+    expect([...document.querySelectorAll(".args-view dt")].map((node) => node.textContent)).toEqual(["body", "email", "message", "path", "id"]);
     expect(screen.getByLabelText("1 waiting")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Approve/u }));
     expect(await screen.findByText("Approved and ran Email a note to someone.")).toBeTruthy();

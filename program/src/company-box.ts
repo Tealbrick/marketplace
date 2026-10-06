@@ -24,7 +24,9 @@ import {
   deriveActionKeys,
 } from "./custom-mcp.js";
 import type { McpRemoteTool } from "./mcp-remote-client.js";
+import { compileArgumentValidator, type ArgumentValidator } from "./openapi-validate.js";
 import {
+  applyMergePatch,
   boundedToolSchema,
   deriveOperationActionKeys,
   operationArgumentGroups,
@@ -134,6 +136,14 @@ export const CompanyBoxEntrySchema = z
         sha256: z.string().regex(SHA256_PATTERN),
         /** Overrides the spec's basePath / server path. "" disables it. */
         basePath: z.string().max(200).optional(),
+        /**
+         * JSON merge patch (RFC 7396) applied to the vendored spec before it is
+         * parsed, so supplements live outside the upstream file. Pinned too.
+         */
+        overlay: z
+          .object({ file: z.string().regex(RELATIVE_FILE_PATTERN), sha256: z.string().regex(SHA256_PATTERN) })
+          .strict()
+          .optional(),
       })
       .strict()
       .optional(),
@@ -240,6 +250,8 @@ export type CompanyBoxOperation = CompanyBoxRisk & {
   argumentGroups: Array<"path" | "query" | "header" | "body">;
   operation: OpenApiOperation;
   inputSchema: JsonSchema;
+  /** Strict schema check run before any request is built. */
+  validateArguments: ArgumentValidator;
   toolSchema: JsonSchema;
   schemaTruncated: boolean;
 };
@@ -251,6 +263,8 @@ export type CompanyBoxCoverageItem = {
   status: "exposed" | "excluded" | "failed";
   key?: string;
   reason?: string;
+  /** Excluded by the engine (not the entry), with an `auto:` reason. */
+  auto?: boolean;
   capability?: ConnectorCapability;
   outward?: boolean;
   destructive?: boolean;
@@ -370,11 +384,37 @@ function compileOpenApi(
 ): CompiledOpenApiEntry {
   const pluginId = companyBoxPluginId(entry.id);
   const pinned = readPinnedFile(dir, entry.openapi!.spec, entry.openapi!.sha256);
-  const document = parseOpenApiDocument(JSON.parse(pinned.bytes.toString("utf8")));
+  let raw: unknown = JSON.parse(pinned.bytes.toString("utf8"));
+  if (entry.openapi!.overlay) {
+    const overlay = readPinnedFile(dir, entry.openapi!.overlay.file, entry.openapi!.overlay.sha256);
+    raw = applyMergePatch(raw, JSON.parse(overlay.bytes.toString("utf8")));
+  }
+  const document = parseOpenApiDocument(raw);
   const errors: string[] = [];
   const warnings: string[] = [];
+  // A declared parameter that carries the entry's own credential is dropped:
+  // Marketplace sets it, callers never do.
+  const authHeader =
+    entry.auth.type === "header" ? entry.auth.name.toLowerCase() : entry.auth.type === "basic" ? "authorization" : null;
+  const authQuery = entry.auth.type === "query" ? entry.auth.name.toLowerCase() : null;
+  let droppedAuthParams = 0;
+  for (const operation of document.operations) {
+    const before = operation.parameters.length;
+    operation.parameters = operation.parameters.filter(
+      (parameter) =>
+        !(
+          (parameter.in === "header" && parameter.name.toLowerCase() === authHeader) ||
+          (parameter.in === "query" && parameter.name.toLowerCase() === authQuery)
+        ),
+    );
+    droppedAuthParams += before - operation.parameters.length;
+  }
+  if (droppedAuthParams) {
+    warnings.push(`${droppedAuthParams} declared credential parameter(s) dropped; Marketplace sets the credential itself.`);
+  }
   const matchedBy = new Map<number, number>();
   const excludedAt = new Map<number, string | undefined>();
+  const autoExcluded = new Set<number>();
   document.operations.forEach((operation, index) => {
     entry.excluded.forEach((exclusion, exclusionIndex) => {
       if (exclusionMatches(exclusion.operation, operation)) {
@@ -387,6 +427,15 @@ function compileOpenApi(
     });
   });
   checkExclusions(entry, matchedBy, errors);
+  // Safe default: a GET/HEAD that declares a request body is never sent
+  // (bodies on GET are dropped or rejected by proxies, so the call would not
+  // do what the spec says). It is reported as an automatic exclusion.
+  document.operations.forEach((operation, index) => {
+    if ((operation.method === "get" || operation.method === "head") && operation.requestBody && !excludedAt.has(index)) {
+      excludedAt.set(index, "auto: GET/HEAD operation with a request body; bodies are not sent on GET");
+      autoExcluded.add(index);
+    }
+  });
   const exposedIndexes = document.operations.map((_operation, index) => index).filter((index) => !excludedAt.has(index));
   const keys = deriveOperationActionKeys(
     pluginId,
@@ -403,6 +452,7 @@ function compileOpenApi(
       path: operation.path,
       status: "excluded",
       ...(reason ? { reason } : {}),
+      ...(autoExcluded.has(index) ? { auto: true } : {}),
     };
   }
   exposedIndexes.forEach((index, position) => {
@@ -412,6 +462,7 @@ function compileOpenApi(
     try {
       const inputSchema = operationInputSchema(operation, document.defs);
       const tool = boundedToolSchema(inputSchema);
+      const validateArguments = compileArgumentValidator(inputSchema);
       const compiled: CompanyBoxOperation = {
         key,
         ref: operation.ref,
@@ -427,6 +478,7 @@ function compileOpenApi(
         argumentGroups: operationArgumentGroups(operation),
         operation,
         inputSchema,
+        validateArguments,
         toolSchema: tool.schema,
         schemaTruncated: tool.truncated,
         ...risk,

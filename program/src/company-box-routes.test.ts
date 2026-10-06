@@ -820,3 +820,80 @@ describe("Company Box catalog groups, reads, schemas and usage evidence", () => 
     expect(small.json().operation).toMatchObject({ schemaSource: "server", inputSchema: { properties: { message: { type: "string" } } } });
   });
 });
+
+describe("Company Box security review fixes", () => {
+  const plugin = "company-box-notes";
+
+  it("never sends stored credentials to a new origin", async () => {
+    const f = await fixture();
+    expect((await f.setup("notes", { baseUrl: f.rest.origin, credentials: { token: SECRET } })).statusCode).toBe(200);
+    // Another allowlisted origin stands in for "a new host".
+    const mcpBefore = f.mcp.requests.length;
+    const moved = await f.setup("notes", { baseUrl: f.mcp.origin });
+    expect(moved.statusCode).toBe(400);
+    expect(moved.json()).toEqual({ ok: false, error: "company_box_credentials_required", fields: ["token"], reason: "origin_changed" });
+    expect(f.mcp.requests.length).toBe(mcpBefore);
+    // Same origin, new path: stored credentials keep working.
+    expect((await f.setup("notes", { baseUrl: `${f.rest.origin}/v2` })).statusCode).toBe(200);
+    expect(f.rest.requests.at(-1)?.headers.authorization).toBe(`Bearer ${SECRET}`);
+
+    // MCP entries: the generic custom connector PATCH obeys the same rule.
+    const setup = await f.setup("tracker", { baseUrl: f.mcp.origin, credentials: { token: SECRET } });
+    const pluginId = setup.json().entry.pluginId as string;
+    const restBefore = f.rest.requests.length;
+    const patched = await f.app.inject({ method: "PATCH", url: `/api/marketplace/connectors/custom/${pluginId}`, headers: f.operator, payload: { url: `${f.rest.origin}/mcp` } });
+    expect(patched.statusCode).toBe(400);
+    expect(patched.json()).toMatchObject({ error: "custom_mcp_secrets_required_for_new_origin", secretHeaders: ["x-api-key"] });
+    const mcpMoved = await f.setup("tracker", { baseUrl: f.rest.origin });
+    expect(mcpMoved.json()).toMatchObject({ error: "company_box_credentials_required", reason: "origin_changed" });
+    expect(f.rest.requests.length).toBe(restBefore);
+  });
+
+  it("serves the full stored arguments to the owner only", async () => {
+    const f = await fixture();
+    await f.setup("notes", { baseUrl: f.rest.origin, credentials: { token: SECRET } });
+    const grantId = await f.grant(plugin, `${plugin}.share-note`);
+    const message = "m".repeat(5_000);
+    const held = await f.inject("POST", `/api/agent/tools/marketplace.${plugin}.share-note`, AGENT, {
+      workspaceSlug: "ws-a",
+      pluginId: plugin,
+      input: { path: { id: "n1" }, body: { email: "a@b.test", message } },
+      grantId,
+    });
+    const approvalId = held.json().approvalId as string;
+    const full = await f.inject("GET", `/api/marketplace/company-box/approvals/${approvalId}`, f.operator);
+    expect(full.json()).toMatchObject({ ok: true, arguments: { path: { id: "n1" }, body: { email: "a@b.test", message } } });
+    expect(full.json().approval.argumentsPreview.length).toBeLessThanOrEqual(400);
+    expect((await f.inject("GET", `/api/marketplace/company-box/approvals/${approvalId}`, SERVICE)).statusCode).toBe(403);
+  });
+
+  it("caps pending approvals per agent and dedupes concurrent holds with one key", async () => {
+    const f = await fixture();
+    await f.setup("notes", { baseUrl: f.rest.origin, credentials: { token: SECRET } });
+    const grantId = await f.grant(plugin, `${plugin}.share-note`);
+    const send = (idempotencyKey?: string) =>
+      f.inject("POST", `/api/agent/tools/marketplace.${plugin}.share-note`, AGENT, {
+        workspaceSlug: "ws-a",
+        pluginId: plugin,
+        input: { path: { id: "n1" }, body: { email: "a@b.test" } },
+        grantId,
+        ...(idempotencyKey ? { idempotencyKey } : {}),
+      });
+    const [one, two] = await Promise.all([send("same-key-0001"), send("same-key-0001")]);
+    expect([one.statusCode, two.statusCode]).toEqual([202, 202]);
+    expect(one.json().approvalId).toBe(two.json().approvalId);
+    for (let index = 1; index < 50; index += 1) expect((await send()).statusCode).toBe(202);
+    const full = await send();
+    expect(full.statusCode).toBe(429);
+    expect(full.json()).toMatchObject({ error: "approval_queue_full" });
+  });
+
+  it("keeps live MCP tools that are not in the pinned snapshot unusable", async () => {
+    const extra = { name: "surprise_tool", description: "Added upstream after pinning." };
+    const f = await fixture({ mcpTools: [...FAKE_MCP_TOOLS, extra] });
+    const setup = await f.setup("tracker", { baseUrl: f.mcp.origin, credentials: { token: SECRET } });
+    const pluginId = setup.json().entry.pluginId as string;
+    expect(f.store.getListing(pluginId)?.actions).not.toContain(`${pluginId}.surprise-tool`);
+    expect(f.store.getConnection("ws-a", pluginId)?.metadata.companyBox).toMatchObject({ notInSnapshot: ["surprise_tool"] });
+  });
+});

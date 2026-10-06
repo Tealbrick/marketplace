@@ -148,7 +148,7 @@ export function errorCopy(error: Error): ErrorCopy {
     case "company_box_base_url_not_allowed":
       return { title: "That app address isn't allowed", detail: "Use the app's https:// address on your tailnet (*.ts.net) or the public internet. Local, private-network and cloud metadata addresses are blocked, and keys don't belong in the address.", reference };
     case "company_box_credentials_required":
-      return { title: "Credentials are missing", detail: "Fill in every credential field the first time you set up this app.", reference };
+      return { title: "Credentials are missing", detail: "Fill in every credential field when you first set up an app or move it to a new address. Saved credentials are never sent to a different host.", reference };
     case "company_box_credential_unknown":
     case "company_box_credential_invalid":
       return { title: "A credential isn't valid", detail: "Paste the value exactly as the app shows it, without line breaks.", reference };
@@ -171,6 +171,10 @@ export function errorCopy(error: Error): ErrorCopy {
       return { title: "The tailnet is unavailable", detail: "Marketplace couldn't join your tailnet, so apps on *.ts.net can't be reached. Check the TS_AUTHKEY on the Marketplace service and its logs.", reference };
     case "owner_approval_required_for_outward":
       return { title: "This sends something outside your workspace", detail: "Outward actions such as sending or publishing need your approval each time. Run it yourself from Marketplace, or connect approvals.", reference };
+    case "approval_queue_full":
+      return { title: "Too many requests are waiting", detail: "This agent already has 50 calls waiting for approval. Approve or deny some first.", reference };
+    case "custom_mcp_secrets_required_for_new_origin":
+      return { title: "Enter the secrets again for the new address", detail: "Saved secrets stay with the server they were entered for. Replace or remove each secret header when you change the server's address.", reference };
     case "approval_not_pending":
       return { title: "This request was already decided", detail: "Someone approved or denied it, or it ran. Refresh to see what happened.", reference };
     case "approval_expired":

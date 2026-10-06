@@ -1316,6 +1316,17 @@ export class SqliteMarketplaceStore {
     return this.getCompanyBoxApproval(id)!;
   }
 
+  countPendingCompanyBoxApprovals(input: { workspaceSlug: string; agentId: string }): number {
+    this.expireCompanyBoxApprovals();
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM company_box_approval
+         WHERE workspace_slug = ? AND agent_id = ? AND state = 'pending'`,
+      )
+      .get(input.workspaceSlug, input.agentId) as { count: number };
+    return Number(row.count);
+  }
+
   /** Pending approvals past their expiry become `expired`. */
   private expireCompanyBoxApprovals() {
     const timestamp = nowIso();

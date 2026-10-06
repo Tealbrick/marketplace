@@ -197,3 +197,7 @@ export const getCompanyBoxApprovals = (state?: CompanyBoxApproval["state"]) =>
 
 export const decideCompanyBoxApproval = (approvalId: string, decision: "approve" | "deny") =>
   api<{ ok: boolean; approval: CompanyBoxApproval }>(`${companyBoxRoute()}/approvals/${encodeURIComponent(approvalId)}/${decision}`, { method: "POST" });
+
+/** Owner-only: the full stored arguments of a held call. */
+export const getCompanyBoxApproval = (approvalId: string) =>
+  api<{ ok: true; approval: CompanyBoxApproval; arguments: Record<string, unknown> }>(`${companyBoxRoute()}/approvals/${encodeURIComponent(approvalId)}`);

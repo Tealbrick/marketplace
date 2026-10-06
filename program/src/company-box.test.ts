@@ -10,6 +10,7 @@ import {
   companyBoxCoverageReport,
   runCompanyBoxCoverageCli,
 } from "./company-box-coverage.js";
+import { policyCheckedLookup } from "./mcp-url-policy.js";
 import { sha256Hex } from "./openapi-adapter.js";
 import { SqliteMarketplaceStore } from "./store.js";
 import { boundedStoredOutput, outputDigest } from "./usage-ledger.js";
@@ -213,5 +214,78 @@ describe("stored output bounds", () => {
     } finally {
       store.close();
     }
+  });
+});
+
+describe("engine requests from the entries pass", () => {
+  it("drops declared credential parameters and keeps undeclared path params as required strings", () => {
+    const root = catalogWith({
+      entry: "notes",
+      spec: (spec) => {
+        const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
+        paths["/folders"]!.get!.parameters = [{ name: "authorization", in: "header", schema: { type: "string" } }];
+        paths["/folders/{folderId}/notes"] = { get: { operationId: "listFolderNotes", responses: { 200: { description: "ok" } } } };
+      },
+    });
+    const notes = loadCompanyBoxCatalog(root).openApiForPluginId("company-box-notes")!;
+    expect(notes.byKey.get("company-box-notes.list-folders")!.operation.parameters).toEqual([]);
+    expect(notes.warnings).toContain("1 declared credential parameter(s) dropped; Marketplace sets the credential itself.");
+    expect(notes.byKey.get("company-box-notes.list-folder-notes")!.operation.parameters).toEqual([
+      { name: "folderId", in: "path", required: true, schema: { type: "string" } },
+    ]);
+  });
+
+  it("auto-excludes GET operations with a request body", () => {
+    const root = catalogWith({
+      entry: "notes",
+      spec: (spec) => {
+        const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
+        paths["/search"] = {
+          get: {
+            operationId: "searchWithBody",
+            requestBody: { content: { "application/json": { schema: { type: "object" } } } },
+            responses: { 200: { description: "ok" } },
+          },
+        };
+      },
+    });
+    const report = companyBoxCoverageReport(root);
+    const notes = report.entries.find((entry) => entry.id === "notes")!;
+    expect(notes).toMatchObject({ ok: true, total: 12, exposed: 10, excluded: 2 });
+    expect(notes.items.find((item) => item.ref === "searchWithBody")).toMatchObject({ status: "excluded", auto: true, reason: expect.stringMatching(/^auto: /u) });
+  });
+
+  it("applies a pinned JSON merge patch overlay before parsing", () => {
+    const root = catalogWith({ entry: "notes" });
+    const overlay = JSON.stringify({ paths: { "/folders": { get: { summary: "Folder tree (overlay)", tags: ["library"] } }, "/admin/reindex": null } });
+    writeFileSync(path.join(root, "notes", "overlay.json"), overlay);
+    const entryPath = path.join(root, "notes", "entry.json");
+    const entry = JSON.parse(readFileSync(entryPath, "utf8"));
+    entry.openapi.overlay = { file: "overlay.json", sha256: sha256Hex(overlay) };
+    entry.excluded = [];
+    writeFileSync(entryPath, JSON.stringify(entry));
+    const notes = loadCompanyBoxCatalog(root).openApiForPluginId("company-box-notes")!;
+    expect(notes.errors).toEqual([]);
+    expect(notes.byKey.get("company-box-notes.list-folders")).toMatchObject({ title: "Folder tree (overlay)", group: "library" });
+    expect(notes.coverage).toHaveLength(10);
+    entry.openapi.overlay.sha256 = "0".repeat(64);
+    writeFileSync(entryPath, JSON.stringify(entry));
+    expect(loadCompanyBoxCatalog(root).loadErrors[0]).toMatchObject({ entry: "notes", message: expect.stringContaining("pinned sha256") });
+  });
+});
+
+describe("DNS pinning", () => {
+  it("re-checks every resolved address at connect time", async () => {
+    const run = (answers: Array<{ address: string; family: number }>, all: boolean) =>
+      new Promise<{ error: unknown; address: unknown }>((resolve) =>
+        policyCheckedLookup(async () => answers)("app.example.com", { all }, (error, address) => resolve({ error, address })),
+      );
+    expect(await run([{ address: "93.184.216.34", family: 4 }], false)).toEqual({ error: null, address: "93.184.216.34" });
+    expect(await run([{ address: "93.184.216.34", family: 4 }], true)).toEqual({ error: null, address: [{ address: "93.184.216.34", family: 4 }] });
+    for (const rebound of ["127.0.0.1", "10.0.0.5", "169.254.169.254", "::1"]) {
+      const result = await run([{ address: "93.184.216.34", family: 4 }, { address: rebound, family: rebound.includes(":") ? 6 : 4 }], true);
+      expect(result.error).toMatchObject({ code: "EADDRNOTAVAIL" });
+    }
+    expect((await run([{ address: "100.88.1.2", family: 4 }], false)).error).toBeNull();
   });
 });

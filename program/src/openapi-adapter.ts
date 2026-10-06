@@ -504,6 +504,14 @@ export function parseOpenApiDocument(raw: unknown): OpenApiDocument {
           };
         }
       }
+      // A `{param}` used in the path template but never declared is still
+      // required to build the URL: treat it as a required string.
+      for (const match of path.matchAll(/\{([^}]+)\}/gu)) {
+        const name = match[1]!;
+        if (!parameters.some((parameter) => parameter.in === "path" && parameter.name === name)) {
+          parameters.push({ name, in: "path", required: true, schema: { type: "string" } });
+        }
+      }
       operations.push({
         ref: operationId ?? operationIdentity(method, path),
         operationId,
@@ -808,4 +816,16 @@ export function encodeDefPointer(name: string) {
 
 export function sha256Hex(value: string | Buffer) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+/** RFC 7396 JSON merge patch (used for pinned entry overlays). */
+export function applyMergePatch(target: unknown, patch: unknown): unknown {
+  if (!patch || typeof patch !== "object" || Array.isArray(patch)) return patch;
+  const base: Record<string, unknown> =
+    target && typeof target === "object" && !Array.isArray(target) ? { ...(target as Record<string, unknown>) } : {};
+  for (const [key, value] of Object.entries(patch as Record<string, unknown>)) {
+    if (value === null) delete base[key];
+    else base[key] = applyMergePatch(base[key], value);
+  }
+  return base;
 }

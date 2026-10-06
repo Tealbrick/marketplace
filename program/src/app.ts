@@ -2135,6 +2135,7 @@ function describeCompanyBoxOperation(
 const COMPANY_BOX_APPROVAL_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const COMPANY_BOX_APPROVAL_MAX_ARGUMENT_BYTES = 32 * 1024;
 const COMPANY_BOX_APPROVAL_PREVIEW_CHARS = 400;
+const COMPANY_BOX_APPROVAL_MAX_PENDING_PER_AGENT = 50;
 
 function approvalFingerprint(actionKey: string, args: Record<string, unknown>) {
   return createHash("sha256").update(stableJson({ actionKey, args })).digest("hex");
@@ -3027,6 +3028,7 @@ export async function buildMarketplaceApp(
       baseUrl: target.baseUrl,
       apiBasePath: target.entry.apiBasePath,
       operation: operation.operation,
+      validateArguments: operation.validateArguments,
       args,
       auth: runtimeAuthFor(target.entry.entry.auth),
       credentials: target.credentials,
@@ -3203,6 +3205,19 @@ export async function buildMarketplaceApp(
           : { status: 409, body: { ok: false, error: "approval_idempotency_conflict" } };
       }
     }
+    if (
+      options.store.countPendingCompanyBoxApprovals({ workspaceSlug: input.workspaceSlug, agentId: input.agentId }) >=
+      COMPANY_BOX_APPROVAL_MAX_PENDING_PER_AGENT
+    ) {
+      return {
+        status: 429,
+        body: {
+          ok: false,
+          error: "approval_queue_full",
+          detail: `This agent already has ${COMPANY_BOX_APPROVAL_MAX_PENDING_PER_AGENT} calls waiting for approval.`,
+        },
+      };
+    }
     if (Buffer.byteLength(JSON.stringify(input.args)) > COMPANY_BOX_APPROVAL_MAX_ARGUMENT_BYTES) {
       return { status: 413, body: { ok: false, error: "approval_arguments_too_large" } };
     }
@@ -3211,7 +3226,7 @@ export async function buildMarketplaceApp(
       const operation = entry.byKey.get(input.actionKey);
       try {
         if (!operation) throw new OpenApiCallError("openapi_argument_invalid", "Unknown operation.");
-        validateOpenApiArguments(operation.operation, input.args, runtimeAuthFor(entry.entry.auth));
+        validateOpenApiArguments(operation.operation, input.args, runtimeAuthFor(entry.entry.auth), operation.validateArguments);
       } catch (error) {
         if (!(error instanceof OpenApiCallError)) throw error;
         return {
@@ -3225,7 +3240,9 @@ export async function buildMarketplaceApp(
         };
       }
     }
-    const approval = options.store.createCompanyBoxApproval({
+    let approval: CompanyBoxApproval;
+    try {
+      approval = options.store.createCompanyBoxApproval({
       workspaceSlug: input.workspaceSlug,
       pluginId: input.listing.pluginId,
       actionKey: input.actionKey,
@@ -3238,7 +3255,21 @@ export async function buildMarketplaceApp(
       arguments: input.args,
       argumentsPreview: approvalPreview(input.args),
       expiresAt: new Date(Date.now() + COMPANY_BOX_APPROVAL_TTL_MS).toISOString(),
-    });
+      });
+    } catch (error) {
+      // A concurrent hold with the same idempotency key won the insert.
+      const existing = input.idempotencyKey
+        ? options.store.findCompanyBoxApprovalByKey({
+            workspaceSlug: input.workspaceSlug,
+            agentId: input.agentId,
+            idempotencyKey: input.idempotencyKey,
+          })
+        : null;
+      if (!existing) throw error;
+      return existing.fingerprint === fingerprint && existing.pluginId === input.listing.pluginId
+        ? approvalReply(existing)
+        : { status: 409, body: { ok: false, error: "approval_idempotency_conflict" } };
+    }
     options.store.recordAudit({
       workspaceSlug: input.workspaceSlug,
       pluginId: input.listing.pluginId,
@@ -4212,6 +4243,18 @@ export async function buildMarketplaceApp(
     } catch (error) {
       return customMcpInputFailure(reply, error);
     }
+    // Secrets stay with the origin they were entered for: moving the server
+    // to another origin requires replacing (or removing) every secret header.
+    if (new URL(manifest.url).origin !== url.origin) {
+      const kept = options.store
+        .listConnectorSecrets({ workspaceSlug, pluginId })
+        .map((secret) => secret.name)
+        .filter((name) => !secretChanges.has(name));
+      if (kept.length) {
+        reply.code(400);
+        return { ok: false, error: "custom_mcp_secrets_required_for_new_origin", secretHeaders: kept };
+      }
+    }
     const writesSecrets = [...secretChanges.values()].some((value) => value !== null);
     if (writesSecrets && !options.store.connectorSecretStoreAvailable()) {
       reply.code(503);
@@ -4368,12 +4411,21 @@ export async function buildMarketplaceApp(
     const at = new Date().toISOString();
     let errorCode: string | null = null;
     let remoteTools: Awaited<ReturnType<typeof listMcpTools>> = [];
+    let liveTools: Awaited<ReturnType<typeof listMcpTools>> = [];
     try {
       // Company Box entries expose the whole toolkit: page through every tool
       // (bounded by the client's page limit) instead of the 200-tool default.
       remoteTools = await listMcpTools(connection, companyBoxMcp ? 10_000 : MCP_MAX_TOOLS);
+      liveTools = remoteTools;
       if (companyBoxMcp) {
-        remoteTools = remoteTools.filter((tool) => !companyBoxMcp.excludedToolNames.has(tool.name));
+        // Only tools in the pinned snapshot are exposed; a tool the server
+        // added since stays unusable (reported as notInSnapshot) until the
+        // entry is re-pinned and reviewed.
+        remoteTools = remoteTools.filter(
+          (tool) =>
+            !companyBoxMcp.excludedToolNames.has(tool.name) &&
+            companyBoxMcp.tools.some((pinned) => pinned.name === tool.name),
+        );
       }
     } catch (error) {
       logCustomMcpFailure({ event: "marketplace.custom_mcp.refresh_failed", pluginId, workspaceSlug, error });
@@ -4447,8 +4499,12 @@ export async function buildMarketplaceApp(
                     .filter((tool) => !remoteTools.some((remote) => remote.name === tool.name))
                     .map((tool) => tool.name)
                     .slice(0, 50),
-                  notInSnapshot: remoteTools
-                    .filter((remote) => !companyBoxMcp.tools.some((tool) => tool.name === remote.name))
+                  notInSnapshot: liveTools
+                    .filter(
+                      (remote) =>
+                        !companyBoxMcp.tools.some((tool) => tool.name === remote.name) &&
+                        !companyBoxMcp.excludedToolNames.has(remote.name),
+                    )
                     .map((remote) => remote.name)
                     .slice(0, 50),
                 },
@@ -4617,6 +4673,13 @@ export async function buildMarketplaceApp(
         .listCompanyBoxApprovals({ workspaceSlug, state: query.state, limit: query.limit })
         .map(ownerApprovalView),
     };
+  });
+
+  /** Owner-only: the full stored arguments (≤ 32 KB) for review before approving. */
+  app.get("/api/marketplace/company-box/approvals/:approvalId", async (request, reply) => {
+    const owned = ownedApproval(request, reply);
+    if ("response" in owned) return owned.response;
+    return { ok: true, approval: ownerApprovalView(owned.approval), arguments: owned.approval.arguments };
   });
 
   app.post("/api/marketplace/company-box/approvals/:approvalId/approve", async (request, reply) => {
@@ -7099,7 +7162,7 @@ export async function buildMarketplaceApp(
         const { type: _type, ...args } = scopedAction.action;
         try {
           if (!operation) throw new OpenApiCallError("openapi_argument_invalid", "Unknown operation.");
-          validateOpenApiArguments(operation.operation, args, runtimeAuthFor(target.entry.entry.auth));
+          validateOpenApiArguments(operation.operation, args, runtimeAuthFor(target.entry.entry.auth), operation.validateArguments);
         } catch (error) {
           if (!(error instanceof OpenApiCallError)) throw error;
           reply.code(400);

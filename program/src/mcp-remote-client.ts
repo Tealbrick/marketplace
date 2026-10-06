@@ -588,7 +588,7 @@ export class McpRemoteClient {
       throw error;
     }
     // Tailnet hosts go through the tailnet proxy when one is configured.
-    const fetchImpl = tailnetAwareFetch(options.env, options.fetchImpl);
+    const fetchImpl = tailnetAwareFetch(options.env, options.fetchImpl, options.lookup);
     const maxBytes = options.maxBodyBytes ?? MCP_MAX_BODY_BYTES;
     const connectMs = options.timeouts?.connectMs ?? MCP_CONNECT_TIMEOUT_MS;
     let session: McpTransportSession;
