@@ -45,6 +45,21 @@ export function governanceModeFor(input: {
 export const OWNER_APPROVAL_REQUIRES_PORTAL_CONSENT =
   "owner_approval_requires_portal_consent" as const;
 
+export const OWNER_APPROVAL_REQUIRED_FOR_OUTWARD =
+  "owner_approval_required_for_outward" as const;
+
+/**
+ * What a governed execute would do, declared by the connector (Company Box
+ * entries flag writes, destructive and outward operations). Sent to Rules in
+ * the payload as `risk`; owner mode uses `outward` to require the owner.
+ */
+export type GovernedActionRisk = {
+  write: boolean;
+  /** Reaches people or systems outside the workspace (send, publish, email). */
+  outward: boolean;
+  destructive: boolean;
+};
+
 export type OwnerGovernedDecision =
   | {
       effect: "allow";
@@ -54,7 +69,9 @@ export type OwnerGovernedDecision =
     }
   | {
       effect: "deny";
-      error: typeof OWNER_APPROVAL_REQUIRES_PORTAL_CONSENT;
+      error:
+        | typeof OWNER_APPROVAL_REQUIRES_PORTAL_CONSENT
+        | typeof OWNER_APPROVAL_REQUIRED_FOR_OUTWARD;
       reason: string;
     };
 
@@ -69,14 +86,27 @@ export type OwnerGovernedDecision =
  *   because the bearer is owner-provisioned infrastructure. Anything that
  *   executes, dispatches or delegates connector actions is denied.
  * - No authenticated actor: denied.
+ * - Outward execute (`risk.outward`): only the owner's operator session may
+ *   run it. Portal consent covers routine reads and writes, not sending or
+ *   publishing on the owner's behalf; that needs the owner each time, or a
+ *   Rules service whose approvals queue reviews it.
  */
 export function ownerGovernedDecision(input: {
   operation: string;
   capability: ConnectorCapability;
   pluginId: string;
   actor: GovernanceActor | null;
+  risk?: GovernedActionRisk;
 }): OwnerGovernedDecision {
   const { actor, operation, pluginId } = input;
+  if (input.risk?.outward && operation === "execute" && actor?.kind !== "operator") {
+    return {
+      effect: "deny",
+      error: OWNER_APPROVAL_REQUIRED_FOR_OUTWARD,
+      reason:
+        "Outward actions (sending, publishing) need the owner's approval: run it from Marketplace, or connect Rules approvals.",
+    };
+  }
   if (actor?.kind === "operator") {
     return {
       effect: "allow",

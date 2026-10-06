@@ -8,6 +8,7 @@ import { buildMarketplaceApp, type BuildMarketplaceAppOptions } from "./app.js";
 import {
   governanceModeFor,
   ownerGovernedDecision,
+  OWNER_APPROVAL_REQUIRED_FOR_OUTWARD,
   OWNER_APPROVAL_REQUIRES_PORTAL_CONSENT,
 } from "./governance.js";
 import {
@@ -168,6 +169,36 @@ describe("governance mode selection", () => {
       ownerGovernedDecision({ ...base, operation: "broker.grant", capability: "connector.observe", actor: { kind: "service", id: "svc" } }),
     ).toMatchObject({ effect: "deny" });
     expect(ownerGovernedDecision({ ...base, actor: null })).toMatchObject({ effect: "deny" });
+  });
+
+  it("requires the owner's own session for outward executes", () => {
+    const base = { operation: "execute", capability: "connector.dispatch" as const, pluginId: "p" };
+    const outward = { write: true, outward: true, destructive: false };
+    for (const attestation of ["agent-grant", "portal-consent", "runtime-lease", "portal-scope"] as const) {
+      expect(
+        ownerGovernedDecision({ ...base, risk: outward, actor: { kind: "agent", id: "agent:a", attestation } }),
+      ).toMatchObject({ effect: "deny", error: OWNER_APPROVAL_REQUIRED_FOR_OUTWARD });
+    }
+    expect(ownerGovernedDecision({ ...base, risk: outward, actor: { kind: "service", id: "svc" } })).toMatchObject({
+      effect: "deny",
+      error: OWNER_APPROVAL_REQUIRED_FOR_OUTWARD,
+    });
+    expect(ownerGovernedDecision({ ...base, risk: outward, actor: { kind: "operator", id: "owner" } })).toMatchObject({
+      effect: "allow",
+      basis: "operator",
+    });
+    // Plain writes and destructive ops follow grants; only outward needs the owner.
+    expect(
+      ownerGovernedDecision({
+        ...base,
+        risk: { write: true, outward: false, destructive: true },
+        actor: { kind: "agent", id: "agent:a", attestation: "agent-grant" },
+      }),
+    ).toMatchObject({ effect: "allow", basis: "portal-consent" });
+    // Grant creation for an outward operation is not itself outward.
+    expect(
+      ownerGovernedDecision({ ...base, operation: "grant", risk: outward, actor: { kind: "agent", id: "agent:a", attestation: "portal-scope" } }),
+    ).toMatchObject({ effect: "allow" });
   });
 });
 

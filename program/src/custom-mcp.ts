@@ -221,7 +221,7 @@ export type CustomMcpManifest = {
   tools: CustomMcpToolRecord[];
   lastRefresh: CustomMcpLastRefresh | null;
   /** Set when the connector was installed from a Company Box `mcp` entry. */
-  companyBox?: { entryId: string };
+  companyBox?: { entryId: string; baseUrl?: string };
 };
 
 function recordValue(value: unknown): Record<string, unknown> | null {
@@ -285,7 +285,12 @@ export function customMcpManifest(listing: MarketplaceListing): CustomMcpManifes
         }
       : null,
     ...(typeof companyBox?.entryId === "string"
-      ? { companyBox: { entryId: companyBox.entryId } }
+      ? {
+          companyBox: {
+            entryId: companyBox.entryId,
+            ...(typeof companyBox.baseUrl === "string" ? { baseUrl: companyBox.baseUrl } : {}),
+          },
+        }
       : {}),
   };
 }

@@ -362,6 +362,28 @@ export function buildOpenApiRequest(options: Omit<OpenApiCallOptions, "fetchImpl
   return { url, method: operation.method.toUpperCase(), headers, body };
 }
 
+/**
+ * Check arguments against the operation without contacting the app (throws
+ * OpenApiCallError `openapi_argument_invalid`). Used before reserving
+ * idempotent runtime operations.
+ */
+export function validateOpenApiArguments(
+  operation: OpenApiCallOptions["operation"],
+  args: Record<string, unknown>,
+  auth: OpenApiAuth,
+) {
+  buildOpenApiRequest(
+    {
+      baseUrl: "https://validation.invalid",
+      operation,
+      args,
+      auth,
+      credentials: { token: "validation", username: "validation", password: "validation", apiKey: "validation" },
+    },
+    new URL("https://validation.invalid"),
+  );
+}
+
 function isAbort(error: unknown) {
   return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
 }

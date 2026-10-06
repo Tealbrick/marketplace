@@ -1221,6 +1221,17 @@ export class SqliteMarketplaceStore {
     return row ? installFromRow(row) : null;
   }
 
+  /** Every workspace's install row for one plugin (global listings). */
+  listInstallsForPlugin(pluginId: string): WorkspacePluginInstall[] {
+    return (
+      this.db
+        .prepare(
+          "SELECT * FROM workspace_plugin_install WHERE plugin_id = ? ORDER BY workspace_slug ASC",
+        )
+        .all(pluginId) as Record<string, unknown>[]
+    ).map(installFromRow);
+  }
+
   requireInstall(
     workspaceSlug: string,
     pluginId: string,
