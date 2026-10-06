@@ -17,4 +17,12 @@
 - Reads (3): the contact, conversation and contact inbox `filter` POSTs. The Captain `tasks` POSTs (LLM calls that spend credits) are not reads.
 - Auth: `api_access_token: <token>`. A user token (Profile settings > Access Token) covers `/api/v1` and `/api/v2` with that user's role; `/platform/api` needs a Platform App token (Super Admin > Platform Apps) and the public client API needs none. The three swagger security schemes all use this one header, so install the token you need.
 - Health: `GET /api/v1/profile` (`fetchProfile`), which verifies the user token.
-- Reproduction: the route expander, controller check and overlay generator were scratch scripts (Ruby mock mapper, Python for the checks); the overlay file itself is the reviewed artefact.
+
+## Reproducing
+
+`tools/` holds everything that produces `overlay.json`, with relative paths only (needs bash, ruby, python3, shasum; no network except `--fetch`):
+
+- `tools/inputs/routes.rb`: `config/routes.rb` at tag `v4.18.0`; `tools/inputs/controllers/**`: the 119 controller and concern sources at that tag that a route can resolve to (`app/controllers`, `enterprise/app/controllers`, `enterprise/app/controllers/enterprise`, singular-name variants and the inbox concerns). A candidate path with no file there does not exist upstream. `tools/inputs/SHA256SUMS` pins all of it and `build.sh` refuses to run if anything changed. The swagger input is the vendored `openapi.json`, pinned in `entry.json`.
+- `tools/expand-routes.rb`: the mock Rails mapper that expands `routes.rb` into flat routes (enterprise conditionals off).
+- `tools/gen-overlay.py`: compares the routes with the swagger, keeps a route only when its controller defines the action, applies the skip rules above and writes the overlay deterministically (same inputs, same bytes).
+- `tools/build.sh` rewrites `overlay.json` and prints its sha256 to pin in `entry.json`; `tools/build.sh --check` rebuilds into a temp dir and fails unless `overlay.json` is byte-identical and pinned; `--stats` prints the reconciliation counts; `--fetch` re-downloads `inputs/` from the tag (network) and refreshes `SHA256SUMS`. To bump Chatwoot: change `tag` in `build.sh`, replace the vendored swagger, run `tools/build.sh --fetch`, update the pins, then `pnpm run company-box:coverage`.

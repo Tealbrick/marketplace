@@ -3270,7 +3270,7 @@ export async function buildMarketplaceApp(
       fingerprint,
       arguments: input.args,
       argumentsPreview: approvalPreview(input.args),
-      expiresAt: new Date(Date.now() + COMPANY_BOX_APPROVAL_TTL_MS).toISOString(),
+      ttlMs: COMPANY_BOX_APPROVAL_TTL_MS,
       });
     } catch (error) {
       // A concurrent hold with the same idempotency key won the insert.

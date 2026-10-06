@@ -204,7 +204,7 @@ describe("stored output bounds", () => {
         fingerprint: "f",
         arguments: { path: { id: "1" } },
         argumentsPreview: "{}",
-        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        ttlMs: 60_000,
       });
       expect(store.decideCompanyBoxApproval({ id: approval.id, workspaceSlug: "other", decision: "approve", decidedBy: "x" })).toBeNull();
       expect(store.decideCompanyBoxApproval({ id: approval.id, workspaceSlug: "ws", decision: "approve", decidedBy: "owner" })?.state).toBe("executing");
