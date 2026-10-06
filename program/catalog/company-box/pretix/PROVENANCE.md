@@ -1,0 +1,12 @@
+# Pretix provenance
+
+- App: pretix 2026.8.0, verified on the deployed container with `pip show pretix` (image `pretix/standalone`, rolling tag, no third-party plugins). Captured 2026-10-06.
+- Upstream: `pretix/pretix` tag `v2026.8.0`, commit `f7863c9feea1d366acb6e215aee2425582f56656`.
+- Pretix publishes no OpenAPI. Vendored `openapi.json` is the generated spec from the Company Box research (`specs-full/pretix-2026.8.0-deployed.openapi.json`, generators `dump_pretix_routes.py` and `gen_pretix.py`), sha256 `3e7071d2dd213c86da7af33a8f5363946d1c62a9df52f5aba202031553eb8af1`. It is built from `doc/api/resources/*.rst` and cross-checked against the routes Django registers at the tag.
+- Operations: complete spec 416; this deployed variant 370 (GET 148, POST 102, PUT 40, PATCH 41, DELETE 39), which drops 46 documented hosted/plugin-only operations that are not routed on the deployed core build and would 404. Exposed 370, excluded 0.
+- Schemas are inferred from the docs and examples, not from the serializers; create/update bodies are open (`additionalProperties`). Per-operation team permissions are recorded in `x-pretix-permission`.
+- Outward from `x-outward` (51): order mails and state changes, payments and refunds, invoices, send voucher, sendmail rules, webhooks, team and token changes, check-in redeem, go-live and clone. Destructive beyond DELETE from `x-destructive` (16); all 39 DELETEs are destructive by method.
+- Exposure: 370 operations is above the 64-operation limit, so `auto` selects discovery (search, describe, call per connector).
+- Auth: `Authorization: Token <team-api-token>` (Organizer > Teams > API token). Use one team per connector with only the needed permissions.
+- Base URL at install: Pretix rejects the tailnet hostname with HTTP 400, so use the instance's configured public site hostname (`https://tickets.<public-domain>`). The spec paths already carry `/api/v1` (`basePath` is empty). The instance runs on the `neuu` node (tailscale serve port 8521).
+- Health: `GET /api/v1/version`.

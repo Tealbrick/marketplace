@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "id": "postiz",
+  "displayName": "Postiz",
+  "description": "Self-hosted social media scheduler: channels, posts, media, analytics and notifications through the public API. Publishing, scheduling, media uploads and deletes act on live social accounts and are held for approval.",
+  "category": "Social",
+  "app": {
+    "version": "2.24.x (inferred)",
+    "homepage": "https://postiz.com",
+    "license": "AGPL-3.0"
+  },
+  "source": "openapi",
+  "openapi": {
+    "spec": "openapi.json",
+    "basePath": "/api",
+    "sha256": "55be5cc2905bc7e15f5633a35cb0ff016b087afdce7e6ea449bcf7a40cd6d233"
+  },
+  "auth": {
+    "type": "header",
+    "name": "Authorization",
+    "label": "Public API key"
+  },
+  "baseUrlExample": "https://fedora-n150.your-tailnet.ts.net:8476",
+  "healthOperation": "PublicIntegrationsController_getActiveIntegrations",
+  "outward": [
+    "PublicIntegrationsController_createPost",
+    "PublicIntegrationsController_deletePost",
+    "PublicIntegrationsController_deletePostByGroup",
+    "PublicIntegrationsController_updatePostSettings",
+    "PublicIntegrationsController_changePostStatus",
+    "PublicIntegrationsController_updateReleaseId",
+    "PublicIntegrationsController_deleteChannel",
+    "PublicIntegrationsController_triggerIntegrationTool",
+    "PublicIntegrationsController_uploadSimple",
+    "PublicIntegrationsController_uploadsFromUrl",
+    "PublicIntegrationsController_generateVideo",
+    "PublicIntegrationsController_videoFunction",
+    "PublicIntegrationsController_startClipping"
+  ],
+  "destructive": [],
+  "exposure": "auto",
+  "excluded": []
+}
