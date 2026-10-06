@@ -227,6 +227,27 @@ custom MCP executions also record the full output's byte length and sha256
 (`metadata.output`). Stored approval results are capped at 64 KB, keeping the
 size and sha256 of anything larger.
 
+## File uploads
+
+In `multipart/form-data` bodies, every part declared as binary
+(`format: binary`, a Swagger `file` form field, or OAS 3.1
+`contentMediaType` / `contentEncoding`), and arrays of them, takes a file
+object; so does an `application/octet-stream` (or `image/*`, `video/*`,
+`audio/*`) body:
+
+```json
+{ "base64": "<base64 content>", "filename": "logo.png", "contentType": "image/png" }
+```
+
+Tool and `describe` schemas show this shape (marked `x-file-upload`), and
+arguments are validated against it. Content must be strict base64; decoded
+uploads are capped per call at 25 MB (`MARKETPLACE_COMPANY_BOX_MAX_UPLOAD_BYTES`,
+error `openapi_upload_too_large`), and the execute routes accept request
+bodies sized for that cap. Outward calls held for approval store their
+arguments in full, so an outward upload over 32 KB is refused with
+`approval_args_too_large`. Upload media through a non-outward operation first
+(for example a media upload), then publish by reference.
+
 ## Request safety
 
 - Arguments are validated against the operation's full input schema (Ajv,

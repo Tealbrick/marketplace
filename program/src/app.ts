@@ -73,6 +73,7 @@ import {
 import {
   callOpenApiOperation,
   OpenApiCallError,
+  companyBoxMaxUploadBytes,
   validateOpenApiArguments,
 } from "./openapi-http.js";
 import { registerCompanyBoxRoutes } from "./company-box-routes.js";
@@ -2998,6 +2999,9 @@ export async function buildMarketplaceApp(
     return { ok: true, traceId: input.traceId, result, usage, rules: input.rules };
   };
   const companyBoxFetch = options.companyBoxFetch ?? options.mcpFetch;
+  const maxUploadBytes = companyBoxMaxUploadBytes(environment);
+  // Execute routes carry base64 uploads: decoded cap × 4/3 plus room for JSON.
+  const uploadBodyLimit = Math.max(1024 * 1024, Math.ceil((maxUploadBytes * 4) / 3) + 256 * 1024);
   /**
    * Base URL (connection metadata) and decrypted credentials for a Company
    * Box REST connector. Throws ConnectorSecretStoreUnavailableError.
@@ -3029,6 +3033,7 @@ export async function buildMarketplaceApp(
       apiBasePath: target.entry.apiBasePath,
       operation: operation.operation,
       validateArguments: operation.validateArguments,
+      maxUploadBytes,
       args,
       auth: runtimeAuthFor(target.entry.entry.auth),
       credentials: target.credentials,
@@ -3040,6 +3045,8 @@ export async function buildMarketplaceApp(
   const companyBoxFailureStatus = (error: OpenApiCallError) =>
     error.code === "openapi_argument_invalid" || error.code === "openapi_base_url_not_allowed"
       ? 400
+      : error.code === "openapi_upload_too_large"
+        ? 413
       : error.code === "openapi_credentials_missing"
         ? 409
         : error.code === "tailnet_unavailable"
@@ -3219,14 +3226,23 @@ export async function buildMarketplaceApp(
       };
     }
     if (Buffer.byteLength(JSON.stringify(input.args)) > COMPANY_BOX_APPROVAL_MAX_ARGUMENT_BYTES) {
-      return { status: 413, body: { ok: false, error: "approval_arguments_too_large" } };
+      // Held calls keep their arguments verbatim for the owner; nothing is
+      // truncated, so uploads that do not fit are refused outright.
+      return {
+        status: 413,
+        body: {
+          ok: false,
+          error: "approval_args_too_large",
+          detail: `Outward calls wait for approval with their arguments stored in full, up to ${COMPANY_BOX_APPROVAL_MAX_ARGUMENT_BYTES} bytes. Send a smaller file, or upload it with a non-outward operation first and reference it.`,
+        },
+      };
     }
     const entry = companyBoxEntryForListing(companyBox, input.listing, input.workspaceSlug);
     if (entry?.kind === "openapi") {
       const operation = entry.byKey.get(input.actionKey);
       try {
         if (!operation) throw new OpenApiCallError("openapi_argument_invalid", "Unknown operation.");
-        validateOpenApiArguments(operation.operation, input.args, runtimeAuthFor(entry.entry.auth), operation.validateArguments);
+        validateOpenApiArguments(operation.operation, input.args, runtimeAuthFor(entry.entry.auth), operation.validateArguments, maxUploadBytes);
       } catch (error) {
         if (!(error instanceof OpenApiCallError)) throw error;
         return {
@@ -6495,6 +6511,7 @@ export async function buildMarketplaceApp(
 
   app.post(
     "/api/marketplace/plugins/:pluginId/execute",
+    { bodyLimit: uploadBodyLimit },
     async (request, reply) => {
       const { pluginId } = request.params as { pluginId: string };
       const input = ExecuteInputSchema.parse(request.body);
@@ -7162,7 +7179,7 @@ export async function buildMarketplaceApp(
         const { type: _type, ...args } = scopedAction.action;
         try {
           if (!operation) throw new OpenApiCallError("openapi_argument_invalid", "Unknown operation.");
-          validateOpenApiArguments(operation.operation, args, runtimeAuthFor(target.entry.entry.auth), operation.validateArguments);
+          validateOpenApiArguments(operation.operation, args, runtimeAuthFor(target.entry.entry.auth), operation.validateArguments, maxUploadBytes);
         } catch (error) {
           if (!(error instanceof OpenApiCallError)) throw error;
           reply.code(400);
@@ -7571,7 +7588,7 @@ export async function buildMarketplaceApp(
     };
   });
 
-  app.post("/api/agent/tools/:toolName", async (request, reply) => {
+  app.post("/api/agent/tools/:toolName", { bodyLimit: uploadBodyLimit }, async (request, reply) => {
     const { toolName } = request.params as { toolName: string };
     const body = z
       .object({

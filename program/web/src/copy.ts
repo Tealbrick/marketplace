@@ -171,6 +171,10 @@ export function errorCopy(error: Error): ErrorCopy {
       return { title: "The tailnet is unavailable", detail: "Marketplace couldn't join your tailnet, so apps on *.ts.net can't be reached. Check the TS_AUTHKEY on the Marketplace service and its logs.", reference };
     case "owner_approval_required_for_outward":
       return { title: "This sends something outside your workspace", detail: "Outward actions such as sending or publishing need your approval each time. Run it yourself from Marketplace, or connect approvals.", reference };
+    case "approval_args_too_large":
+      return { title: "Too large to hold for approval", detail: "Outward calls are stored in full while they wait for you, up to 32 KB. Send a smaller file, or upload it with a non-outward operation first.", reference };
+    case "openapi_upload_too_large":
+      return { title: "The file is too large", detail: "Uploads are limited per call (25 MB by default).", reference };
     case "approval_queue_full":
       return { title: "Too many requests are waiting", detail: "This agent already has 50 calls waiting for approval. Approve or deny some first.", reference };
     case "custom_mcp_secrets_required_for_new_origin":

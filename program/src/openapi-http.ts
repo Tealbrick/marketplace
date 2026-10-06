@@ -24,6 +24,13 @@ import { MARKETPLACE_VERSION } from "./version.js";
 export const OPENAPI_CALL_TIMEOUT_MS = 30_000;
 export const OPENAPI_MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 export const OPENAPI_MAX_BINARY_BYTES = 512 * 1024;
+/** Decoded upload cap per request (sum of all files); MARKETPLACE_COMPANY_BOX_MAX_UPLOAD_BYTES overrides. */
+export const OPENAPI_DEFAULT_MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+
+export function companyBoxMaxUploadBytes(env: Record<string, string | undefined> = process.env) {
+  const value = Number(env.MARKETPLACE_COMPANY_BOX_MAX_UPLOAD_BYTES);
+  return Number.isInteger(value) && value > 0 ? value : OPENAPI_DEFAULT_MAX_UPLOAD_BYTES;
+}
 const MAX_ERROR_BODY_CHARS = 4_096;
 
 export type OpenApiAuth =
@@ -44,6 +51,7 @@ export type OpenApiErrorCode =
   | "openapi_auth_rejected"
   | "openapi_http_error"
   | "openapi_response_too_large"
+  | "openapi_upload_too_large"
   | "tailnet_unavailable";
 
 export class OpenApiCallError extends Error {
@@ -89,6 +97,8 @@ export type OpenApiCallOptions = {
   maxBinaryBytes?: number;
   /** Schema validator for the operation's arguments (run before any request is built). */
   validateArguments?: ArgumentValidator;
+  /** Decoded upload cap for this request (default 25 MB). */
+  maxUploadBytes?: number;
 };
 
 const FORBIDDEN_HEADER_NAMES = new Set([
@@ -275,10 +285,45 @@ function appendQuery(search: URLSearchParams, parameter: OpenApiParameter, value
   search.append(parameter.name, scalarString(value, field));
 }
 
+type FileArgument = { base64: string; filename?: unknown; contentType?: unknown };
+
+function fileArgument(value: unknown): FileArgument | null {
+  const record = recordValue(value);
+  return record && typeof record.base64 === "string" ? (record as FileArgument) : null;
+}
+
+/** Decode one file, enforcing strict base64 and the running upload budget. */
+function decodeFile(file: FileArgument, field: string, budget: { remaining: number; max: number }) {
+  const text = file.base64.replace(/\s+/gu, "");
+  if (!/^[A-Za-z0-9+/_-]*={0,2}$/u.test(text) || text.length % 4 === 1) {
+    argumentError(`${field}.base64`, "not valid base64");
+  }
+  // Check the size from the encoded length before allocating.
+  const estimated = Math.floor((text.length * 3) / 4);
+  if (estimated - 2 > budget.remaining) {
+    throw new OpenApiCallError(
+      "openapi_upload_too_large",
+      `Uploads are limited to ${budget.max} bytes per call.`,
+      { field, reason: `limit ${budget.max} bytes` },
+    );
+  }
+  const bytes = new Uint8Array(Buffer.from(text, text.includes("-") || text.includes("_") ? "base64url" : "base64"));
+  if (bytes.byteLength > budget.remaining) {
+    throw new OpenApiCallError("openapi_upload_too_large", `Uploads are limited to ${budget.max} bytes per call.`, {
+      field,
+      reason: `limit ${budget.max} bytes`,
+    });
+  }
+  budget.remaining -= bytes.byteLength;
+  return bytes;
+}
+
 function buildBody(
   operation: OpenApiCallOptions["operation"],
   value: unknown,
+  maxUploadBytes = OPENAPI_DEFAULT_MAX_UPLOAD_BYTES,
 ): { body?: string | Uint8Array<ArrayBuffer> | FormData; contentType?: string } {
+  const budget = { remaining: maxUploadBytes, max: maxUploadBytes };
   const requestBody = operation.requestBody;
   if (value === undefined) {
     if (requestBody?.required) argumentError("body", "required");
@@ -302,19 +347,27 @@ function buildBody(
   if (base === "multipart/form-data") {
     const record = recordValue(value) ?? argumentError("body", "expected an object");
     const form = new FormData();
-    for (const [key, child] of Object.entries(record)) {
-      const file = recordValue(child);
-      if (file && typeof file.base64 === "string") {
-        const bytes = new Uint8Array(Buffer.from(file.base64, "base64"));
+    const appendPart = (key: string, child: unknown, field: string) => {
+      const file = fileArgument(child);
+      if (file) {
+        const bytes = decodeFile(file, field, budget);
         form.append(
           key,
           new Blob([bytes], {
-            type: typeof file.contentType === "string" ? file.contentType : "application/octet-stream",
+            type: typeof file.contentType === "string" && file.contentType ? file.contentType : "application/octet-stream",
           }),
-          typeof file.filename === "string" ? file.filename : key,
+          typeof file.filename === "string" && file.filename ? file.filename : key,
         );
       } else if (child !== undefined && child !== null) {
-        form.append(key, typeof child === "object" ? JSON.stringify(child) : scalarString(child, `body.${key}`));
+        form.append(key, typeof child === "object" ? JSON.stringify(child) : scalarString(child, field));
+      }
+    };
+    for (const [key, child] of Object.entries(record)) {
+      // Arrays of files (or scalars) repeat the part name.
+      if (Array.isArray(child) && child.some((item) => fileArgument(item))) {
+        child.forEach((item, index) => appendPart(key, item, `body.${key}.${index}`));
+      } else {
+        appendPart(key, child, `body.${key}`);
       }
     }
     // fetch sets the multipart boundary itself.
@@ -323,9 +376,9 @@ function buildBody(
   if (base.startsWith("text/") || base === "application/xml") {
     return { body: scalarString(value, "body"), contentType };
   }
-  const file = recordValue(value);
-  if (file && typeof file.base64 === "string") {
-    return { body: new Uint8Array(Buffer.from(file.base64, "base64")), contentType };
+  const file = fileArgument(value);
+  if (file) {
+    return { body: decodeFile(file, "body", budget), contentType };
   }
   if (typeof value === "string") return { body: value, contentType };
   return { body: JSON.stringify(value), contentType };
@@ -432,7 +485,7 @@ export function buildOpenApiRequest(options: Omit<OpenApiCallOptions, "fetchImpl
     url.searchParams.set(auth.name, key);
   }
 
-  const { body, contentType } = buildBody(operation, args.body);
+  const { body, contentType } = buildBody(operation, args.body, options.maxUploadBytes);
   if (contentType) headers.set("content-type", contentType);
   return { url, method: operation.method.toUpperCase(), headers, body };
 }
@@ -447,6 +500,7 @@ export function validateOpenApiArguments(
   args: Record<string, unknown>,
   auth: OpenApiAuth,
   validateArguments?: ArgumentValidator,
+  maxUploadBytes?: number,
 ) {
   buildOpenApiRequest(
     {
@@ -455,6 +509,7 @@ export function validateOpenApiArguments(
       args,
       auth,
       ...(validateArguments ? { validateArguments } : {}),
+      ...(maxUploadBytes ? { maxUploadBytes } : {}),
       credentials: { token: "validation", username: "validation", password: "validation", apiKey: "validation" },
     },
     new URL("https://validation.invalid"),

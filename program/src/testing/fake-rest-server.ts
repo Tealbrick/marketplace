@@ -12,6 +12,8 @@ export type FakeRestRequest = {
   query: Record<string, string[]>;
   headers: Record<string, string | string[] | undefined>;
   body: string;
+  /** Exact request bytes (binary uploads). */
+  raw: Buffer;
 };
 
 export type FakeRestRoute = (request: FakeRestRequest, response: ServerResponse) => boolean;
@@ -22,11 +24,11 @@ export type FakeRestServerOptions = {
   routes?: FakeRestRoute[];
 };
 
-function readBody(request: IncomingMessage): Promise<string> {
+function readBody(request: IncomingMessage): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     request.on("data", (chunk: Buffer) => chunks.push(chunk));
-    request.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    request.on("end", () => resolve(Buffer.concat(chunks)));
     request.on("error", reject);
   });
 }
@@ -37,12 +39,14 @@ export async function startFakeRestServer(options: FakeRestServerOptions = {}) {
     const url = new URL(request.url ?? "/", "http://fake.invalid");
     const query: Record<string, string[]> = {};
     for (const [key, value] of url.searchParams) query[key] = [...(query[key] ?? []), value];
+    const raw = await readBody(request);
     const record: FakeRestRequest = {
       method: request.method ?? "GET",
       path: url.pathname,
       query,
       headers: request.headers,
-      body: await readBody(request),
+      body: raw.toString("utf8"),
+      raw,
     };
     requests.push(record);
     if (options.authorize && !options.authorize(record)) {

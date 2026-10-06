@@ -1,6 +1,7 @@
-import { createHash } from "node:crypto";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
+import { crc32, deflateSync } from "node:zlib";
 import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -50,12 +51,13 @@ function authorized(request: FakeRestRequest) {
   const basic = `Basic ${Buffer.from(`ops:${SECRET}`).toString("base64")}`;
   return (
     request.headers.authorization === `Bearer ${SECRET}` ||
+    request.headers.authorization === SECRET ||
     request.headers.authorization === basic ||
     request.query.api_key?.[0] === SECRET
   );
 }
 
-async function fixture(options: { catalogDir?: string; rulesClient?: RulesClient; storeRoot?: string; mcpTools?: FakeMcpTool[] } = {}) {
+async function fixture(options: { catalogDir?: string; rulesClient?: RulesClient; storeRoot?: string; mcpTools?: FakeMcpTool[]; extraEnv?: Record<string, string> } = {}) {
   const root = options.storeRoot ?? tempDir("company-box-app-");
   const store = new SqliteMarketplaceStore(path.join(root, "marketplace.sqlite"), {
     handoffEncryptionKey: "a".repeat(64),
@@ -74,7 +76,7 @@ async function fixture(options: { catalogDir?: string; rulesClient?: RulesClient
     organizationId: "ws-a",
     operatorSessionManager: sessions,
     env: {},
-    environment: { NODE_ENV: "test", MARKETPLACE_MCP_ALLOWED_ORIGINS: `${rest.origin},${mcp.origin}` },
+    environment: { NODE_ENV: "test", MARKETPLACE_MCP_ALLOWED_ORIGINS: `${rest.origin},${mcp.origin}`, ...(options.extraEnv ?? {}) },
     mcpFetch: (resource, init) => fetch(resource, init),
     companyBoxCatalogDir: options.catalogDir ?? FIXTURES,
     portalIssuerUrl: "https://portal.test",
@@ -757,7 +759,7 @@ describe("Company Box approvals (owner mode)", () => {
     expect(invalid.json()).toMatchObject({ error: "openapi_argument_invalid", field: "path.id" });
     const large = await send({ path: { id: "n1" }, body: { email: "a@b.test", message: "x".repeat(40_000) } });
     expect(large.statusCode).toBe(413);
-    expect(large.json()).toMatchObject({ error: "approval_arguments_too_large" });
+    expect(large.json()).toMatchObject({ error: "approval_args_too_large" });
     expect(f.store.listCompanyBoxApprovals({ workspaceSlug: "ws-a" })).toEqual([]);
   });
 });
@@ -895,5 +897,171 @@ describe("Company Box security review fixes", () => {
     const pluginId = setup.json().entry.pluginId as string;
     expect(f.store.getListing(pluginId)?.actions).not.toContain(`${pluginId}.surprise-tool`);
     expect(f.store.getConnection("ws-a", pluginId)?.metadata.companyBox).toMatchObject({ notInSnapshot: ["surprise_tool"] });
+  });
+});
+
+/** A real 2×2 RGBA PNG. */
+function pngBytes() {
+  const chunk = (type: string, data: Buffer) => {
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([length, body, crc]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(2, 0);
+  header.writeUInt32BE(2, 4);
+  header[8] = 8;
+  header[9] = 6;
+  const pixels = Buffer.from([0, 0x2a, 0x7f, 0x7a, 0xff, 0x8b, 0x1e, 0x3f, 0xff, 0, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0xff]);
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", header),
+    chunk("IDAT", deflateSync(pixels)),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+const POSTIZ_LIKE_SPEC = {
+  openapi: "3.0.3",
+  info: { title: "Postiz-like API", version: "1.0.0" },
+  servers: [{ url: "/public/v1" }],
+  paths: {
+    "/is-connected": { get: { operationId: "isConnected", tags: ["system"], responses: { 200: { description: "ok" } } } },
+    "/upload": {
+      post: {
+        operationId: "uploadMedia",
+        summary: "Upload a media file",
+        tags: ["media"],
+        requestBody: {
+          required: true,
+          content: { "multipart/form-data": { schema: { $ref: "#/components/schemas/Upload" } } },
+        },
+        responses: { 200: { description: "uploaded" } },
+      },
+    },
+    "/posts": {
+      post: {
+        operationId: "createPost",
+        summary: "Publish a post",
+        tags: ["posts"],
+        requestBody: { required: true, content: { "multipart/form-data": { schema: { type: "object", properties: { content: { type: "string" }, media: { type: "array", items: { type: "string", format: "binary" } } } } } } },
+        responses: { 200: { description: "published" } },
+      },
+    },
+    "/media/{id}/raw": {
+      put: {
+        operationId: "replaceMediaBytes",
+        tags: ["media"],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: { content: { "application/octet-stream": {} } },
+        responses: { 200: { description: "ok" } },
+      },
+    },
+  },
+  components: { schemas: { Upload: { type: "object", required: ["file"], properties: { file: { type: "string", format: "binary" }, preview: { type: "boolean" } } } } },
+};
+
+function postizCatalog() {
+  const root = catalog();
+  const dir = path.join(root, "postiz");
+  mkdirSync(dir);
+  const spec = JSON.stringify(POSTIZ_LIKE_SPEC);
+  writeFileSync(path.join(dir, "openapi.json"), spec);
+  writeFileSync(
+    path.join(dir, "entry.json"),
+    JSON.stringify({
+      schema: 1,
+      id: "postiz",
+      displayName: "Postiz",
+      description: "Fixture: Postiz-like social scheduler.",
+      app: { version: "1.0.0" },
+      source: "openapi",
+      openapi: { spec: "openapi.json", sha256: createHash("sha256").update(spec).digest("hex") },
+      auth: { type: "header", name: "Authorization", label: "API key" },
+      healthOperation: "isConnected",
+      outward: ["createPost"],
+    }),
+  );
+  return root;
+}
+
+async function formFile(request: FakeRestRequest, name: string) {
+  const form = await new Response(request.raw, { headers: { "content-type": String(request.headers["content-type"]) } }).formData();
+  return form.getAll(name) as File[];
+}
+
+describe("Company Box file uploads", () => {
+  const plugin = "company-box-postiz";
+  const png = pngBytes();
+  const file = { base64: png.toString("base64"), filename: "logo.png", contentType: "image/png" };
+
+  it("shows the file shape to agents and delivers a multipart PNG byte-identical", async () => {
+    const f = await fixture({ catalogDir: postizCatalog() });
+    expect((await f.setup("postiz", { baseUrl: f.rest.origin, credentials: { token: SECRET } })).statusCode).toBe(200);
+    const described = await f.tool(`marketplace.${plugin}.operations.describe`, plugin, { operation: `${plugin}.upload-media` });
+    expect(described.json().operation).toMatchObject({
+      contentType: "multipart/form-data",
+      risk: { outward: false },
+      inputSchema: { properties: { body: { required: ["file"], properties: { file: { type: "object", required: ["base64"], "x-file-upload": true }, preview: { type: "boolean" } } } } },
+    });
+    const tools = (await f.inject("GET", "/api/agent/capabilities?workspaceSlug=ws-a", SERVICE)).json().capabilities as CapabilityEntry[];
+    expect(JSON.stringify(tools.find((entry) => entry.actionType === `${plugin}.upload-media`)?.inputSchema)).toContain('"x-file-upload":true');
+
+    const grantId = await f.grant(plugin, `${plugin}.upload-media`);
+    const uploaded = await f.tool(`marketplace.${plugin}.upload-media`, plugin, { body: { file, preview: true } }, grantId);
+    expect(uploaded.statusCode, uploaded.body).toBe(200);
+    const request = f.rest.requests.at(-1)!;
+    expect(request).toMatchObject({ method: "POST", path: "/public/v1/upload" });
+    const [received] = await formFile(request, "file");
+    expect(received!.name).toBe("logo.png");
+    expect(received!.type).toBe("image/png");
+    expect(Buffer.from(await received!.arrayBuffer()).equals(png)).toBe(true);
+
+    // Raw octet-stream bodies take the same file object.
+    const raw = await f.grant(plugin, `${plugin}.replace-media-bytes`);
+    expect((await f.tool(`marketplace.${plugin}.replace-media-bytes`, plugin, { path: { id: "m1" }, body: file }, raw)).statusCode).toBe(200);
+    expect(f.rest.requests.at(-1)!.raw.equals(png)).toBe(true);
+
+    for (const [body, field] of [
+      [{ file: "not-a-file" }, "body.file"],
+      [{ file: { base64: "%%%not base64%%%" } }, "body.file.base64"],
+      [{ file: { ...file, extra: 1 } }, "body.file.extra"],
+    ] as const) {
+      const refused = await f.tool(`marketplace.${plugin}.upload-media`, plugin, { body }, grantId);
+      expect(refused.statusCode).toBe(400);
+      expect(refused.json()).toMatchObject({ error: "openapi_argument_invalid", field });
+    }
+  });
+
+  it("enforces the decoded upload cap with a clear error", async () => {
+    const f = await fixture({ catalogDir: postizCatalog(), extraEnv: { MARKETPLACE_COMPANY_BOX_MAX_UPLOAD_BYTES: "1000" } });
+    await f.setup("postiz", { baseUrl: f.rest.origin, credentials: { token: SECRET } });
+    const grantId = await f.grant(plugin, `${plugin}.upload-media`);
+    const before = f.rest.requests.length;
+    const big = await f.tool(`marketplace.${plugin}.upload-media`, plugin, { body: { file: { base64: randomBytes(1_500).toString("base64") } } }, grantId);
+    expect(big.statusCode).toBe(413);
+    expect(big.json()).toMatchObject({ error: "openapi_upload_too_large", reason: "limit 1000 bytes" });
+    expect(f.rest.requests.length).toBe(before);
+    expect((await f.tool(`marketplace.${plugin}.upload-media`, plugin, { body: { file } }, grantId)).statusCode).toBe(200);
+  });
+
+  it("holds outward uploads in full within 32 KB and refuses larger ones clearly", async () => {
+    const f = await fixture({ catalogDir: postizCatalog() });
+    await f.setup("postiz", { baseUrl: f.rest.origin, credentials: { token: SECRET } });
+    const grantId = await f.grant(plugin, `${plugin}.create-post`);
+    const held = await f.tool(`marketplace.${plugin}.create-post`, plugin, { body: { content: "Launch", media: [file] } }, grantId);
+    expect(held.statusCode, held.body).toBe(202);
+    const approved = await f.inject("POST", `/api/marketplace/company-box/approvals/${held.json().approvalId}/approve`, f.operator);
+    expect(approved.json()).toMatchObject({ ok: true, approval: { state: "succeeded" } });
+    const [received] = await formFile(f.rest.requests.at(-1)!, "media");
+    expect(Buffer.from(await received!.arrayBuffer()).equals(png)).toBe(true);
+
+    const tooBig = await f.tool(`marketplace.${plugin}.create-post`, plugin, { body: { content: "Launch", media: [{ base64: randomBytes(40_000).toString("base64") }] } }, grantId);
+    expect(tooBig.statusCode).toBe(413);
+    expect(tooBig.json()).toMatchObject({ error: "approval_args_too_large" });
+    expect(f.store.listCompanyBoxApprovals({ workspaceSlug: "ws-a" })).toHaveLength(1);
   });
 });

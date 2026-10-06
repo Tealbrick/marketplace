@@ -512,6 +512,9 @@ export function parseOpenApiDocument(raw: unknown): OpenApiDocument {
           parameters.push({ name, in: "path", required: true, schema: { type: "string" } });
         }
       }
+      if (requestBody) {
+        requestBody = { ...requestBody, schema: fileAwareBodySchema(requestBody.contentType, requestBody.schema, defs) };
+      }
       operations.push({
         ref: operationId ?? operationIdentity(method, path),
         operationId,
@@ -828,4 +831,62 @@ export function applyMergePatch(target: unknown, patch: unknown): unknown {
     else base[key] = applyMergePatch(base[key], value);
   }
   return base;
+}
+
+/** What agents send for a file: base64 content plus optional name and media type. */
+export const FILE_UPLOAD_SCHEMA: JsonSchema = {
+  type: "object",
+  description: "File upload: base64-encoded content, with an optional file name and media type.",
+  required: ["base64"],
+  properties: {
+    base64: { type: "string", description: "File content, base64-encoded." },
+    filename: { type: "string", maxLength: 255 },
+    contentType: { type: "string", maxLength: 255 },
+  },
+  additionalProperties: false,
+  "x-file-upload": true,
+};
+
+/** `format: binary` (OAS 3.0 / Swagger file), or OAS 3.1 contentMediaType / contentEncoding. */
+export function isBinarySchema(schema: unknown) {
+  const record = recordValue(schema);
+  if (!record) return false;
+  return (
+    record.format === "binary" ||
+    (typeof record.contentMediaType === "string" && record.type !== "object" && record.type !== "array") ||
+    typeof record.contentEncoding === "string"
+  );
+}
+
+function fileAware(schema: unknown): unknown {
+  if (isBinarySchema(schema)) return FILE_UPLOAD_SCHEMA;
+  const record = recordValue(schema);
+  if (record?.type === "array" && isBinarySchema(record.items)) return { ...record, items: FILE_UPLOAD_SCHEMA };
+  return schema;
+}
+
+/**
+ * Multipart and raw binary bodies: binary parts become the file object the
+ * body builder sends (`{ base64, filename?, contentType? }`), so tool and
+ * describe schemas and argument validation all agree on that shape.
+ */
+export function fileAwareBodySchema(contentType: string, schema: JsonSchema, defs: Record<string, JsonSchema>): JsonSchema {
+  const base = contentType.split(";")[0]!.trim().toLowerCase();
+  if (base === "application/octet-stream" || base.startsWith("image/") || base.startsWith("video/") || base.startsWith("audio/")) {
+    // A raw binary body is one file (OAS 3.1 often gives no schema at all).
+    return !Object.keys(schema).length || isBinarySchema(schema) ? FILE_UPLOAD_SCHEMA : schema;
+  }
+  if (base !== "multipart/form-data") return schema;
+  let target = schema;
+  if (typeof schema.$ref === "string" && schema.$ref.startsWith("#/$defs/")) {
+    // Inline the referenced part schema so its binary properties can change.
+    const name = decodePointerToken(schema.$ref.slice("#/$defs/".length));
+    if (!name.includes("/") && defs[name]) target = { ...defs[name] };
+  }
+  const properties = recordValue(target.properties);
+  if (!properties) return schema;
+  const next = Object.fromEntries(Object.entries(properties).map(([key, value]) => [key, fileAware(value)]));
+  return Object.values(next).some((value, index) => value !== Object.values(properties)[index])
+    ? { ...target, properties: next }
+    : schema;
 }
