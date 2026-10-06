@@ -161,7 +161,7 @@ describe("Company Box coverage", () => {
   it("requires a safe GET health operation", () => {
     const root = catalogWith({ entry: "notes", change: (entry) => (entry.healthOperation = "createNote") });
     expect(companyBoxCoverageReport(root).entries.find((entry) => entry.id === "notes")!.errors).toEqual([
-      'healthOperation "createNote" must be a GET operation.',
+      'healthOperation "createNote" must be a read (GET, HEAD, PROPFIND, …) operation.',
     ]);
   });
 

@@ -17,7 +17,7 @@
  */
 import { assertMcpUrlAllowed, McpUrlPolicyError, type McpLookup } from "./mcp-url-policy.js";
 import { routeOutbound, tailnetAwareFetch, TailnetUnavailableError } from "./tailnet.js";
-import type { OpenApiOperation, OpenApiParameter } from "./openapi-adapter.js";
+import { parameterDefault, type OpenApiOperation, type OpenApiParameter } from "./openapi-adapter.js";
 import type { ArgumentValidator } from "./openapi-validate.js";
 import { MARKETPLACE_VERSION } from "./version.js";
 
@@ -384,6 +384,37 @@ function buildBody(
   return { body: JSON.stringify(value), contentType };
 }
 
+/** One path segment: no separators (raw or percent-encoded), no dot segments. */
+function validSegment(text: string) {
+  const decodedDots = text.replace(/%2e/giu, ".");
+  return !(
+    text === "" ||
+    /[/\\]/u.test(text) ||
+    /%(2f|5c)/iu.test(text) ||
+    decodedDots === "." ||
+    decodedDots === ".."
+  );
+}
+
+/**
+ * Encode one path argument. Normal parameters are a single segment;
+ * `x-multi-segment` ones may span `/` (one leading/trailing slash is
+ * ignored), and every segment is checked and percent-encoded on its own.
+ */
+export function renderPathValue(text: string, field: string, multiSegment: boolean) {
+  if (!multiSegment) {
+    if (!validSegment(text)) argumentError(field, "not a valid path segment");
+    return encodeURIComponent(text);
+  }
+  const segments = text.replace(/^\//u, "").replace(/\/$/u, "").split("/");
+  if (!segments.every(validSegment)) argumentError(field, "not a valid path");
+  return segments.map((segment) => encodeURIComponent(segment)).join("/");
+}
+
+function renderPathTemplate(template: string, value: (name: string) => string) {
+  return template.replace(/\{([^}]+)\}/gu, (_match, name: string) => value(name));
+}
+
 /** Build the outbound request without sending it. Exported for tests. */
 export function buildOpenApiRequest(options: Omit<OpenApiCallOptions, "fetchImpl" | "lookup">, base: URL) {
   const { operation, args, auth, credentials } = options;
@@ -411,23 +442,10 @@ export function buildOpenApiRequest(options: Omit<OpenApiCallOptions, "fetchImpl
     }
   }
 
-  const renderedPath = operation.path.replace(/\{([^}]+)\}/gu, (_match, name: string) => {
+  const renderedPath = renderPathTemplate(operation.path, (name) => {
     const value = pathArgs[name];
     if (value === undefined || value === null) argumentError(`path.${name}`, "required");
-    const text = scalarString(value, `path.${name}`);
-    // No separators (raw or percent-encoded) and no dot segments, even ones
-    // a server would only see after decoding.
-    const decodedDots = text.replace(/%2e/giu, ".");
-    if (
-      text === "" ||
-      /[/\\]/u.test(text) ||
-      /%(2f|5c)/iu.test(text) ||
-      decodedDots === "." ||
-      decodedDots === ".."
-    ) {
-      argumentError(`path.${name}`, "not a valid path segment");
-    }
-    return encodeURIComponent(text);
+    return renderPathValue(scalarString(value, `path.${name}`), `path.${name}`, pathParams.get(name)?.multiSegment === true);
   });
   const prefix = base.pathname.replace(/\/+$/u, "");
   const apiBase = (options.apiBasePath ?? "").replace(/\/+$/u, "");
@@ -448,7 +466,8 @@ export function buildOpenApiRequest(options: Omit<OpenApiCallOptions, "fetchImpl
   headers.set("user-agent", `TealBrick-Marketplace/${MARKETPLACE_VERSION}`);
   const authHeaderName = auth.type === "header" ? auth.name.toLowerCase() : auth.type === "basic" ? "authorization" : null;
   for (const [name, parameter] of headerParams) {
-    const value = headerArgs[name];
+    // Omitted headers with a default or const (e.g. OCS-APIRequest: true) are sent anyway.
+    const value = headerArgs[name] ?? parameterDefault(parameter);
     if (value === undefined || value === null) {
       if (parameter.required) argumentError(`header.${name}`, "required");
       continue;
@@ -459,6 +478,32 @@ export function buildOpenApiRequest(options: Omit<OpenApiCallOptions, "fetchImpl
     }
     const text = scalarString(value, `header.${name}`);
     if (!headerValueValid(text)) argumentError(`header.${name}`, "invalid header value");
+    if (lower === "overwrite" && text !== "T" && text !== "F") argumentError(`header.${name}`, "must be T or F");
+    if (lower === "depth" && !["0", "1", "infinity"].includes(text)) argumentError(`header.${name}`, "must be 0, 1 or infinity");
+    if (lower === "destination") {
+      // Never a caller-supplied URL: the base origin + prefix + the spec's
+      // template, with the caller's value as a relative multi-segment path.
+      if (!parameter.destinationTemplate) argumentError(`header.${name}`, "reserved header");
+      const rendered = renderPathTemplate(parameter.destinationTemplate, (placeholder) => {
+        if (placeholder.toLowerCase() === "destination" || placeholder === name) {
+          return renderPathValue(text, `header.${name}`, true);
+        }
+        const pathValue = pathArgs[placeholder];
+        if (pathValue === undefined || pathValue === null) argumentError(`path.${placeholder}`, "required");
+        return renderPathValue(
+          scalarString(pathValue, `path.${placeholder}`),
+          `path.${placeholder}`,
+          pathParams.get(placeholder)?.multiSegment === true,
+        );
+      });
+      const destination = new URL(base.origin);
+      destination.pathname = `${prefix}${apiBase}${rendered.startsWith("/") ? "" : "/"}${rendered}`;
+      if (destination.origin !== base.origin || !destination.pathname.startsWith(`${prefix}${apiBase}/`)) {
+        argumentError(`header.${name}`, "the destination left the configured base URL");
+      }
+      headers.set(lower, destination.toString());
+      continue;
+    }
     headers.set(lower, text);
   }
 

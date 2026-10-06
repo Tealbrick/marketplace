@@ -35,6 +35,8 @@ import {
   operationInputSchema,
   operationPatternMatches,
   operationRisk,
+  parameterNeedsArgument,
+  READ_METHODS,
   OPENAPI_DESCRIPTION_MAX,
   OPENAPI_SUMMARY_MAX,
   OPENAPI_TITLE_MAX,
@@ -460,6 +462,12 @@ function compileOpenApi(
     const key = keys[position]!;
     const risk = operationRisk(operation, patterns);
     try {
+      const destination = operation.parameters.find(
+        (parameter) => parameter.in === "header" && parameter.name.toLowerCase() === "destination",
+      );
+      if (destination && !destination.destinationTemplate) {
+        throw new Error("A Destination header needs x-destination-template; Marketplace never forwards a caller-supplied URL.");
+      }
       const inputSchema = operationInputSchema(operation, document.defs);
       const tool = boundedToolSchema(inputSchema);
       const validateArguments = compileArgumentValidator(inputSchema);
@@ -523,9 +531,9 @@ function compileOpenApi(
     : null;
   if (!health) {
     errors.push(`healthOperation "${entry.healthOperation}" is not an exposed operation.`);
-  } else if (health.method !== "get") {
-    errors.push(`healthOperation "${entry.healthOperation}" must be a GET operation.`);
-  } else if (health.operation.parameters.some((parameter) => parameter.required) || health.operation.requestBody?.required) {
+  } else if (!READ_METHODS.has(health.method)) {
+    errors.push(`healthOperation "${entry.healthOperation}" must be a read (GET, HEAD, PROPFIND, …) operation.`);
+  } else if (health.operation.parameters.some(parameterNeedsArgument) || health.operation.requestBody?.required) {
     errors.push(`healthOperation "${entry.healthOperation}" must not need arguments.`);
   }
   const apiBasePath = (entry.openapi!.basePath ?? document.basePath).replace(/\/+$/u, "");

@@ -227,6 +227,57 @@ custom MCP executions also record the full output's byte length and sha256
 (`metadata.output`). Stored approval results are capped at 64 KB, keeping the
 size and sha256 of anything larger.
 
+## WebDAV and other spec extensions
+
+OpenAPI has no slot for WebDAV methods, so a spec declares them as Operation
+Objects under `x-<method>` keys of a path item, next to the normal methods:
+
+```jsonc
+"/remote.php/dav/files/{user}/{path}": {
+  "parameters": [
+    { "name": "user", "in": "path", "required": true, "schema": { "type": "string" } },
+    { "name": "path", "in": "path", "required": true, "x-multi-segment": true, "schema": { "type": "string" } }
+  ],
+  "get": { "operationId": "downloadFile" },
+  "x-propfind": {
+    "operationId": "listFolder",
+    "parameters": [{ "name": "Depth", "in": "header", "schema": { "type": "string", "default": "1" } }],
+    "requestBody": { "content": { "application/xml": { "schema": { "type": "string" } } } }
+  },
+  "x-move": {
+    "operationId": "moveFile",
+    "parameters": [
+      { "name": "Destination", "in": "header", "required": true, "schema": { "type": "string" },
+        "x-destination-template": "/remote.php/dav/files/{user}/{Destination}" },
+      { "name": "Overwrite", "in": "header", "schema": { "type": "string", "default": "F" } }
+    ]
+  }
+}
+```
+
+- Supported keys: `x-propfind`, `x-proppatch`, `x-mkcol`, `x-move`, `x-copy`,
+  `x-report`, `x-lock`, `x-unlock`. They count in coverage, take action keys
+  like any operation (`propfind-…` without an operationId), and can be
+  excluded as `PROPFIND /path`.
+- PROPFIND and REPORT are reads (`connector.observe`); PROPPATCH, MKCOL, MOVE,
+  COPY, LOCK and UNLOCK are writes. Multistatus (207) XML is returned as text.
+- `x-multi-segment: true` on a path parameter lets its value span `/`
+  (`Documents/Q3 report/notes.md`). Each segment is percent-encoded on its own;
+  one leading and trailing `/` is ignored; empty, `.` and `..` segments
+  (also `%2e`-encoded), backslashes and encoded slashes are refused. Other path
+  parameters stay single-segment.
+- `Destination` (MOVE/COPY) must declare `x-destination-template`, a path
+  relative to the API base. Marketplace builds the header as the configured
+  base URL's origin and prefix plus that template; `{Destination}` takes the
+  caller's value as a relative multi-segment path, other `{name}`s take the
+  operation's path arguments. A caller-supplied URL is never forwarded, and a
+  `Destination` header without a template fails coverage.
+- `Overwrite` accepts only `T`/`F`, `Depth` only `0`, `1`, `infinity`.
+- A header parameter with a `default` or `const` that the agent omits is sent
+  with that value (e.g. `OCS-APIRequest: true`), and it is not required in the
+  schema agents see. A `healthOperation` may be any read (GET, HEAD,
+  PROPFIND, …) whose required parameters all have defaults or consts.
+
 ## File uploads
 
 In `multipart/form-data` bodies, every part declared as binary
