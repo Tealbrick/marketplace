@@ -14,6 +14,7 @@ import {
   OpenApiSpecError,
   parseOpenApiDocument,
 } from "./openapi-adapter.js";
+import { compileArgumentValidator } from "./openapi-validate.js";
 
 const FIXTURES = path.join(import.meta.dirname, "testing", "company-box");
 const notesSpec = () => JSON.parse(readFileSync(path.join(FIXTURES, "notes", "openapi.json"), "utf8"));
@@ -136,6 +137,48 @@ describe("OpenAPI 3 parsing", () => {
       }),
     ).toThrow(OpenApiSpecError);
     expect(() => parseOpenApiDocument({ swagger: "1.2", paths: {} })).toThrow(/Only OpenAPI 3.x and Swagger 2.0/u);
+  });
+});
+
+describe("OpenAPI 3.0 nullable without type", () => {
+  it("rewrites `nullable: true` beside oneOf/anyOf as an anyOf with null so validators accept it", () => {
+    const document = parseOpenApiDocument({
+      openapi: "3.0.3",
+      paths: {
+        "/x": {
+          post: {
+            operationId: "createX",
+            requestBody: {
+              required: true,
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      meta: { nullable: true, oneOf: [{ type: "object", properties: { a: { type: "string" } } }, { type: "string" }] },
+                      plain: { nullable: false, anyOf: [{ type: "string" }, { type: "number" }] },
+                      nullable: { type: "string" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    const schema = operationInputSchema(document.operations[0]!, document.defs);
+    const body = (schema.properties as Record<string, { properties: Record<string, unknown> }>).body!;
+    expect(body.properties.meta).toEqual({
+      anyOf: [{ oneOf: [{ type: "object", properties: { a: { type: "string" } } }, { type: "string" }] }, { type: "null" }],
+    });
+    expect(body.properties.plain).toEqual({ anyOf: [{ type: "string" }, { type: "number" }] });
+    // A property that is itself called `nullable` is left alone.
+    expect(body.properties.nullable).toEqual({ type: "string" });
+    const validate = compileArgumentValidator(schema);
+    expect(validate({ body: { meta: null } }).ok).toBe(true);
+    expect(validate({ body: { meta: "text" } }).ok).toBe(true);
+    expect(validate({ body: { meta: 4 } }).ok).toBe(false);
   });
 });
 

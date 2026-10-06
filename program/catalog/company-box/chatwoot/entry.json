@@ -1,0 +1,119 @@
+{
+  "schema": 1,
+  "id": "chatwoot",
+  "displayName": "Chatwoot",
+  "description": "Self-hosted customer support inbox: conversations, messages, contacts, inboxes, teams, agents, automation, help center, reports, the platform provisioning API and the public client API. Anything that messages a customer, publishes, invites or sends data to an external URL is held for approval. Operations marked x-source: code are real routes missing from the upstream swagger, read from config/routes.rb.",
+  "category": "Support",
+  "app": {
+    "version": "4.18.0",
+    "homepage": "https://www.chatwoot.com",
+    "license": "MIT (enterprise directory under a separate licence)",
+    "specSource": "https://raw.githubusercontent.com/chatwoot/chatwoot/v4.18.0/swagger/swagger.json"
+  },
+  "source": "openapi",
+  "openapi": {
+    "spec": "openapi.json",
+    "basePath": "",
+    "overlay": {
+      "file": "overlay.json",
+      "sha256": "c4561cbaf47dab1c59314992c697669bfa4c0784e747710ab10c0bba4d58fd00"
+    },
+    "sha256": "775d835239f9a0b8270afb03e5700f6435dfac370655fdc811e3230cc34d6ef8"
+  },
+  "auth": {
+    "type": "header",
+    "name": "api_access_token",
+    "label": "Access token"
+  },
+  "baseUrlExample": "https://neuu.your-tailnet.ts.net:8519",
+  "healthOperation": "fetchProfile",
+  "outward": [
+    "PATCH /api/v1/accounts/{account_id}/agent_bots/{id}",
+    "PATCH /api/v1/accounts/{account_id}/automation_rules/{id}",
+    "PATCH /api/v1/accounts/{account_id}/campaigns/{id}",
+    "PATCH /api/v1/accounts/{account_id}/inboxes/{id}",
+    "PATCH /api/v1/accounts/{account_id}/integrations/hooks/{hook_id}",
+    "PATCH /api/v1/accounts/{account_id}/integrations/slack",
+    "PATCH /api/v1/accounts/{account_id}/portals/{id}",
+    "PATCH /api/v1/accounts/{account_id}/portals/{portal_id}/articles/{id}",
+    "PATCH /api/v1/accounts/{account_id}/webhooks/{webhook_id}",
+    "PATCH /platform/api/v1/agent_bots/{id}",
+    "POST /api/v1/accounts",
+    "POST /api/v1/accounts/{account_id}/agent_bots",
+    "POST /api/v1/accounts/{account_id}/agents",
+    "POST /api/v1/accounts/{account_id}/agents/bulk_create",
+    "POST /api/v1/accounts/{account_id}/automation_rules",
+    "POST /api/v1/accounts/{account_id}/automation_rules/{automation_rule_id}/clone",
+    "POST /api/v1/accounts/{account_id}/callbacks/facebook_pages",
+    "POST /api/v1/accounts/{account_id}/callbacks/reauthorize_page",
+    "POST /api/v1/accounts/{account_id}/callbacks/register_facebook_page",
+    "POST /api/v1/accounts/{account_id}/campaigns",
+    "POST /api/v1/accounts/{account_id}/channels/twilio_channel",
+    "POST /api/v1/accounts/{account_id}/contacts/export",
+    "POST /api/v1/accounts/{account_id}/conversations",
+    "POST /api/v1/accounts/{account_id}/conversations/{conversation_id}/contact_info_request",
+    "POST /api/v1/accounts/{account_id}/conversations/{conversation_id}/messages",
+    "POST /api/v1/accounts/{account_id}/conversations/{conversation_id}/messages/{id}/retry",
+    "POST /api/v1/accounts/{account_id}/conversations/{conversation_id}/toggle_status",
+    "POST /api/v1/accounts/{account_id}/conversations/{conversation_id}/toggle_typing_status",
+    "POST /api/v1/accounts/{account_id}/conversations/{id}/transcript",
+    "POST /api/v1/accounts/{account_id}/inboxes",
+    "POST /api/v1/accounts/{account_id}/inboxes/{id}/register_webhook",
+    "POST /api/v1/accounts/{account_id}/inboxes/{id}/sync_templates",
+    "POST /api/v1/accounts/{account_id}/integrations/dyte/add_participant_to_meeting",
+    "POST /api/v1/accounts/{account_id}/integrations/dyte/create_a_meeting",
+    "POST /api/v1/accounts/{account_id}/integrations/hooks",
+    "POST /api/v1/accounts/{account_id}/integrations/hooks/{id}/process_event",
+    "POST /api/v1/accounts/{account_id}/integrations/linear/create_issue",
+    "POST /api/v1/accounts/{account_id}/integrations/linear/link_issue",
+    "POST /api/v1/accounts/{account_id}/integrations/linear/unlink_issue",
+    "POST /api/v1/accounts/{account_id}/integrations/shopify/auth",
+    "POST /api/v1/accounts/{account_id}/integrations/slack",
+    "POST /api/v1/accounts/{account_id}/macros/{id}/execute",
+    "POST /api/v1/accounts/{account_id}/portals",
+    "POST /api/v1/accounts/{account_id}/portals/{id}/articles",
+    "POST /api/v1/accounts/{account_id}/portals/{id}/send_instructions",
+    "POST /api/v1/accounts/{account_id}/webhooks",
+    "POST /api/v1/accounts/{account_id}/whatsapp/manual/connect",
+    "POST /api/v1/accounts/{account_id}/whatsapp/manual/{inbox_id}/setup_webhook",
+    "POST /api/v1/profile/resend_confirmation",
+    "POST /api/v2/accounts",
+    "POST /platform/api/v1/accounts",
+    "POST /platform/api/v1/accounts/{account_id}/account_users",
+    "POST /platform/api/v1/accounts/{account_id}/email_channel_migrations",
+    "POST /platform/api/v1/agent_bots",
+    "POST /platform/api/v1/users",
+    "POST /platform/api/v1/users/{id}/token",
+    "POST /public/api/v1/inboxes/{inbox_identifier}/contacts/{contact_identifier}/conversations",
+    "POST /public/api/v1/inboxes/{inbox_identifier}/contacts/{contact_identifier}/conversations/{conversation_id}/messages"
+  ],
+  "destructive": [
+    "PATCH /api/v1/accounts/{account_id}/portals/{id}/archive",
+    "POST /api/v1/accounts/{account_id}/actions/contact_merge",
+    "POST /api/v1/accounts/{account_id}/agent_bots/{id}/reset_access_token",
+    "POST /api/v1/accounts/{account_id}/agent_bots/{id}/reset_secret",
+    "POST /api/v1/accounts/{account_id}/contacts/{id}/destroy_custom_attributes",
+    "POST /api/v1/accounts/{account_id}/conversations/{conversation_id}/destroy_custom_attributes",
+    "POST /api/v1/accounts/{account_id}/inboxes/{id}/reset_secret",
+    "POST /api/v1/accounts/{account_id}/inboxes/{id}/rotate_hmac_token",
+    "POST /api/v1/accounts/{account_id}/notifications/destroy_all",
+    "POST /api/v1/profile/reset_access_token",
+    "POST /platform/api/v1/users/{id}/token"
+  ],
+  "reads": [
+    "POST /api/v1/accounts/{account_id}/contact_inboxes/filter",
+    "POST /api/v1/accounts/{account_id}/contacts/filter",
+    "POST /api/v1/accounts/{account_id}/conversations/filter"
+  ],
+  "exposure": "auto",
+  "excluded": [
+    {
+      "operation": "getConversationMessages",
+      "reason": "Not a real route: the upstream swagger lists it as /accounts/{account_id}/conversations/{conversation_id}/messages without the /api/v1 prefix, and Rails routes it only under /api/v1 (listed as list-all-messages). The call would 404."
+    },
+    {
+      "operation": "get-sso-url-of-a-user",
+      "reason": "Mints a one-time login URL that signs in as any user. A GET is a read grant, so it would let a read-only agent impersonate users; create SSO links from the Super Admin console instead."
+    }
+  ]
+}

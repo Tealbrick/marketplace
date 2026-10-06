@@ -1352,7 +1352,8 @@ describe("Marketplace Program", () => {
       expect(response.statusCode).toBe(200);
       expect(response.body).not.toContain("secret-value");
       expect(response.body).not.toContain("MCP_TOKEN");
-      expect(response.body).not.toContain("authorization");
+      // The header name only: Company Box action keys such as `chatwoot.twitter-authorization-create` legitimately contain the word.
+      expect(response.body).not.toContain('"authorization"');
     }
 
     await app.close();

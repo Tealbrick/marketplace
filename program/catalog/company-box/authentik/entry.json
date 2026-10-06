@@ -1,0 +1,129 @@
+{
+  "schema": 1,
+  "id": "authentik",
+  "displayName": "authentik",
+  "description": "Self-hosted identity provider: users, groups, applications, providers, sources, flows, stages, policies, property mappings, outposts, RBAC, events and brands. Use a dedicated, scoped service account. Credential-minting, notification and external-sync operations are held for approval, and code-bearing objects need the admin capability.",
+  "category": "Identity",
+  "app": {
+    "version": "2026.2.1",
+    "homepage": "https://goauthentik.io",
+    "license": "MIT",
+    "specSource": "https://raw.githubusercontent.com/goauthentik/authentik/version/2026.2.1/schema.yml"
+  },
+  "source": "openapi",
+  "openapi": {
+    "spec": "openapi.json",
+    "overlay": {
+      "file": "overlay.json",
+      "sha256": "1c641526452de5a2d99168a26f823c65702647a2309a4f7b47b3a5b502dd73de"
+    },
+    "sha256": "dced8129a58b9b661f6c87b7d4d1129745c89ff33c34a7ca53d76ee5a94f556d"
+  },
+  "auth": {
+    "type": "header",
+    "name": "Authorization",
+    "prefix": "Bearer ",
+    "label": "API token"
+  },
+  "baseUrlExample": "https://fed-main.your-tailnet.ts.net:19443",
+  "healthOperation": "core_users_me_retrieve",
+  "outward": [
+    "POST /core/users/*/recovery_email/",
+    "POST /core/users/*/recovery/",
+    "POST /core/users/*/set_password/",
+    "POST /core/users/*/impersonate/",
+    "POST /core/tokens/",
+    "POST /core/tokens/*/set_key/",
+    "POST /core/users/service_account/",
+    "POST /endpoints/agents/enrollment_tokens/",
+    "POST /events/transports/",
+    "PUT /events/transports/*",
+    "PATCH /events/transports/*",
+    "POST /events/transports/*/test/",
+    "POST /events/rules/",
+    "PUT /events/rules/*",
+    "PATCH /events/rules/*",
+    "POST /stages/email/",
+    "PUT /stages/email/*",
+    "PATCH /stages/email/*",
+    "POST /authenticators/admin/email/",
+    "POST /authenticators/admin/sms/",
+    "POST /providers/scim/",
+    "PUT /providers/scim/*",
+    "PATCH /providers/scim/*",
+    "POST /providers/google_workspace/",
+    "PUT /providers/google_workspace/*",
+    "PATCH /providers/google_workspace/*",
+    "POST /providers/microsoft_entra/",
+    "PUT /providers/microsoft_entra/*",
+    "PATCH /providers/microsoft_entra/*",
+    "POST /providers/*/sync/object/",
+    "POST /stages/authenticator/duo/*/import_devices_automatic/",
+    "POST /flows/instances/import/",
+    "POST /sources/plex/redeem_token*",
+    "POST /flows/executor/*/",
+    "POST /outposts/service_connections/docker/",
+    "PUT /outposts/service_connections/docker/*",
+    "PATCH /outposts/service_connections/docker/*",
+    "POST /outposts/service_connections/kubernetes/",
+    "PUT /outposts/service_connections/kubernetes/*",
+    "PATCH /outposts/service_connections/kubernetes/*"
+  ],
+  "destructive": [
+    "POST /core/groups/*/add_user/",
+    "POST /core/groups/*/remove_user/",
+    "POST /rbac/roles/*/add_user/",
+    "POST /rbac/roles/*/remove_user/",
+    "POST /rbac/permissions/assigned_by_roles/*/assign/",
+    "POST /core/users/*/set_password/",
+    "POST /core/tokens/*/set_key/",
+    "POST /core/users/*/impersonate/",
+    "POST /policies/expression/",
+    "PUT /policies/expression/*",
+    "PATCH /policies/expression/*",
+    "POST /policies/all/*/test/",
+    "POST /propertymappings/*",
+    "PUT /propertymappings/*",
+    "PATCH /propertymappings/*"
+  ],
+  "reads": [
+    "POST /admin/system/",
+    "POST /stages/prompt/prompts/preview/",
+    "POST /stages/authenticator/duo/*/enrollment_status/"
+  ],
+  "exposure": "discovery",
+  "excluded": [
+    {
+      "operation": "managed_blueprints_apply_create",
+      "reason": "Applies a blueprint to the instance: arbitrary model changes and expressions evaluated by the authentik server. Apply blueprints from the admin interface or the blueprint files on the host."
+    },
+    {
+      "operation": "managed_blueprints_create",
+      "reason": "A blueprint instance with inline content is applied by the server as soon as it is saved (arbitrary model changes and expressions), the same code path as apply."
+    },
+    {
+      "operation": "managed_blueprints_update",
+      "reason": "Replacing a blueprint instance's content makes the server apply it (arbitrary model changes and expressions), the same code path as apply."
+    },
+    {
+      "operation": "managed_blueprints_partial_update",
+      "reason": "Editing a blueprint instance's content makes the server apply it (arbitrary model changes and expressions), the same code path as apply."
+    },
+    {
+      "operation": "tasks_schedules_send_create",
+      "reason": "Runs a system schedule immediately (blueprint discovery, outpost controller, cleanup jobs) on the server, whichever schedule id is given. Trigger schedules from the admin interface."
+    },
+    {
+      "operation": "tasks_tasks_retry_create",
+      "reason": "Re-executes a previously failed system task on the server, whichever task id is given, including ones that apply blueprints. Retry tasks from the admin interface."
+    },
+    {
+      "operation": "core_tokens_view_key_retrieve",
+      "reason": "A GET (read grant) that returns a live API token key. Reading must never reveal credentials; view token keys in the admin interface."
+    },
+    {
+      "operation": "endpoints_agents_enrollment_tokens_view_key_retrieve",
+      "reason": "A GET (read grant) that returns a live device enrollment token key. Reading must never reveal credentials; view it in the admin interface."
+    }
+  ]
+}
