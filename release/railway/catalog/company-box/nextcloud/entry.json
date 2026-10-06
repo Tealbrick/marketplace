@@ -1,0 +1,150 @@
+{
+  "schema": 1,
+  "id": "nextcloud",
+  "displayName": "Nextcloud",
+  "description": "Self-hosted Nextcloud 31: the OCS API of every enabled app (sharing, users and groups, notifications, status, search, webhooks, activity, server info) and WebDAV (files at any depth, chunked upload, trash bin, versions, system tags, comments). Sharing, mail, push, webhooks, comments and federation calls are held for approval; deletes and version restores are destructive.",
+  "category": "Files",
+  "app": {
+    "version": "31.0.14",
+    "homepage": "https://nextcloud.com",
+    "license": "AGPL-3.0",
+    "specSource": "https://github.com/nextcloud/server/tree/v31.0.14 (core and apps/*/openapi*.json) merged with the notifications, recommendations, password_policy (v31.0.14) and user_oidc (v8.7.0) app specs and hand-authored WebDAV, activity and serverinfo documents (sources/)"
+  },
+  "source": "openapi",
+  "openapi": {
+    "spec": "openapi.json",
+    "basePath": "",
+    "sha256": "fefdc71dbe0fba439d8f6877af9965eb43912ad670153d36059e13bb6767fae6"
+  },
+  "auth": {
+    "type": "basic"
+  },
+  "baseUrlExample": "https://neuu.your-tailnet.ts.net:8446",
+  "healthOperation": "ocs-get-capabilities",
+  "outward": [
+    "shareapi-create-share",
+    "shareapi-update-share",
+    "shareapi-send-share-email",
+    "deleted_shareapi-undelete",
+    "mount_public_link-create-federated-share",
+    "remote-accept-share",
+    "remote-decline-share",
+    "remote-unshare",
+    "request_handler-*",
+    "ocs_authapi-request-shared-secret*",
+    "api-generate-notification*",
+    "api-self-test-push",
+    "push-register-device",
+    "push-remove-device",
+    "users-add-user",
+    "users-resend-welcome-message",
+    "users-wipe-user-devices",
+    "direct-get-url",
+    "webhooks-create",
+    "webhooks-update",
+    "transfer_ownership-transfer",
+    "webdav-comments-create"
+  ],
+  "destructive": [
+    "users-wipe-user-devices",
+    "transfer_ownership-transfer",
+    "two_factor_api-disable",
+    "users-disable-user",
+    "webdav-versions-restore"
+  ],
+  "reads": [
+    "reference_api-extract",
+    "reference_api-extract-public",
+    "reference_api-resolve",
+    "reference_api-resolve-public",
+    "translation_api-translate",
+    "endpoint-confirm-ids-for-user",
+    "api-validate",
+    "share_info-info",
+    "users-search-by-phone-numbers",
+    "wipe-check-wipe"
+  ],
+  "exposure": "discovery",
+  "excluded": [
+    {
+      "operation": "app_password-delete-app-password",
+      "reason": "Mints, rotates, deletes or confirms credentials, so an agent could leak a secret or invalidate the app password this connector authenticates with; manage app passwords in Nextcloud's own Security settings."
+    },
+    {
+      "operation": "app_password-get-app-password",
+      "reason": "Mints, rotates, deletes or confirms credentials, so an agent could leak a secret or invalidate the app password this connector authenticates with; manage app passwords in Nextcloud's own Security settings."
+    },
+    {
+      "operation": "app_password-rotate-app-password",
+      "reason": "Mints, rotates, deletes or confirms credentials, so an agent could leak a secret or invalidate the app password this connector authenticates with; manage app passwords in Nextcloud's own Security settings."
+    },
+    {
+      "operation": "app_password-confirm-user-password",
+      "reason": "Mints, rotates, deletes or confirms credentials, so an agent could leak a secret or invalidate the app password this connector authenticates with; manage app passwords in Nextcloud's own Security settings."
+    },
+    {
+      "operation": "login-confirm-password",
+      "reason": "Mints, rotates, deletes or confirms credentials, so an agent could leak a secret or invalidate the app password this connector authenticates with; manage app passwords in Nextcloud's own Security settings."
+    },
+    {
+      "operation": "client_flow_login_v2-init",
+      "reason": "Interactive login and OAuth2 bootstrap that hands out credentials or needs a browser redirect; an agent already holds an app password, so this stays in Nextcloud's own sign-in flow."
+    },
+    {
+      "operation": "client_flow_login_v2-poll",
+      "reason": "Interactive login and OAuth2 bootstrap that hands out credentials or needs a browser redirect; an agent already holds an app password, so this stays in Nextcloud's own sign-in flow."
+    },
+    {
+      "operation": "login_redirector-authorize",
+      "reason": "Interactive login and OAuth2 bootstrap that hands out credentials or needs a browser redirect; an agent already holds an app password, so this stays in Nextcloud's own sign-in flow."
+    },
+    {
+      "operation": "oauth_api-get-token",
+      "reason": "Interactive login and OAuth2 bootstrap that hands out credentials or needs a browser redirect; an agent already holds an app password, so this stays in Nextcloud's own sign-in flow."
+    },
+    {
+      "operation": "apps-enable",
+      "reason": "Enabling or disabling an app changes what code runs on the server; do it from the Apps page or occ."
+    },
+    {
+      "operation": "apps-disable",
+      "reason": "Enabling or disabling an app changes what code runs on the server; do it from the Apps page or occ."
+    },
+    {
+      "operation": "app_config-set-value",
+      "reason": "Writes server or app-wide configuration (admin settings), which can reconfigure or lock down the whole instance; change it from Nextcloud's admin settings or occ."
+    },
+    {
+      "operation": "declarative_settings-set-value",
+      "reason": "Writes server or app-wide configuration (admin settings), which can reconfigure or lock down the whole instance; change it from Nextcloud's admin settings or occ."
+    },
+    {
+      "operation": "settings-set-admin-config",
+      "reason": "Changes how users sign in to the server (OpenID Connect providers and admin config hold client secrets and can lock everyone out); manage it in Nextcloud's admin settings."
+    },
+    {
+      "operation": "settings-create-provider",
+      "reason": "Changes how users sign in to the server (OpenID Connect providers and admin config hold client secrets and can lock everyone out); manage it in Nextcloud's admin settings."
+    },
+    {
+      "operation": "settings-update-provider",
+      "reason": "Changes how users sign in to the server (OpenID Connect providers and admin config hold client secrets and can lock everyone out); manage it in Nextcloud's admin settings."
+    },
+    {
+      "operation": "settings-delete-provider",
+      "reason": "Changes how users sign in to the server (OpenID Connect providers and admin config hold client secrets and can lock everyone out); manage it in Nextcloud's admin settings."
+    },
+    {
+      "operation": "settings-seti-d4me",
+      "reason": "Changes how users sign in to the server (OpenID Connect providers and admin config hold client secrets and can lock everyone out); manage it in Nextcloud's admin settings."
+    },
+    {
+      "operation": "settings-add-server",
+      "reason": "Adds or removes a trusted server, which decides which other Nextcloud servers may exchange shares and shared secrets with this one; manage it in Nextcloud's admin settings."
+    },
+    {
+      "operation": "settings-remove-server",
+      "reason": "Adds or removes a trusted server, which decides which other Nextcloud servers may exchange shares and shared secrets with this one; manage it in Nextcloud's admin settings."
+    }
+  ]
+}

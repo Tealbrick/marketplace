@@ -1,0 +1,10 @@
+{
+  "paths": {
+    "/tenants/domains/": null,
+    "/tenants/domains/{id}/": null,
+    "/tenants/tenants/": null,
+    "/tenants/tenants/{tenant_uuid}/": null,
+    "/tenants/tenants/{tenant_uuid}/create_admin_group/": null,
+    "/tenants/tenants/{tenant_uuid}/create_recovery_key/": null
+  }
+}

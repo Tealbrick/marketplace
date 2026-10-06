@@ -1,0 +1,1515 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Nextcloud WebDAV (hand-authored)",
+    "version": "31.0.14",
+    "x-source": "hand-authored",
+    "description": "Hand-authored OpenAPI description of Nextcloud's WebDAV endpoints (files, chunked upload v2, trash bin, versions, system tags, comments), written from the developer manual at https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/ . WebDAV methods are declared as x-<method> operations on the path item (Marketplace spec extension). Not verified against a live server."
+  },
+  "paths": {
+    "/remote.php/dav/files/{user}": {
+      "parameters": [
+        {
+          "name": "user",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "The Nextcloud user id whose storage is addressed; use the connector's own user."
+        }
+      ],
+      "x-propfind": {
+        "operationId": "webdav-files-list-root",
+        "summary": "List or stat the root folder of a user's files",
+        "tags": [
+          "files"
+        ],
+        "externalDocs": {
+          "description": "Nextcloud developer manual",
+          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/basic.html"
+        },
+        "parameters": [
+          {
+            "name": "Depth",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "1"
+            },
+            "description": "0 = the item itself, 1 = the item and its children. infinity is normally refused by the server."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "description": "Optional PROPFIND request body (`<d:propfind>` with the requested properties); omit for all properties.",
+          "content": {
+            "application/xml": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "207": {
+            "description": "Multistatus XML",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "x-report": {
+        "operationId": "webdav-files-search-report",
+        "summary": "Search files by favorite or system tag (REPORT oc:filter-files)",
+        "tags": [
+          "files"
+        ],
+        "externalDocs": {
+          "description": "Nextcloud developer manual",
+          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/basic.html#listing-favorites"
+        },
+        "requestBody": {
+          "required": true,
+          "description": "`<oc:filter-files>` with `<oc:filter-rules>` (e.g. `<oc:favorite>1</oc:favorite>` or `<oc:systemtag>`) and the properties to return.",
+          "content": {
+            "application/xml": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "207": {
+            "description": "Multistatus XML",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "description": "Files filtered by favorite flag or system tag. Free-text SEARCH (DASL) is not available in this connector."
+      }
+    },
+    "/remote.php/dav/files/{user}/{path}": {
+      "parameters": [
+        {
+          "name": "user",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "The Nextcloud user id whose storage is addressed; use the connector's own user."
+        },
+        {
+          "name": "path",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "x-multi-segment": true,
+          "description": "Path below the user's root, e.g. `Documents/Q3 report/notes.md`. Segments are encoded for you."
+        }
+      ],
+      "get": {
+        "operationId": "webdav-files-download",
+        "summary": "Download a file",
+        "tags": [
+          "files"
+        ],
+        "externalDocs": {
+          "description": "Nextcloud developer manual",
+          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/basic.html"
+        },
+        "responses": {
+          "200": {
+            "description": "File content",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        },
+        "description": "Binary responses are returned base64 and capped at 512 KB."
+      },
+      "put": {
+        "operationId": "webdav-files-upload",
+        "summary": "Upload (create or replace) a file",
+        "tags": [
+          "files"
+        ],
+        "externalDocs": {
+          "description": "Nextcloud developer manual",
+          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/basic.html"
+        },
+        "parameters": [
+          {
+            "name": "X-OC-MTime",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Optional modification time as a Unix timestamp."
+          },
+          {
+            "name": "OC-Checksum",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional checksum, e.g. `SHA256:<hex>`, verified by the server."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "204": {
+            "description": "Replaced"
+          }
+        },
+        "description": "Creates the file or replaces an existing one (the previous content stays as a version when the Versions app is on). The parent folder must exist (use MKCOL). Content is a base64 file object, up to 25 MB per call; larger files use the chunked upload operations."
+      },
+      "delete": {
+        "operationId": "webdav-files-delete",
+        "summary": "Delete a file or folder (moves it to the trash bin)",
+        "tags": [
+          "files"
+        ],
+        "externalDocs": {
+          "description": "Nextcloud developer manual",
+          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/basic.html"
+        },
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          }
+        }
+      },
+      "x-propfind": {
+        "operationId": "webdav-files-propfind",
+        "summary": "List a folder or stat a file",
+        "tags": [
+          "files"
+        ],
+        "externalDocs": {
+          "description": "Nextcloud developer manual",
+          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/basic.html"
+        },
+        "parameters": [
+          {
+            "name": "Depth",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "1"
+            },
+            "description": "0 = the item itself, 1 = the item and its children. infinity is normally refused by the server."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "description": "Optional PROPFIND request body (`<d:propfind>` with the requested properties); omit for all properties.",
+          "content": {
+            "application/xml": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "207": {
+            "description": "Multistatus XML",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "x-proppatch": {
+        "operationId": "webdav-files-proppatch",
+        "summary": "Set or remove file properties (favorite, tags, custom)",
+        "tags": [
+          "files"
+        ],
+        "externalDocs": {
+          "description": "Nextcloud developer manual",
+          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/basic.html"
+        },
+        "requestBody": {
+          "required": true,
+          "description": "`<d:propertyupdate>` with `<d:set>` / `<d:remove>`, e.g. `<oc:favorite>1</oc:favorite>`.",
+          "content": {
+            "application/xml": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "207": {
+            "description": "Multistatus XML",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "x-mkcol": {
+        "operationId": "webdav-files-mkcol",
+        "summary": "Create a folder",
+        "tags": [
+          "files"
+        ],
+        "externalDocs": {
+          "description": "Nextcloud developer manual",
+          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/basic.html"
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          }
+        },
+        "description": "The parent folder must exist."
+      },
+      "x-move": {
+        "operationId": "webdav-files-move",
+        "summary": "Move or rename a file or folder",
+        "tags": [
+          "files"
+        ],
+        "externalDocs": {
+          "description": "Nextcloud developer manual",
+          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/basic.html"
+        },
+        "parameters": [
+          {
+            "name": "Destination",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Target path below the user's root, e.g. `Archive/notes.md`.",
+            "x-destination-template": "/remote.php/dav/files/{user}/{Destination}"
+          },
+          {
+            "name": "Overwrite",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "F"
+            },
+            "description": "T replaces an existing target, F (default) fails if it exists."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Moved"
+          },
+          "204": {
+            "description": "Moved over an existing target"
+          }
+        }
+      },
+      "x-copy": {
+        "operationId": "webdav-files-copy",
+        "summary": "Copy a file or folder (fails if the target exists)",
+        "tags": [
+          "files"
+        ],
+        "externalDocs": {
+          "description": "Nextcloud developer manual",
+          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/basic.html"
+        },
+        "parameters": [
+          {
+            "name": "Destination",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Target path below the user's root; it must not exist yet.",
+            "x-destination-template": "/remote.php/dav/files/{user}/{Destination}"
+          },
+          {
+            "name": "Overwrite",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "const": "F"
+            },
+            "description": "Fixed to F: a copy never replaces an existing file. Delete the target first, or use MOVE with Overwrite T, to replace it."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Copied"
+          },
+          "412": {
+            "description": "The target exists"
+          }
+        }
+      }
+    },
+    "/remote.php/dav/uploads/{user}/{uploadId}": {
+      "parameters": [
+        {
+          "name": "user",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "The Nextcloud user id whose storage is addressed; use the connector's own user."
+        },
+        {
+          "name": "uploadId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "A unique id you choose for this upload session."
+        }
+      ],
+      "x-mkcol": {
+        "operationId": "webdav-uploads-start",
+        "summary": "Start a chunked upload (v2)",
+        "tags": [
+          "uploads"
+        ],
+        "externalDocs": {
+          "description": "Nextcloud developer manual",
+          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/chunking.html"
+        },
+        "parameters": [
+          {
+            "name": "Destination",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Final file path below the user's root, e.g. `Videos/big.mp4`.",
+            "x-destination-template": "/remote.php/dav/files/{user}/{Destination}"
+          },
+          {
+            "name": "OC-Total-Length",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Total size in bytes of the final file."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Upload session created"
+          }
+        }
+      },
+      "x-propfind": {
+        "operationId": "webdav-uploads-list-chunks",
+        "summary": "List the chunks uploaded so far",
+        "tags": [
+          "uploads"
+        ],
+        "externalDocs": {
+          "description": "Nextcloud developer manual",
+          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/chunking.html"
+        },
+        "parameters": [
+          {
+            "name": "Depth",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "1"
+            },
+            "description": "0 = the item itself, 1 = the item and its children. infinity is normally refused by the server."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "description": "Optional PROPFIND request body (`<d:propfind>` with the requested properties); omit for all properties.",
+          "content": {
+            "application/xml": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "207": {
+            "description": "Multistatus XML",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "webdav-uploads-abort",
+        "summary": "Abort a chunked upload and discard its chunks",
+        "tags": [
+          "uploads"
+        ],
+        "externalDocs": {
+          "description": "Nextcloud developer manual",
+          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/chunking.html"
+        },
+        "responses": {
+          "204": {
+            "description": "Discarded"
+          }
+        }
+      }
+    },
+    "/remote.php/dav/uploads/{user}/{uploadId}/{chunkId}": {
+      "parameters": [
+        {
+          "name": "user",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "The Nextcloud user id whose storage is addressed; use the connector's own user."
+        },
+        {
+          "name": "uploadId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "chunkId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Chunk number, 1 to 10000; chunks are assembled in numeric order."
+        }
+      ],
+      "put": {
+        "operationId": "webdav-uploads-put-chunk",
+        "summary": "Upload one chunk",
+        "tags": [
+          "uploads"
+        ],
+        "externalDocs": {
+          "description": "Nextcloud developer manual",
+          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/chunking.html"
+        },
+        "parameters": [
+          {
+            "name": "Destination",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Final file path below the user's root, e.g. `Videos/big.mp4`.",
+            "x-destination-template": "/remote.php/dav/files/{user}/{Destination}"
+          },
+          {
+            "name": "OC-Total-Length",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Total size in bytes of the final file."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Chunk stored"
+          }
+        },
+        "description": "Chunks other than the last must be at least 5 MB (server default) and at most 5 GB; each call carries up to 25 MB here."
+      }
+    },
+    "/remote.php/dav/uploads/{user}/{uploadId}/.file": {
+      "parameters": [
+        {
+          "name": "user",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "The Nextcloud user id whose storage is addressed; use the connector's own user."
+        },
+        {
+          "name": "uploadId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "x-move": {
+        "operationId": "webdav-uploads-finish",
+        "summary": "Assemble the chunks into the destination file",
+        "tags": [
+          "uploads"
+        ],
+        "externalDocs": {
+          "description": "Nextcloud developer manual",
+          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/chunking.html"
+        },
+        "parameters": [
+          {
+            "name": "Destination",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Final file path below the user's root, e.g. `Videos/big.mp4`.",
+            "x-destination-template": "/remote.php/dav/files/{user}/{Destination}"
+          },
+          {
+            "name": "OC-Total-Length",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Total size in bytes of the final file."
+          },
+          {
+            "name": "X-OC-MTime",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Optional modification time as a Unix timestamp."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "204": {
+            "description": "Replaced"
+          }
+        }
+      }
+    },
+    "/remote.php/dav/trashbin/{user}/trash": {
+      "parameters": [
+        {
+          "name": "user",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "The Nextcloud user id whose storage is addressed; use the connector's own user."
+        }
+      ],
+      "x-propfind": {
+        "operationId": "webdav-trashbin-list",
+        "summary": "List the trash bin",
+        "tags": [
+          "trashbin"
+        ],
+        "externalDocs": {
+          "description": "Nextcloud developer manual",
+          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/trashbin.html"
+        },
+        "parameters": [
+          {
+            "name": "Depth",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "1"
+            },
+            "description": "0 = the item itself, 1 = the item and its children. infinity is normally refused by the server."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "description": "Optional PROPFIND request body (`<d:propfind>` with the requested properties); omit for all properties.",
+          "content": {
+            "application/xml": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "207": {
+            "description": "Multistatus XML",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "webdav-trashbin-empty",
+        "summary": "Empty the trash bin permanently",
+        "tags": [
+          "trashbin"
+        ],
+        "externalDocs": {
+          "description": "Nextcloud developer manual",
+          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/trashbin.html"
+        },
+        "responses": {
+          "204": {
+            "description": "Emptied"
+          }
+        },
+        "description": "Permanently removes every item in the trash bin."
+      }
+    },
+    "/remote.php/dav/trashbin/{user}/trash/{item}": {
+      "parameters": [
+        {
+          "name": "user",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "The Nextcloud user id whose storage is addressed; use the connector's own user."
+        },
+        {
+          "name": "item",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "x-multi-segment": true,
+          "description": "A trash item as listed by PROPFIND, e.g. `notes.md.d1700000000` (inside a trashed folder: `folder.d1700000000/file.md`)."
+        }
+      ],
+      "get": {
+        "operationId": "webdav-trashbin-download",
+        "summary": "Download a trashed file",
+        "tags": [
+          "trashbin"
+        ],
+        "externalDocs": {
+          "description": "Nextcloud developer manual",
+          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/trashbin.html"
+        },
+        "responses": {
+          "200": {
+            "description": "File content",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        }
+      },
+      "x-propfind": {
+        "operationId": "webdav-trashbin-item-propfind",
+        "summary": "Stat a trashed item or list a trashed folder",
+        "tags": [
+          "trashbin"
+        ],
+        "externalDocs": {
+          "description": "Nextcloud developer manual",
+          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/trashbin.html"
+        },
+        "parameters": [
+          {
+            "name": "Depth",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "1"
+            },
+            "description": "0 = the item itself, 1 = the item and its children. infinity is normally refused by the server."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "description": "Optional PROPFIND request body (`<d:propfind>` with the requested properties); omit for all properties.",
+          "content": {
+            "application/xml": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "207": {
+            "description": "Multistatus XML",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "x-move": {
+        "operationId": "webdav-trashbin-restore",
+        "summary": "Restore a trashed item to its original location",
+        "tags": [
+          "trashbin"
+        ],
+        "externalDocs": {
+          "description": "Nextcloud developer manual",
+          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/trashbin.html"
+        },
+        "parameters": [
+          {
+            "name": "Destination",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "restored"
+            },
+            "description": "Any name; the item is restored to its original location.",
+            "x-destination-template": "/remote.php/dav/trashbin/{user}/restore/{Destination}"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Restored"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "webdav-trashbin-delete",
+        "summary": "Permanently delete a trashed item",
+        "tags": [
+          "trashbin"
+        ],
+        "externalDocs": {
+          "description": "Nextcloud developer manual",
+          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/trashbin.html"
+        },
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/remote.php/dav/versions/{user}/versions/{fileId}": {
+      "parameters": [
+        {
+          "name": "user",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "The Nextcloud user id whose storage is addressed; use the connector's own user."
+        },
+        {
+          "name": "fileId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Numeric file id (the `oc:fileid` property from PROPFIND)."
+        }
+      ],
+      "x-propfind": {
+        "operationId": "webdav-versions-list",
+        "summary": "List the versions of a file",
+        "tags": [
+          "versions"
+        ],
+        "externalDocs": {
+          "description": "Nextcloud developer manual",
+          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/versions.html"
+        },
+        "parameters": [
+          {
+            "name": "Depth",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "1"
+            },
+            "description": "0 = the item itself, 1 = the item and its children. infinity is normally refused by the server."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "description": "Optional PROPFIND request body (`<d:propfind>` with the requested properties); omit for all properties.",
+          "content": {
+            "application/xml": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "207": {
+            "description": "Multistatus XML",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/remote.php/dav/versions/{user}/versions/{fileId}/{versionId}": {
+      "parameters": [
+        {
+          "name": "user",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "The Nextcloud user id whose storage is addressed; use the connector's own user."
+        },
+        {
+          "name": "fileId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "versionId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "A version id as listed by PROPFIND (a Unix timestamp)."
+        }
+      ],
+      "get": {
+        "operationId": "webdav-versions-download",
+        "summary": "Download one version of a file",
+        "tags": [
+          "versions"
+        ],
+        "externalDocs": {
+          "description": "Nextcloud developer manual",
+          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/versions.html"
+        },
+        "responses": {
+          "200": {
+            "description": "File content",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        }
+      },
+      "x-move": {
+        "operationId": "webdav-versions-restore",
+        "summary": "Restore a version, replacing the current file content",
+        "tags": [
+          "versions"
+        ],
+        "externalDocs": {
+          "description": "Nextcloud developer manual",
+          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/versions.html"
+        },
+        "parameters": [
+          {
+            "name": "Destination",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "target"
+            },
+            "description": "Any name; the file is restored in place.",
+            "x-destination-template": "/remote.php/dav/versions/{user}/restore/{Destination}"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Restored"
+          }
+        }
+      }
+    },
+    "/remote.php/dav/systemtags": {
+      "x-propfind": {
+        "operationId": "webdav-systemtags-list",
+        "summary": "List system tags",
+        "tags": [
+          "systemtags"
+        ],
+        "externalDocs": {
+          "description": "Server source of the system tags DAV endpoints (no developer-manual page)",
+          "url": "https://github.com/nextcloud/server/tree/v31.0.14/apps/dav/lib/SystemTag"
+        },
+        "parameters": [
+          {
+            "name": "Depth",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "1"
+            },
+            "description": "0 = the item itself, 1 = the item and its children. infinity is normally refused by the server."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "description": "Optional PROPFIND request body (`<d:propfind>` with the requested properties); omit for all properties.",
+          "content": {
+            "application/xml": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "207": {
+            "description": "Multistatus XML",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "webdav-systemtags-create",
+        "summary": "Create a system tag",
+        "tags": [
+          "systemtags"
+        ],
+        "externalDocs": {
+          "description": "Server source of the system tags DAV endpoints (no developer-manual page)",
+          "url": "https://github.com/nextcloud/server/tree/v31.0.14/apps/dav/lib/SystemTag"
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "userVisible": {
+                    "type": "boolean",
+                    "default": true
+                  },
+                  "userAssignable": {
+                    "type": "boolean",
+                    "default": true
+                  },
+                  "canAssign": {
+                    "type": "boolean",
+                    "default": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created; the Content-Location header holds the new tag"
+          }
+        }
+      }
+    },
+    "/remote.php/dav/systemtags/{tagId}": {
+      "parameters": [
+        {
+          "name": "tagId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Numeric tag id."
+        }
+      ],
+      "x-propfind": {
+        "operationId": "webdav-systemtags-get",
+        "summary": "Get one system tag",
+        "tags": [
+          "systemtags"
+        ],
+        "externalDocs": {
+          "description": "Server source of the system tags DAV endpoints (no developer-manual page)",
+          "url": "https://github.com/nextcloud/server/tree/v31.0.14/apps/dav/lib/SystemTag"
+        },
+        "parameters": [
+          {
+            "name": "Depth",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "1"
+            },
+            "description": "0 = the item itself, 1 = the item and its children. infinity is normally refused by the server."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "description": "Optional PROPFIND request body (`<d:propfind>` with the requested properties); omit for all properties.",
+          "content": {
+            "application/xml": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "207": {
+            "description": "Multistatus XML",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "x-proppatch": {
+        "operationId": "webdav-systemtags-update",
+        "summary": "Rename or change a system tag",
+        "tags": [
+          "systemtags"
+        ],
+        "externalDocs": {
+          "description": "Server source of the system tags DAV endpoints (no developer-manual page)",
+          "url": "https://github.com/nextcloud/server/tree/v31.0.14/apps/dav/lib/SystemTag"
+        },
+        "requestBody": {
+          "required": true,
+          "description": "`<d:propertyupdate>` setting `<oc:display-name>`, `<oc:user-visible>`, `<oc:user-assignable>`.",
+          "content": {
+            "application/xml": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "207": {
+            "description": "Multistatus XML",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "webdav-systemtags-delete",
+        "summary": "Delete a system tag (removes it from every file)",
+        "tags": [
+          "systemtags"
+        ],
+        "externalDocs": {
+          "description": "Server source of the system tags DAV endpoints (no developer-manual page)",
+          "url": "https://github.com/nextcloud/server/tree/v31.0.14/apps/dav/lib/SystemTag"
+        },
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/remote.php/dav/systemtags-relations/files/{fileId}": {
+      "parameters": [
+        {
+          "name": "fileId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Numeric file id."
+        }
+      ],
+      "x-propfind": {
+        "operationId": "webdav-systemtags-file-tags",
+        "summary": "List the system tags of a file",
+        "tags": [
+          "systemtags"
+        ],
+        "externalDocs": {
+          "description": "Server source of the system tags DAV endpoints (no developer-manual page)",
+          "url": "https://github.com/nextcloud/server/tree/v31.0.14/apps/dav/lib/SystemTag"
+        },
+        "parameters": [
+          {
+            "name": "Depth",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "1"
+            },
+            "description": "0 = the item itself, 1 = the item and its children. infinity is normally refused by the server."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "description": "Optional PROPFIND request body (`<d:propfind>` with the requested properties); omit for all properties.",
+          "content": {
+            "application/xml": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "207": {
+            "description": "Multistatus XML",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/remote.php/dav/systemtags-relations/files/{fileId}/{tagId}": {
+      "parameters": [
+        {
+          "name": "fileId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "tagId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "operationId": "webdav-systemtags-assign",
+        "summary": "Assign a system tag to a file",
+        "tags": [
+          "systemtags"
+        ],
+        "externalDocs": {
+          "description": "Server source of the system tags DAV endpoints (no developer-manual page)",
+          "url": "https://github.com/nextcloud/server/tree/v31.0.14/apps/dav/lib/SystemTag"
+        },
+        "responses": {
+          "201": {
+            "description": "Assigned"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "webdav-systemtags-unassign",
+        "summary": "Remove a system tag from a file",
+        "tags": [
+          "systemtags"
+        ],
+        "externalDocs": {
+          "description": "Server source of the system tags DAV endpoints (no developer-manual page)",
+          "url": "https://github.com/nextcloud/server/tree/v31.0.14/apps/dav/lib/SystemTag"
+        },
+        "responses": {
+          "204": {
+            "description": "Removed"
+          }
+        }
+      }
+    },
+    "/remote.php/dav/comments/files/{fileId}": {
+      "parameters": [
+        {
+          "name": "fileId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Numeric file id."
+        }
+      ],
+      "x-report": {
+        "operationId": "webdav-comments-list",
+        "summary": "List the comments on a file (REPORT)",
+        "tags": [
+          "comments"
+        ],
+        "externalDocs": {
+          "description": "Nextcloud developer manual",
+          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/comments.html"
+        },
+        "requestBody": {
+          "required": true,
+          "description": "Report body with `<oc:limit>`, `<oc:offset>` and optional `<oc:datetime>` (see the docs example).",
+          "content": {
+            "application/xml": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "207": {
+            "description": "Multistatus XML",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "webdav-comments-create",
+        "summary": "Comment on a file",
+        "tags": [
+          "comments"
+        ],
+        "externalDocs": {
+          "description": "Nextcloud developer manual",
+          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/comments.html"
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "message"
+                ],
+                "properties": {
+                  "actorType": {
+                    "type": "string",
+                    "default": "users"
+                  },
+                  "verb": {
+                    "type": "string",
+                    "default": "comment"
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 1000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          }
+        },
+        "description": "Visible to everyone who can open the file; an `@user` mention notifies that user."
+      }
+    },
+    "/remote.php/dav/comments/files/{fileId}/{commentId}": {
+      "parameters": [
+        {
+          "name": "fileId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "commentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "x-proppatch": {
+        "operationId": "webdav-comments-update",
+        "summary": "Edit a comment",
+        "tags": [
+          "comments"
+        ],
+        "externalDocs": {
+          "description": "Nextcloud developer manual",
+          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/comments.html"
+        },
+        "requestBody": {
+          "required": true,
+          "description": "`<d:propertyupdate>` setting `<oc:message>`.",
+          "content": {
+            "application/xml": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "207": {
+            "description": "Multistatus XML",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "webdav-comments-delete",
+        "summary": "Delete a comment",
+        "tags": [
+          "comments"
+        ],
+        "externalDocs": {
+          "description": "Nextcloud developer manual",
+          "url": "https://docs.nextcloud.com/server/31/developer_manual/client_apis/WebDAV/comments.html"
+        },
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          }
+        }
+      }
+    }
+  },
+  "components": {}
+}

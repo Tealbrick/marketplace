@@ -1,11 +1,11 @@
-# Marketplace standalone 0.1.14 image
+# Marketplace standalone 0.1.15 image
 
-This bundle is the public Marketplace 0.1.14 release line and supersedes
-0.1.13 with the Company Box collection (full-API self-hosted app connectors, owner approval queue, optional tailnet egress).
+This bundle is the public Marketplace 0.1.15 release line and supersedes
+0.1.14 with seven more full-API Company Box connectors, WebDAV support and a Google Calendar approval policy.
 
-Source snapshot: `7c9bc8acd4b6e102eca6d751983800b44d50821e`
-Source archive SHA256: `ae9571bea356f4a2113a435c17ca12a435b78466bf04bb775c277be42056be4f`
-Image: `ghcr.io/tealbrick/marketplace:0.1.14`
+Source snapshot: `46abccb1b4b8548843b0ce66986c5adfd7d40cbd`
+Source archive SHA256: `419b9b5714f2f742cf92000c2468fbe1ad6a26aec47c6e3d8388590f1f08ff39`
+Image: `ghcr.io/tealbrick/marketplace:0.1.15`
 
 ## Runtime contract
 
@@ -23,13 +23,43 @@ Image: `ghcr.io/tealbrick/marketplace:0.1.14`
   into the image or returned to browser code.
 
 The source-backed Railway path uses the fixed public release branch
-`release-marketplace-v0.1.14` (slash-free so the Railway template editor
+`release-marketplace-v0.1.15` (slash-free so the Railway template editor
 accepts it); its exact tag target, branch ruleset, and image
 digest are recorded in the successor receipt. Set the service root directory
 to `release/railway`, keep the Dockerfile entrypoint, and use the relay
 contract in `deploy/railway/recipe.json` and `deploy/railway/railway-blueprint.json`.
 GHCR is optional for the source-build path; no template ID or publication is
 implied by these files.
+
+## v0.1.15 Company Box expansion disposition
+
+This successor merges Tealbrick/marketplace#17.
+
+New Company Box entries:
+- Nextcloud 31.0.14 (OCS for the enabled apps, plus hand-authored WebDAV files, trash bin, versions and chunked upload)
+- Documenso
+- changedetection.io
+- Chatwoot
+- GlitchTip
+- Forgejo
+- Authentik
+
+There are now 12 entries exposing 3233/3289 operations; every exclusion has a reason.
+
+Engine changes:
+- WebDAV methods, multi-segment paths with traversal refusal, and an origin-pinned Destination.
+- Header defaults.
+- Classification hardening: MOVE is destructive, `reads` patterns downgrade only POST/QUERY, and reserved header names are refused.
+
+Google Calendar through Composio:
+- A versioned Composio policy holds tools that notify attendees or share calendars in the owner approval queue.
+- Destructive tools need admin.
+- `composio:coverage` maps 37/38 Calendar v3 methods; `calendars.transferOwnership` has no Composio tool yet.
+
+Upgrade and rollback:
+- There is no schema change. Approval records keep the 0.1.14 table.
+- Composio tools that were reclassified up to dispatch or admin need fresh grants at that capability.
+- Rollback to 0.1.14 needs no data change.
 
 ## v0.1.14 Company Box disposition
 

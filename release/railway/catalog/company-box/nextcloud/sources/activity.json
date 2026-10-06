@@ -1,0 +1,229 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Nextcloud Activity API v2 (hand-authored)",
+    "version": "4.0.0",
+    "x-source": "hand-authored",
+    "description": "Hand-authored from https://github.com/nextcloud/activity/blob/stable31/docs/endpoint-v2.md (activity app 4.0.0, tag v31.0.14); the app publishes no OpenAPI document."
+  },
+  "paths": {
+    "/ocs/v2.php/apps/activity/api/v2/activity": {
+      "get": {
+        "operationId": "activity-get-default",
+        "summary": "Get the activity stream",
+        "description": "Pagination: pass the `X-Activity-Last-Given` response header as `since`.",
+        "tags": [
+          "api"
+        ],
+        "externalDocs": {
+          "description": "Activity API v2",
+          "url": "https://github.com/nextcloud/activity/blob/stable31/docs/endpoint-v2.md"
+        },
+        "parameters": [
+          {
+            "name": "OCS-APIRequest",
+            "in": "header",
+            "required": true,
+            "description": "Required to be true for the API request to pass",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Id of the last activity you have seen."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "minimum": 1
+            },
+            "description": "How many activities to return."
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "desc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not modified"
+          }
+        }
+      }
+    },
+    "/ocs/v2.php/apps/activity/api/v2/activity/filters": {
+      "get": {
+        "operationId": "activity-list-filters",
+        "summary": "List the activity type filters",
+        "tags": [
+          "api"
+        ],
+        "externalDocs": {
+          "description": "Activity API v2",
+          "url": "https://github.com/nextcloud/activity/blob/stable31/docs/endpoint-v2.md"
+        },
+        "parameters": [
+          {
+            "name": "OCS-APIRequest",
+            "in": "header",
+            "required": true,
+            "description": "Required to be true for the API request to pass",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not modified"
+          }
+        }
+      }
+    },
+    "/ocs/v2.php/apps/activity/api/v2/activity/{filter}": {
+      "get": {
+        "operationId": "activity-get-filter",
+        "summary": "Get the activity stream for one filter",
+        "tags": [
+          "api"
+        ],
+        "externalDocs": {
+          "description": "Activity API v2",
+          "url": "https://github.com/nextcloud/activity/blob/stable31/docs/endpoint-v2.md"
+        },
+        "parameters": [
+          {
+            "name": "OCS-APIRequest",
+            "in": "header",
+            "required": true,
+            "description": "Required to be true for the API request to pass",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "name": "filter",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "A filter id from the filters list, e.g. `all`, `self`, `by`, `filter`, `files_favorites`. `filter` is the only one that accepts object_type and object_id."
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Id of the last activity you have seen."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "minimum": 1
+            },
+            "description": "How many activities to return."
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "desc"
+            }
+          },
+          {
+            "name": "object_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only with filter `filter` and together with object_id, e.g. `files`."
+          },
+          {
+            "name": "object_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only with filter `filter` and together with object_type, e.g. a file id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not modified"
+          }
+        }
+      }
+    }
+  },
+  "components": {}
+}

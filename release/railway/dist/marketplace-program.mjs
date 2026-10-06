@@ -73147,6 +73147,151 @@ var coerce = {
 };
 var NEVER = INVALID;
 
+// catalog/composio-policy/googlecalendar.json
+var googlecalendar_default = {
+  schema: 1,
+  toolkit: "googlecalendar",
+  version: "2026-10-06",
+  reviewedAgainst: "googlecalendar.tools.json",
+  notes: 'Outward: reaches people outside the workspace (attendee notifications, calendar sharing) or registers an external webhook. Event tools that notify attendees are outward unless the call is quiet: send_updates/sendUpdates explicitly "none", no attendees, and send_notifications not true. Tools with no way to turn notifications off are always outward. Writes: tools whose names do not reveal they write (patch, insert, move, watch, stop, duplicate, batch, clear) are pinned to at least connector.dispatch. BATCH_EVENTS is destructive as well: one batch can delete events.',
+  outward: {
+    always: [
+      "GOOGLECALENDAR_BATCH_EVENTS",
+      "GOOGLECALENDAR_EVENTS_IMPORT",
+      "GOOGLECALENDAR_REMOVE_ATTENDEE",
+      "GOOGLECALENDAR_ACL_INSERT",
+      "GOOGLECALENDAR_ACL_UPDATE",
+      "GOOGLECALENDAR_ACL_PATCH",
+      "GOOGLECALENDAR_*_WATCH"
+    ],
+    unlessQuiet: [
+      "GOOGLECALENDAR_CREATE_EVENT",
+      "GOOGLECALENDAR_UPDATE_EVENT",
+      "GOOGLECALENDAR_PATCH_EVENT",
+      "GOOGLECALENDAR_QUICK_ADD",
+      "GOOGLECALENDAR_EVENTS_MOVE",
+      "GOOGLECALENDAR_DELETE_EVENT"
+    ],
+    quiet: {
+      argument: [
+        "send_updates",
+        "sendUpdates"
+      ],
+      equals: "none",
+      unlessPresent: [
+        "attendees"
+      ],
+      unlessTrue: [
+        "send_notifications",
+        "sendNotifications"
+      ]
+    }
+  },
+  destructive: [
+    "GOOGLECALENDAR_BATCH_EVENTS",
+    "GOOGLECALENDAR_CALENDARS_DELETE",
+    "GOOGLECALENDAR_CLEAR_CALENDAR",
+    "GOOGLECALENDAR_ACL_DELETE",
+    "GOOGLECALENDAR_CALENDAR_LIST_DELETE",
+    "GOOGLECALENDAR_DELETE_EVENT"
+  ],
+  writes: [
+    "GOOGLECALENDAR_ACL_INSERT",
+    "GOOGLECALENDAR_ACL_PATCH",
+    "GOOGLECALENDAR_*_WATCH",
+    "GOOGLECALENDAR_BATCH_EVENTS",
+    "GOOGLECALENDAR_CALENDAR_LIST_INSERT",
+    "GOOGLECALENDAR_CALENDAR_LIST_PATCH",
+    "GOOGLECALENDAR_CHANNELS_STOP",
+    "GOOGLECALENDAR_DUPLICATE_CALENDAR",
+    "GOOGLECALENDAR_EVENTS_MOVE",
+    "GOOGLECALENDAR_PATCH_CALENDAR",
+    "GOOGLECALENDAR_PATCH_EVENT"
+  ],
+  reads: [
+    "GOOGLECALENDAR_SYNC_EVENTS"
+  ]
+};
+
+// src/composio-policy.ts
+var PatternList = external_exports.array(external_exports.string().trim().min(1).max(200)).max(500).default([]);
+var ComposioPolicySchema = external_exports.object({
+  schema: external_exports.literal(1),
+  toolkit: external_exports.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/u),
+  version: external_exports.string().min(1).max(40),
+  reviewedAgainst: external_exports.string().optional(),
+  notes: external_exports.string().max(4e3).optional(),
+  outward: external_exports.object({
+    always: PatternList,
+    unlessQuiet: PatternList,
+    quiet: external_exports.object({
+      argument: external_exports.array(external_exports.string().min(1)).min(1),
+      equals: external_exports.union([external_exports.string(), external_exports.boolean()]),
+      unlessPresent: external_exports.array(external_exports.string().min(1)).default([]),
+      unlessTrue: external_exports.array(external_exports.string().min(1)).default([])
+    }).strict().optional()
+  }).strict().default({ always: [], unlessQuiet: [] }),
+  destructive: PatternList,
+  writes: PatternList,
+  reads: PatternList
+}).strict().superRefine((policy, context) => {
+  if (policy.outward.unlessQuiet.length && !policy.outward.quiet) {
+    context.addIssue({ code: "custom", path: ["outward", "quiet"], message: "unlessQuiet needs a quiet rule" });
+  }
+});
+var POLICIES = new Map(
+  [googlecalendar_default].map((raw) => {
+    const policy = ComposioPolicySchema.parse(raw);
+    return [policy.toolkit, policy];
+  })
+);
+function composioPolicyFor(toolkit) {
+  return POLICIES.get(toolkit.toLowerCase().replace(/[^a-z0-9]+/gu, "")) ?? POLICIES.get(toolkit) ?? null;
+}
+function composioPatternMatches(pattern, toolSlug) {
+  const regex = new RegExp(
+    `^${pattern.trim().split("*").map((part) => part.replace(/[.+?^${}()|[\]\\]/gu, "\\$&")).join(".*")}$`,
+    "iu"
+  );
+  return regex.test(toolSlug);
+}
+function matchesAny(patterns, toolSlug) {
+  return patterns.some((pattern) => composioPatternMatches(pattern, toolSlug));
+}
+var CAPABILITY_RANK = {
+  "connector.observe": 0,
+  "connector.dispatch": 1,
+  "connector.admin": 2
+};
+function composioToolPolicy(policy, toolSlug, inferred) {
+  const destructive = matchesAny(policy.destructive, toolSlug);
+  const outward = matchesAny(policy.outward.always, toolSlug) ? "always" : matchesAny(policy.outward.unlessQuiet, toolSlug) ? "unlessQuiet" : null;
+  let capability = inferred;
+  if (destructive) capability = "connector.admin";
+  else if (matchesAny(policy.writes, toolSlug) || outward) {
+    capability = CAPABILITY_RANK[inferred] >= CAPABILITY_RANK["connector.dispatch"] ? inferred : "connector.dispatch";
+  } else if (matchesAny(policy.reads, toolSlug)) capability = "connector.observe";
+  return { capability, outward, destructive };
+}
+function argumentValue(args, names) {
+  for (const name of names) if (name in args) return args[name];
+  return void 0;
+}
+function composioCallIsOutward(policy, toolSlug, args) {
+  const classification = composioToolPolicy(policy, toolSlug, "connector.observe").outward;
+  if (classification !== "unlessQuiet") return classification === "always";
+  const quiet = policy.outward.quiet;
+  if (!args) return true;
+  if (argumentValue(args, quiet.argument) !== quiet.equals) return true;
+  for (const name of quiet.unlessPresent) {
+    const value = args[name];
+    if (value !== void 0 && value !== null && !(Array.isArray(value) && value.length === 0) && value !== "") {
+      return true;
+    }
+  }
+  return quiet.unlessTrue.some((name) => args[name] === true);
+}
+
 // src/connectors.ts
 var CONNECTOR_SUPPORTED_CAPABILITIES = {
   github: ["connector.observe", "connector.dispatch"],
@@ -73574,7 +73719,10 @@ function normalizeComposioTool(tool, toolkit) {
   }
   const actionSuffix = actionSuffixFromToolName(rawToolName, toolkit);
   const action = `${toolkit}.${actionSuffix}`;
-  const capability = inferConnectorCapabilityFromAction(action);
+  const inferred = inferConnectorCapabilityFromAction(action);
+  const policy = composioPolicyFor(toolkit);
+  const governed = policy ? composioToolPolicy(policy, rawToolName, inferred) : null;
+  const capability = governed?.capability ?? inferred;
   const inputArguments = composioToolInputArguments(record2);
   return [
     {
@@ -73583,9 +73731,55 @@ function normalizeComposioTool(tool, toolkit) {
       displayName: stringValue(record2.displayName) ?? stringValue(record2.display_name) ?? titleCase(actionSuffix),
       description: stringValue(record2.description) ?? "",
       capability,
-      ...inputArguments ? { inputArguments } : {}
+      ...inputArguments ? { inputArguments } : {},
+      ...governed?.outward ? { outward: governed.outward } : {},
+      ...governed?.destructive ? { destructive: true } : {}
     }
   ];
+}
+function applyComposioPolicyToListing(listing) {
+  if (listing.source !== "composio") return null;
+  const policy = composioPolicyFor(listing.provider);
+  const composio = recordValue(listing.manifest.composio);
+  const tools = Array.isArray(composio?.tools) ? composio.tools : [];
+  if (!policy || !tools.length) return null;
+  const requirements = { ...recordValue(listing.manifest.actionRequirements) ?? {} };
+  let changed = false;
+  const nextTools = tools.map((value) => {
+    const tool = recordValue(value);
+    const toolName = stringValue(tool?.toolName);
+    const action = stringValue(tool?.action);
+    if (!tool || !toolName || !action) return value;
+    const governed = composioToolPolicy(policy, toolName, inferConnectorCapabilityFromAction(action));
+    const next = { ...tool, capability: governed.capability };
+    delete next.outward;
+    delete next.destructive;
+    if (governed.outward) next.outward = governed.outward;
+    if (governed.destructive) next.destructive = true;
+    const requirement = recordValue(requirements[action]);
+    if (requirement && requirement.capability !== governed.capability) {
+      requirements[action] = { ...requirement, capability: governed.capability };
+      changed = true;
+    }
+    if (JSON.stringify(next) !== JSON.stringify(tool)) changed = true;
+    return next;
+  });
+  if (!changed) return null;
+  const capabilities2 = [
+    ...new Set(
+      Object.values(requirements).map((requirement) => recordValue(requirement)?.capability).filter((capability) => CAPABILITIES.has(capability))
+    )
+  ].sort();
+  return {
+    ...listing,
+    capabilities: capabilities2,
+    manifest: {
+      ...listing.manifest,
+      actionRequirements: requirements,
+      composio: { ...composio, tools: nextTools }
+    },
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
 }
 function composioToolInputArguments(record2) {
   const schema = recordValue(
@@ -75418,7 +75612,9 @@ var SqliteMarketplaceStore = class {
   /** Store an agent's held outward call. Arguments are bounded by the caller. */
   createCompanyBoxApproval(input) {
     const id = createId("approval");
-    const timestamp = nowIso();
+    const created = Date.now();
+    const timestamp = new Date(created).toISOString();
+    const expiresAt = new Date(created + input.ttlMs).toISOString();
     this.db.prepare(
       `INSERT INTO company_box_approval (
           id, workspace_slug, plugin_id, action_key, capability, agent_id, source_kind, source_ref,
@@ -75437,7 +75633,7 @@ var SqliteMarketplaceStore = class {
       input.fingerprint,
       JSON.stringify(input.arguments),
       input.argumentsPreview,
-      input.expiresAt,
+      expiresAt,
       timestamp,
       timestamp
     );
@@ -77963,7 +78159,7 @@ function policyCheckedLookup(lookup = defaultMcpLookup) {
 // package.json
 var package_default = {
   name: "@tealbrick/marketplace-program",
-  version: "0.1.14",
+  version: "0.1.15",
   private: true,
   type: "module",
   packageManager: "pnpm@9.15.4",
@@ -77985,7 +78181,8 @@ var package_default = {
     test: "vitest run && vitest run --config web/vitest.config.ts",
     "test:e2e": "pnpm run build:web && playwright test --config web/playwright.config.ts",
     lint: "tsc -p tsconfig.json --noEmit",
-    "company-box:coverage": "tsx scripts/company-box-coverage.ts"
+    "company-box:coverage": "tsx scripts/company-box-coverage.ts",
+    "composio:coverage": "tsx scripts/composio-coverage.ts"
   },
   dependencies: {
     "@fastify/static": "^8.3.0",
@@ -78639,6 +78836,17 @@ var OPENAPI_METHODS = [
   "patch",
   "trace"
 ];
+var WEBDAV_METHODS = [
+  "propfind",
+  "proppatch",
+  "mkcol",
+  "move",
+  "copy",
+  "report",
+  "lock",
+  "unlock"
+];
+var READ_METHODS = /* @__PURE__ */ new Set(["get", "head", "options", "propfind", "report"]);
 var OPENAPI_MAX_ACTION_KEY_LENGTH = 128;
 var OPENAPI_ACTION_KEY_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*){1,7}$/u;
 var OPENAPI_TOOL_SCHEMA_MAX_BYTES = 16384;
@@ -78655,6 +78863,17 @@ var OpenApiSpecError = class extends Error {
   }
   code;
 };
+function parameterDefault(parameter) {
+  if ("const" in parameter.schema) return parameter.schema.const;
+  if ("default" in parameter.schema) return parameter.schema.default;
+  return void 0;
+}
+function parameterHasDefault(parameter) {
+  return parameter.in === "header" && parameterDefault(parameter) !== void 0;
+}
+function parameterNeedsArgument(parameter) {
+  return parameter.required && !parameterHasDefault(parameter);
+}
 function recordValue5(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : null;
 }
@@ -78724,7 +78943,12 @@ function rewriteSchema(context, value, seen = /* @__PURE__ */ new Set()) {
   for (const [key, child] of Object.entries(record2)) {
     out[key] = rewriteSchema(context, child, seen);
   }
-  return out;
+  return nullableWithoutType(out);
+}
+function nullableWithoutType(schema) {
+  if (typeof schema.nullable !== "boolean" || "type" in schema) return schema;
+  const { nullable, ...rest } = schema;
+  return nullable ? { anyOf: [rest, { type: "null" }] } : rest;
 }
 function collectDefRefs(value, into) {
   if (Array.isArray(value)) {
@@ -78901,8 +79125,10 @@ function parseOpenApiDocument(raw) {
   for (const [path10, rawItem] of Object.entries(paths)) {
     const item = derefObject(document, rawItem);
     if (!item) continue;
-    for (const method of OPENAPI_METHODS) {
-      const operation = recordValue5(item[method]);
+    for (const method of [...OPENAPI_METHODS, ...WEBDAV_METHODS]) {
+      const operation = recordValue5(
+        WEBDAV_METHODS.includes(method) ? item[`x-${method}`] : item[method]
+      );
       if (!operation) continue;
       const operationId = stringValue4(operation.operationId);
       const parameters = [];
@@ -78945,11 +79171,15 @@ function parseOpenApiDocument(raw) {
             parameter.schema ?? recordValue5(Object.values(recordValue5(parameter.content) ?? {})[0])?.schema ?? {}
           )
         ) ?? {};
+        const lowerName = name.toLowerCase();
+        const constrained = location === "header" && lowerName === "overwrite" ? { ...schema, type: "string", enum: ["T", "F"] } : location === "header" && lowerName === "depth" ? { ...schema, type: "string", enum: ["0", "1", "infinity"] } : schema;
         parameters.push({
           name,
           in: location,
           required: location === "path" ? true : parameter.required === true,
-          schema,
+          schema: location === "path" && parameter["x-multi-segment"] === true ? { description: "A path; may contain / between segments (no empty, . or .. segments).", ...constrained, "x-multi-segment": true } : location === "header" && lowerName === "destination" ? { description: "Destination path relative to the app (not a URL); Marketplace builds the full address.", ...constrained } : constrained,
+          ...location === "path" && parameter["x-multi-segment"] === true ? { multiSegment: true } : {},
+          ...location === "header" && lowerName === "destination" && typeof parameter["x-destination-template"] === "string" ? { destinationTemplate: parameter["x-destination-template"] } : {},
           ...description ? { description } : {},
           ...typeof parameter.style === "string" ? { style: parameter.style } : {},
           ...typeof parameter.explode === "boolean" ? { explode: parameter.explode } : {},
@@ -79090,11 +79320,18 @@ function operationPatternMatches(pattern, operation) {
   );
   return operation.operationId !== null && regex.test(operation.operationId) || regex.test(operationIdentity(operation.method, operation.path));
 }
+var READS_DOWNGRADABLE_METHODS = /* @__PURE__ */ new Set(["post", "query"]);
+function copyMayOverwrite(parameters) {
+  const overwrite = (parameters ?? []).find(
+    (parameter) => parameter.in === "header" && parameter.name.toLowerCase() === "overwrite"
+  );
+  return !(overwrite && overwrite.schema.const === "F");
+}
 function operationRisk(operation, patterns) {
-  const readMethod = ["get", "head", "options"].includes(operation.method);
-  const readClass = !readMethod && (patterns.reads ?? []).some((pattern) => operationPatternMatches(pattern, operation));
+  const readMethod = READ_METHODS.has(operation.method);
+  const readClass = READS_DOWNGRADABLE_METHODS.has(operation.method) && (patterns.reads ?? []).some((pattern) => operationPatternMatches(pattern, operation));
   const write = !readMethod && !readClass;
-  const destructive = operation.method === "delete" && !readClass || patterns.destructive.some((pattern) => operationPatternMatches(pattern, operation));
+  const destructive = operation.method === "delete" || operation.method === "move" || operation.method === "copy" && copyMayOverwrite(operation.parameters) || patterns.destructive.some((pattern) => operationPatternMatches(pattern, operation));
   const outward = patterns.outward.some((pattern) => operationPatternMatches(pattern, operation));
   return {
     capability: destructive ? "connector.admin" : write ? "connector.dispatch" : "connector.observe",
@@ -79118,7 +79355,7 @@ function groupSchema(parameters) {
         parameter.description && !("description" in parameter.schema) ? { ...parameter.schema, description: parameter.description } : parameter.schema
       ])
     ),
-    required: parameters.filter((parameter) => parameter.required).map((parameter) => parameter.name),
+    required: parameters.filter(parameterNeedsArgument).map((parameter) => parameter.name),
     additionalProperties: false
   };
 }
@@ -79137,7 +79374,7 @@ function operationInputSchema(operation, defs) {
     const parameters = operation.parameters.filter((parameter) => parameter.in === location);
     if (!parameters.length) continue;
     properties[location] = groupSchema(parameters);
-    if (parameters.some((parameter) => parameter.required)) required.push(location);
+    if (parameters.some(parameterNeedsArgument)) required.push(location);
   }
   if (operation.requestBody) {
     properties.body = {
@@ -79239,6 +79476,544 @@ function fileAwareBodySchema(contentType, schema, defs) {
   if (!properties) return schema;
   const next = Object.fromEntries(Object.entries(properties).map(([key, value]) => [key, fileAware(value)]));
   return Object.values(next).some((value, index) => value !== Object.values(properties)[index]) ? { ...target, properties: next } : schema;
+}
+
+// src/openapi-http.ts
+var OPENAPI_CALL_TIMEOUT_MS = 3e4;
+var OPENAPI_MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+var OPENAPI_MAX_BINARY_BYTES = 512 * 1024;
+var OPENAPI_DEFAULT_MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+function companyBoxMaxUploadBytes(env = process.env) {
+  const value = Number(env.MARKETPLACE_COMPANY_BOX_MAX_UPLOAD_BYTES);
+  return Number.isInteger(value) && value > 0 ? value : OPENAPI_DEFAULT_MAX_UPLOAD_BYTES;
+}
+var MAX_ERROR_BODY_CHARS = 4096;
+var OpenApiCallError = class extends Error {
+  constructor(code, message, detail = {}) {
+    super(message);
+    this.code = code;
+    this.detail = detail;
+  }
+  code;
+  detail;
+};
+var FORBIDDEN_HEADER_NAMES = /* @__PURE__ */ new Set([
+  "accept-encoding",
+  "authorization",
+  "connection",
+  "content-length",
+  "content-type",
+  "cookie",
+  "host",
+  "keep-alive",
+  "proxy-authorization",
+  "proxy-connection",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade"
+]);
+var RESPONSE_HEADER_ALLOWLIST = /* @__PURE__ */ new Set([
+  "content-type",
+  "etag",
+  "last-modified",
+  "link",
+  "x-total-count",
+  "x-total",
+  "x-page",
+  "x-per-page",
+  "x-next-page",
+  "x-request-id",
+  "retry-after"
+]);
+function recordValue6(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+function argumentError(field, reason) {
+  throw new OpenApiCallError("openapi_argument_invalid", `Argument ${field} is invalid (${reason}).`, {
+    field,
+    reason
+  });
+}
+function scalarString(value, field) {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return argumentError(field, "expected a string, number or boolean");
+}
+function headerValueValid(value) {
+  return value.length <= 4096 && /^[\t\x20-\x7e\x80-\xff]*$/u.test(value);
+}
+function credentialValues(credentials, auth) {
+  const values = Object.entries(credentials).filter(([field, value]) => field !== "username" && value.length >= 4).map(([, value]) => value);
+  if (auth.type === "basic" && credentials.username !== void 0 && credentials.password !== void 0) {
+    values.push(Buffer.from(`${credentials.username}:${credentials.password}`).toString("base64"));
+  }
+  return values;
+}
+function secretVariants(secret) {
+  const json = JSON.stringify(secret).slice(1, -1);
+  const forms = /* @__PURE__ */ new Set([
+    secret,
+    encodeURIComponent(secret),
+    encodeURI(secret),
+    encodeURIComponent(secret).replace(/%20/gu, "+"),
+    json,
+    json.replace(/\//gu, "\\/"),
+    secret.replace(/\//gu, "\\/"),
+    Buffer.from(secret).toString("base64"),
+    Buffer.from(secret).toString("base64url"),
+    Buffer.from(secret).toString("base64").replace(/=+$/u, "")
+  ]);
+  forms.add(encodeURIComponent(secret).replace(/%[0-9A-F]{2}/gu, (escape2) => escape2.toLowerCase()));
+  return [...forms].filter((form) => form.length >= 4).sort((left, right) => right.length - left.length);
+}
+function scrubSecrets(text, secrets) {
+  let out = text;
+  for (const secret of secrets) {
+    if (!secret) continue;
+    for (const form of secretVariants(secret)) {
+      out = out.split(form).join("[redacted]");
+    }
+  }
+  return out;
+}
+function scrubDeep(value, secrets) {
+  if (typeof value === "string") return scrubSecrets(value, secrets);
+  if (Array.isArray(value)) return value.map((item) => scrubDeep(item, secrets));
+  const record2 = recordValue6(value);
+  if (!record2) return value;
+  return Object.fromEntries(
+    Object.entries(record2).map(([key, child]) => [scrubSecrets(key, secrets), scrubDeep(child, secrets)])
+  );
+}
+function groupArgs(args, group) {
+  const value = args[group];
+  if (value === void 0 || value === null) return {};
+  const record2 = recordValue6(value);
+  if (!record2) argumentError(group, "expected an object");
+  return record2;
+}
+function declared(parameters, location) {
+  return new Map(
+    parameters.filter((parameter) => parameter.in === location).map((parameter) => [parameter.name, parameter])
+  );
+}
+function checkUnknown(group, supplied, known) {
+  for (const name of Object.keys(supplied)) {
+    if (!known.has(name)) argumentError(`${group}.${name}`, "not declared by the operation");
+  }
+}
+function reservedParameterName(name, auth) {
+  const lower = name.toLowerCase();
+  return lower === "_method" || lower.startsWith("x-http-method") || lower.startsWith("x-method-override") || auth.type === "query" && lower === auth.name.toLowerCase();
+}
+function appendQuery(search, parameter, value, auth) {
+  const field = `query.${parameter.name}`;
+  if (value === void 0 || value === null) return;
+  if (Array.isArray(value)) {
+    const items = value.map((item) => scalarString(item, field));
+    if (parameter.explode === false) search.append(parameter.name, items.join(","));
+    else for (const item of items) search.append(parameter.name, item);
+    return;
+  }
+  const record2 = recordValue6(value);
+  if (record2) {
+    const properties = recordValue6(parameter.schema.properties);
+    if (parameter.schema.type !== "object" || !properties) argumentError(field, "expected a scalar or array");
+    for (const key of Object.keys(record2)) {
+      if (!(key in properties)) argumentError(`${field}.${key}`, "not declared by the operation");
+      if (reservedParameterName(key, auth)) argumentError(`${field}.${key}`, "reserved parameter name");
+    }
+    if (parameter.style === "deepObject") {
+      for (const [key, child] of Object.entries(record2)) {
+        search.append(`${parameter.name}[${key}]`, scalarString(child, field));
+      }
+    } else if (parameter.explode === false) {
+      search.append(
+        parameter.name,
+        Object.entries(record2).flatMap(([key, child]) => [key, scalarString(child, field)]).join(",")
+      );
+    } else {
+      for (const [key, child] of Object.entries(record2)) search.append(key, scalarString(child, field));
+    }
+    return;
+  }
+  search.append(parameter.name, scalarString(value, field));
+}
+function fileArgument(value) {
+  const record2 = recordValue6(value);
+  return record2 && typeof record2.base64 === "string" ? record2 : null;
+}
+function decodeFile(file, field, budget) {
+  const text = file.base64.replace(/\s+/gu, "");
+  if (!/^[A-Za-z0-9+/_-]*={0,2}$/u.test(text) || text.length % 4 === 1) {
+    argumentError(`${field}.base64`, "not valid base64");
+  }
+  const estimated = Math.floor(text.length * 3 / 4);
+  if (estimated - 2 > budget.remaining) {
+    throw new OpenApiCallError(
+      "openapi_upload_too_large",
+      `Uploads are limited to ${budget.max} bytes per call.`,
+      { field, reason: `limit ${budget.max} bytes` }
+    );
+  }
+  const bytes = new Uint8Array(Buffer.from(text, text.includes("-") || text.includes("_") ? "base64url" : "base64"));
+  if (bytes.byteLength > budget.remaining) {
+    throw new OpenApiCallError("openapi_upload_too_large", `Uploads are limited to ${budget.max} bytes per call.`, {
+      field,
+      reason: `limit ${budget.max} bytes`
+    });
+  }
+  budget.remaining -= bytes.byteLength;
+  return bytes;
+}
+function buildBody(operation, value, maxUploadBytes = OPENAPI_DEFAULT_MAX_UPLOAD_BYTES) {
+  const budget = { remaining: maxUploadBytes, max: maxUploadBytes };
+  const requestBody = operation.requestBody;
+  if (value === void 0) {
+    if (requestBody?.required) argumentError("body", "required");
+    return {};
+  }
+  if (!requestBody) argumentError("body", "the operation takes no request body");
+  const contentType = requestBody.contentType;
+  const base = contentType.split(";")[0].trim().toLowerCase();
+  if (base === "application/json" || base.endsWith("+json") || base.endsWith("/json")) {
+    return { body: JSON.stringify(value), contentType };
+  }
+  if (base === "application/x-www-form-urlencoded") {
+    const record2 = recordValue6(value) ?? argumentError("body", "expected an object");
+    const form = new URLSearchParams();
+    for (const [key, child] of Object.entries(record2)) {
+      if (Array.isArray(child)) for (const item of child) form.append(key, scalarString(item, `body.${key}`));
+      else if (child !== void 0 && child !== null) form.append(key, scalarString(child, `body.${key}`));
+    }
+    return { body: form.toString(), contentType };
+  }
+  if (base === "multipart/form-data") {
+    const record2 = recordValue6(value) ?? argumentError("body", "expected an object");
+    const form = new FormData();
+    const appendPart = (key, child, field) => {
+      const file2 = fileArgument(child);
+      if (file2) {
+        const bytes = decodeFile(file2, field, budget);
+        form.append(
+          key,
+          new Blob([bytes], {
+            type: typeof file2.contentType === "string" && file2.contentType ? file2.contentType : "application/octet-stream"
+          }),
+          typeof file2.filename === "string" && file2.filename ? file2.filename : key
+        );
+      } else if (child !== void 0 && child !== null) {
+        form.append(key, typeof child === "object" ? JSON.stringify(child) : scalarString(child, field));
+      }
+    };
+    for (const [key, child] of Object.entries(record2)) {
+      if (Array.isArray(child) && child.some((item) => fileArgument(item))) {
+        child.forEach((item, index) => appendPart(key, item, `body.${key}.${index}`));
+      } else {
+        appendPart(key, child, `body.${key}`);
+      }
+    }
+    return { body: form };
+  }
+  if (base.startsWith("text/") || base === "application/xml") {
+    return { body: scalarString(value, "body"), contentType };
+  }
+  const file = fileArgument(value);
+  if (file) {
+    return { body: decodeFile(file, "body", budget), contentType };
+  }
+  if (typeof value === "string") return { body: value, contentType };
+  return { body: JSON.stringify(value), contentType };
+}
+function validSegment(text) {
+  const decodedDots = text.replace(/%2e/giu, ".");
+  return !(text === "" || /[/\\]/u.test(text) || /%(2f|5c)/iu.test(text) || decodedDots === "." || decodedDots === "..");
+}
+function renderPathValue(text, field, multiSegment) {
+  const encode = (segment) => {
+    try {
+      return encodeURIComponent(segment);
+    } catch {
+      return argumentError(field, "not valid Unicode");
+    }
+  };
+  if (!multiSegment) {
+    if (!validSegment(text)) argumentError(field, "not a valid path segment");
+    return encode(text);
+  }
+  const segments = text.replace(/^\//u, "").replace(/\/$/u, "").split("/");
+  if (!segments.every(validSegment)) argumentError(field, "not a valid path");
+  return segments.map(encode).join("/");
+}
+function renderPathTemplate(template, value) {
+  return template.replace(/\{([^}]+)\}/gu, (_match, name) => value(name));
+}
+function buildOpenApiRequest(options, base) {
+  const { operation, args, auth, credentials } = options;
+  for (const key of Object.keys(args)) {
+    if (!["path", "query", "header", "body"].includes(key)) {
+      argumentError(key, "arguments are grouped as path, query, header and body");
+    }
+  }
+  if (options.validateArguments) {
+    const validation = options.validateArguments(args);
+    if (!validation.ok) argumentError(validation.field, validation.reason);
+  }
+  const pathArgs = groupArgs(args, "path");
+  const queryArgs = groupArgs(args, "query");
+  const headerArgs = groupArgs(args, "header");
+  const pathParams = declared(operation.parameters, "path");
+  const queryParams = declared(operation.parameters, "query");
+  const headerParams = declared(operation.parameters, "header");
+  checkUnknown("path", pathArgs, pathParams);
+  checkUnknown("query", queryArgs, queryParams);
+  checkUnknown("header", headerArgs, headerParams);
+  for (const [group, supplied] of [["query", queryArgs], ["header", headerArgs], ["path", pathArgs]]) {
+    for (const name of Object.keys(supplied)) {
+      if (reservedParameterName(name, auth)) argumentError(`${group}.${name}`, "reserved parameter name");
+    }
+  }
+  const renderedPath = renderPathTemplate(operation.path, (name) => {
+    const value = pathArgs[name];
+    if (value === void 0 || value === null) argumentError(`path.${name}`, "required");
+    return renderPathValue(scalarString(value, `path.${name}`), `path.${name}`, pathParams.get(name)?.multiSegment === true);
+  });
+  const prefix = base.pathname.replace(/\/+$/u, "");
+  const apiBase = (options.apiBasePath ?? "").replace(/\/+$/u, "");
+  const url = new URL(base.origin);
+  url.pathname = `${prefix}${apiBase}${renderedPath.startsWith("/") ? "" : "/"}${renderedPath}`;
+  if (url.origin !== base.origin || !url.pathname.startsWith(`${prefix}${apiBase}`)) {
+    argumentError("path", "the request left the configured base URL");
+  }
+  for (const [name, parameter] of queryParams) {
+    if (parameter.required && (queryArgs[name] === void 0 || queryArgs[name] === null)) {
+      argumentError(`query.${name}`, "required");
+    }
+    appendQuery(url.searchParams, parameter, queryArgs[name], auth);
+  }
+  const headers = new Headers();
+  headers.set("accept", "application/json, text/plain;q=0.9, */*;q=0.8");
+  headers.set("user-agent", `TealBrick-Marketplace/${MARKETPLACE_VERSION}`);
+  const authHeaderName = auth.type === "header" ? auth.name.toLowerCase() : auth.type === "basic" ? "authorization" : null;
+  for (const [name, parameter] of headerParams) {
+    const value = headerArgs[name] ?? parameterDefault(parameter);
+    if (value === void 0 || value === null) {
+      if (parameter.required) argumentError(`header.${name}`, "required");
+      continue;
+    }
+    const lower = name.toLowerCase();
+    if (FORBIDDEN_HEADER_NAMES.has(lower) || lower.startsWith("proxy-") || lower === authHeaderName || reservedParameterName(name, auth)) {
+      argumentError(`header.${name}`, "reserved header");
+    }
+    const text = scalarString(value, `header.${name}`);
+    if ("const" in parameter.schema && text !== scalarString(parameter.schema.const, `header.${name}`)) {
+      argumentError(`header.${name}`, `must be ${String(parameter.schema.const)}`);
+    }
+    if (!headerValueValid(text)) argumentError(`header.${name}`, "invalid header value");
+    if (lower === "overwrite" && text !== "T" && text !== "F") argumentError(`header.${name}`, "must be T or F");
+    if (lower === "depth" && !["0", "1", "infinity"].includes(text)) argumentError(`header.${name}`, "must be 0, 1 or infinity");
+    if (lower === "destination") {
+      if (!parameter.destinationTemplate) argumentError(`header.${name}`, "reserved header");
+      const rendered = renderPathTemplate(parameter.destinationTemplate, (placeholder) => {
+        if (placeholder.toLowerCase() === "destination" || placeholder === name) {
+          return renderPathValue(text, `header.${name}`, true);
+        }
+        const pathValue = pathArgs[placeholder];
+        if (pathValue === void 0 || pathValue === null) argumentError(`path.${placeholder}`, "required");
+        return renderPathValue(
+          scalarString(pathValue, `path.${placeholder}`),
+          `path.${placeholder}`,
+          pathParams.get(placeholder)?.multiSegment === true
+        );
+      });
+      const destination = new URL(base.origin);
+      destination.pathname = `${prefix}${apiBase}${rendered.startsWith("/") ? "" : "/"}${rendered}`;
+      if (destination.origin !== base.origin || !destination.pathname.startsWith(`${prefix}${apiBase}/`)) {
+        argumentError(`header.${name}`, "the destination left the configured base URL");
+      }
+      headers.set(lower, destination.toString());
+      continue;
+    }
+    headers.set(lower, text);
+  }
+  if (auth.type === "header") {
+    const token = credentials.token;
+    if (!token) throw new OpenApiCallError("openapi_credentials_missing", "The connector has no API token configured.");
+    headers.set(auth.name.toLowerCase(), `${auth.prefix ?? ""}${token}`);
+  } else if (auth.type === "basic") {
+    if (credentials.username === void 0 || credentials.password === void 0) {
+      throw new OpenApiCallError("openapi_credentials_missing", "The connector has no username and password configured.");
+    }
+    headers.set(
+      "authorization",
+      `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString("base64")}`
+    );
+  } else if (auth.type === "query") {
+    const key = credentials.apiKey;
+    if (!key) throw new OpenApiCallError("openapi_credentials_missing", "The connector has no API key configured.");
+    for (const name of queryParams.keys()) {
+      if (name.toLowerCase() === auth.name.toLowerCase() && queryArgs[name] !== void 0) {
+        argumentError(`query.${name}`, "reserved for the API key");
+      }
+    }
+    url.searchParams.set(auth.name, key);
+  }
+  const { body, contentType } = buildBody(operation, args.body, options.maxUploadBytes);
+  if (contentType) headers.set("content-type", contentType);
+  return { url, method: operation.method.toUpperCase(), headers, body };
+}
+function validateOpenApiArguments(operation, args, auth, validateArguments, maxUploadBytes) {
+  buildOpenApiRequest(
+    {
+      baseUrl: "https://validation.invalid",
+      operation,
+      args,
+      auth,
+      ...validateArguments ? { validateArguments } : {},
+      ...maxUploadBytes ? { maxUploadBytes } : {},
+      credentials: { token: "validation", username: "validation", password: "validation", apiKey: "validation" }
+    },
+    new URL("https://validation.invalid")
+  );
+}
+function isAbort(error) {
+  return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
+}
+async function readCapped(response, maxBytes) {
+  const declaredLength = Number(response.headers.get("content-length") ?? "");
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    await response.body?.cancel().catch(() => void 0);
+    throw new OpenApiCallError("openapi_response_too_large", "The app's response was too large.", {
+      status: response.status
+    });
+  }
+  if (!response.body) return Buffer.alloc(0);
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  for (; ; ) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => void 0);
+      throw new OpenApiCallError("openapi_response_too_large", "The app's response was too large.", {
+        status: response.status
+      });
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks);
+}
+function textual(contentType) {
+  if (!contentType) return true;
+  const base = contentType.split(";")[0].trim().toLowerCase();
+  return base.startsWith("text/") || base.endsWith("/json") || base.endsWith("+json") || base.endsWith("/xml") || base.endsWith("+xml") || base === "application/javascript" || base === "application/x-www-form-urlencoded" || base === "application/yaml" || base === "application/x-yaml";
+}
+function decodeResponse(bytes, contentType, secrets, maxBinaryBytes, status) {
+  if (bytes.length === 0) return { bodyKind: "empty" };
+  if (textual(contentType)) {
+    const text = scrubSecrets(bytes.toString("utf8"), secrets);
+    const base = (contentType ?? "").split(";")[0].trim().toLowerCase();
+    if (!contentType || base.endsWith("json")) {
+      try {
+        return { bodyKind: "json", body: JSON.parse(text) };
+      } catch {
+      }
+    }
+    return { bodyKind: "text", text };
+  }
+  if (bytes.length > maxBinaryBytes) {
+    throw new OpenApiCallError("openapi_response_too_large", "The app's binary response was too large.", {
+      status
+    });
+  }
+  return { bodyKind: "binary", base64: bytes.toString("base64") };
+}
+async function callOpenApiOperation(options) {
+  let base;
+  try {
+    base = await assertMcpUrlAllowed(options.baseUrl, { env: options.env, lookup: options.lookup });
+    routeOutbound(base, options.env);
+  } catch (error) {
+    if (error instanceof TailnetUnavailableError) {
+      throw new OpenApiCallError("tailnet_unavailable", error.message);
+    }
+    if (error instanceof McpUrlPolicyError) {
+      throw new OpenApiCallError("openapi_base_url_not_allowed", "The app address is not allowed.", {
+        reason: error.reason
+      });
+    }
+    throw error;
+  }
+  const request = buildOpenApiRequest(options, base);
+  const secrets = credentialValues(options.credentials, options.auth);
+  let response;
+  try {
+    response = await tailnetAwareFetch(options.env, options.fetchImpl, options.lookup)(request.url, {
+      method: request.method,
+      headers: request.headers,
+      ...request.body === void 0 ? {} : { body: request.body },
+      redirect: "error",
+      signal: AbortSignal.timeout(options.timeoutMs ?? OPENAPI_CALL_TIMEOUT_MS)
+    });
+  } catch (error) {
+    if (isAbort(error)) throw new OpenApiCallError("openapi_timeout", "The app did not respond in time.");
+    throw new OpenApiCallError("openapi_unreachable", "The app could not be reached.");
+  }
+  let bytes;
+  try {
+    bytes = await readCapped(response, options.maxResponseBytes ?? OPENAPI_MAX_RESPONSE_BYTES);
+  } catch (error) {
+    if (error instanceof OpenApiCallError) throw error;
+    if (isAbort(error)) throw new OpenApiCallError("openapi_timeout", "The app did not respond in time.");
+    throw new OpenApiCallError("openapi_unreachable", "The app could not be reached.");
+  }
+  const contentType = response.headers.get("content-type");
+  if (!response.ok) {
+    let body;
+    if (textual(contentType) && bytes.length) {
+      const text = scrubSecrets(bytes.toString("utf8"), secrets);
+      let parsed = text;
+      try {
+        parsed = scrubDeep(JSON.parse(text), secrets);
+      } catch {
+        parsed = text;
+      }
+      const serialized = typeof parsed === "string" ? parsed : JSON.stringify(parsed);
+      body = serialized.length <= MAX_ERROR_BODY_CHARS ? parsed : `${serialized.slice(0, MAX_ERROR_BODY_CHARS - 14)}\u2026 [truncated]`;
+    }
+    const status = response.status;
+    throw new OpenApiCallError(
+      status === 401 || status === 403 ? "openapi_auth_rejected" : "openapi_http_error",
+      status === 401 || status === 403 ? "The app rejected the credentials." : `The app answered HTTP ${status}.`,
+      { status, ...body === void 0 ? {} : { body } }
+    );
+  }
+  const decoded = decodeResponse(
+    bytes,
+    contentType,
+    secrets,
+    options.maxBinaryBytes ?? OPENAPI_MAX_BINARY_BYTES,
+    response.status
+  );
+  const headers = {};
+  response.headers.forEach((value, name) => {
+    if (RESPONSE_HEADER_ALLOWLIST.has(name.toLowerCase())) {
+      headers[name.toLowerCase()] = scrubSecrets(value, secrets);
+    }
+  });
+  return {
+    status: response.status,
+    contentType,
+    bytes: bytes.length,
+    headers,
+    ...decoded.body === void 0 ? {} : { body: scrubDeep(decoded.body, secrets) },
+    ...decoded.text === void 0 ? {} : { text: decoded.text },
+    ...decoded.base64 === void 0 ? {} : { base64: decoded.base64 },
+    bodyKind: decoded.bodyKind
+  };
 }
 
 // src/company-box.ts
@@ -79496,6 +80271,24 @@ function compileOpenApi(entry, dir, directMax) {
     const key = keys[position];
     const risk = operationRisk(operation, patterns);
     try {
+      const reserved = operation.parameters.find(
+        (parameter) => (parameter.in === "header" || parameter.in === "query") && reservedParameterName(parameter.name, runtimeAuthFor(entry.auth))
+      );
+      if (reserved) {
+        throw new Error(`Parameter ${reserved.in} ${reserved.name} is a reserved name (method override or credential).`);
+      }
+      const overwrite = operation.parameters.find(
+        (parameter) => parameter.in === "header" && parameter.name.toLowerCase() === "overwrite"
+      );
+      if (overwrite && "default" in overwrite.schema && overwrite.schema.default !== "F") {
+        throw new Error("An Overwrite header default must be F; overwriting must be asked for explicitly.");
+      }
+      const destination = operation.parameters.find(
+        (parameter) => parameter.in === "header" && parameter.name.toLowerCase() === "destination"
+      );
+      if (destination && !destination.destinationTemplate) {
+        throw new Error("A Destination header needs x-destination-template; Marketplace never forwards a caller-supplied URL.");
+      }
       const inputSchema = operationInputSchema(operation, document.defs);
       const tool = boundedToolSchema(inputSchema);
       const validateArguments = compileArgumentValidator(inputSchema);
@@ -79553,13 +80346,22 @@ function compileOpenApi(entry, dir, directMax) {
       }
     }
   }
+  for (const pattern of entry.reads) {
+    for (const operation of document.operations) {
+      if (operationPatternMatches(pattern, operation) && !READ_METHODS.has(operation.method) && !READS_DOWNGRADABLE_METHODS.has(operation.method)) {
+        warnings.push(
+          `reads pattern "${pattern}" ignored for ${operationIdentity(operation.method, operation.path)}: only POST can be read-class.`
+        );
+      }
+    }
+  }
   const byKey = new Map(operations.map((operation) => [operation.key, operation]));
   const health = entry.healthOperation ? operations.find((operation) => exclusionMatches(entry.healthOperation, operation.operation)) ?? null : null;
   if (!health) {
     errors.push(`healthOperation "${entry.healthOperation}" is not an exposed operation.`);
-  } else if (health.method !== "get") {
-    errors.push(`healthOperation "${entry.healthOperation}" must be a GET operation.`);
-  } else if (health.operation.parameters.some((parameter) => parameter.required) || health.operation.requestBody?.required) {
+  } else if (!READ_METHODS.has(health.method)) {
+    errors.push(`healthOperation "${entry.healthOperation}" must be a read (GET, HEAD, PROPFIND, \u2026) operation.`);
+  } else if (health.operation.parameters.some(parameterNeedsArgument) || health.operation.requestBody?.required) {
     errors.push(`healthOperation "${entry.healthOperation}" must not need arguments.`);
   }
   const apiBasePath = (entry.openapi.basePath ?? document.basePath).replace(/\/+$/u, "");
@@ -79825,14 +80627,14 @@ function retiredCompanyBoxListing(listing) {
     updatedAt: (/* @__PURE__ */ new Date()).toISOString()
   };
 }
-function recordValue6(value) {
+function recordValue7(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : null;
 }
 function listingIsCompanyBoxOpenApi(listing) {
-  return listing.source === "openapi" && listing.executionOwner === "openapi" && listing.pluginId.startsWith(COMPANY_BOX_PLUGIN_PREFIX) && recordValue6(listing.manifest.companyBox) !== null;
+  return listing.source === "openapi" && listing.executionOwner === "openapi" && listing.pluginId.startsWith(COMPANY_BOX_PLUGIN_PREFIX) && recordValue7(listing.manifest.companyBox) !== null;
 }
 function companyBoxManifest(listing) {
-  const raw = recordValue6(listing.manifest.companyBox) ?? {};
+  const raw = recordValue7(listing.manifest.companyBox) ?? {};
   return {
     entryId: typeof raw.entryId === "string" ? raw.entryId : "",
     collection: COMPANY_BOX_COLLECTION.id,
@@ -79843,7 +80645,7 @@ function companyBoxManifest(listing) {
     operationCount: typeof raw.operationCount === "number" ? raw.operationCount : 0,
     excludedCount: typeof raw.excludedCount === "number" ? raw.excludedCount : 0,
     operations: (Array.isArray(raw.operations) ? raw.operations : []).flatMap((value) => {
-      const operation = recordValue6(value);
+      const operation = recordValue7(value);
       if (!operation || typeof operation.key !== "string") return [];
       return [operation];
     })
@@ -79886,499 +80688,6 @@ function searchAgentOperations(operations, input) {
     limit,
     nextCursor: offset + limit < filtered.length ? String(offset + limit) : null,
     operations: page
-  };
-}
-
-// src/openapi-http.ts
-var OPENAPI_CALL_TIMEOUT_MS = 3e4;
-var OPENAPI_MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
-var OPENAPI_MAX_BINARY_BYTES = 512 * 1024;
-var OPENAPI_DEFAULT_MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
-function companyBoxMaxUploadBytes(env = process.env) {
-  const value = Number(env.MARKETPLACE_COMPANY_BOX_MAX_UPLOAD_BYTES);
-  return Number.isInteger(value) && value > 0 ? value : OPENAPI_DEFAULT_MAX_UPLOAD_BYTES;
-}
-var MAX_ERROR_BODY_CHARS = 4096;
-var OpenApiCallError = class extends Error {
-  constructor(code, message, detail = {}) {
-    super(message);
-    this.code = code;
-    this.detail = detail;
-  }
-  code;
-  detail;
-};
-var FORBIDDEN_HEADER_NAMES = /* @__PURE__ */ new Set([
-  "accept-encoding",
-  "authorization",
-  "connection",
-  "content-length",
-  "content-type",
-  "cookie",
-  "host",
-  "keep-alive",
-  "proxy-authorization",
-  "proxy-connection",
-  "te",
-  "trailer",
-  "transfer-encoding",
-  "upgrade"
-]);
-var RESPONSE_HEADER_ALLOWLIST = /* @__PURE__ */ new Set([
-  "content-type",
-  "etag",
-  "last-modified",
-  "link",
-  "x-total-count",
-  "x-total",
-  "x-page",
-  "x-per-page",
-  "x-next-page",
-  "x-request-id",
-  "retry-after"
-]);
-function recordValue7(value) {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
-}
-function argumentError(field, reason) {
-  throw new OpenApiCallError("openapi_argument_invalid", `Argument ${field} is invalid (${reason}).`, {
-    field,
-    reason
-  });
-}
-function scalarString(value, field) {
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  return argumentError(field, "expected a string, number or boolean");
-}
-function headerValueValid(value) {
-  return value.length <= 4096 && /^[\t\x20-\x7e\x80-\xff]*$/u.test(value);
-}
-function credentialValues(credentials, auth) {
-  const values = Object.entries(credentials).filter(([field, value]) => field !== "username" && value.length >= 4).map(([, value]) => value);
-  if (auth.type === "basic" && credentials.username !== void 0 && credentials.password !== void 0) {
-    values.push(Buffer.from(`${credentials.username}:${credentials.password}`).toString("base64"));
-  }
-  return values;
-}
-function secretVariants(secret) {
-  const json = JSON.stringify(secret).slice(1, -1);
-  const forms = /* @__PURE__ */ new Set([
-    secret,
-    encodeURIComponent(secret),
-    encodeURI(secret),
-    encodeURIComponent(secret).replace(/%20/gu, "+"),
-    json,
-    json.replace(/\//gu, "\\/"),
-    secret.replace(/\//gu, "\\/"),
-    Buffer.from(secret).toString("base64"),
-    Buffer.from(secret).toString("base64url"),
-    Buffer.from(secret).toString("base64").replace(/=+$/u, "")
-  ]);
-  forms.add(encodeURIComponent(secret).replace(/%[0-9A-F]{2}/gu, (escape2) => escape2.toLowerCase()));
-  return [...forms].filter((form) => form.length >= 4).sort((left, right) => right.length - left.length);
-}
-function scrubSecrets(text, secrets) {
-  let out = text;
-  for (const secret of secrets) {
-    if (!secret) continue;
-    for (const form of secretVariants(secret)) {
-      out = out.split(form).join("[redacted]");
-    }
-  }
-  return out;
-}
-function scrubDeep(value, secrets) {
-  if (typeof value === "string") return scrubSecrets(value, secrets);
-  if (Array.isArray(value)) return value.map((item) => scrubDeep(item, secrets));
-  const record2 = recordValue7(value);
-  if (!record2) return value;
-  return Object.fromEntries(
-    Object.entries(record2).map(([key, child]) => [scrubSecrets(key, secrets), scrubDeep(child, secrets)])
-  );
-}
-function groupArgs(args, group) {
-  const value = args[group];
-  if (value === void 0 || value === null) return {};
-  const record2 = recordValue7(value);
-  if (!record2) argumentError(group, "expected an object");
-  return record2;
-}
-function declared(parameters, location) {
-  return new Map(
-    parameters.filter((parameter) => parameter.in === location).map((parameter) => [parameter.name, parameter])
-  );
-}
-function checkUnknown(group, supplied, known) {
-  for (const name of Object.keys(supplied)) {
-    if (!known.has(name)) argumentError(`${group}.${name}`, "not declared by the operation");
-  }
-}
-function reservedParameterName(name, auth) {
-  const lower = name.toLowerCase();
-  return lower === "_method" || lower.startsWith("x-http-method") || lower.startsWith("x-method-override") || auth.type === "query" && lower === auth.name.toLowerCase();
-}
-function appendQuery(search, parameter, value, auth) {
-  const field = `query.${parameter.name}`;
-  if (value === void 0 || value === null) return;
-  if (Array.isArray(value)) {
-    const items = value.map((item) => scalarString(item, field));
-    if (parameter.explode === false) search.append(parameter.name, items.join(","));
-    else for (const item of items) search.append(parameter.name, item);
-    return;
-  }
-  const record2 = recordValue7(value);
-  if (record2) {
-    const properties = recordValue7(parameter.schema.properties);
-    if (parameter.schema.type !== "object" || !properties) argumentError(field, "expected a scalar or array");
-    for (const key of Object.keys(record2)) {
-      if (!(key in properties)) argumentError(`${field}.${key}`, "not declared by the operation");
-      if (reservedParameterName(key, auth)) argumentError(`${field}.${key}`, "reserved parameter name");
-    }
-    if (parameter.style === "deepObject") {
-      for (const [key, child] of Object.entries(record2)) {
-        search.append(`${parameter.name}[${key}]`, scalarString(child, field));
-      }
-    } else if (parameter.explode === false) {
-      search.append(
-        parameter.name,
-        Object.entries(record2).flatMap(([key, child]) => [key, scalarString(child, field)]).join(",")
-      );
-    } else {
-      for (const [key, child] of Object.entries(record2)) search.append(key, scalarString(child, field));
-    }
-    return;
-  }
-  search.append(parameter.name, scalarString(value, field));
-}
-function fileArgument(value) {
-  const record2 = recordValue7(value);
-  return record2 && typeof record2.base64 === "string" ? record2 : null;
-}
-function decodeFile(file, field, budget) {
-  const text = file.base64.replace(/\s+/gu, "");
-  if (!/^[A-Za-z0-9+/_-]*={0,2}$/u.test(text) || text.length % 4 === 1) {
-    argumentError(`${field}.base64`, "not valid base64");
-  }
-  const estimated = Math.floor(text.length * 3 / 4);
-  if (estimated - 2 > budget.remaining) {
-    throw new OpenApiCallError(
-      "openapi_upload_too_large",
-      `Uploads are limited to ${budget.max} bytes per call.`,
-      { field, reason: `limit ${budget.max} bytes` }
-    );
-  }
-  const bytes = new Uint8Array(Buffer.from(text, text.includes("-") || text.includes("_") ? "base64url" : "base64"));
-  if (bytes.byteLength > budget.remaining) {
-    throw new OpenApiCallError("openapi_upload_too_large", `Uploads are limited to ${budget.max} bytes per call.`, {
-      field,
-      reason: `limit ${budget.max} bytes`
-    });
-  }
-  budget.remaining -= bytes.byteLength;
-  return bytes;
-}
-function buildBody(operation, value, maxUploadBytes = OPENAPI_DEFAULT_MAX_UPLOAD_BYTES) {
-  const budget = { remaining: maxUploadBytes, max: maxUploadBytes };
-  const requestBody = operation.requestBody;
-  if (value === void 0) {
-    if (requestBody?.required) argumentError("body", "required");
-    return {};
-  }
-  if (!requestBody) argumentError("body", "the operation takes no request body");
-  const contentType = requestBody.contentType;
-  const base = contentType.split(";")[0].trim().toLowerCase();
-  if (base === "application/json" || base.endsWith("+json") || base.endsWith("/json")) {
-    return { body: JSON.stringify(value), contentType };
-  }
-  if (base === "application/x-www-form-urlencoded") {
-    const record2 = recordValue7(value) ?? argumentError("body", "expected an object");
-    const form = new URLSearchParams();
-    for (const [key, child] of Object.entries(record2)) {
-      if (Array.isArray(child)) for (const item of child) form.append(key, scalarString(item, `body.${key}`));
-      else if (child !== void 0 && child !== null) form.append(key, scalarString(child, `body.${key}`));
-    }
-    return { body: form.toString(), contentType };
-  }
-  if (base === "multipart/form-data") {
-    const record2 = recordValue7(value) ?? argumentError("body", "expected an object");
-    const form = new FormData();
-    const appendPart = (key, child, field) => {
-      const file2 = fileArgument(child);
-      if (file2) {
-        const bytes = decodeFile(file2, field, budget);
-        form.append(
-          key,
-          new Blob([bytes], {
-            type: typeof file2.contentType === "string" && file2.contentType ? file2.contentType : "application/octet-stream"
-          }),
-          typeof file2.filename === "string" && file2.filename ? file2.filename : key
-        );
-      } else if (child !== void 0 && child !== null) {
-        form.append(key, typeof child === "object" ? JSON.stringify(child) : scalarString(child, field));
-      }
-    };
-    for (const [key, child] of Object.entries(record2)) {
-      if (Array.isArray(child) && child.some((item) => fileArgument(item))) {
-        child.forEach((item, index) => appendPart(key, item, `body.${key}.${index}`));
-      } else {
-        appendPart(key, child, `body.${key}`);
-      }
-    }
-    return { body: form };
-  }
-  if (base.startsWith("text/") || base === "application/xml") {
-    return { body: scalarString(value, "body"), contentType };
-  }
-  const file = fileArgument(value);
-  if (file) {
-    return { body: decodeFile(file, "body", budget), contentType };
-  }
-  if (typeof value === "string") return { body: value, contentType };
-  return { body: JSON.stringify(value), contentType };
-}
-function buildOpenApiRequest(options, base) {
-  const { operation, args, auth, credentials } = options;
-  for (const key of Object.keys(args)) {
-    if (!["path", "query", "header", "body"].includes(key)) {
-      argumentError(key, "arguments are grouped as path, query, header and body");
-    }
-  }
-  if (options.validateArguments) {
-    const validation = options.validateArguments(args);
-    if (!validation.ok) argumentError(validation.field, validation.reason);
-  }
-  const pathArgs = groupArgs(args, "path");
-  const queryArgs = groupArgs(args, "query");
-  const headerArgs = groupArgs(args, "header");
-  const pathParams = declared(operation.parameters, "path");
-  const queryParams = declared(operation.parameters, "query");
-  const headerParams = declared(operation.parameters, "header");
-  checkUnknown("path", pathArgs, pathParams);
-  checkUnknown("query", queryArgs, queryParams);
-  checkUnknown("header", headerArgs, headerParams);
-  for (const [group, supplied] of [["query", queryArgs], ["header", headerArgs], ["path", pathArgs]]) {
-    for (const name of Object.keys(supplied)) {
-      if (reservedParameterName(name, auth)) argumentError(`${group}.${name}`, "reserved parameter name");
-    }
-  }
-  const renderedPath = operation.path.replace(/\{([^}]+)\}/gu, (_match, name) => {
-    const value = pathArgs[name];
-    if (value === void 0 || value === null) argumentError(`path.${name}`, "required");
-    const text = scalarString(value, `path.${name}`);
-    const decodedDots = text.replace(/%2e/giu, ".");
-    if (text === "" || /[/\\]/u.test(text) || /%(2f|5c)/iu.test(text) || decodedDots === "." || decodedDots === "..") {
-      argumentError(`path.${name}`, "not a valid path segment");
-    }
-    return encodeURIComponent(text);
-  });
-  const prefix = base.pathname.replace(/\/+$/u, "");
-  const apiBase = (options.apiBasePath ?? "").replace(/\/+$/u, "");
-  const url = new URL(base.origin);
-  url.pathname = `${prefix}${apiBase}${renderedPath.startsWith("/") ? "" : "/"}${renderedPath}`;
-  if (url.origin !== base.origin || !url.pathname.startsWith(`${prefix}${apiBase}`)) {
-    argumentError("path", "the request left the configured base URL");
-  }
-  for (const [name, parameter] of queryParams) {
-    if (parameter.required && (queryArgs[name] === void 0 || queryArgs[name] === null)) {
-      argumentError(`query.${name}`, "required");
-    }
-    appendQuery(url.searchParams, parameter, queryArgs[name], auth);
-  }
-  const headers = new Headers();
-  headers.set("accept", "application/json, text/plain;q=0.9, */*;q=0.8");
-  headers.set("user-agent", `TealBrick-Marketplace/${MARKETPLACE_VERSION}`);
-  const authHeaderName = auth.type === "header" ? auth.name.toLowerCase() : auth.type === "basic" ? "authorization" : null;
-  for (const [name, parameter] of headerParams) {
-    const value = headerArgs[name];
-    if (value === void 0 || value === null) {
-      if (parameter.required) argumentError(`header.${name}`, "required");
-      continue;
-    }
-    const lower = name.toLowerCase();
-    if (FORBIDDEN_HEADER_NAMES.has(lower) || lower.startsWith("proxy-") || lower === authHeaderName) {
-      argumentError(`header.${name}`, "reserved header");
-    }
-    const text = scalarString(value, `header.${name}`);
-    if (!headerValueValid(text)) argumentError(`header.${name}`, "invalid header value");
-    headers.set(lower, text);
-  }
-  if (auth.type === "header") {
-    const token = credentials.token;
-    if (!token) throw new OpenApiCallError("openapi_credentials_missing", "The connector has no API token configured.");
-    headers.set(auth.name.toLowerCase(), `${auth.prefix ?? ""}${token}`);
-  } else if (auth.type === "basic") {
-    if (credentials.username === void 0 || credentials.password === void 0) {
-      throw new OpenApiCallError("openapi_credentials_missing", "The connector has no username and password configured.");
-    }
-    headers.set(
-      "authorization",
-      `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString("base64")}`
-    );
-  } else if (auth.type === "query") {
-    const key = credentials.apiKey;
-    if (!key) throw new OpenApiCallError("openapi_credentials_missing", "The connector has no API key configured.");
-    for (const name of queryParams.keys()) {
-      if (name.toLowerCase() === auth.name.toLowerCase() && queryArgs[name] !== void 0) {
-        argumentError(`query.${name}`, "reserved for the API key");
-      }
-    }
-    url.searchParams.set(auth.name, key);
-  }
-  const { body, contentType } = buildBody(operation, args.body, options.maxUploadBytes);
-  if (contentType) headers.set("content-type", contentType);
-  return { url, method: operation.method.toUpperCase(), headers, body };
-}
-function validateOpenApiArguments(operation, args, auth, validateArguments, maxUploadBytes) {
-  buildOpenApiRequest(
-    {
-      baseUrl: "https://validation.invalid",
-      operation,
-      args,
-      auth,
-      ...validateArguments ? { validateArguments } : {},
-      ...maxUploadBytes ? { maxUploadBytes } : {},
-      credentials: { token: "validation", username: "validation", password: "validation", apiKey: "validation" }
-    },
-    new URL("https://validation.invalid")
-  );
-}
-function isAbort(error) {
-  return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
-}
-async function readCapped(response, maxBytes) {
-  const declaredLength = Number(response.headers.get("content-length") ?? "");
-  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
-    await response.body?.cancel().catch(() => void 0);
-    throw new OpenApiCallError("openapi_response_too_large", "The app's response was too large.", {
-      status: response.status
-    });
-  }
-  if (!response.body) return Buffer.alloc(0);
-  const reader = response.body.getReader();
-  const chunks = [];
-  let total = 0;
-  for (; ; ) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > maxBytes) {
-      await reader.cancel().catch(() => void 0);
-      throw new OpenApiCallError("openapi_response_too_large", "The app's response was too large.", {
-        status: response.status
-      });
-    }
-    chunks.push(value);
-  }
-  return Buffer.concat(chunks);
-}
-function textual(contentType) {
-  if (!contentType) return true;
-  const base = contentType.split(";")[0].trim().toLowerCase();
-  return base.startsWith("text/") || base.endsWith("/json") || base.endsWith("+json") || base.endsWith("/xml") || base.endsWith("+xml") || base === "application/javascript" || base === "application/x-www-form-urlencoded" || base === "application/yaml" || base === "application/x-yaml";
-}
-function decodeResponse(bytes, contentType, secrets, maxBinaryBytes, status) {
-  if (bytes.length === 0) return { bodyKind: "empty" };
-  if (textual(contentType)) {
-    const text = scrubSecrets(bytes.toString("utf8"), secrets);
-    const base = (contentType ?? "").split(";")[0].trim().toLowerCase();
-    if (!contentType || base.endsWith("json")) {
-      try {
-        return { bodyKind: "json", body: JSON.parse(text) };
-      } catch {
-      }
-    }
-    return { bodyKind: "text", text };
-  }
-  if (bytes.length > maxBinaryBytes) {
-    throw new OpenApiCallError("openapi_response_too_large", "The app's binary response was too large.", {
-      status
-    });
-  }
-  return { bodyKind: "binary", base64: bytes.toString("base64") };
-}
-async function callOpenApiOperation(options) {
-  let base;
-  try {
-    base = await assertMcpUrlAllowed(options.baseUrl, { env: options.env, lookup: options.lookup });
-    routeOutbound(base, options.env);
-  } catch (error) {
-    if (error instanceof TailnetUnavailableError) {
-      throw new OpenApiCallError("tailnet_unavailable", error.message);
-    }
-    if (error instanceof McpUrlPolicyError) {
-      throw new OpenApiCallError("openapi_base_url_not_allowed", "The app address is not allowed.", {
-        reason: error.reason
-      });
-    }
-    throw error;
-  }
-  const request = buildOpenApiRequest(options, base);
-  const secrets = credentialValues(options.credentials, options.auth);
-  let response;
-  try {
-    response = await tailnetAwareFetch(options.env, options.fetchImpl, options.lookup)(request.url, {
-      method: request.method,
-      headers: request.headers,
-      ...request.body === void 0 ? {} : { body: request.body },
-      redirect: "error",
-      signal: AbortSignal.timeout(options.timeoutMs ?? OPENAPI_CALL_TIMEOUT_MS)
-    });
-  } catch (error) {
-    if (isAbort(error)) throw new OpenApiCallError("openapi_timeout", "The app did not respond in time.");
-    throw new OpenApiCallError("openapi_unreachable", "The app could not be reached.");
-  }
-  let bytes;
-  try {
-    bytes = await readCapped(response, options.maxResponseBytes ?? OPENAPI_MAX_RESPONSE_BYTES);
-  } catch (error) {
-    if (error instanceof OpenApiCallError) throw error;
-    if (isAbort(error)) throw new OpenApiCallError("openapi_timeout", "The app did not respond in time.");
-    throw new OpenApiCallError("openapi_unreachable", "The app could not be reached.");
-  }
-  const contentType = response.headers.get("content-type");
-  if (!response.ok) {
-    let body;
-    if (textual(contentType) && bytes.length) {
-      const text = scrubSecrets(bytes.toString("utf8"), secrets);
-      let parsed = text;
-      try {
-        parsed = scrubDeep(JSON.parse(text), secrets);
-      } catch {
-        parsed = text;
-      }
-      const serialized = typeof parsed === "string" ? parsed : JSON.stringify(parsed);
-      body = serialized.length <= MAX_ERROR_BODY_CHARS ? parsed : `${serialized.slice(0, MAX_ERROR_BODY_CHARS - 14)}\u2026 [truncated]`;
-    }
-    const status = response.status;
-    throw new OpenApiCallError(
-      status === 401 || status === 403 ? "openapi_auth_rejected" : "openapi_http_error",
-      status === 401 || status === 403 ? "The app rejected the credentials." : `The app answered HTTP ${status}.`,
-      { status, ...body === void 0 ? {} : { body } }
-    );
-  }
-  const decoded = decodeResponse(
-    bytes,
-    contentType,
-    secrets,
-    options.maxBinaryBytes ?? OPENAPI_MAX_BINARY_BYTES,
-    response.status
-  );
-  const headers = {};
-  response.headers.forEach((value, name) => {
-    if (RESPONSE_HEADER_ALLOWLIST.has(name.toLowerCase())) {
-      headers[name.toLowerCase()] = scrubSecrets(value, secrets);
-    }
-  });
-  return {
-    status: response.status,
-    contentType,
-    bytes: bytes.length,
-    headers,
-    ...decoded.body === void 0 ? {} : { body: scrubDeep(decoded.body, secrets) },
-    ...decoded.text === void 0 ? {} : { text: decoded.text },
-    ...decoded.base64 === void 0 ? {} : { base64: decoded.base64 },
-    bodyKind: decoded.bodyKind
   };
 }
 
@@ -84250,7 +84559,23 @@ function mcpToolRisk(entry, listing, actionKey) {
   const tool = customMcpToolForAction(listing, actionKey);
   return tool ? companyBoxMcpToolRisk(entry.entry, tool, actionKey.slice(listing.provider.length + 1)) : null;
 }
-function companyBoxRiskForAction(catalog, listing, workspaceSlug, actionKey) {
+function composioPolicyForListing(listing) {
+  return listing.executionOwner === "composio" ? composioPolicyFor(listing.provider) : null;
+}
+function holdableListing(catalog, listing, workspaceSlug) {
+  return Boolean(companyBoxEntryForListing(catalog, listing, workspaceSlug) || composioPolicyForListing(listing));
+}
+function companyBoxRiskForAction(catalog, listing, workspaceSlug, actionKey, args) {
+  const policy = composioPolicyForListing(listing);
+  if (policy) {
+    const toolSlug = composioToolNameForAction(listing, actionKey);
+    const governed = composioToolPolicy(policy, toolSlug, resolveActionRequirement(listing, actionKey)?.capability ?? "connector.dispatch");
+    return {
+      write: governed.capability !== "connector.observe",
+      outward: composioCallIsOutward(policy, toolSlug, args),
+      destructive: governed.destructive
+    };
+  }
   const entry = companyBoxEntryForListing(catalog, listing, workspaceSlug);
   if (!entry) {
     return listingIsCompanyBoxOpenApi(listing) ? { write: true, outward: true, destructive: false } : void 0;
@@ -84764,6 +85089,10 @@ async function buildMarketplaceApp(options) {
     }
   }
   for (const listing of options.store.listListings()) {
+    const governed2 = applyComposioPolicyToListing(listing);
+    if (governed2) options.store.upsertListing(governed2);
+  }
+  for (const listing of options.store.listListings()) {
     if (listingIsCompanyBoxOpenApi(listing) && !companyBox.openApiForPluginId(listing.pluginId) && listing.actions.length > 0) {
       options.store.upsertListing(retiredCompanyBoxListing(listing));
     }
@@ -85259,7 +85588,7 @@ async function buildMarketplaceApp(options) {
         fingerprint,
         arguments: input.args,
         argumentsPreview: approvalPreview(input.args),
-        expiresAt: new Date(Date.now() + COMPANY_BOX_APPROVAL_TTL_MS).toISOString()
+        ttlMs: COMPANY_BOX_APPROVAL_TTL_MS
       });
     } catch (error) {
       const existing = input.idempotencyKey ? options.store.findCompanyBoxApprovalByKey({
@@ -85310,7 +85639,7 @@ async function buildMarketplaceApp(options) {
       if (!listing || !published || published.capability !== approval.capability) {
         return fail("approval_target_unavailable");
       }
-      const risk = companyBoxRiskForAction(companyBox, listing, approval.workspaceSlug, approval.actionKey);
+      const risk = companyBoxRiskForAction(companyBox, listing, approval.workspaceSlug, approval.actionKey, approval.arguments);
       const rules = await enforceRules({
         reply,
         workspaceSlug: approval.workspaceSlug,
@@ -85337,12 +85666,121 @@ async function buildMarketplaceApp(options) {
         sessionId: null,
         agentGrantId: approval.sourceKind === "agent-grant" ? approval.sourceRef : null
       };
-      const outcome = listingIsCompanyBoxOpenApi(listing) ? await executeCompanyBoxAction({ ...common, risk }) : await executeCustomMcpAction(common);
+      const outcome = listingIsCompanyBoxOpenApi(listing) ? await executeCompanyBoxAction({ ...common, risk }) : listing.executionOwner === "composio" ? await executeComposioAction({
+        ...common,
+        connection: options.store.getConnection(approval.workspaceSlug, approval.pluginId)
+      }) : await executeCustomMcpAction(common);
       return outcome.ok === true ? options.store.finishCompanyBoxApproval({ id: approval.id, state: "succeeded", result: outcome.result }) : fail(typeof outcome.error === "string" ? outcome.error : "approval_execution_failed");
     } catch (error) {
       fail("approval_execution_failed");
       throw error;
     }
+  };
+  const executeComposioAction = async (input) => {
+    const toolName = composioToolNameForAction(input.listing, input.action.type);
+    let providerResult;
+    try {
+      const providerOutput = await executeComposioTool({
+        toolName,
+        arguments: { ...input.action, type: void 0 },
+        connectedAccountId: connectedAccountIdFromConnection(input.connection),
+        userId: typeof input.connection?.metadata.userId === "string" ? input.connection.metadata.userId : void 0,
+        env: providerEnvironment(),
+        fetchImpl: options.providerFetch
+      });
+      providerResult = {
+        summary: `Executed ${toolName} through Composio.`,
+        details: {
+          toolName,
+          result: providerOutput
+        }
+      };
+    } catch (error) {
+      const usage2 = options.store.recordUsage({
+        workspaceSlug: input.workspaceSlug,
+        pluginId: input.listing.pluginId,
+        provider: input.listing.provider,
+        sourceExecutor: input.listing.executionOwner,
+        sourceActionKey: input.action.type,
+        productCapabilityKey: `connector.${input.listing.executionOwner}.${input.listing.provider}.${input.action.type}`,
+        scopesUsed: [input.capability],
+        status: "failed",
+        runId: input.runId,
+        sessionId: input.sessionId,
+        error: error instanceof Error ? error.message : String(error),
+        metadata: {
+          rules: input.rules,
+          ...input.agentGrantId ? { agentGrantId: input.agentGrantId } : {}
+        },
+        input: input.action,
+        output: null
+      });
+      options.store.recordEvent({
+        type: "marketplace.execution.failed",
+        traceId: input.traceId,
+        workspaceSlug: input.workspaceSlug,
+        pluginId: input.listing.pluginId,
+        actorId: input.actorId,
+        rulesDecisionId: "decisionId" in input.rules ? input.rules.decisionId ?? null : null,
+        payload: {
+          capability: input.capability,
+          action: input.action.type,
+          usageId: usage2.id
+        }
+      });
+      input.reply.code(502);
+      return {
+        ok: false,
+        traceId: input.traceId,
+        error: "composio_execute_failed",
+        detail: error instanceof Error ? error.message : String(error),
+        usage: usage2
+      };
+    }
+    const result = {
+      pluginId: input.listing.pluginId,
+      workspaceSlug: input.workspaceSlug,
+      provider: input.listing.provider,
+      capability: input.capability,
+      actionType: input.action.type,
+      performedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      simulated: false,
+      summary: providerResult.summary,
+      details: providerResult.details
+    };
+    const usage = options.store.recordUsage({
+      workspaceSlug: input.workspaceSlug,
+      pluginId: input.listing.pluginId,
+      provider: input.listing.provider,
+      sourceExecutor: input.listing.executionOwner,
+      sourceActionKey: input.action.type,
+      productCapabilityKey: `connector.${input.listing.executionOwner}.${input.listing.provider}.${input.action.type}`,
+      scopesUsed: [input.capability],
+      status: "succeeded",
+      runId: input.runId,
+      sessionId: input.sessionId,
+      error: null,
+      metadata: {
+        rules: input.rules,
+        ...input.agentGrantId ? { agentGrantId: input.agentGrantId } : {}
+      },
+      input: input.action,
+      output: result
+    });
+    options.store.recordEvent({
+      type: "marketplace.execution.completed",
+      traceId: input.traceId,
+      workspaceSlug: input.workspaceSlug,
+      pluginId: input.listing.pluginId,
+      actorId: input.actorId,
+      rulesDecisionId: "decisionId" in input.rules ? input.rules.decisionId ?? null : null,
+      payload: {
+        capability: input.capability,
+        action: input.action.type,
+        usageId: usage.id
+      }
+    });
+    return { ok: true, traceId: input.traceId, result, usage, rules: input.rules };
   };
   const composioCatalogSyncByWorkspace = /* @__PURE__ */ new Map();
   const ensureComposioCatalog = async (workspaceSlug = "default") => {
@@ -86436,12 +86874,19 @@ async function buildMarketplaceApp(options) {
     const entry = listing ? companyBoxEntryForListing(companyBox, listing, approval.workspaceSlug) : null;
     const operation = entry?.kind === "openapi" ? entry.byKey.get(approval.actionKey) : null;
     const tool = listing && !operation ? customMcpToolForAction(listing, approval.actionKey) : null;
+    const composioTool = listing?.executionOwner === "composio" ? recordValue9(listing.manifest.composio)?.tools?.find(
+      (candidate) => candidate.action === approval.actionKey
+    ) : void 0;
     return {
       id: approval.id,
       pluginId: approval.pluginId,
       app: listing?.displayName ?? approval.pluginId,
       actionKey: approval.actionKey,
-      operation: operation ? { title: operation.title, method: operation.method.toUpperCase(), path: operation.path } : { title: tool?.title ?? tool?.name ?? approval.actionKey, method: null, path: null },
+      operation: operation ? { title: operation.title, method: operation.method.toUpperCase(), path: operation.path } : {
+        title: tool?.title ?? tool?.name ?? (typeof composioTool?.displayName === "string" ? composioTool.displayName : null) ?? approval.actionKey,
+        method: null,
+        path: null
+      },
       capability: approval.capability,
       agentId: approval.agentId,
       argumentsPreview: approval.argumentsPreview,
@@ -88316,8 +88761,9 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
           detail: "This launch profile executes Composio-backed tools and the workspace's own custom MCP connectors only. Native, Activepieces, Nango, and Hub MCP execution are unavailable rather than simulated."
         };
       }
-      const risk = companyBoxRiskForAction(companyBox, listing, input.workspaceSlug, input.action.type);
-      if (governanceMode === "owner" && risk?.outward && scopedGrant && companyBoxEntryForListing(companyBox, listing, input.workspaceSlug)) {
+      const { type: _riskType, ...riskArgs } = effectiveAction;
+      const risk = companyBoxRiskForAction(companyBox, listing, input.workspaceSlug, input.action.type, riskArgs);
+      if (governanceMode === "owner" && risk?.outward && scopedGrant && holdableListing(companyBox, listing, input.workspaceSlug)) {
         const { type: _type, ...args } = effectiveAction;
         const held = holdCompanyBoxCall({
           listing,
@@ -88403,110 +88849,20 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
           agentGrantId: scopedGrant?.id ?? null
         });
       }
-      const toolName = composioToolNameForAction(listing, input.action.type);
-      let providerResult;
-      try {
-        const providerOutput = await executeComposioTool({
-          toolName,
-          arguments: { ...effectiveAction, type: void 0 },
-          connectedAccountId: connectedAccountIdFromConnection(connection),
-          userId: typeof connection?.metadata.userId === "string" ? connection.metadata.userId : void 0,
-          env: providerEnvironment(),
-          fetchImpl: options.providerFetch
-        });
-        providerResult = {
-          summary: `Executed ${toolName} through Composio.`,
-          details: {
-            toolName,
-            result: providerOutput
-          }
-        };
-      } catch (error) {
-        const usage2 = options.store.recordUsage({
-          workspaceSlug: input.workspaceSlug,
-          pluginId,
-          provider: listing.provider,
-          sourceExecutor: listing.executionOwner,
-          sourceActionKey: input.action.type,
-          productCapabilityKey: `connector.${listing.executionOwner}.${listing.provider}.${input.action.type}`,
-          scopesUsed: [input.capability],
-          status: "failed",
-          runId: input.runId ?? null,
-          sessionId: input.sessionId ?? null,
-          error: error instanceof Error ? error.message : String(error),
-          metadata: {
-            rules,
-            ...scopedGrant ? { agentGrantId: scopedGrant.id } : {}
-          },
-          input: effectiveAction,
-          output: null
-        });
-        options.store.recordEvent({
-          type: "marketplace.execution.failed",
-          traceId,
-          workspaceSlug: input.workspaceSlug,
-          pluginId,
-          actorId: effectiveActorId,
-          rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
-          payload: {
-            capability: input.capability,
-            action: input.action.type,
-            usageId: usage2.id
-          }
-        });
-        reply.code(502);
-        return {
-          ok: false,
-          traceId,
-          error: "composio_execute_failed",
-          detail: error instanceof Error ? error.message : String(error),
-          usage: usage2
-        };
-      }
-      const result = {
-        pluginId,
+      return executeComposioAction({
+        reply,
+        listing,
         workspaceSlug: input.workspaceSlug,
-        provider: listing.provider,
         capability: input.capability,
-        actionType: input.action.type,
-        performedAt: (/* @__PURE__ */ new Date()).toISOString(),
-        simulated: false,
-        summary: providerResult.summary,
-        details: providerResult.details
-      };
-      const usage = options.store.recordUsage({
-        workspaceSlug: input.workspaceSlug,
-        pluginId,
-        provider: listing.provider,
-        sourceExecutor: listing.executionOwner,
-        sourceActionKey: input.action.type,
-        productCapabilityKey: `connector.${listing.executionOwner}.${listing.provider}.${input.action.type}`,
-        scopesUsed: [input.capability],
-        status: "succeeded",
+        action: effectiveAction,
+        actorId: effectiveActorId,
+        traceId,
+        rules,
         runId: input.runId ?? null,
         sessionId: input.sessionId ?? null,
-        error: null,
-        metadata: {
-          rules,
-          ...scopedGrant ? { agentGrantId: scopedGrant.id } : {}
-        },
-        input: effectiveAction,
-        output: result
+        agentGrantId: scopedGrant?.id ?? null,
+        connection
       });
-      options.store.recordEvent({
-        type: "marketplace.execution.completed",
-        traceId,
-        workspaceSlug: input.workspaceSlug,
-        pluginId,
-        actorId: effectiveActorId,
-        rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
-        payload: {
-          capability: input.capability,
-          action: input.action.type,
-          usageId: usage.id
-        }
-      });
-      return { ok: true, traceId, result, usage, rules };
     }
   );
   app2.route({
@@ -88665,8 +89021,9 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
           error: scopedAction.error
         });
       }
-      const runtimeRisk = companyBoxRiskForAction(companyBox, listing, organizationId, input.selection.actionKey);
-      if (governanceMode === "owner" && runtimeRisk?.outward && companyBoxEntryForListing(companyBox, listing, organizationId)) {
+      const { type: _runtimeType, ...runtimeArgs } = scopedAction.action;
+      const runtimeRisk = companyBoxRiskForAction(companyBox, listing, organizationId, input.selection.actionKey, runtimeArgs);
+      if (governanceMode === "owner" && runtimeRisk?.outward && holdableListing(companyBox, listing, organizationId)) {
         const { type: _type, ...args } = scopedAction.action;
         const held = holdCompanyBoxCall({
           listing,
