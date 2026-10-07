@@ -7,11 +7,14 @@ never an entitlement, a grant, or agent authorization.
 
 ## Routes
 
-Both routes are server-to-server only.
+Both routes are server-to-server only. The canonical path is
+`/.well-known/tealbrick/claim`. `/api/tealbrick/claim` stays a working alias
+served by the same handlers, with the same authentication, responses and
+identity.
 
-* `GET /api/tealbrick/claim` returns `{instanceId, publicJwk}`. `publicJwk` is
+* `GET /.well-known/tealbrick/claim` returns `{instanceId, publicJwk}`. `publicJwk` is
   an Ed25519 public key with exactly `kty: "OKP"`, `crv: "Ed25519"` and `x`.
-* `POST /api/tealbrick/claim` takes exactly `{portalIssuer, nonce, companyId}`
+* `POST /.well-known/tealbrick/claim` takes exactly `{portalIssuer, nonce, companyId}`
   and returns `{proof, publicJwk, instanceId, companyId}`.
 
 ### Authentication
