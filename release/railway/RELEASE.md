@@ -1,11 +1,11 @@
-# Marketplace standalone 0.1.16 image
+# Marketplace standalone 0.1.17 image
 
-This bundle is the public Marketplace 0.1.16 release line and supersedes
-0.1.15 with the retired HDDA Skills Hub adapter, Hermes plugin and registry contracts removed.
+This bundle is the public Marketplace 0.1.17 release line and supersedes
+0.1.16 with the Teal Brick instance claim for Portal runtime registration.
 
-Source snapshot: `296f9b48fd8ddbd63c27e54ea5e29338ebab13f8`
-Source archive SHA256: `07f1bc7be765e0f2c6b9e62083ecd0cfd9a304cd0ff9bf609be168ffad950833`
-Image: `ghcr.io/tealbrick/marketplace:0.1.16`
+Source snapshot: `ebf34a6b5537ef77be54ef2e3ad81b8f6f417ae0`
+Source archive SHA256: `dac7f5ca7da49a026c2e6c951ad3eca40448ffd99e9c7e21507e3a257f051254`
+Image: `ghcr.io/tealbrick/marketplace:0.1.17`
 
 ## Runtime contract
 
@@ -23,13 +23,24 @@ Image: `ghcr.io/tealbrick/marketplace:0.1.16`
   into the image or returned to browser code.
 
 The source-backed Railway path uses the fixed public release branch
-`release-marketplace-v0.1.16` (slash-free so the Railway template editor
+`release-marketplace-v0.1.17` (slash-free so the Railway template editor
 accepts it); its exact tag target, branch ruleset, and image
 digest are recorded in the successor receipt. Set the service root directory
 to `release/railway`, keep the Dockerfile entrypoint, and use the relay
 contract in `deploy/railway/recipe.json` and `deploy/railway/railway-blueprint.json`.
 GHCR is optional for the source-build path; no template ID or publication is
 implied by these files.
+
+## v0.1.17 instance claim disposition
+
+This successor merges Tealbrick/marketplace#19. It adds the Teal Brick instance claim, so Portal can register a Portal-provisioned Marketplace as a verified runtime app:
+- `GET /api/tealbrick/claim` returns the stable `instanceId` and the Ed25519 public key;
+- `POST /api/tealbrick/claim` signs a `tealbrick-app-claim` v1 proof for the configured Portal issuer and workspace;
+- both routes need the Portal-held instance credential and refuse browser sessions.
+
+The instance identity is created once as `instance-claim-identity.json` (mode 0600) next to the Marketplace database on the data volume. It is never overwritten. If it is lost, Portal must revoke and register the app again.
+
+There is no schema change. Upgrades keep the volume, variables and encrypted connector secrets. Rollback to 0.1.16 needs no data change; 0.1.16 ignores the identity file.
 
 ## v0.1.16 legacy removal disposition
 
