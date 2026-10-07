@@ -22,6 +22,9 @@ const app = await buildMarketplaceApp({
   rulesClient: makeRulesClient(config),
   rules: config.rules,
   providerSettings,
+  // Same durability as the SQLite state: the claim key must survive restarts
+  // and upgrades.
+  instanceClaimDir: path.dirname(config.dbPath),
 });
 
 const address = await app.listen({ host: config.host, port: config.port });

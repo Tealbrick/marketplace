@@ -6,6 +6,7 @@ import Fastify from "fastify";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z, ZodError } from "zod";
 
+import { InstanceClaimError, MarketplaceInstanceClaim } from "./instance-claim.js";
 import {
   applyComposioPolicyToListing,
   buildComposioCatalogListing,
@@ -494,6 +495,12 @@ export type BuildMarketplaceAppOptions = {
   environment?: ProviderEnvironment;
   agentScopeVerifier?: PortalAgentScopeVerifier;
   portalInstanceProof?: string | null;
+  /**
+   * Directory on the persistent data volume that holds the instance claim
+   * identity (Ed25519 key + instance id). Without it the claim routes answer
+   * 503; the server entrypoint always sets it.
+   */
+  instanceClaimDir?: string;
   portalRuntimeScopeVerifier?: PortalRuntimeScopeVerifier;
   rules?: RulesReadinessConfiguration;
   /** Company Box catalog directory (default MARKETPLACE_COMPANY_BOX_DIR or program/catalog/company-box). */
@@ -707,6 +714,9 @@ function marketplacePublicPath(pathname: string) {
     pathname === "/embed" ||
     pathname === "/healthz" ||
     pathname === "/api/portal/readiness" ||
+    // Authenticated inside the route by the instance credential only; an
+    // operator session cookie must never reach it.
+    pathname === "/api/tealbrick/claim" ||
     pathname === "/status" ||
     pathname === "/bootstrap.json" ||
     pathname === "/openapi.json" ||
@@ -3678,6 +3688,66 @@ export async function buildMarketplaceApp(
     tailnet: await tailnetHealth(environment),
     time: new Date().toISOString(),
   }));
+
+  const instanceClaim = options.instanceClaimDir
+    ? new MarketplaceInstanceClaim(options.instanceClaimDir)
+    : null;
+  /**
+   * Portal registers a Portal-provisioned Marketplace as a verified runtime
+   * app by reading the public claim key and having the instance sign a fresh
+   * Portal challenge. Only the Portal-held deployment credentials are
+   * accepted: the internal bearer (also as `x-knowledge-instance-token`) or
+   * the Portal instance proof. A browser session, origin or cookie never is.
+   */
+  const claimAuthorization = (request: FastifyRequest, reply: FastifyReply) => {
+    reply.header("cache-control", "no-store");
+    if (request.headers.cookie || request.headers.origin) {
+      reply.code(403).send({ ok: false, error: "claim_service_request_required" });
+      return false;
+    }
+    const bearer = bearerTokenFrom(request);
+    const legacy = headerValue(request, "x-knowledge-instance-token");
+    const proof = headerValue(request, "x-tealbrick-instance-proof");
+    const matches = [
+      bearer !== null && marketplaceSecretMatches(bearer, options.internalAuthToken),
+      legacy !== null && marketplaceSecretMatches(legacy, options.internalAuthToken),
+      proof !== null && marketplaceSecretMatches(proof, portalInstanceProof),
+    ];
+    if (!matches.some(Boolean)) {
+      reply.code(401).send({ ok: false, error: "claim_instance_auth_required" });
+      return false;
+    }
+    if (!instanceClaim) {
+      reply.code(503).send({ ok: false, error: "claim_identity_unavailable" });
+      return false;
+    }
+    return true;
+  };
+
+  app.get("/api/tealbrick/claim", async (request, reply) => {
+    if (!claimAuthorization(request, reply) || !instanceClaim) return reply;
+    return { instanceId: instanceClaim.instanceId, publicJwk: instanceClaim.publicJwk };
+  });
+
+  app.post("/api/tealbrick/claim", { bodyLimit: 4096 }, async (request, reply) => {
+    if (!claimAuthorization(request, reply) || !instanceClaim) return reply;
+    // The company is this instance's configured Portal workspace; with no
+    // binding or issuer there is nothing honest to sign.
+    const companyId = configuredOrganizationId ?? portalConfiguration.workspaceId;
+    if (!portalIssuerUrl || !companyId) {
+      reply.code(503);
+      return { ok: false, error: "claim_scope_unconfigured" };
+    }
+    try {
+      return instanceClaim.signChallenge(request.body, { portalIssuer: portalIssuerUrl, companyId });
+    } catch (error) {
+      if (error instanceof InstanceClaimError) {
+        reply.code(error.code === "invalid_claim_challenge" ? 400 : 403);
+        return { ok: false, error: error.code };
+      }
+      throw error;
+    }
+  });
 
   app.get("/api/portal/readiness", async (request, reply) => {
     const suppliedProof = headerValue(request, "x-tealbrick-instance-proof");

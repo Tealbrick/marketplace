@@ -90,6 +90,11 @@ label does not establish authority.
    `x-tealbrick-instance-proof`; no browser cookie, origin or authorization
    header is accepted on that route.
 5. Verify tenant binding, Rules introspection, and private volume persistence.
+   To register the deployment as a verified runtime app, Portal calls
+   `GET`/`POST /api/tealbrick/claim` with its deployment credential; see
+   `docs/instance-claim.md`. The claim key persists in
+   `/data/state/instance-claim-identity.json` and must be backed up with the
+   database.
 6. Back up the database/settings/secrets through an approved consistent path,
    restore into an isolated instance with the same handoff key, and verify
    wrong-key startup fails without rewriting the database.
