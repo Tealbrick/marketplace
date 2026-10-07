@@ -708,6 +708,10 @@ function isMutation(method: string) {
   return !["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());
 }
 
+// Canonical claim path; the /api path stays a working alias for the same handlers.
+const MARKETPLACE_CLAIM_PATH = "/.well-known/tealbrick/claim";
+const MARKETPLACE_CLAIM_ALIAS_PATH = "/api/tealbrick/claim";
+
 function marketplacePublicPath(pathname: string) {
   return (
     pathname === "/" ||
@@ -716,7 +720,8 @@ function marketplacePublicPath(pathname: string) {
     pathname === "/api/portal/readiness" ||
     // Authenticated inside the route by the instance credential only; an
     // operator session cookie must never reach it.
-    pathname === "/api/tealbrick/claim" ||
+    pathname === MARKETPLACE_CLAIM_PATH ||
+    pathname === MARKETPLACE_CLAIM_ALIAS_PATH ||
     pathname === "/status" ||
     pathname === "/bootstrap.json" ||
     pathname === "/openapi.json" ||
@@ -3724,12 +3729,12 @@ export async function buildMarketplaceApp(
     return true;
   };
 
-  app.get("/api/tealbrick/claim", async (request, reply) => {
+  const claimIdentity = async (request: FastifyRequest, reply: FastifyReply) => {
     if (!claimAuthorization(request, reply) || !instanceClaim) return reply;
     return { instanceId: instanceClaim.instanceId, publicJwk: instanceClaim.publicJwk };
-  });
+  };
 
-  app.post("/api/tealbrick/claim", { bodyLimit: 4096 }, async (request, reply) => {
+  const claimSign = async (request: FastifyRequest, reply: FastifyReply) => {
     if (!claimAuthorization(request, reply) || !instanceClaim) return reply;
     // The company is this instance's configured Portal workspace; with no
     // binding or issuer there is nothing honest to sign.
@@ -3747,7 +3752,12 @@ export async function buildMarketplaceApp(
       }
       throw error;
     }
-  });
+  };
+
+  for (const claimPath of [MARKETPLACE_CLAIM_PATH, MARKETPLACE_CLAIM_ALIAS_PATH]) {
+    app.get(claimPath, claimIdentity);
+    app.post(claimPath, { bodyLimit: 4096 }, claimSign);
+  }
 
   app.get("/api/portal/readiness", async (request, reply) => {
     const suppliedProof = headerValue(request, "x-tealbrick-instance-proof");
