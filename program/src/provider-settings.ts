@@ -12,7 +12,7 @@ export type ComposioProviderSettings = {
 
 type SecretDocument = { composioApiKey?: string };
 
-const DEFAULTS: ComposioProviderSettings = {
+export const COMPOSIO_PROVIDER_DEFAULTS: Readonly<ComposioProviderSettings> = {
   composioBaseUrl: "https://backend.composio.dev/api/v3.1",
   composioDefaultUserId: "doppelganger",
   composioDefaultConnectedAccountId: "",
@@ -69,7 +69,7 @@ function cleanString(value: unknown, fallback = "") {
 }
 
 export class MarketplaceProviderSettingsStore {
-  private settings: ComposioProviderSettings = { ...DEFAULTS };
+  private settings: ComposioProviderSettings = { ...COMPOSIO_PROVIDER_DEFAULTS };
   private secrets: SecretDocument = {};
   readonly settingsPath: string;
   readonly secretsPath: string;
@@ -94,11 +94,11 @@ export class MarketplaceProviderSettingsStore {
       composioBaseUrl:
         cleanString(settings.composioBaseUrl) ||
         cleanString(this.bootstrapEnv.COMPOSIO_BASE_URL) ||
-        DEFAULTS.composioBaseUrl,
+        COMPOSIO_PROVIDER_DEFAULTS.composioBaseUrl,
       composioDefaultUserId:
         cleanString(settings.composioDefaultUserId) ||
         cleanString(this.bootstrapEnv.COMPOSIO_DEFAULT_USER_ID) ||
-        DEFAULTS.composioDefaultUserId,
+        COMPOSIO_PROVIDER_DEFAULTS.composioDefaultUserId,
       composioDefaultConnectedAccountId:
         cleanString(settings.composioDefaultConnectedAccountId) ||
         cleanString(this.bootstrapEnv.COMPOSIO_DEFAULT_CONNECTED_ACCOUNT_ID),

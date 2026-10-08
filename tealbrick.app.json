@@ -1,0 +1,392 @@
+{
+  "$schema": "./program/node_modules/@tealbrick/contract/schema/tealbrick.miniapp.v1.schema.json",
+  "schema": "tealbrick.miniapp/v1",
+  "kind": "suite",
+  "app": {
+    "id": "marketplace",
+    "name": "Marketplace",
+    "major": 1,
+    "version": "0.1.17",
+    "summary": "Connector catalog, provider accounts, consent-gated tool execution and an owner approvals queue for a Teal Brick workspace.",
+    "domain": "connectors, provider accounts, agent consents, consented tool calls, owner approvals"
+  },
+  "licence": {
+    "product": "marketplace",
+    "major": 1
+  },
+  "runtime": {
+    "image": {
+      "repository": "ghcr.io/tealbrick/marketplace"
+    },
+    "port": 5314,
+    "volume": {
+      "path": "/data",
+      "required": true
+    },
+    "health": "/healthz",
+    "claim": "/.well-known/tealbrick/claim",
+    "instanceAuthEnv": "TEALBRICK_INSTANCE_TOKEN",
+    "tenantEnv": "TEALBRICK_TENANT_ID",
+    "env": {
+      "static": {
+        "NODE_ENV": "production",
+        "MARKETPLACE_HOST": "0.0.0.0",
+        "MARKETPLACE_PORT": "5314",
+        "MARKETPLACE_DATA_DIR": "/data/state"
+      },
+      "allow": [
+        "PORT",
+        "MARKETPLACE_HOST",
+        "MARKETPLACE_PORT",
+        "MARKETPLACE_DATA_DIR",
+        "MARKETPLACE_DATABASE_PATH",
+        "MARKETPLACE_SETTINGS_PATH",
+        "MARKETPLACE_SECRETS_PATH",
+        "MARKETPLACE_INTERNAL_AUTH_TOKEN",
+        "MARKETPLACE_OPERATOR_ACCESS_TOKEN",
+        "MARKETPLACE_OPERATOR_ID",
+        "MARKETPLACE_OPERATOR_SESSION_TTL_SECONDS",
+        "MARKETPLACE_ORGANIZATION_ID",
+        "MARKETPLACE_ALLOWED_ORIGINS",
+        "MARKETPLACE_PUBLIC_ORIGIN",
+        "MARKETPLACE_HANDOFF_ENCRYPTION_KEY",
+        "MARKETPLACE_PORTAL_ISSUER_URL",
+        "MARKETPLACE_PORTAL_URL",
+        "MARKETPLACE_PORTAL_ORIGIN",
+        "MARKETPLACE_PORTAL_ATTACHMENT_AUDIENCE",
+        "MARKETPLACE_PORTAL_INSTANCE_PROOF",
+        "MARKETPLACE_PORTAL_DEPLOYMENT_ID",
+        "MARKETPLACE_PORTAL_ORG_ID",
+        "MARKETPLACE_PORTAL_WORKSPACE_ID",
+        "TEALBRICK_PORTAL_URL",
+        "TEALBRICK_DEPLOYMENT_ID",
+        "TEALBRICK_PORTAL_ORG_ID",
+        "TEALBRICK_PORTAL_INSTANCE_PROOF",
+        "TEALBRICK_EMERGENCY_CODE",
+        "COMPOSIO_API_KEY",
+        "COMPOSIO_BASE_URL",
+        "COMPOSIO_DEFAULT_USER_ID",
+        "COMPOSIO_DEFAULT_CONNECTED_ACCOUNT_ID",
+        "NANGO_SECRET_KEY",
+        "NANGO_BASE_URL",
+        "ACTIVEPIECES_BASE_URL",
+        "ACTIVEPIECES_API_KEY",
+        "RULES_BASE_URL",
+        "RULES_INTERNAL_AUTH_TOKEN",
+        "RULES_COMPANY_ID"
+      ]
+    },
+    "providers": [
+      "railway",
+      "vps",
+      "existing-instance"
+    ]
+  },
+  "operations": [
+    {
+      "id": "marketplace.consents.list",
+      "crud": [
+        "read"
+      ],
+      "method": "GET",
+      "path": "/api/marketplace/v1/agent/consents",
+      "idempotency": "none",
+      "effects": "read-only",
+      "review": "none",
+      "summary": "List the calling agent's active connector consents (ids, toolkit, actions, state; never credentials)"
+    },
+    {
+      "id": "marketplace.tools.call",
+      "crud": [
+        "create"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/v1/agent/tools/call",
+      "idempotency": "required",
+      "effects": "external-effects",
+      "review": "allowed",
+      "summary": "Run one consented connector action for the calling agent; the consent must belong to the caller"
+    },
+    {
+      "id": "marketplace.consents.request",
+      "crud": [
+        "create"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/v1/agent/grants/request",
+      "idempotency": "required",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Start a Portal consent request for an agent connector action",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.consents.redeem",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/v1/agent/grants/redeem",
+      "idempotency": "supported",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Redeem an approved Portal consent into a stored consent (idempotent by request id)",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.consents.revoke",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/agent/grants/{grantId}/revoke",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Revoke a stored agent consent or grant",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.connections.connect",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/plugins/{pluginId}/connection",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Connect a provider account for a connector (provider connect)",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.plugins.install",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/plugins/{pluginId}/install",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Install a connector for the workspace",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.plugins.uninstall",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/plugins/{pluginId}/uninstall",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Uninstall a connector from the workspace",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.plugins.register",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/plugins/{pluginId}/register",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Register an installed connector with the runtime",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.plugins.unregister",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/plugins/{pluginId}/unregister",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Unregister a connector from the runtime",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.catalog.import",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/catalog/composio/import",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Import a provider toolkit into the workspace catalog",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.settings.get",
+      "crud": [
+        "read"
+      ],
+      "method": "GET",
+      "path": "/api/settings/providers/composio",
+      "idempotency": "none",
+      "effects": "read-only",
+      "review": "none",
+      "summary": "Read provider settings (secret presence only)",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.settings.update",
+      "crud": [
+        "update"
+      ],
+      "method": "PUT",
+      "path": "/api/settings/providers/composio",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Update provider settings",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.settings.clear",
+      "crud": [
+        "delete"
+      ],
+      "method": "DELETE",
+      "path": "/api/settings/providers/composio/key",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Remove the stored provider key",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.approvals.list",
+      "crud": [
+        "read"
+      ],
+      "method": "GET",
+      "path": "/api/marketplace/company-box/approvals",
+      "idempotency": "none",
+      "effects": "read-only",
+      "review": "none",
+      "summary": "List held connector calls waiting for owner approval",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.approvals.get",
+      "crud": [
+        "read"
+      ],
+      "method": "GET",
+      "path": "/api/marketplace/company-box/approvals/{approvalId}",
+      "idempotency": "none",
+      "effects": "read-only",
+      "review": "none",
+      "summary": "Read one held connector call",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.approvals.approve",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/company-box/approvals/{approvalId}/approve",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Approve a held connector call",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.approvals.deny",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/company-box/approvals/{approvalId}/deny",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Deny a held connector call",
+      "audience": "owner"
+    }
+  ],
+  "guidance": {
+    "version": "1",
+    "path": "/.well-known/tealbrick/guidance/1"
+  },
+  "settings": {
+    "schemaVersion": 1,
+    "groups": [
+      {
+        "id": "provider",
+        "label": "Connector provider",
+        "scope": "instance",
+        "fields": [
+          {
+            "key": "composio.apiKey",
+            "label": "Composio API key",
+            "description": "Account-level key for the Composio connector provider. Taken from the account connection and delivered to this service as an environment variable.",
+            "type": "secret",
+            "maxLength": 512,
+            "source": "account",
+            "destination": "provider-env",
+            "env": "COMPOSIO_API_KEY",
+            "rotation": "update-credentials"
+          },
+          {
+            "key": "composio.baseUrl",
+            "label": "Composio API address",
+            "description": "Leave empty for the default Composio API.",
+            "type": "url",
+            "maxLength": 512
+          },
+          {
+            "key": "composio.defaultUserId",
+            "label": "Default provider user",
+            "description": "User id Marketplace uses when a connection names none.",
+            "type": "string",
+            "maxLength": 128
+          }
+        ]
+      }
+    ]
+  },
+  "frontend": {
+    "standalone": true,
+    "routes": {
+      "home": "/",
+      "settings": "/?view=settings"
+    },
+    "launch": "ticket-v1",
+    "embed": {
+      "allowed": true,
+      "frameAncestors": "portal-origins"
+    }
+  },
+  "harnesses": {
+    "connector": {
+      "minConnector": "0.3.0"
+    },
+    "support": {
+      "eve": "supported",
+      "claude-code": "supported",
+      "codex": "supported",
+      "desktop": "supported",
+      "hermes": "unsupported",
+      "openclaw": "unsupported"
+    }
+  },
+  "companions": [
+    {
+      "app": "rules-approvals",
+      "relation": "enhanced-by"
+    }
+  ],
+  "unlocks": []
+}

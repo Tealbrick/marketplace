@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, getBootstrap, getCardDetail, getCardSummaries, getOperatorSession, saveProviderSettings, unlockOperator } from "./api";
+import { ApiError, getBootstrap, getCardDetail, getCardSummaries, getOperatorSession, logoutOperator, saveProviderSettings, unlockOperator, unlockWithEmergencyCode } from "./api";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -39,6 +39,22 @@ describe("frontend API client", () => {
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ credentials: "include", method: "POST" });
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ credentials: "include", method: "PUT" });
     expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get("x-csrf-token")).toBe("csrf-proof");
+  });
+
+  it("signs in with the break-glass emergency code over JSON and signs out through the emergency route", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ tokenType: "Bearer" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: "emergency_code_invalid" }), { status: 401 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: "rate_limited" }), { status: 429 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    await unlockWithEmergencyCode("the-emergency-code");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/auth/emergency");
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: "POST", credentials: "include", body: JSON.stringify({ code: "the-emergency-code" }) });
+    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("accept")).toBe("application/json");
+    await expect(unlockWithEmergencyCode("wrong")).rejects.toMatchObject({ status: 401, message: "The emergency code is not valid." });
+    await expect(unlockWithEmergencyCode("wrong")).rejects.toMatchObject({ status: 429 });
+    await logoutOperator("emergency");
+    expect(fetchMock.mock.calls[3]?.[0]).toBe("/auth/emergency/logout");
   });
 
   it("signals an expired authenticated session on a protected 401", async () => {

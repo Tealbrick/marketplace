@@ -41,6 +41,11 @@ private repository history.
   configured. Nango, Activepieces, and MCP integration surfaces are explicit
   adapter boundaries and fail closed when their runtime is not configured or
   accepted for execution.
+- Teal Brick miniapp contract: `tealbrick.app.json` (validated, served at
+  `/.well-known/tealbrick/manifest`), the `/.well-known/tealbrick/*` control
+  endpoints, two agent operations over a Portal app grant (list your consents,
+  run a consented tool call), owner-only everything else, and a break-glass
+  emergency login. See `docs/contract.md`.
 
 The schemas under `contracts/` and the extension manifest describe typed
 integration boundaries. Hosts and other miniapps must use the

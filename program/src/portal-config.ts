@@ -54,6 +54,8 @@ export function resolvePortalRuntimeConfiguration(input: {
         { name: "MARKETPLACE_PORTAL_ISSUER_URL", value: env.MARKETPLACE_PORTAL_ISSUER_URL },
         { name: "MARKETPLACE_PORTAL_URL", value: env.MARKETPLACE_PORTAL_URL },
         { name: "MARKETPLACE_PORTAL_ORIGIN", value: env.MARKETPLACE_PORTAL_ORIGIN },
+        // Contract deployments (tealbrick.app.json) name the same value TEALBRICK_PORTAL_URL.
+        { name: "TEALBRICK_PORTAL_URL", value: env.TEALBRICK_PORTAL_URL },
       ],
       normalizeOrigin,
     ),
@@ -61,12 +63,15 @@ export function resolvePortalRuntimeConfiguration(input: {
       { name: "options.portalInstanceProof", value: input.portalInstanceProof },
       { name: "MARKETPLACE_PORTAL_INSTANCE_PROOF", value: env.MARKETPLACE_PORTAL_INSTANCE_PROOF },
       { name: "MARKETPLACE_PORTAL_INSTANCE_TOKEN", value: env.MARKETPLACE_PORTAL_INSTANCE_TOKEN },
+      { name: "TEALBRICK_PORTAL_INSTANCE_PROOF", value: env.TEALBRICK_PORTAL_INSTANCE_PROOF },
     ]),
     deploymentId: resolveCompatibleValue("Portal deployment identity", [
       { name: "MARKETPLACE_PORTAL_DEPLOYMENT_ID", value: env.MARKETPLACE_PORTAL_DEPLOYMENT_ID },
+      { name: "TEALBRICK_DEPLOYMENT_ID", value: env.TEALBRICK_DEPLOYMENT_ID },
     ]),
     portalOrgId: resolveCompatibleValue("Portal organization identity", [
       { name: "MARKETPLACE_PORTAL_ORG_ID", value: env.MARKETPLACE_PORTAL_ORG_ID },
+      { name: "TEALBRICK_PORTAL_ORG_ID", value: env.TEALBRICK_PORTAL_ORG_ID },
     ]),
     workspaceId: resolveCompatibleValue("Portal workspace identity", [
       { name: "MARKETPLACE_PORTAL_WORKSPACE_ID", value: env.MARKETPLACE_PORTAL_WORKSPACE_ID },

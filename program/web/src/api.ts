@@ -49,8 +49,26 @@ export async function unlockOperator(accessToken: string) {
   return result;
 }
 
-export async function logoutOperator() {
-  await api<void>("/api/marketplace/auth/session", { method: "DELETE" });
+/** Break-glass sign-in with the emergency code (contract 12.3.3), for when Portal is not available. */
+export async function unlockWithEmergencyCode(code: string) {
+  const response = await fetch("/auth/emergency", {
+    method: "POST",
+    credentials: "include",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: string } | null;
+    throw new ApiError(response.status === 429 ? "Too many attempts. Try again later." : "The emergency code is not valid.", response.status, body);
+  }
+}
+
+export async function logoutOperator(mode?: OperatorSession["mode"]) {
+  if (mode === "emergency") {
+    await fetch("/auth/emergency/logout", { method: "POST", credentials: "include" });
+  } else {
+    await api<void>("/api/marketplace/auth/session", { method: "DELETE" });
+  }
   operatorCsrfToken = null;
 }
 
@@ -94,7 +112,7 @@ export const getCardSummaries = (input: { workspaceSlug: string; search: string;
 export const getCardDetail = (pluginId: string, workspaceSlug: string) =>
   api<CardDetailResponse>(`/api/marketplace/cards/${encodeURIComponent(pluginId)}?${workspaceQuery(workspaceSlug)}`);
 export const getAudit = (workspaceSlug: string) => api<AuditResponse>(`/api/marketplace/audit?${workspaceQuery(workspaceSlug)}&limit=100`);
-export const getLiveness = () => api<{ ok: boolean; status: string }>("/healthz");
+export const getLiveness = () => api<{ ok: boolean; app: string }>("/healthz");
 export const getRuntimeHealth = () => api<RuntimeHealth>("/api/marketplace/health");
 export const getOpenApi = () => api<Record<string, unknown>>("/openapi.json");
 export const getProviderSettings = () => api<ProviderSettings>("/api/settings/providers/composio");

@@ -82,7 +82,7 @@ function AuthorizationPanel({ bootstrap, health }: { bootstrap: FrontendBootstra
 }
 
 function SecurityPanel({ session, onLogout }: { session: OperatorSession; onLogout: () => void }) {
-  const logout = useMutation({ mutationFn: logoutOperator, onSuccess: onLogout });
+  const logout = useMutation({ mutationFn: () => logoutOperator(session.mode), onSuccess: onLogout });
   return <div className="settings-stack"><div className="settings-intro"><div><h3>Your session</h3><p>You're signed in to Marketplace in this browser. Agents and other apps use their own separate credentials.</p></div><ShieldCheck /></div><dl className="contract-list"><dt>Signed in as</dt><dd>{session.principal?.id ?? "—"}</dd><dt>Organization</dt><dd>{session.principal?.organizationId ?? "—"}</dd><dt>Session ends</dt><dd>{session.expiresAt ? new Date(session.expiresAt).toLocaleString() : session.mode === "test_bypass" ? "Test mode" : "—"}</dd><dt>Sign-in</dt><dd>Secure browser cookie; your access token isn't stored</dd><dt>Change protection</dt><dd>Each change is verified as coming from this session</dd></dl>{logout.error && <InlineError error={logout.error} />}<div><Button tone="danger" disabled={logout.isPending} onClick={() => logout.mutate()}><LogOut size={15} />Sign out</Button></div></div>;
 }
 

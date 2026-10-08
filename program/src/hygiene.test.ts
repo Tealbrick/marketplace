@@ -51,15 +51,17 @@ afterEach(async () => {
 describe("release version source of truth", () => {
   it("keeps package.json, manifest.json, and the Railway recipe on one version", async () => {
     const readJson = async (file: string) => JSON.parse(await readFile(path.join(repoRoot, file), "utf8")) as { version: string };
-    const [programPackage, manifest, recipe] = await Promise.all([
+    const [programPackage, manifest, recipe, contractManifest] = await Promise.all([
       readJson("program/package.json"),
       readJson("manifest.json"),
       readJson("deploy/railway/recipe.json"),
+      readJson("tealbrick.app.json").then((value) => ({ version: (value as unknown as { app: { version: string } }).app.version })),
     ]);
     expect(MARKETPLACE_VERSION).toMatch(/^\d+\.\d+\.\d+$/u);
     expect(programPackage.version).toBe(MARKETPLACE_VERSION);
     expect(manifest.version).toBe(MARKETPLACE_VERSION);
     expect(recipe.version).toBe(MARKETPLACE_VERSION);
+    expect(contractManifest.version).toBe(MARKETPLACE_VERSION);
   });
 
   it("serves the real version from bootstrap, status, and OpenAPI", async () => {
