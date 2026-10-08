@@ -27,7 +27,7 @@ steps:
         for f in $(find /tmp/img -type f); do
           if tar -tf "$f" 2>/dev/null | grep -q 'entrypoint\.mjs$'; then
             found=1
-            echo "entrypoint.mjs found in ${f##*/}"
+            echo "entrypoint.mjs found in $(basename "$f")"
           fi
         done
         [ "$found" = 1 ] || { echo "entrypoint.mjs is not in the image"; exit 1; }
