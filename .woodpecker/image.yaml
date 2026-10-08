@@ -19,3 +19,15 @@ steps:
         --dockerfile "$CI_WORKSPACE/release/railway/Dockerfile"
         --tar-path /tmp/image.tar
         --verbosity info
+      - |
+        set -eu
+        mkdir /tmp/img
+        tar -xf /tmp/image.tar -C /tmp/img
+        found=0
+        for f in $(find /tmp/img -type f); do
+          if tar -tf "$f" 2>/dev/null | grep -q 'entrypoint\.mjs$'; then
+            found=1
+            echo "entrypoint.mjs found in ${f##*/}"
+          fi
+        done
+        [ "$found" = 1 ] || { echo "entrypoint.mjs is not in the image"; exit 1; }
