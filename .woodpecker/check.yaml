@@ -30,32 +30,37 @@ steps:
     environment: *env
     commands:
       - cd program
-      - corepack pnpm install --frozen-lockfile
+      - corepack enable && corepack prepare pnpm@9.15.4 --activate
+      - pnpm install --frozen-lockfile
 
   - name: typecheck
     image: *node_image
     environment: *env
     commands:
       - cd program
-      - corepack pnpm run typecheck
+      - corepack enable && corepack prepare pnpm@9.15.4 --activate
+      - pnpm run typecheck
 
   - name: build
     image: *node_image
     environment: *env
     commands:
       - cd program
-      - corepack pnpm run build
+      - corepack enable && corepack prepare pnpm@9.15.4 --activate
+      - pnpm run build
 
   - name: test
     image: *node_image
     environment: *env
     commands:
       - cd program
-      - corepack pnpm exec vitest run --maxWorkers=2
+      - corepack enable && corepack prepare pnpm@9.15.4 --activate
+      - pnpm exec vitest run --maxWorkers=2
 
   - name: test-web
     image: *node_image
     environment: *env
     commands:
       - cd program
-      - corepack pnpm exec vitest run --config web/vitest.config.ts --maxWorkers=2
+      - corepack enable && corepack prepare pnpm@9.15.4 --activate
+      - pnpm exec vitest run --config web/vitest.config.ts --maxWorkers=2
