@@ -1,0 +1,66 @@
+# Woodpecker CI (self-hosted). GitHub stores code only; GitHub Actions is not used.
+# Checks only: no secrets, no privileged or Docker-in-Docker steps.
+#
+# Not run here: publishing the container image to the registry. That is a
+# release-time job: run it on the CI host with a registry secret, or let
+# Railway build the image from source. The release manifest checksums have
+# their own manual pipeline (release-manifests.yaml).
+when:
+  - event: pull_request
+  - event: push
+    branch: main
+  - event: manual
+
+variables:
+  - &node_image node:24.21.0-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20
+  - &env
+    CI: "true"
+    NPM_CONFIG_UPDATE_NOTIFIER: "false"
+    COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+
+steps:
+  - name: validate-manifest
+    image: *node_image
+    environment: *env
+    commands:
+      - npx --yes @tealbrick/contract@0.1.0-alpha.3 validate tealbrick.app.json
+
+  - name: install
+    image: *node_image
+    environment: *env
+    commands:
+      - cd program
+      - corepack enable && corepack prepare pnpm@9.15.4 --activate
+      - pnpm install --frozen-lockfile
+
+  - name: typecheck
+    image: *node_image
+    environment: *env
+    commands:
+      - cd program
+      - corepack enable && corepack prepare pnpm@9.15.4 --activate
+      - pnpm run typecheck
+
+  - name: build
+    image: *node_image
+    environment: *env
+    commands:
+      - cd program
+      - corepack enable && corepack prepare pnpm@9.15.4 --activate
+      - pnpm run build
+
+  - name: test
+    image: *node_image
+    environment: *env
+    commands:
+      - cd program
+      - corepack enable && corepack prepare pnpm@9.15.4 --activate
+      - pnpm exec vitest run --maxWorkers=2
+
+  - name: test-web
+    image: *node_image
+    environment: *env
+    commands:
+      - cd program
+      - corepack enable && corepack prepare pnpm@9.15.4 --activate
+      - pnpm exec vitest run --config web/vitest.config.ts --maxWorkers=2

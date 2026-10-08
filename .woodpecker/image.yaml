@@ -1,0 +1,33 @@
+# Container image build check (no push). Proves release/railway/Dockerfile still
+# builds, using an unprivileged builder: no privileged step, no host socket, no
+# added capabilities, no secrets. Publishing stays a release-time job (see
+# check.yaml).
+when:
+  - event: pull_request
+  - event: push
+    branch: main
+  - event: manual
+
+steps:
+  - name: image-build
+    image: gcr.io/kaniko-project/executor:v1.24.0-debug@sha256:2562c4fe551399514277ffff7dcca9a3b1628c4ea38cb017d7286dc6ea52f4cd
+    commands:
+      - >-
+        /kaniko/executor
+        --no-push
+        --context "$CI_WORKSPACE/release/railway"
+        --dockerfile "$CI_WORKSPACE/release/railway/Dockerfile"
+        --tar-path /tmp/image.tar
+        --verbosity info
+      - |
+        set -eu
+        mkdir /tmp/img
+        tar -xf /tmp/image.tar -C /tmp/img
+        found=0
+        for f in $(find /tmp/img -type f); do
+          if tar -tf "$f" 2>/dev/null | grep -q 'entrypoint\.mjs$'; then
+            found=1
+            echo "entrypoint.mjs found in $(basename "$f")"
+          fi
+        done
+        [ "$found" = 1 ] || { echo "entrypoint.mjs is not in the image"; exit 1; }

@@ -1,0 +1,60 @@
+# Contract conformance: boots Marketplace from source next to the fake Portal of
+# the published conformance runner and runs the section 8 checks against it.
+# Everything runs inside one unprivileged step on loopback ports. The keys and
+# tokens are generated per run and thrown away; there are no secrets and no
+# external services. Fails when the runner reports `ok: false`.
+when:
+  - event: pull_request
+  - event: push
+    branch: main
+  - event: manual
+
+variables:
+  - &node_image node:24.21.0-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20
+
+steps:
+  - name: conformance
+    image: *node_image
+    environment:
+      CI: "true"
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+    commands:
+      - |
+        set -eu
+        W="$CI_WORKSPACE"
+        RUN=/tmp/conformance
+        mkdir -p "$RUN/data" "$RUN/runner"
+        corepack enable && corepack prepare pnpm@9.15.4 --activate
+        (cd program && pnpm install --frozen-lockfile)
+        npm install --prefix "$RUN/runner" --no-audit --no-fund @tealbrick/conformance@0.1.0-alpha.1
+        CLI="$RUN/runner/node_modules/@tealbrick/conformance/dist/cli.js"
+        rand() { node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))'; }
+        wait_for() { # url, seconds
+          node -e 'const [u,s]=process.argv.slice(1);const end=Date.now()+s*1000;(async()=>{for(;;){try{if((await fetch(u)).ok)return}catch{}if(Date.now()>end){console.error("timeout waiting for "+u);process.exit(1)}await new Promise(r=>setTimeout(r,500))}})()' "$1" "$2"
+        }
+        PORTAL_PID=""; APP_PID=""
+        cleanup() { [ -z "$APP_PID" ] || kill "$APP_PID" 2>/dev/null || true; [ -z "$PORTAL_PID" ] || kill "$PORTAL_PID" 2>/dev/null || true; }
+        trap cleanup EXIT
+        # Fake Portal (loopback). Its output env carries the app-facing values.
+        node "$CLI" portal --manifest "$W/tealbrick.app.json" --port 18410 --env-out "$RUN/portal.env" > "$RUN/portal.log" 2>&1 &
+        PORTAL_PID=$!
+        i=0; while [ ! -s "$RUN/portal.env" ]; do i=$((i+1)); [ "$i" -lt 60 ] || { cat "$RUN/portal.log"; echo "fake Portal did not start"; exit 1; }; sleep 0.5; done
+        set -a; . "$RUN/portal.env"; set +a
+        # The runner control values stay out of the app environment.
+        CONTROL_TOKEN="$TEALBRICK_CONFORMANCE_CONTROL_TOKEN"
+        CONTROL_URL="$TEALBRICK_CONFORMANCE_PORTAL_URL"
+        unset TEALBRICK_CONFORMANCE_PORTAL_URL TEALBRICK_CONFORMANCE_CONTROL_TOKEN
+        MARKETPLACE_OPERATOR_ACCESS_TOKEN="$(rand)" MARKETPLACE_HANDOFF_ENCRYPTION_KEY="$(rand)" \
+          MARKETPLACE_HOST=127.0.0.1 MARKETPLACE_PORT=18411 MARKETPLACE_DATA_DIR="$RUN/data" \
+          sh -c 'cd program && exec ./node_modules/.bin/tsx src/index.ts' > "$RUN/app.log" 2>&1 &
+        APP_PID=$!
+        wait_for http://127.0.0.1:18411/healthz 60 || { cat "$RUN/app.log"; exit 1; }
+        set +e
+        TEALBRICK_CONFORMANCE_CONTROL_TOKEN="$CONTROL_TOKEN" TEALBRICK_CONFORMANCE_PORTAL_URL="$CONTROL_URL" node "$CLI" run \
+          --app http://127.0.0.1:18411 --manifest "$W/tealbrick.app.json" \
+          --json --out "$RUN/report.json" --slow > "$RUN/run.out" 2>&1
+        rc=$?
+        set -e
+        node -e 'const r=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"));console.log("conformance summary",JSON.stringify(r.summary),"ok="+r.ok);for(const c of r.checks)if(c.status==="FAIL")console.log("FAIL",c.id,(c.evidence||[]).filter(e=>String(e).startsWith("FAIL")).slice(0,3).join(" | "))' "$RUN/report.json" || cat "$RUN/run.out"
+        exit "$rc"
