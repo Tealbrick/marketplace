@@ -1,0 +1,38 @@
+# Manual-only: verifies the release bundle checksums and the source archive
+# digest recorded for the release. Mirrors the verify step of the former image
+# publish workflow. It does NOT build or publish the container image; that is a
+# release-time job on the CI host with a registry secret, or a Railway source
+# build.
+#
+# Run it against a release tag (choose the tag when you start the manual run):
+# the build-input manifest describes the tagged tree, so it will not match a
+# branch that has moved past the release.
+#
+# The source archive check runs `git archive` on the recorded source snapshot,
+# so this pipeline clones the full history.
+when:
+  - event: manual
+
+clone:
+  git:
+    image: woodpeckerci/plugin-git:2.10.1@sha256:550075c844fcec0af41d9d28f9860aa5d8c43e1e9419be4b9266dc02c2f29804
+    settings:
+      partial: false
+      tags: true
+
+steps:
+  - name: verify-release-manifests
+    # The git plugin image ships git and busybox coreutils, which is all this step needs.
+    image: woodpeckerci/plugin-git:2.10.1@sha256:550075c844fcec0af41d9d28f9860aa5d8c43e1e9419be4b9266dc02c2f29804
+    commands:
+      - |
+        set -eu
+        sha256sum -c release/railway/build-input-manifest.sha256
+        sha256sum -c release/railway/bundle-manifest.sha256
+        source_ref="$(sed -n 's/.*Source snapshot: `\([^`]*\)`.*/\1/p' release/railway/RELEASE.md)"
+        test -n "$source_ref"
+        test "$source_ref" != "SOURCE_SNAPSHOT_COMMIT"
+        expected_source="$(tr -d '[:space:]' < release/railway/SOURCE-SHA256)"
+        actual_source="$(git archive --format=tar "$source_ref" | sha256sum | awk '{print $1}')"
+        test "$actual_source" = "$expected_source"
+        echo "release manifests and source archive digest verified for $source_ref"
