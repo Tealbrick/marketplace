@@ -6,7 +6,7 @@ import { BrandMark, Button, Field, IconButton, Tag } from "@tealbrick/ui";
 import { ActivityPage } from "./Activity";
 import { AgentGrantsPage } from "./AgentGrants";
 import { revokeAgentGrant } from "./agent-grants-api";
-import { getBootstrap, getCardDetail, getCardSummaries, getCompanyBoxApprovals, getLiveness, getOperatorSession, getRuntimeHealth, unlockOperator } from "./api";
+import { getBootstrap, getCardDetail, getCardSummaries, getCompanyBoxApprovals, getLiveness, getOperatorSession, getRuntimeHealth, unlockOperator, unlockWithEmergencyCode } from "./api";
 import { CatalogRow, ConfirmDialog, type ConfirmState, PluginWorkspace } from "./Catalog";
 import { ConnectionsPage } from "./Connections";
 import { SettingsDialog } from "./Settings";
@@ -28,12 +28,21 @@ function UnlockScreen({ session, reason, onUnlocked }: { session: OperatorSessio
       onUnlocked();
     },
   });
+  const [emergencyCode, setEmergencyCode] = useState("");
+  const emergencyUnlock = useMutation({
+    mutationFn: () => unlockWithEmergencyCode(emergencyCode),
+    onSuccess: () => {
+      setEmergencyCode("");
+      onUnlocked();
+    },
+  });
   const title = reason === "ended" ? "Your session ended" : reason === "signedOut" ? "You're signed out" : "Open Marketplace from Teal Brick Portal";
   const lede = reason === "ended" ? SESSION_ENDED_COPY : reason === "signedOut" ? "To continue, relaunch Marketplace from Teal Brick Portal." : "Marketplace opens from Teal Brick Portal. Relaunch it there to continue.";
   return <main className="marketplace-auth-screen">
     <section className="auth-brand"><BrandMark /><p className="eyebrow">Teal Brick · Marketplace</p><h1>Connect the tools your team and <em>agents</em> rely on.</h1><p className="auth-lede">Browse connectors, install the ones you need, and decide which agents can use them. Every change is approved before it takes effect.</p><div className="auth-proof"><div><ShieldCheck size={18} /><span><strong>Private by default</strong>Nothing in your catalog is visible until you're signed in.</span></div><div><KeyRound size={18} /><span><strong>Approved changes only</strong>Installs and connections happen only once approved.</span></div><div><Plug size={18} /><span><strong>Keys stay on the server</strong>Provider keys are never sent to your browser.</span></div></div></section>
     <section className="auth-card"><h2>{title}</h2><p className="auth-card__lede">{lede}</p>
-      {session.configured ? <details className="operator-recovery"><summary>Operator recovery</summary><form onSubmit={(event) => { event.preventDefault(); unlock.mutate(); }}><p>For administrators: sign in with the access token set up for this Marketplace.</p><Field label="Operator access token"><input autoComplete="current-password" type="password" value={accessToken} onChange={(event) => setAccessToken(event.target.value)} required /></Field>{unlock.error && <InlineError error={unlock.error} />}<Button tone="primary" type="submit" disabled={unlock.isPending || !accessToken.trim()}>{unlock.isPending ? <LoaderCircle className="spin" size={15} /> : <KeyRound size={15} />}Unlock Marketplace</Button></form></details> : <div className="auth-warning"><AlertTriangle size={18} /><span>Sign-in isn't set up for this Marketplace yet. Ask your administrator to finish setup, then relaunch from Teal Brick Portal.</span></div>}
+      {session.configured ? <details className="operator-recovery"><summary>Operator recovery</summary><form onSubmit={(event) => { event.preventDefault(); unlock.mutate(); }}><p>For administrators: sign in with the access token set up for this Marketplace.</p><Field label="Operator access token"><input autoComplete="current-password" type="password" value={accessToken} onChange={(event) => setAccessToken(event.target.value)} required /></Field>{unlock.error && <InlineError error={unlock.error} />}<Button tone="primary" type="submit" disabled={unlock.isPending || !accessToken.trim()}>{unlock.isPending ? <LoaderCircle className="spin" size={15} /> : <KeyRound size={15} />}Unlock Marketplace</Button></form></details> : session.emergencyLogin ? null : <div className="auth-warning"><AlertTriangle size={18} /><span>Sign-in isn't set up for this Marketplace yet. Ask your administrator to finish setup, then relaunch from Teal Brick Portal.</span></div>}
+      {session.emergencyLogin && <details className="operator-recovery"><summary>Emergency access</summary><form onSubmit={(event) => { event.preventDefault(); emergencyUnlock.mutate(); }}><p>Use this only when Teal Brick Portal is not available. It signs you in as the owner for a short time and is recorded.</p><Field label="Emergency code"><input autoComplete="off" type="password" value={emergencyCode} onChange={(event) => setEmergencyCode(event.target.value)} required /></Field>{emergencyUnlock.error && <InlineError error={emergencyUnlock.error} />}<Button tone="danger" type="submit" disabled={emergencyUnlock.isPending || !emergencyCode.trim()}>{emergencyUnlock.isPending ? <LoaderCircle className="spin" size={15} /> : <KeyRound size={15} />}Use emergency access</Button></form></details>}
     </section>
   </main>;
 }
@@ -113,6 +122,10 @@ export function App() {
   });
 
   useEffect(() => { setOffset(0); }, [workspaceSlug, deferredSearch, source, installed]);
+  // Portal opens the settings route as `/?view=settings` (the manifest `frontend.routes.settings`).
+  useEffect(() => {
+    if (authenticated && new URLSearchParams(window.location.search).get("view") === "settings") setSettingsOpen(true);
+  }, [authenticated]);
   useEffect(() => {
     const principalScope = operatorSession.data?.session.principal?.organizationId;
     setWorkspaceSlug(principalScope ?? "");
@@ -160,6 +173,7 @@ export function App() {
   return <main className="app-shell">
     <MarketplaceNav pendingApprovals={approvals.data?.pendingCount ?? 0} section={section} onSection={setSection} providers={cards.data?.providers} rules={approvalStatus(runtimeHealth.data)} version={bootstrap.data?.program.version} onSettings={() => setSettingsOpen(true)} />
     <section className="application-frame">
+      {operatorSession.data?.session.emergency && <div className="auth-warning" role="status"><AlertTriangle size={18} /><span>{operatorSession.data.session.emergency.banner}</span></div>}
       <header className="topbar"><div className="verified-scope"><span className="eyebrow">Workspace</span>{workspaceName ? <strong className="workspace-name" title={workspaceSlug}>{workspaceName}</strong> : <code title={workspaceSlug}>{shortScope(workspaceSlug)}</code>}</div><div><ProgramState online={liveness.isError ? false : liveness.data ? true : null} rules={approvalStatus(runtimeHealth.data)} /><Button size="small" className="topbar-refresh" onClick={refresh}><RefreshCw size={14} aria-hidden="true" /><span className="topbar-refresh__label">Refresh</span></Button><IconButton className="topbar-settings" aria-label="Open settings" onClick={() => setSettingsOpen(true)}><Settings size={16} /></IconButton></div></header>
       {section === "grants" ? <AgentGrantsPage workspaceSlug={workspaceSlug} onRevoke={requestRevoke} onNavigate={setSection} /> : cards.error ? <StatePanel error={cards.error} onRetry={() => void cards.refetch()} /> : section === "connections" && cards.data ? <ConnectionsPage connections={cards.data.connections} providers={cards.data.providers} onChanged={refresh} /> : section === "activity" ? <ActivityPage workspaceSlug={workspaceSlug} /> : installed && cards.data && cards.data.filteredTotal === 0 && !deferredSearch && source === "all" ? <section className="collection-page"><div className="collection-empty"><PackageCheck size={28} /><h2>Nothing installed yet</h2><p>Install connectors from the catalog to make them available to your workspace and agents.</p><Button tone="primary" onClick={() => setSection("catalog")}><Boxes size={15} />Browse the catalog</Button></div></section> : <div className="catalog-layout">
         <aside className="catalog-index"><div className="index-heading"><div><p className="eyebrow">{installed ? "Your workspace" : "Catalog"}</p><h2>{installed ? "Installed" : "Discover"}</h2></div><Tag>{cards.data?.filteredTotal ?? 0}</Tag></div><label className="search-box"><Search size={15} /><input aria-label="Search catalog" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search providers and tools…" /></label><label className="source-filter"><Filter size={14} /><select aria-label="Filter by source" value={source} onChange={(event) => setSource(event.target.value)}><option value="all">All sources</option>{cards.data?.sources.map((entry) => <option key={entry} value={entry}>{words(entry)}</option>)}</select></label><div className="catalog-list">{cards.isLoading ? <div className="list-loading"><LoaderCircle className="spin" />Loading catalog…<small>Showing up to {PAGE_SIZE} at a time.</small></div> : cards.data?.items.length ? cards.data.items.map((card) => <CatalogRow key={card.pluginId} card={card} selected={selectedId === card.pluginId} onSelect={() => setSelectedId(card.pluginId)} />) : <div className="list-empty">No matching capabilities.</div>}</div>{cards.data && cards.data.filteredTotal > PAGE_SIZE && <footer className="index-footer"><Button size="small" disabled={offset === 0} onClick={() => setOffset((value) => Math.max(0, value - PAGE_SIZE))}>Previous</Button><span>{offset + 1}–{Math.min(offset + PAGE_SIZE, cards.data.filteredTotal)} of {cards.data.filteredTotal}</span><Button size="small" disabled={!cards.data.hasMore} onClick={() => setOffset((value) => value + PAGE_SIZE)}>Next</Button></footer>}</aside>

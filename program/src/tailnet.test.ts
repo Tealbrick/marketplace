@@ -185,7 +185,7 @@ describe("tailnet proxy in the REST executor and MCP client", () => {
     expect(mcp).toMatchObject({ code: "tailnet_unavailable" });
   });
 
-  it("exposes only the tailnet state on health endpoints", async () => {
+  it("exposes only the tailnet state on the authenticated health endpoint, and nothing on /healthz", async () => {
     const dir = tempDir("tailnet-health-");
     const store = new SqliteMarketplaceStore(path.join(dir, "m.sqlite"));
     const app = await buildMarketplaceApp({ store, environment: { NODE_ENV: "test", MARKETPLACE_TAILNET_STATE: "unavailable" } });
@@ -193,9 +193,11 @@ describe("tailnet proxy in the REST executor and MCP client", () => {
       await app.close();
       store.close();
     });
-    const response = await app.inject({ method: "GET", url: "/healthz" });
+    const liveness = await app.inject({ method: "GET", url: "/healthz" });
+    // Contract liveness: the app identity only, no topology.
+    expect(Object.keys(liveness.json()).sort()).toEqual(["app", "major", "ok", "version"]);
+    const response = await app.inject({ method: "GET", url: "/api/marketplace/health" });
     expect(response.json()).toMatchObject({ ok: true, tailnet: "unavailable" });
-    expect(Object.keys(response.json()).sort()).toEqual(["ok", "service", "status", "tailnet", "time"]);
   });
 });
 

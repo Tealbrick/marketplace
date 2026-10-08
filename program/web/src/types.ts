@@ -304,10 +304,14 @@ export interface FrontendBootstrap {
 export interface OperatorSession {
   configured: boolean;
   authenticated: boolean;
-  mode: "session" | "test_bypass" | "unconfigured";
+  mode: "session" | "test_bypass" | "unconfigured" | "emergency";
   principal: { kind: "operator"; id: string; organizationId: string; organizationName?: string } | null;
   csrfToken: string | null;
   expiresAt: string | null;
+  /** True when the break-glass emergency code is set up for this Marketplace (contract 12.3.3). */
+  emergencyLogin?: boolean;
+  /** Present while the signed-in session is a break-glass emergency session; the UI must show the banner. */
+  emergency?: { banner: string };
 }
 
 export interface AuditResponse {

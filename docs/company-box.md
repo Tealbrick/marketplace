@@ -385,8 +385,9 @@ end); everything else stays direct. MagicDNS names resolve inside
 tailscaled, so the URL policy skips local DNS for `*.ts.net` in that mode;
 https-only and the private-range rules still apply. If the node does not come
 up, Marketplace still starts, logs a non-secret reason, and tailnet connectors
-answer `tailnet_unavailable`. `/healthz` and `/api/marketplace/health` report
-only `tailnet: "connected" | "unavailable" | "disabled"`.
+answer `tailnet_unavailable`. The authenticated `/api/marketplace/health` reports
+only `tailnet: "connected" | "unavailable" | "disabled"`; `/healthz` carries
+no tailnet state.
 
 The image sources are `deploy/railway/image/` (Dockerfile, `entrypoint.mjs`,
 `tailnet.mjs`); the release cut copies them into `release/railway/`. Tailscale

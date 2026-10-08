@@ -104,7 +104,8 @@ export class MarketplaceOperatorSessionManager {
     return new MarketplaceOperatorSessionManager({
       accessToken: process.env.MARKETPLACE_OPERATOR_ACCESS_TOKEN,
       operatorId: process.env.MARKETPLACE_OPERATOR_ID,
-      organizationId: process.env.MARKETPLACE_ORGANIZATION_ID,
+      // TEALBRICK_TENANT_ID is the contract name for the same workspace binding.
+      organizationId: process.env.MARKETPLACE_ORGANIZATION_ID ?? process.env.TEALBRICK_TENANT_ID,
       sessionTtlMs: Number.isFinite(ttlSeconds) ? ttlSeconds * 1_000 : undefined,
       allowUnauthenticated: options.allowUnauthenticated,
     });

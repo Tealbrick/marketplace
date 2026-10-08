@@ -20,6 +20,9 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.90.20
         version: 5.101.4(react@19.2.8)
+      '@tealbrick/contract':
+        specifier: 0.1.0-alpha.3
+        version: 0.1.0-alpha.3
       '@tealbrick/ui':
         specifier: 0.2.2
         version: 0.2.2(react@19.2.8)
@@ -969,6 +972,11 @@ packages:
     peerDependencies:
       react: ^18 || ^19
 
+  '@tealbrick/contract@0.1.0-alpha.3':
+    resolution: {integrity: sha512-rMmQsArfyta/326VHIil4JkOtExwir18xrDoFn5mvDL5SP8L/6XI0UqzgYZR/Dm3cZcUjzIeGaTRk1FYj2tOMA==}
+    engines: {node: '>=24'}
+    hasBin: true
+
   '@tealbrick/ui@0.2.2':
     resolution: {integrity: sha512-wb8x1OdpDL/EJfaE/gHs2WXNijtrdzOkxtjaqGxsD7NjPdntFeAWe67/2nkJSYGXEr+xpuilEgarlHAP/1uxNw==}
     peerDependencies:
@@ -1883,6 +1891,9 @@ packages:
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
+  zod@4.6.5:
+    resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
+
 snapshots:
 
   '@acemir/cssom@0.9.31': {}
@@ -2559,6 +2570,10 @@ snapshots:
     dependencies:
       '@tanstack/query-core': 5.101.4
       react: 19.2.8
+
+  '@tealbrick/contract@0.1.0-alpha.3':
+    dependencies:
+      zod: 4.6.5
 
   '@tealbrick/ui@0.2.2(react@19.2.8)':
     dependencies:
@@ -3491,3 +3506,5 @@ snapshots:
   yallist@3.1.1: {}
 
   zod@3.25.76: {}
+
+  zod@4.6.5: {}
