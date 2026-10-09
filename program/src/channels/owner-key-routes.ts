@@ -24,7 +24,8 @@ import { readAttestedOwnerNostrPubkey, readOwnerPin, type OwnerPinSource } from 
 
 export const OWNER_KEY_ROUTE = "/api/marketplace/approvals/owner-key";
 
-const OwnerKeyBody = z.strictObject({ pubkey: z.string().min(1).max(128) });
+/** `{pubkey}`; `workspaceSlug` and `actorId` are bound by the server from the session (never trusted from the client). */
+const OwnerKeyBody = z.strictObject({ pubkey: z.string().min(1).max(128), workspaceSlug: z.string().optional(), actorId: z.string().optional() });
 
 export type OwnerKeyRouteDeps = {
   app: FastifyInstance;

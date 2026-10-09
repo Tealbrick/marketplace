@@ -1,5 +1,5 @@
 // Test-only: owner approval proofs signed locally (BIP-340 Nostr events, PO3 Ed25519 assertions). Never imported by runtime code.
-import { createHash, generateKeyPairSync, randomUUID, sign, type KeyObject } from "node:crypto";
+import { createHash, generateKeyPairSync, randomUUID, sign, type JsonWebKey, type KeyObject } from "node:crypto";
 
 import { nostrEventId, OWNER_APPROVAL_HEADER_TYP, OWNER_APPROVAL_TYP } from "@tealbrick/contract";
 

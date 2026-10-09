@@ -71,6 +71,8 @@ export async function channelFixture(input: {
   environment?: Record<string, string | undefined>;
   options?: Partial<BuildMarketplaceAppOptions>;
   verifier?: OwnerApprovalVerifier;
+  /** Portal's K1 `approvalTrusted` flag on every introspection answer (absent by default). */
+  approvalTrusted?: boolean;
 } = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), "marketplace-channels-app-"));
   const store = new SqliteMarketplaceStore(path.join(root, "marketplace.sqlite"), { handoffEncryptionKey: "a".repeat(64) });
@@ -105,6 +107,7 @@ export async function channelFixture(input: {
           operations: grant.operations,
           capabilityRevision: 1,
           expiresAt: Date.now() + 600_000,
+          ...(input.approvalTrusted !== undefined ? { approvalTrusted: input.approvalTrusted } : {}),
         }),
         { status: 200 },
       );
@@ -115,7 +118,8 @@ export async function channelFixture(input: {
     return new Response("{}", { status: 404 });
   };
   const logs: string[] = [];
-  const operatorSessions = new MarketplaceOperatorSessionManager({ allowUnauthenticated: true, organizationId: TENANT, operatorId: "operator-1" });
+  const operatorSessions =
+    input.options?.operatorSessionManager ?? new MarketplaceOperatorSessionManager({ allowUnauthenticated: true, organizationId: TENANT, operatorId: "operator-1" });
   const app = await buildMarketplaceApp({
     store,
     internalAuthToken: SERVICE,
