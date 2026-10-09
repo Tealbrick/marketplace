@@ -365,6 +365,7 @@ describe("Marketplace Program", () => {
 
     const requestedToolkits: string[] = [];
     const authConfigBodies: Array<Record<string, unknown>> = [];
+    const authConfigLookups: Array<string | null> = [];
     const authLinkUrls: string[] = [];
     const app = await buildMarketplaceApp({
       store,
@@ -424,8 +425,7 @@ describe("Marketplace Program", () => {
               { status: 200 },
             );
           }
-          expect(url.searchParams.get("toolkit_slug")).toBe("_1password");
-          expect(url.searchParams.get("is_composio_managed")).toBe("false");
+          authConfigLookups.push(url.searchParams.get("toolkit_slug"));
           return new Response(JSON.stringify({ items: [] }), { status: 200 });
         }
         if (url.pathname.endsWith("/connected_accounts/link")) {
@@ -469,6 +469,9 @@ describe("Marketplace Program", () => {
 
     expect(connected.statusCode).toBe(200);
     expect(requestedToolkits.filter(Boolean)).toEqual(["_1password"]);
+    // Catalog sync lists all auth configs (no toolkit filter); Connect then
+    // looks up existing configs for the exact upstream slug before creating.
+    expect(authConfigLookups).toContain("_1password");
     expect(authLinkUrls).toEqual([
       "https://backend.composio.dev/api/v3/connected_accounts/link",
     ]);

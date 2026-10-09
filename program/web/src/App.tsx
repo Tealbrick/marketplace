@@ -11,13 +11,26 @@ import { CatalogRow, ConfirmDialog, type ConfirmState, PluginWorkspace } from ".
 import { ConnectionsPage } from "./Connections";
 import { SettingsDialog } from "./Settings";
 import type { AgentGrantSummary, BrowserProviderHealth, OperatorSession } from "./types";
-import { APPROVAL_STATUS_COPY, approvalStatus, type ApprovalStatus, SESSION_ENDED_COPY, shortScope } from "./copy";
+import { APPROVAL_STATUS_COPY, approvalStatus, type ApprovalStatus, CONNECT_MODE_LABELS, CONNECT_MODE_ORDER, SESSION_ENDED_COPY, shortScope } from "./copy";
 import { InlineError, ProviderDot, StatePanel, words } from "./ui";
 
 type Section = "catalog" | "installed" | "connections" | "grants" | "activity";
 const PAGE_SIZE = 60;
 
 type SignedOutReason = "ended" | "signedOut" | null;
+
+/** Per-status counts with a toggle filter; the Program derives each card's status. */
+function ConnectModeFilter({ counts, value, onChange }: { counts: Partial<Record<string, number>> | undefined; value: string; onChange: (mode: string) => void }) {
+  if (!counts) return null;
+  const visible = CONNECT_MODE_ORDER.filter((mode) => (counts[mode] ?? 0) > 0 || mode === value);
+  if (!visible.length) return null;
+  return (
+    <div className="connect-mode-filter" role="group" aria-label="Filter by connection status">
+      <button type="button" aria-pressed={value === "all"} onClick={() => onChange("all")}>All</button>
+      {visible.map((mode) => <button key={mode} type="button" aria-pressed={value === mode} onClick={() => onChange(value === mode ? "all" : mode)}>{CONNECT_MODE_LABELS[mode]}<span>{counts[mode] ?? 0}</span></button>)}
+    </div>
+  );
+}
 
 function UnlockScreen({ session, reason, onUnlocked }: { session: OperatorSession; reason: SignedOutReason; onUnlocked: () => void }) {
   const [accessToken, setAccessToken] = useState("");
@@ -93,6 +106,7 @@ export function App() {
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search.trim());
   const [source, setSource] = useState("all");
+  const [connectMode, setConnectMode] = useState("all");
   const [offset, setOffset] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -108,8 +122,8 @@ export function App() {
   const runtimeHealth = useQuery({ queryKey: ["runtime-health"], queryFn: getRuntimeHealth, enabled: authenticated, retry: false, refetchInterval: 30_000 });
   const approvals = useQuery({ queryKey: ["company-box-approvals"], queryFn: () => getCompanyBoxApprovals(), enabled: authenticated, retry: false, refetchInterval: 30_000 });
   const cards = useQuery({
-    queryKey: ["cards", workspaceSlug, deferredSearch, source, installed, offset],
-    queryFn: () => getCardSummaries({ workspaceSlug, search: deferredSearch, source, installed, offset, limit: PAGE_SIZE }),
+    queryKey: ["cards", workspaceSlug, deferredSearch, source, connectMode, installed, offset],
+    queryFn: () => getCardSummaries({ workspaceSlug, search: deferredSearch, source, connectMode, installed, offset, limit: PAGE_SIZE }),
     retry: false,
     enabled: authenticated && Boolean(workspaceSlug),
     placeholderData: (previous) => previous,
@@ -121,7 +135,7 @@ export function App() {
     retry: false,
   });
 
-  useEffect(() => { setOffset(0); }, [workspaceSlug, deferredSearch, source, installed]);
+  useEffect(() => { setOffset(0); }, [workspaceSlug, deferredSearch, source, connectMode, installed]);
   // Portal opens the settings route as `/?view=settings` (the manifest `frontend.routes.settings`).
   useEffect(() => {
     if (authenticated && new URLSearchParams(window.location.search).get("view") === "settings") setSettingsOpen(true);
@@ -175,8 +189,8 @@ export function App() {
     <section className="application-frame">
       {operatorSession.data?.session.emergency && <div className="auth-warning" role="status"><AlertTriangle size={18} /><span>{operatorSession.data.session.emergency.banner}</span></div>}
       <header className="topbar"><div className="verified-scope"><span className="eyebrow">Workspace</span>{workspaceName ? <strong className="workspace-name" title={workspaceSlug}>{workspaceName}</strong> : <code title={workspaceSlug}>{shortScope(workspaceSlug)}</code>}</div><div><ProgramState online={liveness.isError ? false : liveness.data ? true : null} rules={approvalStatus(runtimeHealth.data)} /><Button size="small" className="topbar-refresh" onClick={refresh}><RefreshCw size={14} aria-hidden="true" /><span className="topbar-refresh__label">Refresh</span></Button><IconButton className="topbar-settings" aria-label="Open settings" onClick={() => setSettingsOpen(true)}><Settings size={16} /></IconButton></div></header>
-      {section === "grants" ? <AgentGrantsPage workspaceSlug={workspaceSlug} onRevoke={requestRevoke} onNavigate={setSection} /> : cards.error ? <StatePanel error={cards.error} onRetry={() => void cards.refetch()} /> : section === "connections" && cards.data ? <ConnectionsPage connections={cards.data.connections} providers={cards.data.providers} onChanged={refresh} /> : section === "activity" ? <ActivityPage workspaceSlug={workspaceSlug} /> : installed && cards.data && cards.data.filteredTotal === 0 && !deferredSearch && source === "all" ? <section className="collection-page"><div className="collection-empty"><PackageCheck size={28} /><h2>Nothing installed yet</h2><p>Install connectors from the catalog to make them available to your workspace and agents.</p><Button tone="primary" onClick={() => setSection("catalog")}><Boxes size={15} />Browse the catalog</Button></div></section> : <div className="catalog-layout">
-        <aside className="catalog-index"><div className="index-heading"><div><p className="eyebrow">{installed ? "Your workspace" : "Catalog"}</p><h2>{installed ? "Installed" : "Discover"}</h2></div><Tag>{cards.data?.filteredTotal ?? 0}</Tag></div><label className="search-box"><Search size={15} /><input aria-label="Search catalog" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search providers and tools…" /></label><label className="source-filter"><Filter size={14} /><select aria-label="Filter by source" value={source} onChange={(event) => setSource(event.target.value)}><option value="all">All sources</option>{cards.data?.sources.map((entry) => <option key={entry} value={entry}>{words(entry)}</option>)}</select></label><div className="catalog-list">{cards.isLoading ? <div className="list-loading"><LoaderCircle className="spin" />Loading catalog…<small>Showing up to {PAGE_SIZE} at a time.</small></div> : cards.data?.items.length ? cards.data.items.map((card) => <CatalogRow key={card.pluginId} card={card} selected={selectedId === card.pluginId} onSelect={() => setSelectedId(card.pluginId)} />) : <div className="list-empty">No matching capabilities.</div>}</div>{cards.data && cards.data.filteredTotal > PAGE_SIZE && <footer className="index-footer"><Button size="small" disabled={offset === 0} onClick={() => setOffset((value) => Math.max(0, value - PAGE_SIZE))}>Previous</Button><span>{offset + 1}–{Math.min(offset + PAGE_SIZE, cards.data.filteredTotal)} of {cards.data.filteredTotal}</span><Button size="small" disabled={!cards.data.hasMore} onClick={() => setOffset((value) => value + PAGE_SIZE)}>Next</Button></footer>}</aside>
+      {section === "grants" ? <AgentGrantsPage workspaceSlug={workspaceSlug} onRevoke={requestRevoke} onNavigate={setSection} /> : cards.error ? <StatePanel error={cards.error} onRetry={() => void cards.refetch()} /> : section === "connections" && cards.data ? <ConnectionsPage connections={cards.data.connections} providers={cards.data.providers} onChanged={refresh} /> : section === "activity" ? <ActivityPage workspaceSlug={workspaceSlug} /> : installed && cards.data && cards.data.filteredTotal === 0 && !deferredSearch && source === "all" && connectMode === "all" ? <section className="collection-page"><div className="collection-empty"><PackageCheck size={28} /><h2>Nothing installed yet</h2><p>Install connectors from the catalog to make them available to your workspace and agents.</p><Button tone="primary" onClick={() => setSection("catalog")}><Boxes size={15} />Browse the catalog</Button></div></section> : <div className="catalog-layout">
+        <aside className="catalog-index"><div className="index-heading"><div><p className="eyebrow">{installed ? "Your workspace" : "Catalog"}</p><h2>{installed ? "Installed" : "Discover"}</h2></div><Tag>{cards.data?.filteredTotal ?? 0}</Tag></div><label className="search-box"><Search size={15} /><input aria-label="Search catalog" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search providers and tools…" /></label><label className="source-filter"><Filter size={14} /><select aria-label="Filter by source" value={source} onChange={(event) => setSource(event.target.value)}><option value="all">All sources</option>{cards.data?.sources.map((entry) => <option key={entry} value={entry}>{words(entry)}</option>)}</select></label><ConnectModeFilter counts={cards.data?.connectModeCounts} value={connectMode} onChange={setConnectMode} /><div className="catalog-list">{cards.isLoading ? <div className="list-loading"><LoaderCircle className="spin" />Loading catalog…<small>Showing up to {PAGE_SIZE} at a time.</small></div> : cards.data?.items.length ? cards.data.items.map((card) => <CatalogRow key={card.pluginId} card={card} selected={selectedId === card.pluginId} onSelect={() => setSelectedId(card.pluginId)} />) : <div className="list-empty">No matching capabilities.</div>}</div>{cards.data && cards.data.filteredTotal > PAGE_SIZE && <footer className="index-footer"><Button size="small" disabled={offset === 0} onClick={() => setOffset((value) => Math.max(0, value - PAGE_SIZE))}>Previous</Button><span>{offset + 1}–{Math.min(offset + PAGE_SIZE, cards.data.filteredTotal)} of {cards.data.filteredTotal}</span><Button size="small" disabled={!cards.data.hasMore} onClick={() => setOffset((value) => value + PAGE_SIZE)}>Next</Button></footer>}</aside>
         <section className="primary-workspace">{detail.error ? <StatePanel error={detail.error} onRetry={() => void detail.refetch()} /> : <PluginWorkspace card={detail.data?.card ?? null} loading={detail.isLoading && Boolean(selectedId)} workspaceSlug={workspaceSlug} onConfirm={setConfirm} onRefresh={refresh} />}</section>
       </div>}
       {notice && <div className="toast" role="status"><CheckCircle2 size={16} />{notice}<button aria-label="Dismiss notification" onClick={() => setNotice(null)}><X size={14} /></button></div>}

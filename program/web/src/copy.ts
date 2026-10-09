@@ -1,5 +1,5 @@
 import { ApiError } from "./api";
-import type { GovernanceMode, RulesConnectionStatus } from "./types";
+import type { ConnectMode, GovernanceMode, RulesConnectionStatus } from "./types";
 
 export type ErrorCopy = {
   title: string;
@@ -45,6 +45,65 @@ export function words(value: string) {
 export function statusLabel(value: string) {
   const key = value.charAt(0).toLowerCase() + value.slice(1);
   return STATUS_LABELS[key] ?? words(value);
+}
+
+/** Badge labels for connect modes, in the order the status filter shows them. */
+export const CONNECT_MODE_LABELS: Record<ConnectMode, string> = {
+  connected: "Connected",
+  ready_managed: "Ready to connect",
+  ready_user_key: "Ready — needs your API key",
+  ready_auth_config: "Ready — uses your auth config",
+  no_auth: "No sign-in needed",
+  needs_auth_config: "Needs an auth config",
+  needs_credentials: "Needs credentials",
+  not_supported: "Can't connect yet",
+};
+
+export const CONNECT_MODE_ORDER = Object.keys(CONNECT_MODE_LABELS) as ConnectMode[];
+
+export function connectModeLabel(mode: ConnectMode | undefined) {
+  return mode ? CONNECT_MODE_LABELS[mode] ?? words(mode) : null;
+}
+
+export function connectModeTone(mode: ConnectMode | undefined): "success" | "warning" | "accent" | "danger" | "default" {
+  switch (mode) {
+    case "connected":
+      return "success";
+    case "ready_managed":
+    case "ready_user_key":
+    case "ready_auth_config":
+    case "no_auth":
+      return "accent";
+    case "needs_auth_config":
+    case "needs_credentials":
+      return "warning";
+    default:
+      return "default";
+  }
+}
+
+/** One plain sentence on what connecting this connector involves. */
+export function connectModeHint(mode: ConnectMode | undefined, toolkit?: string | null) {
+  switch (mode) {
+    case "connected":
+      return "This connector is connected for your workspace.";
+    case "ready_managed":
+      return "Connect opens the provider's sign-in page through Composio.";
+    case "ready_user_key":
+      return "Connect opens a Composio page where you enter your API key for this service.";
+    case "ready_auth_config":
+      return "Connect uses the auth config you created for this toolkit in Composio.";
+    case "no_auth":
+      return "This service does not need a sign-in.";
+    case "needs_auth_config":
+      return `Composio does not manage sign-in for this service. In your Composio dashboard, create an auth config for ${toolkit ? `the "${toolkit}" toolkit` : "this toolkit"}, then choose Connect and paste its ID.`;
+    case "needs_credentials":
+      return "Add this connector's address and credentials, then test or refresh it under Connections.";
+    case "not_supported":
+      return "Marketplace can't connect this listing yet.";
+    default:
+      return null;
+  }
 }
 
 export const CATALOG_ONLY_HINT = "Only Composio connectors and your own custom connectors can be installed today. This listing is shown for reference.";
@@ -126,6 +185,18 @@ export function errorCopy(error: Error): ErrorCopy {
       return { title: "Too many headers", detail: "Use at most 20 regular headers and 10 secret headers.", reference };
     case "custom_mcp_already_exists":
       return { title: "You already have a connector with this name", detail: "Pick a different name, or edit the existing connector.", reference };
+    case "composio_auth_config_required":
+      return { title: "This service needs an auth config", detail: "Composio does not manage sign-in for this service. Create an auth config for this toolkit in your Composio dashboard, then paste its ID under Advanced and connect again.", reference };
+    case "composio_auth_config_toolkit_mismatch":
+      return { title: "That auth config is for a different service", detail: "Use the ID of an auth config created for this connector's toolkit in your Composio dashboard.", reference };
+    case "composio_auth_config_not_found":
+      return { title: "Auth config not found", detail: "Check the ID in your Composio dashboard. It must belong to the same Composio project as the API key in Settings.", reference };
+    case "composio_auth_config_disabled":
+      return { title: "That auth config is turned off", detail: "Enable it in your Composio dashboard, then connect again.", reference };
+    case "composio_auth_config_lookup_failed":
+      return { title: "Couldn't check the auth config", detail: "Marketplace couldn't reach Composio to check the auth config. Try again in a few minutes.", reference };
+    case "composio_toolkit_no_auth":
+      return { title: "This service doesn't need a sign-in", detail: "There is nothing to connect for this service.", reference };
     case "custom_mcp_refresh_required":
       return { title: "Use Refresh tools to connect", detail: "Custom connectors connect when Marketplace loads their tools. Open Connections and choose Refresh tools.", reference };
     case "connector_secret_store_unavailable":

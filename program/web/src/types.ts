@@ -58,6 +58,27 @@ export interface PluginConnection {
   updatedAt: string;
 }
 
+/**
+ * How a connector can be connected, derived by the Program
+ * (`program/src/connect-mode.ts`). The browser only displays it.
+ */
+export type ConnectMode =
+  | "connected"
+  | "no_auth"
+  | "ready_auth_config"
+  | "ready_managed"
+  | "ready_user_key"
+  | "needs_auth_config"
+  | "needs_credentials"
+  | "not_supported";
+
+export interface ConnectInfo {
+  /** Composio toolkit slug the auth config must belong to. */
+  toolkit: string;
+  authSchemes: string[];
+  managedAuthSchemes: string[];
+}
+
 export interface ToolSelectionAction {
   actionKey: string;
   displayName: string;
@@ -94,6 +115,9 @@ export interface PluginCard {
   parityGaps: string[];
   installPlan: { addonId: string; steps: Array<{ kind: string; label: string; status: string; detail: string }> };
   toolSelection: { total: number; enabled: number; disabled: number; actions: ToolSelectionAction[] };
+  /** Optional so an older Program without connect modes still renders. */
+  connectMode?: ConnectMode;
+  connectInfo?: ConnectInfo | null;
   listing: MarketplaceListing;
   install: Pick<PluginInstall, "enabled" | "lifecycle" | "updatedAt"> | null;
   connection: Pick<PluginConnection, "provider" | "backend" | "state" | "detail" | "updatedAt"> | null;
@@ -119,6 +143,7 @@ export interface PluginSummary {
   registered: boolean;
   installed: boolean;
   authRequired: boolean;
+  connectMode?: ConnectMode;
   toolCount: number;
   install: Pick<PluginInstall, "enabled" | "lifecycle" | "updatedAt"> | null;
   connection: Pick<PluginConnection, "provider" | "backend" | "state" | "detail" | "updatedAt"> | null;
@@ -144,6 +169,8 @@ export interface CardsSummaryResponse {
   limit: number;
   hasMore: boolean;
   sources: MarketplaceListing["source"][];
+  /** Per-mode counts after search/source/installed filters, before the mode filter. */
+  connectModeCounts?: Partial<Record<ConnectMode, number>>;
   connections: ConnectionSummary[];
   items: PluginSummary[];
 }

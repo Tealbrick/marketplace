@@ -464,11 +464,12 @@ export async function createComposioAuthLink(input: {
   const connectBaseUrl =
     readUrl(env, "COMPOSIO_CONNECT_BASE_URL") ??
     baseUrl.replace(/\/v3\.1$/u, "/v3");
-  const authConfigId = input.authConfigId?.trim() || await getOrCreateComposioAuthConfig({
+  const authConfigId = await getOrCreateComposioAuthConfig({
     baseUrl,
     apiKey,
     toolkit: input.toolkit,
     fetchImpl,
+    authConfigId: input.authConfigId,
     authSchemes: input.authSchemes,
     managedAuthSchemes: input.managedAuthSchemes,
     noAuth: input.noAuth,
@@ -540,17 +541,230 @@ export async function executeComposioTool(input: {
   });
 }
 
-async function getOrCreateComposioAuthConfig(input: {
+/**
+ * Composio auth schemes where the end user types their own key or password
+ * on the Composio link page; Marketplace can create a custom auth config with
+ * empty credentials for these.
+ */
+export const COMPOSIO_USER_KEY_AUTH_SCHEMES = ["API_KEY", "BEARER_TOKEN", "BASIC"] as const;
+
+/**
+ * Composio auth schemes that need app-level setup (for example an OAuth
+ * client id and secret) the owner creates as a custom auth config in the
+ * Composio dashboard. Marketplace cannot create these configs itself.
+ */
+export const COMPOSIO_OWNER_CONFIGURED_AUTH_SCHEMES = [
+  "OAUTH2",
+  "OAUTH1",
+  "OAUTH1A",
+  "DCR_OAUTH",
+  "S2S_OAUTH2",
+  "GOOGLE_SERVICE_ACCOUNT",
+  "SERVICE_ACCOUNT",
+  "BASIC_WITH_JWT",
+] as const;
+
+/** A typed, customer-safe failure while resolving a Composio auth config. */
+export class ComposioAuthConfigError extends Error {
+  readonly code:
+    | "composio_auth_config_not_found"
+    | "composio_auth_config_toolkit_mismatch"
+    | "composio_auth_config_disabled"
+    | "composio_auth_config_lookup_failed"
+    | "composio_auth_config_required"
+    | "composio_toolkit_no_auth";
+  readonly statusCode: number;
+
+  constructor(code: ComposioAuthConfigError["code"], statusCode: number, message: string) {
+    super(message);
+    this.name = "ComposioAuthConfigError";
+    this.code = code;
+    this.statusCode = statusCode;
+  }
+}
+
+/**
+ * The non-secret facts Marketplace reads from a Composio auth config. The
+ * upstream record can carry credentials (for example an OAuth client secret);
+ * they are never copied out of this function.
+ */
+export type ComposioAuthConfigSummary = {
+  id: string;
+  toolkit: string | null;
+  authScheme: string | null;
+  /** `null` when the upstream record does not say. */
+  composioManaged: boolean | null;
+  enabled: boolean;
+};
+
+export function summarizeComposioAuthConfig(value: unknown): ComposioAuthConfigSummary | null {
+  const record = objectValue(value);
+  const nested = objectValue(record?.auth_config) ?? objectValue(record?.authConfig);
+  const source = nested && !stringValue(record?.id) ? nested : record;
+  const id = stringValue(source?.id) ?? stringValue(source?.nanoid) ?? stringValue(source?.nanoId);
+  if (!source || !id) {
+    return null;
+  }
+  const toolkit = objectValue(source.toolkit);
+  const managed = source.is_composio_managed ?? source.isComposioManaged;
+  const status = stringValue(source.status)?.toUpperCase();
+  return {
+    id,
+    toolkit: stringValue(toolkit?.slug) ?? stringValue(source.toolkit_slug) ?? stringValue(source.toolkit) ?? null,
+    authScheme: (stringValue(source.auth_scheme) ?? stringValue(source.authScheme))?.toUpperCase() ?? null,
+    composioManaged: typeof managed === "boolean" ? managed : null,
+    enabled: status !== "DISABLED" && source.is_disabled !== true && source.disabled !== true,
+  };
+}
+
+function sameToolkit(left: string, right: string) {
+  return left.trim().toLowerCase() === right.trim().toLowerCase();
+}
+
+/**
+ * Fetch every auth config in the Composio project (paginated) as
+ * non-secret summaries. Used by the catalog sync to learn which toolkits
+ * already have an owner-created custom auth config.
+ */
+export async function fetchComposioAuthConfigs(
+  env: ProviderEnvironment = process.env,
+  fetchImpl: FetchLike = fetch,
+): Promise<ComposioAuthConfigSummary[]> {
+  const apiKey = env.COMPOSIO_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error("COMPOSIO_API_KEY is required for Composio auth-config fetch.");
+  }
+  const baseUrl = readUrl(env, "COMPOSIO_BASE_URL") ?? "https://backend.composio.dev/api/v3.1";
+  const items: ComposioAuthConfigSummary[] = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | undefined;
+  do {
+    const params = new URLSearchParams({ limit: "1000" });
+    if (cursor) {
+      params.set("cursor", cursor);
+    }
+    const response = await probeJson({
+      url: `${baseUrl}/auth_configs?${params.toString()}`,
+      fetchImpl,
+      headers: { "x-api-key": apiKey },
+    });
+    if (response.statusCode === null || response.statusCode < 200 || response.statusCode >= 300) {
+      throw new Error(
+        response.error ?? `Composio auth-config fetch failed with status ${response.statusCode ?? "unknown"}.`,
+      );
+    }
+    const body = objectValue(response.json) ?? {};
+    const pageItems = Array.isArray(body.items) ? body.items : Array.isArray(body.data) ? body.data : [];
+    for (const item of pageItems) {
+      const summary = summarizeComposioAuthConfig(item);
+      if (summary) {
+        items.push(summary);
+      }
+    }
+    const nextCursor = stringValue(body.next_cursor ?? body.nextCursor);
+    if (!nextCursor || seenCursors.has(nextCursor)) {
+      cursor = undefined;
+    } else {
+      seenCursors.add(nextCursor);
+      cursor = nextCursor;
+    }
+  } while (cursor);
+  return items;
+}
+
+async function fetchComposioAuthConfigById(input: {
+  baseUrl: string;
+  apiKey: string;
+  authConfigId: string;
+  fetchImpl: FetchLike;
+}): Promise<ComposioAuthConfigSummary> {
+  const response = await probeJson({
+    url: `${input.baseUrl}/auth_configs/${encodeURIComponent(input.authConfigId)}`,
+    fetchImpl: input.fetchImpl,
+    headers: { "x-api-key": input.apiKey },
+  });
+  if (response.statusCode === 404 || response.statusCode === 400) {
+    throw new ComposioAuthConfigError(
+      "composio_auth_config_not_found",
+      400,
+      "The Composio auth config was not found in this Composio project.",
+    );
+  }
+  if (response.statusCode === null || response.statusCode < 200 || response.statusCode >= 300) {
+    throw new ComposioAuthConfigError(
+      "composio_auth_config_lookup_failed",
+      502,
+      `Composio auth config lookup failed with status ${response.statusCode ?? "unknown"}.`,
+    );
+  }
+  const summary = summarizeComposioAuthConfig(response.json);
+  if (!summary) {
+    throw new ComposioAuthConfigError(
+      "composio_auth_config_not_found",
+      400,
+      "The Composio auth config was not found in this Composio project.",
+    );
+  }
+  return summary;
+}
+
+/**
+ * Resolve the Composio auth config used to connect `toolkit`.
+ *
+ * Lookup order:
+ * 1. A caller-supplied `authConfigId`: fetched and accepted only when it
+ *    belongs to the toolkit and is enabled (otherwise a 400-class
+ *    `ComposioAuthConfigError`).
+ * 2. An existing enabled custom (non-Composio-managed) auth config for the
+ *    toolkit whose scheme the toolkit supports, for example an OAuth app the
+ *    owner created in the Composio dashboard.
+ * 3. An existing enabled Composio-managed auth config for the toolkit (or one
+ *    whose managed flag is not reported).
+ * 4. Create a Composio-managed config (managed schemes exist, or the toolkit
+ *    lists no schemes) or a custom config with empty credentials for a
+ *    user-key scheme (API_KEY, BEARER_TOKEN, BASIC).
+ * 5. Otherwise fail with `composio_auth_config_required`.
+ */
+export async function getOrCreateComposioAuthConfig(input: {
   baseUrl: string;
   apiKey: string;
   toolkit: string;
   fetchImpl: FetchLike;
+  authConfigId?: string;
   authSchemes?: readonly string[];
   managedAuthSchemes?: readonly string[];
   noAuth?: boolean;
 }): Promise<string> {
+  const requestedId = input.authConfigId?.trim();
+  if (requestedId) {
+    const config = await fetchComposioAuthConfigById({
+      baseUrl: input.baseUrl,
+      apiKey: input.apiKey,
+      authConfigId: requestedId,
+      fetchImpl: input.fetchImpl,
+    });
+    if (!config.toolkit || !sameToolkit(config.toolkit, input.toolkit)) {
+      throw new ComposioAuthConfigError(
+        "composio_auth_config_toolkit_mismatch",
+        400,
+        `The Composio auth config belongs to ${config.toolkit ?? "an unknown toolkit"}, not ${input.toolkit}.`,
+      );
+    }
+    if (!config.enabled) {
+      throw new ComposioAuthConfigError(
+        "composio_auth_config_disabled",
+        400,
+        "The Composio auth config is disabled. Enable it in the Composio dashboard, then connect again.",
+      );
+    }
+    return config.id;
+  }
   if (input.noAuth) {
-    throw new Error(`Composio toolkit ${input.toolkit} does not require an auth configuration.`);
+    throw new ComposioAuthConfigError(
+      "composio_toolkit_no_auth",
+      409,
+      `Composio toolkit ${input.toolkit} does not require an auth configuration.`,
+    );
   }
   const authSchemes = (input.authSchemes ?? []).map((scheme) =>
     scheme.trim().toUpperCase(),
@@ -559,17 +773,12 @@ async function getOrCreateComposioAuthConfig(input: {
     scheme.trim().toUpperCase(),
   );
   const customAuthScheme = authSchemes.find((scheme) =>
-    ["API_KEY", "BEARER_TOKEN", "BASIC"].includes(scheme),
+    (COMPOSIO_USER_KEY_AUTH_SCHEMES as readonly string[]).includes(scheme),
   );
   const usesManagedAuth = managedAuthSchemes.length > 0 || authSchemes.length === 0;
-  if (!usesManagedAuth && !customAuthScheme) {
-    throw new Error(
-      `Composio toolkit ${input.toolkit} requires custom ${authSchemes.join(", ") || "authentication"} configuration before it can be connected.`,
-    );
-  }
+
   const params = new URLSearchParams({
     toolkit_slug: input.toolkit,
-    is_composio_managed: String(usesManagedAuth),
     limit: "100",
   });
   const existingResponse = await probeJson({
@@ -577,9 +786,41 @@ async function getOrCreateComposioAuthConfig(input: {
     fetchImpl: input.fetchImpl,
     headers: { "x-api-key": input.apiKey },
   });
-  const existing = authConfigIdFromPayload(existingResponse.json, input.toolkit);
-  if (existing) {
-    return existing;
+  const listed =
+    existingResponse.statusCode !== null &&
+    existingResponse.statusCode >= 200 &&
+    existingResponse.statusCode < 300
+      ? objectValue(existingResponse.json)
+      : undefined;
+  const rawItems = Array.isArray(listed?.items) ? listed.items : Array.isArray(listed?.data) ? listed.data : [];
+  const candidates = rawItems
+    .map(summarizeComposioAuthConfig)
+    .filter((config): config is ComposioAuthConfigSummary =>
+      config !== null &&
+      config.enabled &&
+      (config.toolkit === null || sameToolkit(config.toolkit, input.toolkit)),
+    );
+  const existingCustom = candidates.find(
+    (config) =>
+      config.composioManaged === false &&
+      (config.authScheme === null || authSchemes.length === 0 || authSchemes.includes(config.authScheme)),
+  );
+  if (existingCustom) {
+    return existingCustom.id;
+  }
+  const existingManaged =
+    candidates.find((config) => config.composioManaged === true) ??
+    candidates.find((config) => config.composioManaged === null);
+  if (existingManaged) {
+    return existingManaged.id;
+  }
+
+  if (!usesManagedAuth && !customAuthScheme) {
+    throw new ComposioAuthConfigError(
+      "composio_auth_config_required",
+      409,
+      `Composio toolkit ${input.toolkit} requires custom ${authSchemes.join(", ") || "authentication"} configuration before it can be connected.`,
+    );
   }
 
   const created = await postComposioJson({
