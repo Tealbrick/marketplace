@@ -73,7 +73,9 @@
         "ACTIVEPIECES_API_KEY",
         "RULES_BASE_URL",
         "RULES_INTERNAL_AUTH_TOKEN",
-        "RULES_COMPANY_ID"
+        "RULES_COMPANY_ID",
+        "MARKETPLACE_CHANNELS_TELEGRAM_BOT_TOKEN",
+        "MARKETPLACE_CHANNELS_DISCORD_BOT_TOKEN"
       ]
     },
     "providers": [
@@ -106,6 +108,166 @@
       "effects": "external-effects",
       "review": "allowed",
       "summary": "Run one consented connector action for the calling agent; the consent must belong to the caller"
+    },
+    {
+      "id": "marketplace.channels.list",
+      "crud": [
+        "read"
+      ],
+      "method": "GET",
+      "path": "/api/marketplace/v1/agent/channels",
+      "output": "#/schemas/ChannelList",
+      "idempotency": "none",
+      "effects": "read-only",
+      "review": "none",
+      "summary": "List the channels the calling agent has a consent for: label, purpose, audience, effective capabilities, caps, usage today and own standing grants"
+    },
+    {
+      "id": "marketplace.channels.get",
+      "crud": [
+        "read"
+      ],
+      "method": "GET",
+      "path": "/api/marketplace/v1/agent/channels/{channelId}",
+      "output": "#/schemas/ChannelView",
+      "idempotency": "none",
+      "effects": "read-only",
+      "review": "none",
+      "summary": "One consented channel; 404 for channels without consent (same as unknown)"
+    },
+    {
+      "id": "marketplace.channel-attachments.upload",
+      "crud": [
+        "create"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/v1/agent/channels/attachments",
+      "output": "#/schemas/AttachmentUploaded",
+      "idempotency": "required",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Upload raw attachment bytes (query name, content-type header) for a later post; returns attachmentId and sha256. Not outward"
+    },
+    {
+      "id": "marketplace.channels.post",
+      "crud": [
+        "create"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/v1/agent/channels/{channelId}/posts",
+      "input": "#/schemas/ChannelPostInput",
+      "output": "#/schemas/ChannelPostResult",
+      "idempotency": "required",
+      "effects": "external-effects",
+      "review": "allowed",
+      "summary": "Post to a consented channel: 200 receipt under a covering standing grant or an owner-approved digest, otherwise 202 approval_pending"
+    },
+    {
+      "id": "marketplace.channels.schedule",
+      "crud": [
+        "create"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/v1/agent/channels/{channelId}/scheduled",
+      "input": "#/schemas/ChannelScheduleInput",
+      "output": "#/schemas/ChannelPostResult",
+      "idempotency": "required",
+      "effects": "external-effects",
+      "review": "allowed",
+      "summary": "Schedule a post (sendAt now+60 s to now+30 days); authority is checked and the digest bound now, then rechecked at send time"
+    },
+    {
+      "id": "marketplace.channel-scheduled.cancel",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/v1/agent/channels/{channelId}/scheduled/{postId}/cancel",
+      "output": "#/schemas/ChannelPostResult",
+      "idempotency": "supported",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Cancel one of the caller's own scheduled posts (narrowing; never needs approval)"
+    },
+    {
+      "id": "marketplace.channel-receipts.list",
+      "crud": [
+        "read"
+      ],
+      "method": "GET",
+      "path": "/api/marketplace/v1/agent/channels/receipts",
+      "output": "#/schemas/ReceiptList",
+      "idempotency": "none",
+      "effects": "read-only",
+      "review": "none",
+      "summary": "The caller's own channel receipts"
+    },
+    {
+      "id": "marketplace.channel-grants.list",
+      "crud": [
+        "read"
+      ],
+      "method": "GET",
+      "path": "/api/marketplace/v1/agent/channels/grants",
+      "output": "#/schemas/GrantList",
+      "idempotency": "none",
+      "effects": "read-only",
+      "review": "none",
+      "summary": "The caller's own standing grants and their state"
+    },
+    {
+      "id": "marketplace.channel-grants.propose",
+      "crud": [
+        "create"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/v1/agent/channels/{channelId}/grants",
+      "input": "#/schemas/GrantProposal",
+      "output": "#/schemas/GrantResult",
+      "idempotency": "required",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Propose a standing grant (proposed; authorises nothing until the owner approves); never wider than the channel ceiling"
+    },
+    {
+      "id": "marketplace.channel-grants.narrow",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/v1/agent/channels/grants/{grantId}/narrow",
+      "input": "#/schemas/GrantTerms",
+      "output": "#/schemas/GrantResult",
+      "idempotency": "required",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Narrow one of the caller's grants; any widening is refused"
+    },
+    {
+      "id": "marketplace.channel-grants.withdraw",
+      "crud": [
+        "delete"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/v1/agent/channels/grants/{grantId}/withdraw",
+      "output": "#/schemas/GrantResult",
+      "idempotency": "supported",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Withdraw one of the caller's grants"
+    },
+    {
+      "id": "marketplace.approvals.resolve",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/v1/agent/approvals/{approvalId}/resolve",
+      "input": "#/schemas/ApprovalProof",
+      "idempotency": "required",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Forward the owner-signed decision (Buzz nostr event or Portal assertion) for the caller's own held call; single-shot per approval"
     },
     {
       "id": "marketplace.consents.request",
@@ -314,6 +476,190 @@
       "review": "none",
       "summary": "Deny a held connector call",
       "audience": "owner"
+    },
+    {
+      "id": "marketplace.channels.browse",
+      "crud": [
+        "read"
+      ],
+      "method": "GET",
+      "path": "/api/marketplace/channels",
+      "idempotency": "none",
+      "effects": "read-only",
+      "review": "none",
+      "summary": "Channels, provider readiness, connections (bot identity only), pending grants and uncertain posts",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channels.discover",
+      "crud": [
+        "read"
+      ],
+      "method": "GET",
+      "path": "/api/marketplace/channels/discover",
+      "idempotency": "none",
+      "effects": "read-only",
+      "review": "none",
+      "summary": "Destinations the provider credential can reach",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channels.create",
+      "crud": [
+        "create"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/channels",
+      "idempotency": "required",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Create a channel from a discovered destination with its policy ceiling",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channels.update",
+      "crud": [
+        "update"
+      ],
+      "method": "PATCH",
+      "path": "/api/marketplace/channels/{channelId}",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Change a channel or its ceiling; bumps revision and re-checks standing grants",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channels.pause",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/channels/{channelId}/pause",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Pause a channel (suspends its standing grants)",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channels.resume",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/channels/{channelId}/resume",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Resume a paused channel",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channels.archive",
+      "crud": [
+        "delete"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/channels/{channelId}/archive",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Archive a channel (soft; receipts remain)",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channels.test",
+      "crud": [
+        "create"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/channels/{channelId}/test",
+      "output": "#/schemas/ChannelPostResult",
+      "idempotency": "required",
+      "effects": "external-effects",
+      "review": "allowed",
+      "summary": "Send the fixed test text after the owner clicks; returns the receipt",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channel-grants.approve",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/channels/grants/{grantId}/approve",
+      "input": "#/schemas/GrantApproval",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Approve a standing grant as proposed or narrowed",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channel-grants.decline",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/channels/grants/{grantId}/decline",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Decline a proposed standing grant",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channel-grants.revoke",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/channels/grants/{grantId}/revoke",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Revoke a standing grant, effective immediately",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channel-posts.resolve",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/channels/posts/{postId}/resolve",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Mark an uncertain post sent or failed after checking the destination",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channel-receipts.export",
+      "crud": [
+        "read"
+      ],
+      "method": "GET",
+      "path": "/api/marketplace/channels/receipts/export",
+      "idempotency": "none",
+      "effects": "read-only",
+      "review": "none",
+      "summary": "Export channel receipts with their text (retention domain record)",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channel-receipts.purge",
+      "crud": [
+        "delete"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/channels/receipts/purge",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Purge receipts older than the retention (default 90 days)",
+      "audience": "owner"
     }
   ],
   "guidance": {
@@ -354,6 +700,35 @@
             "maxLength": 128
           }
         ]
+      },
+      {
+        "id": "channels",
+        "label": "Channels",
+        "scope": "instance",
+        "fields": [
+          {
+            "key": "channels.telegram.botToken",
+            "label": "Telegram bot token",
+            "description": "Token of the Telegram bot that agents post through. Taken from the account connection and delivered to this service as an environment variable. Create the bot with @BotFather.",
+            "type": "secret",
+            "maxLength": 256,
+            "source": "account",
+            "destination": "provider-env",
+            "env": "MARKETPLACE_CHANNELS_TELEGRAM_BOT_TOKEN",
+            "rotation": "update-credentials"
+          },
+          {
+            "key": "channels.discord.botToken",
+            "label": "Discord bot token",
+            "description": "Token of the Discord bot that agents post through. Taken from the account connection and delivered to this service as an environment variable.",
+            "type": "secret",
+            "maxLength": 256,
+            "source": "account",
+            "destination": "provider-env",
+            "env": "MARKETPLACE_CHANNELS_DISCORD_BOT_TOKEN",
+            "rotation": "update-credentials"
+          }
+        ]
       }
     ]
   },
@@ -388,5 +763,1468 @@
       "relation": "enhanced-by"
     }
   ],
-  "unlocks": []
+  "unlocks": [],
+  "schemas": {
+    "ChannelPostInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text"
+      ],
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "attachments": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "attachmentId",
+              "kind"
+            ],
+            "properties": {
+              "attachmentId": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "image",
+                  "file",
+                  "audio",
+                  "voice",
+                  "video"
+                ]
+              },
+              "transcript": {
+                "type": "string",
+                "maxLength": 1000
+              }
+            }
+          }
+        },
+        "campaign": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ref": {
+              "type": "string"
+            },
+            "phase": {
+              "enum": [
+                "announce",
+                "reminder",
+                "recap",
+                "update"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "ChannelScheduleInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text",
+        "sendAt"
+      ],
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "attachments": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "attachmentId",
+              "kind"
+            ],
+            "properties": {
+              "attachmentId": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "image",
+                  "file",
+                  "audio",
+                  "voice",
+                  "video"
+                ]
+              },
+              "transcript": {
+                "type": "string",
+                "maxLength": 1000
+              }
+            }
+          }
+        },
+        "campaign": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ref": {
+              "type": "string"
+            },
+            "phase": {
+              "enum": [
+                "announce",
+                "reminder",
+                "recap",
+                "update"
+              ]
+            }
+          }
+        },
+        "sendAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "ChannelReceipt": {
+      "type": "object",
+      "required": [
+        "resultIds",
+        "resultUrls",
+        "status",
+        "channelId",
+        "postId",
+        "digest",
+        "provider"
+      ],
+      "properties": {
+        "resultIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "resultUrls": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "status": {
+          "enum": [
+            "sent",
+            "failed",
+            "uncertain",
+            "pending",
+            "skipped",
+            "cancelled",
+            "expired"
+          ]
+        },
+        "detail": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "channelId": {
+          "type": "string"
+        },
+        "postId": {
+          "type": "string"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "authority": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "approvedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sentAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provider": {
+          "type": "string"
+        },
+        "fallback": {
+          "type": "string"
+        }
+      }
+    },
+    "ChannelPostResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "ok",
+            "receipt"
+          ],
+          "properties": {
+            "ok": {
+              "type": "boolean"
+            },
+            "receipt": {
+              "type": "object",
+              "required": [
+                "resultIds",
+                "resultUrls",
+                "status",
+                "channelId",
+                "postId",
+                "digest",
+                "provider"
+              ],
+              "properties": {
+                "resultIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "resultUrls": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "status": {
+                  "enum": [
+                    "sent",
+                    "failed",
+                    "uncertain",
+                    "pending",
+                    "skipped",
+                    "cancelled",
+                    "expired"
+                  ]
+                },
+                "detail": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "channelId": {
+                  "type": "string"
+                },
+                "postId": {
+                  "type": "string"
+                },
+                "digest": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "authority": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "approvedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "sentAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "provider": {
+                  "type": "string"
+                },
+                "fallback": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "ok",
+            "error",
+            "approvalId",
+            "digest",
+            "expiresAt",
+            "payloadView"
+          ],
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "error": {
+              "const": "approval_pending"
+            },
+            "approvalId": {
+              "type": "string"
+            },
+            "postId": {
+              "type": "string"
+            },
+            "digest": {
+              "type": "string"
+            },
+            "digestPrefix": {
+              "type": "string"
+            },
+            "expiresAt": {
+              "type": "string"
+            },
+            "payloadView": {
+              "type": "object",
+              "required": [
+                "canonical",
+                "files"
+              ],
+              "properties": {
+                "canonical": {
+                  "type": "string"
+                },
+                "files": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "sha256": {
+                        "type": "string"
+                      },
+                      "contentType": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "ok",
+            "error"
+          ],
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "error": {
+              "type": "string"
+            },
+            "retryAfterSeconds": {
+              "type": "integer"
+            },
+            "receipt": {
+              "type": "object",
+              "required": [
+                "resultIds",
+                "resultUrls",
+                "status",
+                "channelId",
+                "postId",
+                "digest",
+                "provider"
+              ],
+              "properties": {
+                "resultIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "resultUrls": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "status": {
+                  "enum": [
+                    "sent",
+                    "failed",
+                    "uncertain",
+                    "pending",
+                    "skipped",
+                    "cancelled",
+                    "expired"
+                  ]
+                },
+                "detail": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "channelId": {
+                  "type": "string"
+                },
+                "postId": {
+                  "type": "string"
+                },
+                "digest": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "authority": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "approvedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "sentAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "provider": {
+                  "type": "string"
+                },
+                "fallback": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ChannelView": {
+      "type": "object",
+      "properties": {
+        "channel": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "slug": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "purpose": {
+              "type": "string"
+            },
+            "audience": {
+              "type": "string"
+            },
+            "grantClass": {
+              "enum": [
+                "read",
+                "outward"
+              ]
+            },
+            "capabilities": {
+              "type": "object"
+            },
+            "caps": {
+              "type": "object"
+            },
+            "usageToday": {
+              "type": "object"
+            },
+            "grants": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "channelId": {
+                    "type": "string"
+                  },
+                  "purpose": {
+                    "type": "string"
+                  },
+                  "caps": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "perDay",
+                      "minIntervalSeconds",
+                      "onePerPhase"
+                    ],
+                    "properties": {
+                      "perDay": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "perHour": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "minIntervalSeconds": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "onePerPhase": {
+                        "type": "boolean"
+                      }
+                    }
+                  },
+                  "scope": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "files",
+                      "immediate",
+                      "scheduled"
+                    ],
+                    "properties": {
+                      "phases": {
+                        "type": "array",
+                        "items": {
+                          "enum": [
+                            "announce",
+                            "reminder",
+                            "recap",
+                            "update"
+                          ]
+                        }
+                      },
+                      "campaignRefs": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "files": {
+                        "oneOf": [
+                          {
+                            "const": false
+                          },
+                          {
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "maxChars": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "immediate": {
+                        "type": "boolean"
+                      },
+                      "scheduled": {
+                        "type": "boolean"
+                      }
+                    }
+                  },
+                  "notBefore": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "expires": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "enum": [
+                      "proposed",
+                      "active",
+                      "suspended",
+                      "withdrawn",
+                      "revoked",
+                      "expired",
+                      "declined"
+                    ]
+                  },
+                  "digest": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "ChannelList": {
+      "type": "object",
+      "properties": {
+        "channels": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string"
+              },
+              "purpose": {
+                "type": "string"
+              },
+              "audience": {
+                "type": "string"
+              },
+              "grantClass": {
+                "enum": [
+                  "read",
+                  "outward"
+                ]
+              },
+              "capabilities": {
+                "type": "object"
+              },
+              "caps": {
+                "type": "object"
+              },
+              "usageToday": {
+                "type": "object"
+              },
+              "grants": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "channelId": {
+                      "type": "string"
+                    },
+                    "purpose": {
+                      "type": "string"
+                    },
+                    "caps": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "perDay",
+                        "minIntervalSeconds",
+                        "onePerPhase"
+                      ],
+                      "properties": {
+                        "perDay": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "perHour": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "minIntervalSeconds": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "onePerPhase": {
+                          "type": "boolean"
+                        }
+                      }
+                    },
+                    "scope": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "files",
+                        "immediate",
+                        "scheduled"
+                      ],
+                      "properties": {
+                        "phases": {
+                          "type": "array",
+                          "items": {
+                            "enum": [
+                              "announce",
+                              "reminder",
+                              "recap",
+                              "update"
+                            ]
+                          }
+                        },
+                        "campaignRefs": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "files": {
+                          "oneOf": [
+                            {
+                              "const": false
+                            },
+                            {
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        "maxChars": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "immediate": {
+                          "type": "boolean"
+                        },
+                        "scheduled": {
+                          "type": "boolean"
+                        }
+                      }
+                    },
+                    "notBefore": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "expires": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "enum": [
+                        "proposed",
+                        "active",
+                        "suspended",
+                        "withdrawn",
+                        "revoked",
+                        "expired",
+                        "declined"
+                      ]
+                    },
+                    "digest": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "ReceiptList": {
+      "type": "object",
+      "properties": {
+        "receipts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "resultIds",
+              "resultUrls",
+              "status",
+              "channelId",
+              "postId",
+              "digest",
+              "provider"
+            ],
+            "properties": {
+              "resultIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "resultUrls": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "status": {
+                "enum": [
+                  "sent",
+                  "failed",
+                  "uncertain",
+                  "pending",
+                  "skipped",
+                  "cancelled",
+                  "expired"
+                ]
+              },
+              "detail": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "channelId": {
+                "type": "string"
+              },
+              "postId": {
+                "type": "string"
+              },
+              "digest": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "authority": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "approvedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "sentAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "provider": {
+                "type": "string"
+              },
+              "fallback": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "AttachmentUploaded": {
+      "type": "object",
+      "required": [
+        "attachmentId",
+        "sha256"
+      ],
+      "properties": {
+        "attachmentId": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "bytes": {
+          "type": "integer"
+        },
+        "contentType": {
+          "type": "string"
+        }
+      }
+    },
+    "GrantTerms": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "caps",
+        "scope",
+        "expires"
+      ],
+      "properties": {
+        "caps": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "perDay",
+            "minIntervalSeconds",
+            "onePerPhase"
+          ],
+          "properties": {
+            "perDay": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "perHour": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "minIntervalSeconds": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "onePerPhase": {
+              "type": "boolean"
+            }
+          }
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "files",
+            "immediate",
+            "scheduled"
+          ],
+          "properties": {
+            "phases": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "announce",
+                  "reminder",
+                  "recap",
+                  "update"
+                ]
+              }
+            },
+            "campaignRefs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "files": {
+              "oneOf": [
+                {
+                  "const": false
+                },
+                {
+                  "type": "object"
+                }
+              ]
+            },
+            "maxChars": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "immediate": {
+              "type": "boolean"
+            },
+            "scheduled": {
+              "type": "boolean"
+            }
+          }
+        },
+        "notBefore": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "expires": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "GrantProposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "purpose",
+        "caps",
+        "scope",
+        "expires"
+      ],
+      "properties": {
+        "caps": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "perDay",
+            "minIntervalSeconds",
+            "onePerPhase"
+          ],
+          "properties": {
+            "perDay": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "perHour": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "minIntervalSeconds": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "onePerPhase": {
+              "type": "boolean"
+            }
+          }
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "files",
+            "immediate",
+            "scheduled"
+          ],
+          "properties": {
+            "phases": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "announce",
+                  "reminder",
+                  "recap",
+                  "update"
+                ]
+              }
+            },
+            "campaignRefs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "files": {
+              "oneOf": [
+                {
+                  "const": false
+                },
+                {
+                  "type": "object"
+                }
+              ]
+            },
+            "maxChars": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "immediate": {
+              "type": "boolean"
+            },
+            "scheduled": {
+              "type": "boolean"
+            }
+          }
+        },
+        "notBefore": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "expires": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "purpose": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        }
+      }
+    },
+    "GrantApproval": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "final": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "caps",
+            "scope",
+            "expires"
+          ],
+          "properties": {
+            "caps": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "perDay",
+                "minIntervalSeconds",
+                "onePerPhase"
+              ],
+              "properties": {
+                "perDay": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "perHour": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "minIntervalSeconds": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "onePerPhase": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "scope": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "files",
+                "immediate",
+                "scheduled"
+              ],
+              "properties": {
+                "phases": {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "announce",
+                      "reminder",
+                      "recap",
+                      "update"
+                    ]
+                  }
+                },
+                "campaignRefs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "files": {
+                  "oneOf": [
+                    {
+                      "const": false
+                    },
+                    {
+                      "type": "object"
+                    }
+                  ]
+                },
+                "maxChars": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "immediate": {
+                  "type": "boolean"
+                },
+                "scheduled": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "notBefore": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "expires": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        }
+      }
+    },
+    "GrantResult": {
+      "type": "object",
+      "properties": {
+        "grant": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "channelId": {
+              "type": "string"
+            },
+            "purpose": {
+              "type": "string"
+            },
+            "caps": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "perDay",
+                "minIntervalSeconds",
+                "onePerPhase"
+              ],
+              "properties": {
+                "perDay": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "perHour": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "minIntervalSeconds": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "onePerPhase": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "scope": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "files",
+                "immediate",
+                "scheduled"
+              ],
+              "properties": {
+                "phases": {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "announce",
+                      "reminder",
+                      "recap",
+                      "update"
+                    ]
+                  }
+                },
+                "campaignRefs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "files": {
+                  "oneOf": [
+                    {
+                      "const": false
+                    },
+                    {
+                      "type": "object"
+                    }
+                  ]
+                },
+                "maxChars": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "immediate": {
+                  "type": "boolean"
+                },
+                "scheduled": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "notBefore": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "expires": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "proposed",
+                "active",
+                "suspended",
+                "withdrawn",
+                "revoked",
+                "expired",
+                "declined"
+              ]
+            },
+            "digest": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "GrantList": {
+      "type": "object",
+      "properties": {
+        "grants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "channelId": {
+                "type": "string"
+              },
+              "purpose": {
+                "type": "string"
+              },
+              "caps": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "perDay",
+                  "minIntervalSeconds",
+                  "onePerPhase"
+                ],
+                "properties": {
+                  "perDay": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "perHour": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "minIntervalSeconds": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "onePerPhase": {
+                    "type": "boolean"
+                  }
+                }
+              },
+              "scope": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "files",
+                  "immediate",
+                  "scheduled"
+                ],
+                "properties": {
+                  "phases": {
+                    "type": "array",
+                    "items": {
+                      "enum": [
+                        "announce",
+                        "reminder",
+                        "recap",
+                        "update"
+                      ]
+                    }
+                  },
+                  "campaignRefs": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "files": {
+                    "oneOf": [
+                      {
+                        "const": false
+                      },
+                      {
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "maxChars": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "immediate": {
+                    "type": "boolean"
+                  },
+                  "scheduled": {
+                    "type": "boolean"
+                  }
+                }
+              },
+              "notBefore": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "expires": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "proposed",
+                  "active",
+                  "suspended",
+                  "withdrawn",
+                  "revoked",
+                  "expired",
+                  "declined"
+                ]
+              },
+              "digest": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "ApprovalProof": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "proof",
+            "event",
+            "channel"
+          ],
+          "properties": {
+            "proof": {
+              "const": "nostr"
+            },
+            "event": {
+              "type": "object"
+            },
+            "channel": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "proof",
+            "token"
+          ],
+          "properties": {
+            "proof": {
+              "const": "portal"
+            },
+            "token": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    }
+  }
 }

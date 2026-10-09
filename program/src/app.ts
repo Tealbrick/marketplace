@@ -58,7 +58,40 @@ import {
   toolRecordsFromRemote,
   type CustomMcpManifest,
 } from "./custom-mcp.js";
-import { selectExecutionTarget, type ExecutionTarget } from "./execution-targets.js";
+import {
+  ConsentedExecutionOutcome,
+  selectExecutionTarget,
+  type ExecutionPreparation,
+  type ExecutionTarget,
+} from "./execution-targets.js";
+import {
+  OwnerApprovalProofSchema,
+  RESOLVE_CLAIM_STALE_MS,
+  RESOLVE_IDEMPOTENCY_KEY,
+  unsupportedOwnerApprovalVerifier,
+  type OwnerApprovalVerifier,
+} from "./channels/approvals.js";
+import { registerChannelRoutes } from "./channels/routes.js";
+import {
+  CHANNEL_TOKEN_ENV,
+  MARKETPLACE_PORTAL_CLASS_CONTRACT_VERSION,
+  channelClassSelection,
+  channelResourceKind,
+  classSelectionOfConsent,
+  classSelectionsEqual,
+  defaultChannelProviders,
+  providerFromPluginId,
+  sanitizeActionGroupLabel,
+  type ChannelProviderRegistry,
+} from "./channels/runtime.js";
+import type { ChannelPostRecord } from "./channels/store.js";
+import {
+  CHANNEL_SCHEDULER_INTERVAL_MS,
+  channelResponse,
+  createChannelService,
+  detachedReply,
+  type ChannelCallPlan,
+} from "./channels/service.js";
 import {
   callMcpTool,
   listMcpTools,
@@ -165,6 +198,7 @@ import {
   MARKETPLACE_PORTAL_HANDOFF_CONTRACT_VERSION,
   PortalHandoffError,
   type MarketplacePortalSelection,
+  isClassSelection,
 } from "./portal-handoff.js";
 import {
   createPortalRuntimeScopeVerifier,
@@ -183,6 +217,8 @@ import type {
   CompanyBoxApproval,
   ConnectorCapability,
   ConnectorConnection,
+  ConnectorUsageLedgerEntry,
+  MarketplaceAgentConsent,
   MarketplaceListing,
   MarketplacePortalGrantRequest,
   MarketplaceSkillDeclaration,
@@ -379,10 +415,32 @@ const PortalSelectionSchema = z
     }
   });
 
+// Handoff v1.4 class selection (Channels §5.3). P1 accepts it for channel
+// connections only; `actionGroupLabel` is display-only and is never stored.
+const PortalClassSelectionSchema = z
+  .strictObject({
+    pluginId: z.string().regex(/^channels-[a-z0-9][a-z0-9-]{0,40}$/u),
+    accountId: PortalIdentifierSchema,
+    resourceKind: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}\.connected-account$/u),
+    resourceRef: z.string().regex(/^account:[A-Za-z0-9_:-]{1,128}$/u),
+    grantClass: z.enum(["read", "outward"]),
+    actionGroup: z.string().regex(/^[A-Za-z0-9 _.:/-]{1,80}$/u),
+    actionGroupLabel: z.string().max(400).optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.resourceRef !== `account:${value.accountId}`) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["resourceRef"],
+        message: "resourceRef must bind exactly to accountId.",
+      });
+    }
+  });
+
 const PortalHandoffRequestSchema = z.strictObject({
   deploymentId: PortalIdentifierSchema,
   agentId: PortalIdentifierSchema,
-  selection: PortalSelectionSchema,
+  selection: z.union([PortalSelectionSchema, PortalClassSelectionSchema]),
   idempotencyKey: z
     .string()
     .regex(/^[A-Za-z0-9_-]{8,100}$/u),
@@ -568,7 +626,32 @@ export type BuildMarketplaceAppOptions = {
   companyBoxCatalog?: CompanyBoxCatalog;
   /** Outbound fetch for Company Box REST apps (tests inject a fake); defaults to mcpFetch. */
   companyBoxFetch?: typeof fetch;
+  /** Channel provider adapters (tests inject fakes); default: Telegram and Discord on `fetch`. */
+  channelProviders?: ChannelProviderRegistry;
+  /** The in-process channel scheduler (30 s ticker). `false` disables it; tests drive `tick(now)` directly. */
+  channelScheduler?: boolean;
+  /** Channels clock (caps windows, schedule checks); tests inject one. */
+  channelClock?: () => Date;
+  /** Fetch for the confirmed-event live check at send time (tests inject a fake). */
+  channelEventFetch?: typeof fetch;
+  /**
+   * Verifies owner-signed approval proofs for `marketplace.approvals.resolve`.
+   * Default: refuses every proof (501) until kit rc.14 / contract alpha.6 ship.
+   */
+  ownerApprovalVerifier?: OwnerApprovalVerifier;
 };
+
+/** Test and ops handle on a built app's channel runtime (scheduler tick, boot completion). */
+export type MarketplaceChannelRuntime = {
+  ready: Promise<void>;
+  tick: (now?: Date, claimer?: string) => Promise<{ recovered: number; expired: number; sent: number; skipped: number; claimed: number }>;
+};
+const channelRuntimes = new WeakMap<FastifyInstance, MarketplaceChannelRuntime>();
+export function channelRuntimeOf(app: FastifyInstance): MarketplaceChannelRuntime {
+  const runtime = channelRuntimes.get(app);
+  if (!runtime) throw new Error("channel_runtime_unavailable");
+  return runtime;
+}
 
 type RulesGateInput = {
   reply: FastifyReply;
@@ -2177,6 +2260,7 @@ function approvalPreview(args: Record<string, unknown>) {
 
 const APPROVAL_STATUS: Record<CompanyBoxApproval["state"], string> = {
   pending: "approval_pending",
+  resolving: "resolving",
   executing: "executing",
   succeeded: "succeeded",
   failed: "failed",
@@ -2792,7 +2876,12 @@ export async function buildMarketplaceApp(
       },
       secrets: {},
       // The Composio key is an account-level provider variable (COMPOSIO_API_KEY), reported as presence only.
-      account: { "composio.apiKey": { set: providerSettings.activeApiKey() !== null } },
+      // So are the Channels bot tokens (provider env from Account Connections).
+      account: {
+        "composio.apiKey": { set: providerSettings.activeApiKey() !== null },
+        "channels.telegram.botToken": { set: Boolean(environment[CHANNEL_TOKEN_ENV.telegram]?.trim()) },
+        "channels.discord.botToken": { set: Boolean(environment[CHANNEL_TOKEN_ENV.discord]?.trim()) },
+      },
     };
   };
   const contract: MarketplaceContract = createMarketplaceContract({
@@ -3471,6 +3560,8 @@ export async function buildMarketplaceApp(
     request: FastifyRequest,
     reply: FastifyReply,
     operatorId: string,
+    /** The owner behind a verified approval proof (resolve); default: the request principal. */
+    actorOverride?: GovernanceActor,
   ): Promise<CompanyBoxApproval> => {
     const traceId = traceIdFrom(request);
     const fail = (error: string) =>
@@ -3502,7 +3593,7 @@ export async function buildMarketplaceApp(
         pluginId: approval.pluginId,
         actorId: operatorId,
         payload: { approvalId: approval.id, agentId: approval.agentId, actionKey: approval.actionKey, traceId },
-        actor: principalActor(request),
+        actor: actorOverride ?? principalActor(request),
         ...(risk ? { risk } : {}),
         ...governed,
       });
@@ -4251,6 +4342,7 @@ export async function buildMarketplaceApp(
     }
 
     const publicOrigin = environment.MARKETPLACE_PUBLIC_ORIGIN?.trim();
+    await channelsReady;
     if (
       !portalIssuerUrl ||
       !portalConfiguration.deploymentId ||
@@ -4284,6 +4376,8 @@ export async function buildMarketplaceApp(
         configured: true,
         instanceProofHeader: "x-tealbrick-instance-proof" as const,
       },
+      // Channels §3.1/§8: live provider readiness, never the credential.
+      channels: { providers: channelService.readinessView() },
     };
 
     if (!rulesConfiguration) {
@@ -5223,6 +5317,39 @@ export async function buildMarketplaceApp(
       decidedBy: approval.decidedBy,
       error: approval.error,
       ...(approval.state === "succeeded" ? { result: approval.result } : {}),
+      ...(approval.sourceKind === "channel-consent" ? { channel: channelApprovalSummary(approval) } : {}),
+    };
+  };
+  /** A held channel post in the Approvals queue: channel, digest and post state (never the text in lists). */
+  const channelApprovalSummary = (approval: CompanyBoxApproval) => {
+    const post = options.store.channels.getPost(approval.workspaceSlug, String(approval.arguments.postId ?? ""));
+    const channel = post ? options.store.channels.getChannel(approval.workspaceSlug, post.channelId) : null;
+    return {
+      channelId: post?.channelId ?? null,
+      label: channel?.label ?? null,
+      provider: channel?.provider ?? null,
+      postId: post?.id ?? null,
+      postStatus: post?.status ?? null,
+      mode: post?.mode ?? null,
+      sendAt: post?.sendAt ?? null,
+      digest: approval.fingerprint,
+      digestPrefix: approval.fingerprint.slice(0, 12),
+    };
+  };
+  /** Owner detail view of a held channel post: the exact payload the digest covers (spec §6.2). */
+  const channelApprovalPayload = (approval: CompanyBoxApproval) => {
+    const post = options.store.channels.getPost(approval.workspaceSlug, String(approval.arguments.postId ?? ""));
+    const channel = post ? options.store.channels.getChannel(approval.workspaceSlug, post.channelId) : null;
+    if (!post || !channel || !channelService.providerFor(channel.provider)) return null;
+    const built = channelService.payloadFor(channel, post.agentId, post.mode, channelService.bodyFromPost(post));
+    if (!built.ok) return { error: built.refusal.error };
+    return {
+      digest: built.payload.digest,
+      matchesHeldDigest: built.payload.digest === post.digest,
+      text: built.payload.text,
+      canonical: built.payload.canonical,
+      files: built.payload.files,
+      fallbacks: built.payload.fallbacks,
     };
   };
   const ownedApproval = (request: FastifyRequest, reply: FastifyReply) => {
@@ -5272,7 +5399,12 @@ export async function buildMarketplaceApp(
   app.get("/api/marketplace/company-box/approvals/:approvalId", async (request, reply) => {
     const owned = ownedApproval(request, reply);
     if ("response" in owned) return owned.response;
-    return { ok: true, approval: ownerApprovalView(owned.approval), arguments: owned.approval.arguments };
+    return {
+      ok: true,
+      approval: ownerApprovalView(owned.approval),
+      arguments: owned.approval.arguments,
+      ...(owned.approval.sourceKind === "channel-consent" ? { payloadView: channelApprovalPayload(owned.approval) } : {}),
+    };
   });
 
   app.post("/api/marketplace/company-box/approvals/:approvalId/approve", async (request, reply) => {
@@ -5287,6 +5419,30 @@ export async function buildMarketplaceApp(
       decidedBy: principal.id,
     });
     if (!claimed) return notPending(reply, approval.id);
+    if (claimed.sourceKind === "channel-consent") {
+      const run = await runApprovedChannelHold(claimed, traceIdFrom(request));
+      const current = options.store.getCompanyBoxApproval(claimed.id)!;
+      options.store.recordAudit({
+        workspaceSlug: current.workspaceSlug,
+        pluginId: current.pluginId,
+        eventType: "marketplace.company_box.approval.approved",
+        actorId: principal.id,
+        metadata: {
+          approvalId: current.id,
+          actionKey: current.actionKey,
+          agentId: current.agentId,
+          digest: current.fingerprint,
+          outcome: current.state,
+          ...(current.error ? { error: current.error } : {}),
+        },
+      });
+      reply.code(200);
+      return {
+        ok: current.state === "succeeded" || run.response.scheduled === true,
+        approval: ownerApprovalView(current),
+        channel: run.response,
+      };
+    }
     const finished = await runApprovedCompanyBoxCall(claimed, request, reply, principal.id);
     reply.code(200);
     options.store.recordAudit({
@@ -5316,6 +5472,7 @@ export async function buildMarketplaceApp(
       decidedBy: principal.id,
     });
     if (!denied) return notPending(reply, approval.id);
+    if (denied.sourceKind === "channel-consent") channelService.onApprovalDenied(denied);
     options.store.recordAudit({
       workspaceSlug: denied.workspaceSlug,
       pluginId: denied.pluginId,
@@ -6170,6 +6327,80 @@ export async function buildMarketplaceApp(
         reply.code(401);
         return { ok: false, schema: 1, error: "portal_session_expired" };
       }
+      if ("grantClass" in input.selection) {
+        // "Grant to agent" from the Channels view: a class selection narrowed to one channel.
+        const selection = input.selection;
+        const provider = providerFromPluginId(selection.pluginId);
+        const channel =
+          provider && selection.actionGroup.startsWith("channel:")
+            ? options.store.channels.getChannelBySlug(organizationId, selection.actionGroup.slice("channel:".length))
+            : null;
+        if (!provider || !channel || channel.status === "archived") {
+          reply.code(404);
+          return { ok: false, schema: 1, error: "channel_not_found" };
+        }
+        const connection = options.store.getConnection(organizationId, selection.pluginId);
+        if (
+          channel.provider !== provider ||
+          channel.connectionId !== selection.accountId ||
+          selection.resourceKind !== channelResourceKind(provider) ||
+          connection?.id !== selection.accountId ||
+          connection.state !== "connected"
+        ) {
+          reply.code(409);
+          return { ok: false, schema: 1, error: "channel_selection_mismatch" };
+        }
+        const stored = {
+          pluginId: selection.pluginId,
+          accountId: selection.accountId,
+          resourceKind: selection.resourceKind,
+          resourceRef: selection.resourceRef,
+          grantClass: selection.grantClass,
+          actionGroup: selection.actionGroup,
+        };
+        const label = sanitizeActionGroupLabel(selection.actionGroupLabel ?? channel.label);
+        try {
+          const handoff = await portalHandoffClient.requestGrant({
+            deploymentId: input.deploymentId,
+            session: session.sessionToken,
+            agentId: input.agentId,
+            // Portal sanitises the label, keeps it in memory only and strips it before canonicalisation.
+            selection: { ...stored, ...(label ? { actionGroupLabel: label } : {}) },
+            idempotencyKey: input.idempotencyKey,
+          });
+          const projection = options.store.upsertMarketplacePortalGrantRequest({
+            portalIssuer: session.portalIssuer,
+            portalOrgId: session.portalOrgId,
+            productTenantId: session.productTenantId,
+            workspaceId: session.workspaceId,
+            deploymentId: input.deploymentId,
+            agentId: input.agentId,
+            requestId: handoff.requestId,
+            approvalUrl: handoff.approvalUrl,
+            expiresAt: new Date(handoff.expiresAt).toISOString(),
+            idempotencyKey: input.idempotencyKey,
+            selection: stored,
+          });
+          return {
+            ok: true,
+            schema: 1,
+            contractVersion: MARKETPLACE_PORTAL_CLASS_CONTRACT_VERSION,
+            authority:
+              principal.kind === "operator"
+                ? "marketplace_operator_session"
+                : "marketplace_service_bearer",
+            request: handoff,
+            projection: browserMarketplacePortalGrantRequest(projection),
+          };
+        } catch (error) {
+          reply.code(error instanceof PortalHandoffError ? error.statusCode : 503);
+          return {
+            ok: false,
+            schema: 1,
+            error: error instanceof PortalHandoffError ? error.code : "portal_handoff_unavailable",
+          };
+        }
+      }
       const published = resolvePublishedAgentAction({
         store: options.store,
         workspaceSlug: organizationId,
@@ -6332,20 +6563,160 @@ export async function buildMarketplaceApp(
         reply.code(403);
         return { ok: false, schema: 1, traceId, error: "portal_consent_invalid" };
       }
+      if (isClassSelection(consent.selection)) {
+        // Handoff v1.4 class consent (Channels §5.3): Marketplace expands it to channel operations itself.
+        const selection = consent.selection;
+        const persistedSelection = persistedRequest?.selection;
+        if (
+          persistedSelection &&
+          (!("grantClass" in persistedSelection) ||
+            !classSelectionsEqual(
+              { ...persistedSelection, grantClass: persistedSelection.grantClass },
+              { ...selection },
+            ))
+        ) {
+          reply.code(403);
+          return { ok: false, schema: 1, traceId, error: "portal_consent_invalid" };
+        }
+        const provider = providerFromPluginId(selection.pluginId);
+        const channel = provider && selection.actionGroup?.startsWith("channel:")
+          ? options.store.channels.getChannelBySlug(organizationId, selection.actionGroup.slice("channel:".length))
+          : null;
+        const connection = provider ? options.store.getConnection(organizationId, selection.pluginId) : null;
+        if (
+          !provider ||
+          !channel ||
+          channel.status === "archived" ||
+          channel.provider !== provider ||
+          channel.connectionId !== selection.accountId ||
+          selection.resourceKind !== channelResourceKind(provider) ||
+          selection.grantClass === "write" ||
+          connection?.state !== "connected" ||
+          connection.id !== selection.accountId ||
+          !consent.capabilities.includes(`connector.class.${selection.grantClass}`)
+        ) {
+          reply.code(409);
+          return { ok: false, schema: 1, traceId, error: "portal_consent_scope_unavailable" };
+        }
+        const classCapability: ConnectorCapability =
+          selection.grantClass === "outward" ? "connector.dispatch" : "connector.observe";
+        const classRules = await enforceRules({
+          reply,
+          workspaceSlug: organizationId,
+          operation: "execute",
+          capability: classCapability,
+          pluginId: selection.pluginId,
+          actorId: `agent:${consent.agentId}`,
+          payload: {
+            contractVersion: MARKETPLACE_PORTAL_CLASS_CONTRACT_VERSION,
+            phase: "grant",
+            portalOrgId: consent.portalOrgId,
+            productTenantId: consent.productTenantId,
+            deploymentId: consent.deploymentId,
+            agentId: consent.agentId,
+            consentId: consent.consentId,
+            selection,
+            traceId,
+          },
+          actor: { kind: "agent", id: `agent:${consent.agentId}`, attestation: "portal-consent" },
+          ...governed,
+        });
+        if ("ok" in classRules && classRules.ok === false) {
+          return { ...classRules, traceId };
+        }
+        const createdClass = options.store.createMarketplaceAgentConsent({
+          portalIssuer: session.portalIssuer,
+          portalOrgId: consent.portalOrgId,
+          productTenantId: consent.productTenantId,
+          workspaceId: consent.workspaceId,
+          deploymentId: consent.deploymentId,
+          userId: consent.userId,
+          agentId: consent.agentId,
+          consentId: consent.consentId,
+          consentRevision: consent.consentRevision,
+          pluginId: selection.pluginId,
+          // A class consent names no single action; this marker never matches a published action key.
+          actionKey: `class:${selection.grantClass}`,
+          capability: classCapability,
+          connectionId: connection.id,
+          accountId: selection.accountId,
+          resourceKind: selection.resourceKind,
+          resourceRef: selection.resourceRef,
+          capabilities: consent.capabilities as unknown as ConnectorCapability[],
+          requiredActions: consent.requiredActions,
+          metadata: {
+            contractVersion: MARKETPLACE_PORTAL_CLASS_CONTRACT_VERSION,
+            durableConsent: true,
+            rawTokensStored: false,
+            selectionKind: "class",
+            grantClass: selection.grantClass,
+            ...(selection.actionGroup ? { actionGroup: selection.actionGroup } : {}),
+          },
+        });
+        if (createdClass.created) {
+          options.store.recordEvent({
+            type: "marketplace.agent.consent.created",
+            traceId,
+            workspaceSlug: organizationId,
+            pluginId: selection.pluginId,
+            actorId: `agent:${consent.agentId}`,
+            rulesDecisionId: "decisionId" in classRules ? classRules.decisionId : null,
+            payload: {
+              grantId: createdClass.consent.id,
+              consentId: createdClass.consent.consentId,
+              portalOrgId: createdClass.consent.portalOrgId,
+              productTenantId: createdClass.consent.productTenantId,
+              deploymentId: createdClass.consent.deploymentId,
+              agentId: createdClass.consent.agentId,
+              grantClass: selection.grantClass,
+              channelId: channel.id,
+              rawTokensStored: false,
+            },
+          });
+        }
+        const classProjection = persistedRequest
+          ? options.store.updateMarketplacePortalGrantRequest({
+              portalIssuer: session.portalIssuer,
+              deploymentId: input.deploymentId,
+              requestId: input.requestId,
+              state: "redeemed",
+              consentId: createdClass.consent.consentId,
+            })
+          : null;
+        return {
+          ok: true,
+          schema: 1,
+          contractVersion: MARKETPLACE_PORTAL_CLASS_CONTRACT_VERSION,
+          authority:
+            principal.kind === "operator"
+              ? "marketplace_operator_session"
+              : "marketplace_service_bearer",
+          traceId,
+          reconciled,
+          created: createdClass.created,
+          consent: browserMarketplaceAgentConsent(createdClass.consent),
+          ...(classProjection
+            ? { projection: browserMarketplacePortalGrantRequest(classProjection) }
+            : {}),
+          rules: classRules,
+        };
+      }
+      const perActionSelection = consent.selection;
       if (
         persistedRequest &&
-        !portalSelectionsEquivalent(persistedRequest.selection, consent.selection)
+        ("grantClass" in persistedRequest.selection ||
+          !portalSelectionsEquivalent(persistedRequest.selection, perActionSelection))
       ) {
         reply.code(403);
         return { ok: false, schema: 1, traceId, error: "portal_consent_invalid" };
       }
       const listing = options.store.getListingForWorkspace(
-        consent.selection.pluginId,
+        perActionSelection.pluginId,
         organizationId,
       );
       const connection = options.store.getConnection(
         organizationId,
-        consent.selection.pluginId,
+        perActionSelection.pluginId,
       );
       const accountId = listing
         ? agentAccountIdForConnection({ listing, workspaceSlug: organizationId, connection })
@@ -6353,26 +6724,26 @@ export async function buildMarketplaceApp(
       if (
         !listing ||
         !listingExecutableForAgents(listing, organizationId) ||
-        !listing.actions.includes(consent.selection.actionKey) ||
-        !options.store.getInstall(organizationId, consent.selection.pluginId)?.enabled ||
+        !listing.actions.includes(perActionSelection.actionKey) ||
+        !options.store.getInstall(organizationId, perActionSelection.pluginId)?.enabled ||
         !options.store.isActionEnabled({
           workspaceSlug: organizationId,
-          pluginId: consent.selection.pluginId,
-          actionKey: consent.selection.actionKey,
+          pluginId: perActionSelection.pluginId,
+          actionKey: perActionSelection.actionKey,
         }) ||
         connection?.state !== "connected" ||
-        accountId !== consent.selection.accountId ||
-        consent.selection.resourceRef !== `account:${accountId}`
+        accountId !== perActionSelection.accountId ||
+        perActionSelection.resourceRef !== `account:${accountId}`
       ) {
         reply.code(409);
         return { ok: false, schema: 1, traceId, error: "portal_consent_scope_unavailable" };
       }
-      const consentCapability = selectionCapability(consent.selection);
+      const consentCapability = selectionCapability(perActionSelection);
       let binding;
       try {
         binding = options.store.requireCapabilityBinding(
           organizationId,
-          consent.selection.pluginId,
+          perActionSelection.pluginId,
           consentCapability,
         );
       } catch {
@@ -6386,15 +6757,15 @@ export async function buildMarketplaceApp(
       const published = resolvePublishedAgentAction({
         store: options.store,
         workspaceSlug: organizationId,
-        pluginId: consent.selection.pluginId,
-        actionKey: consent.selection.actionKey,
+        pluginId: perActionSelection.pluginId,
+        actionKey: perActionSelection.actionKey,
       });
       if (
         !published ||
         published.capability !== consentCapability ||
-        published.resourceKind !== consent.selection.resourceKind ||
+        published.resourceKind !== perActionSelection.resourceKind ||
         !published.accounts.some((account) => account.accountId === accountId) ||
-        !consent.capabilities.includes(published.capability)
+        !(consent.capabilities as string[]).includes(published.capability)
       ) {
         reply.code(409);
         return { ok: false, schema: 1, traceId, error: "portal_consent_scope_unavailable" };
@@ -6404,7 +6775,7 @@ export async function buildMarketplaceApp(
         workspaceSlug: organizationId,
         operation: "execute",
         capability: published.capability,
-        pluginId: consent.selection.pluginId,
+        pluginId: perActionSelection.pluginId,
         actorId: `agent:${consent.agentId}`,
         payload: {
           contractVersion: MARKETPLACE_PORTAL_HANDOFF_CONTRACT_VERSION,
@@ -6414,7 +6785,7 @@ export async function buildMarketplaceApp(
           deploymentId: consent.deploymentId,
           agentId: consent.agentId,
           consentId: consent.consentId,
-          selection: consent.selection,
+          selection: perActionSelection,
           traceId,
         },
         actor: { kind: "agent", id: `agent:${consent.agentId}`, attestation: "portal-consent" },
@@ -6433,14 +6804,14 @@ export async function buildMarketplaceApp(
         agentId: consent.agentId,
         consentId: consent.consentId,
         consentRevision: consent.consentRevision,
-        pluginId: consent.selection.pluginId,
-        actionKey: consent.selection.actionKey,
+        pluginId: perActionSelection.pluginId,
+        actionKey: perActionSelection.actionKey,
         capability: published.capability,
         connectionId: connection.id,
-        accountId: consent.selection.accountId,
-        resourceKind: consent.selection.resourceKind,
-        resourceRef: consent.selection.resourceRef,
-        capabilities: consent.capabilities,
+        accountId: perActionSelection.accountId,
+        resourceKind: perActionSelection.resourceKind,
+        resourceRef: perActionSelection.resourceRef,
+        capabilities: consent.capabilities as ConnectorCapability[],
         requiredActions: consent.requiredActions,
         metadata: {
           contractVersion: MARKETPLACE_PORTAL_HANDOFF_CONTRACT_VERSION,
@@ -7108,42 +7479,272 @@ export async function buildMarketplaceApp(
       },
     },
   ];
-  const executeConsentedCall = async (call: {
+  /**
+   * Shared tail of executeConsentedCall (one execution path, Channels C1):
+   * governance (owner mode or Rules) → target preparation → idempotency
+   * (`marketplace_runtime_operation`) → provider call → usage ledger → audit.
+   * The per-action connector path and the channel path differ only in how
+   * they resolve the call before this; everything here is the same code.
+   */
+  type ConsentedDispatch = {
+    reply: FastifyReply;
+    traceId: string;
+    via: "runtime-lease" | "app-grant";
+    /** Runtime-operation scope (`UNIQUE(consent_id, idempotency_key)`). */
+    operationConsentId: string;
+    idempotencyKey: string;
+    fingerprintSource: unknown;
+    pluginId: string;
+    provider: string;
+    sourceExecutor: ConnectorUsageLedgerEntry["sourceExecutor"];
+    actionType: string;
+    capability: ConnectorCapability;
+    /** The Portal consent id recorded in usage and audit. */
+    consentId: string;
+    leaseId: string;
+    actorId: string;
+    governance: {
+      actor: GovernanceActor;
+      risk?: GovernedActionRisk;
+      payload: Record<string, unknown>;
+    };
+    ledgerInput: Record<string, unknown>;
+    prepare: () => ExecutionPreparation;
+  };
+  const dispatchConsentedCall = async (dispatch: ConsentedDispatch) => {
+    const { reply, traceId, via } = dispatch;
+    const rules = await enforceRules({
+      reply,
+      workspaceSlug: organizationId,
+      operation: "execute",
+      capability: dispatch.capability,
+      pluginId: dispatch.pluginId,
+      actorId: dispatch.actorId,
+      ...(dispatch.governance.risk ? { risk: dispatch.governance.risk } : {}),
+      payload: dispatch.governance.payload,
+      actor: dispatch.governance.actor,
+      ...governed,
+    });
+    if ("ok" in rules && rules.ok === false) {
+      options.store.recordEvent({
+        type: "marketplace.runtime.execution.denied",
+        traceId,
+        workspaceSlug: organizationId,
+        pluginId: dispatch.pluginId,
+        actorId: dispatch.actorId,
+        payload: {
+          consentId: dispatch.consentId,
+          leaseId: dispatch.leaseId,
+          capability: dispatch.capability,
+          action: dispatch.actionType,
+          error: rules.error,
+        },
+      });
+      return runtimeResponse({
+        ok: false,
+        traceId,
+        error: rules.error,
+      });
+    }
+    // Build the outbound call before reserving the idempotency key so a
+    // missing secret store never leaves an operation needing reconciliation.
+    const preparation = dispatch.prepare();
+    if (!preparation.ok) {
+      reply.code(preparation.statusCode);
+      return { ...runtimeResponse({ ok: false, traceId, error: preparation.error }), ...(preparation.detail ?? {}) };
+    }
+    const { prepared } = preparation;
+    const fingerprint = createHash("sha256")
+      .update(stableJson(dispatch.fingerprintSource))
+      .digest("hex");
+    let operation;
+    try {
+      operation = options.store.beginMarketplaceRuntimeOperation({
+        consentId: dispatch.operationConsentId,
+        idempotencyKey: dispatch.idempotencyKey,
+        fingerprint,
+      });
+    } catch (error) {
+      prepared.release?.();
+      reply.code(409);
+      return runtimeResponse({
+        ok: false,
+        traceId,
+        error:
+          error instanceof Error && error.message === "runtime_operation_idempotency_conflict"
+            ? "runtime_idempotency_conflict"
+            : "runtime_operation_unavailable",
+      });
+    }
+    if (!operation.created) {
+      prepared.release?.();
+      if (operation.operation.status === "succeeded" && operation.operation.response) {
+        return { ...operation.operation.response, replayed: true };
+      }
+      reply.code(409);
+      return runtimeResponse({
+        ok: false,
+        traceId,
+        error:
+          operation.operation.status === "pending"
+            ? "runtime_operation_in_progress"
+            : "runtime_operation_reconciliation_required",
+      });
+    }
+    const toolName = prepared.toolName;
+    const resultFor = (providerOutput: unknown) => ({
+      pluginId: dispatch.pluginId,
+      workspaceSlug: organizationId,
+      provider: dispatch.provider,
+      capability: dispatch.capability,
+      actionType: dispatch.actionType,
+      performedAt: new Date().toISOString(),
+      simulated: false,
+      summary: prepared.summary,
+      details: { toolName, result: runtimeSafeProviderResult(providerOutput) },
+    });
+    try {
+      const providerOutput = await prepared.run();
+      const result = resultFor(providerOutput);
+      if (JSON.stringify(result).length > 65536) {
+        throw new Error("runtime_result_too_large");
+      }
+      const usage = options.store.recordUsage({
+        workspaceSlug: organizationId,
+        pluginId: dispatch.pluginId,
+        provider: dispatch.provider,
+        sourceExecutor: dispatch.sourceExecutor,
+        sourceActionKey: dispatch.actionType,
+        productCapabilityKey: `connector.${dispatch.sourceExecutor}.${dispatch.provider}.${dispatch.actionType}`,
+        scopesUsed: [dispatch.capability],
+        status: "succeeded",
+        runId: null,
+        sessionId: null,
+        error: null,
+        metadata: {
+          contractVersion: MARKETPLACE_PORTAL_HANDOFF_CONTRACT_VERSION,
+          consentId: dispatch.consentId,
+          leaseId: dispatch.leaseId,
+          ...(via === "app-grant" ? { via } : {}),
+        },
+        input: dispatch.ledgerInput,
+        output: result,
+      });
+      options.store.recordEvent({
+        type: "marketplace.runtime.execution.completed",
+        traceId,
+        workspaceSlug: organizationId,
+        pluginId: dispatch.pluginId,
+        actorId: dispatch.actorId,
+        rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
+        payload: {
+          consentId: dispatch.consentId,
+          leaseId: dispatch.leaseId,
+          usageId: usage.id,
+          ...(via === "app-grant" ? { via } : {}),
+        },
+      });
+      const response = runtimeResponse({
+        ok: true,
+        traceId,
+        result,
+        usageId: usage.id,
+      });
+      options.store.finishMarketplaceRuntimeOperation({
+        id: operation.operation.id,
+        status: "succeeded",
+        response,
+      });
+      return response;
+    } catch (error) {
+      // A target that knows its outcome (a channel send that failed before
+      // delivery, or is uncertain) reports it; anything else may have reached
+      // the provider and needs reconciliation, exactly as before.
+      const outcome = error instanceof ConsentedExecutionOutcome ? error : null;
+      const detail = outcome
+        ? outcome.detail
+        : error instanceof Error && error.message === "runtime_result_too_large"
+          ? "Provider result exceeded the bounded runtime response size."
+          : "Provider dispatch may have completed; reconcile before retrying this idempotency key.";
+      const usage = options.store.recordUsage({
+        workspaceSlug: organizationId,
+        pluginId: dispatch.pluginId,
+        provider: dispatch.provider,
+        sourceExecutor: dispatch.sourceExecutor,
+        sourceActionKey: dispatch.actionType,
+        productCapabilityKey: `connector.${dispatch.sourceExecutor}.${dispatch.provider}.${dispatch.actionType}`,
+        scopesUsed: [dispatch.capability],
+        status: "failed",
+        runId: null,
+        sessionId: null,
+        error: outcome ? outcome.code : error instanceof Error ? error.message : String(error),
+        metadata: { consentId: dispatch.consentId, leaseId: dispatch.leaseId },
+        input: dispatch.ledgerInput,
+        output: null,
+      });
+      const response = {
+        ...runtimeResponse({
+          ok: false,
+          traceId,
+          error: outcome ? outcome.code : "runtime_operation_reconciliation_required",
+          ...(detail ? { detail } : {}),
+          usageId: usage.id,
+        }),
+        ...(outcome && outcome.output !== undefined ? { result: resultFor(outcome.output) } : {}),
+      };
+      const operationStatus = outcome ? outcome.operationStatus : "reconciliation-required";
+      options.store.finishMarketplaceRuntimeOperation({
+        id: operation.operation.id,
+        status: operationStatus,
+        response,
+      });
+      options.store.recordEvent({
+        type: "marketplace.runtime.execution.failed",
+        traceId,
+        workspaceSlug: organizationId,
+        pluginId: dispatch.pluginId,
+        actorId: dispatch.actorId,
+        payload: {
+          consentId: dispatch.consentId,
+          leaseId: dispatch.leaseId,
+          usageId: usage.id,
+          reconciliationRequired: operationStatus === "reconciliation-required",
+        },
+      });
+      reply.code(outcome ? outcome.statusCode : 502);
+      return response;
+    }
+  };
+
+  type ConsentedCall = {
     reply: FastifyReply;
     traceId: string;
     scope: ConsentedCallScope;
     input: {
       consentId: string;
-      selection: MarketplacePortalSelection;
+      /** The per-action selection; null on the channel path (the class selection is in `channel`). */
+      selection: MarketplacePortalSelection | null;
       input: Record<string, unknown>;
       idempotencyKey: string;
     };
     via: "runtime-lease" | "app-grant";
-  }) => {
-    const { reply, traceId, scope, input, via } = call;
+  };
+  /** Shared head: tenant, Portal identity, consent id, consent state. Returns the live consent or the refusal. */
+  const verifyConsentedCall = (
+    call: Pick<ConsentedCall, "reply" | "traceId" | "scope"> & { consentId: string },
+  ): { consent: MarketplaceAgentConsent } | { response: ReturnType<typeof runtimeResponse> } => {
+    const { reply, traceId, scope } = call;
     if (scope.productTenantId !== organizationId) {
       reply.code(403);
-      return runtimeResponse({
-        ok: false,
-        traceId,
-        error: "runtime_tenant_mismatch",
-      });
+      return { response: runtimeResponse({ ok: false, traceId, error: "runtime_tenant_mismatch" }) };
     }
     if (!portalIdentityMatches(scope)) {
       reply.code(403);
-      return runtimeResponse({
-        ok: false,
-        traceId,
-        error: "runtime_identity_mismatch",
-      });
+      return { response: runtimeResponse({ ok: false, traceId, error: "runtime_identity_mismatch" }) };
     }
-    if (scope.consentId !== input.consentId) {
+    if (scope.consentId !== call.consentId) {
       reply.code(403);
-      return runtimeResponse({
-        ok: false,
-        traceId,
-        error: "runtime_consent_mismatch",
-      });
+      return { response: runtimeResponse({ ok: false, traceId, error: "runtime_consent_mismatch" }) };
     }
     const consent = options.store.getMarketplaceAgentConsent({
       portalIssuer: portalIssuerUrl ?? "",
@@ -7152,24 +7753,53 @@ export async function buildMarketplaceApp(
     });
     if (!consent || consent.state !== "active") {
       reply.code(403);
-      return runtimeResponse({
-        ok: false,
-        traceId,
-        error: consent ? "runtime_consent_revoked" : "runtime_consent_not_found",
-      });
+      return {
+        response: runtimeResponse({
+          ok: false,
+          traceId,
+          error: consent ? "runtime_consent_revoked" : "runtime_consent_not_found",
+        }),
+      };
     }
     if (
       consent.productTenantId !== scope.productTenantId ||
       consent.portalOrgId !== scope.portalOrgId ||
       consent.workspaceId !== scope.workspaceId ||
       consent.deploymentId !== scope.deploymentId ||
-      consent.agentId !== scope.agentId ||
-      consent.pluginId !== input.selection.pluginId ||
-      consent.actionKey !== input.selection.actionKey ||
-      consent.accountId !== input.selection.accountId ||
-      consent.resourceKind !== input.selection.resourceKind ||
-      consent.resourceRef !== input.selection.resourceRef ||
-      consent.capability !== selectionCapability(input.selection)
+      consent.agentId !== scope.agentId
+    ) {
+      reply.code(403);
+      return { response: runtimeResponse({ ok: false, traceId, error: "runtime_scope_mismatch" }) };
+    }
+    return { consent };
+  };
+
+  const executeConsentedCall = async (call: ConsentedCall & { channel?: ChannelCallPlan }) => {
+    const { reply, traceId, scope, input, via } = call;
+    const verified = verifyConsentedCall({ reply, traceId, scope, consentId: input.consentId });
+    if ("response" in verified) return verified.response;
+    const { consent } = verified;
+    if (call.channel) {
+      // Channel path (Channels §6): the class consent must be exactly the
+      // channel's class selection; the channel service resolves 3a–3d and
+      // hands its provider call to the same dispatch tail.
+      const classSelection = classSelectionOfConsent(consent);
+      if (!classSelection || !classSelectionsEqual(classSelection, call.channel.selection)) {
+        reply.code(403);
+        return runtimeResponse({ ok: false, traceId, error: "runtime_scope_mismatch" });
+      }
+      return channelService.execute({ ...call.channel, consent, scope, traceId, reply, via, idempotencyKey: input.idempotencyKey, dispatch: dispatchConsentedCall });
+    }
+    const selection = input.selection;
+    if (
+      !selection ||
+      classSelectionOfConsent(consent) !== null ||
+      consent.pluginId !== selection.pluginId ||
+      consent.actionKey !== selection.actionKey ||
+      consent.accountId !== selection.accountId ||
+      consent.resourceKind !== selection.resourceKind ||
+      consent.resourceRef !== selection.resourceRef ||
+      consent.capability !== selectionCapability(selection)
     ) {
       reply.code(403);
       return runtimeResponse({
@@ -7179,22 +7809,22 @@ export async function buildMarketplaceApp(
       });
     }
     const listing = options.store.getListingForWorkspace(
-      input.selection.pluginId,
+      selection.pluginId,
       organizationId,
     );
     const connection = options.store.getConnection(
       organizationId,
-      input.selection.pluginId,
+      selection.pluginId,
     );
     if (
       !listing ||
       !listingExecutableForAgents(listing, organizationId) ||
-      !listing.actions.includes(input.selection.actionKey) ||
-      !options.store.getInstall(organizationId, input.selection.pluginId)?.enabled ||
+      !listing.actions.includes(selection.actionKey) ||
+      !options.store.getInstall(organizationId, selection.pluginId)?.enabled ||
       !options.store.isActionEnabled({
         workspaceSlug: organizationId,
-        pluginId: input.selection.pluginId,
-        actionKey: input.selection.actionKey,
+        pluginId: selection.pluginId,
+        actionKey: selection.actionKey,
       }) ||
       !connection ||
       agentAccountIdForConnection({ listing, workspaceSlug: organizationId, connection }) !==
@@ -7212,7 +7842,7 @@ export async function buildMarketplaceApp(
     try {
       binding = options.store.requireCapabilityBinding(
         organizationId,
-        input.selection.pluginId,
+        selection.pluginId,
         consent.capability,
       );
     } catch {
@@ -7245,7 +7875,7 @@ export async function buildMarketplaceApp(
         error: "runtime_connection_unavailable",
       });
     }
-    const action = { type: input.selection.actionKey, ...input.input };
+    const action = { type: selection.actionKey, ...input.input };
     const scopedAction = applyScopedResource({
       action,
       grant: consent,
@@ -7260,7 +7890,7 @@ export async function buildMarketplaceApp(
       });
     }
     const { type: _runtimeType, ...runtimeArgs } = scopedAction.action;
-    const runtimeRisk = companyBoxRiskForAction(companyBox, listing, organizationId, input.selection.actionKey, runtimeArgs);
+    const runtimeRisk = companyBoxRiskForAction(companyBox, listing, organizationId, selection.actionKey, runtimeArgs);
     if (
       governanceMode === "owner" &&
       runtimeRisk?.outward &&
@@ -7270,7 +7900,7 @@ export async function buildMarketplaceApp(
       const held = holdCompanyBoxCall({
         listing,
         workspaceSlug: organizationId,
-        actionKey: input.selection.actionKey,
+        actionKey: selection.actionKey,
         capability: consent.capability,
         args,
         agentId: consent.agentId,
@@ -7282,223 +7912,200 @@ export async function buildMarketplaceApp(
       reply.code(held.status);
       return { ...held.body, schema: 1, traceId };
     }
-    const rules = await enforceRules({
-      reply,
-      workspaceSlug: organizationId,
-      operation: "execute",
-      capability: consent.capability,
-      pluginId: consent.pluginId,
-      actorId: `agent:${consent.agentId}`,
-      ...(runtimeRisk ? { risk: runtimeRisk } : {}),
-      payload: {
-        contractVersion: MARKETPLACE_PORTAL_HANDOFF_CONTRACT_VERSION,
-        phase: "execute",
-        portalOrgId: consent.portalOrgId,
-        productTenantId: consent.productTenantId,
-        workspaceId: consent.workspaceId,
-        deploymentId: consent.deploymentId,
-        agentId: consent.agentId,
-        consentId: consent.consentId,
-        leaseId: scope.leaseId,
-        action: scopedAction.action,
-        selection: input.selection,
-        traceId,
-      },
-      actor: { kind: "agent", id: `agent:${consent.agentId}`, attestation: "runtime-lease" },
-      ...governed,
-    });
-    if ("ok" in rules && rules.ok === false) {
-      options.store.recordEvent({
-        type: "marketplace.runtime.execution.denied",
-        traceId,
-        workspaceSlug: organizationId,
-        pluginId: consent.pluginId,
-        actorId: `agent:${consent.agentId}`,
-        payload: {
-          consentId: consent.consentId,
-          leaseId: scope.leaseId,
-          capability: consent.capability,
-          action: input.selection.actionKey,
-          error: rules.error,
-        },
-      });
-      return runtimeResponse({
-        ok: false,
-        traceId,
-        error: rules.error,
-      });
-    }
     const executionContext: ConsentedExecutionContext = {
       listing,
       organizationId,
-      actionKey: input.selection.actionKey,
+      actionKey: selection.actionKey,
       action: scopedAction.action,
       publishedToolName: published.toolName,
       connection,
     };
-    // Build the outbound call before reserving the idempotency key so a
-    // missing secret store never leaves an operation needing reconciliation.
-    const preparation = selectExecutionTarget(consentedExecutionTargets, executionContext)
-      .prepare(executionContext);
-    if (!preparation.ok) {
-      reply.code(preparation.statusCode);
-      return runtimeResponse({ ok: false, traceId, error: preparation.error });
-    }
-    const { prepared } = preparation;
-    const fingerprint = createHash("sha256")
-      .update(
-        stableJson({
-          consentId: input.consentId,
-          selection: input.selection,
-          input: input.input,
-        }),
-      )
-      .digest("hex");
-    let operation;
-    try {
-      operation = options.store.beginMarketplaceRuntimeOperation({
+    return dispatchConsentedCall({
+      reply,
+      traceId,
+      via,
+      operationConsentId: input.consentId,
+      idempotencyKey: input.idempotencyKey,
+      fingerprintSource: {
         consentId: input.consentId,
-        idempotencyKey: input.idempotencyKey,
-        fingerprint,
-      });
-    } catch (error) {
-      reply.code(409);
-      return runtimeResponse({
-        ok: false,
-        traceId,
-        error:
-          error instanceof Error && error.message === "runtime_operation_idempotency_conflict"
-            ? "runtime_idempotency_conflict"
-            : "runtime_operation_unavailable",
-      });
-    }
-    if (!operation.created) {
-      if (operation.operation.status === "succeeded" && operation.operation.response) {
-        return { ...operation.operation.response, replayed: true };
-      }
-      reply.code(409);
-      return runtimeResponse({
-        ok: false,
-        traceId,
-        error:
-          operation.operation.status === "pending"
-            ? "runtime_operation_in_progress"
-            : "runtime_operation_reconciliation_required",
-      });
-    }
-    const toolName = prepared.toolName;
-    try {
-      const providerOutput = await prepared.run();
-      const result = {
-        pluginId: input.selection.pluginId,
-        workspaceSlug: organizationId,
-        provider: listing.provider,
-        capability: consent.capability,
-        actionType: input.selection.actionKey,
-        performedAt: new Date().toISOString(),
-        simulated: false,
-        summary: prepared.summary,
-        details: { toolName, result: runtimeSafeProviderResult(providerOutput) },
-      };
-      if (JSON.stringify(result).length > 65536) {
-        throw new Error("runtime_result_too_large");
-      }
-      const usage = options.store.recordUsage({
-        workspaceSlug: organizationId,
-        pluginId: input.selection.pluginId,
-        provider: listing.provider,
-        sourceExecutor: listing.executionOwner,
-        sourceActionKey: input.selection.actionKey,
-        productCapabilityKey: `connector.${listing.executionOwner}.${listing.provider}.${input.selection.actionKey}`,
-        scopesUsed: [consent.capability],
-        status: "succeeded",
-        runId: null,
-        sessionId: null,
-        error: null,
-        metadata: {
+        selection: selection,
+        input: input.input,
+      },
+      pluginId: selection.pluginId,
+      provider: listing.provider,
+      sourceExecutor: listing.executionOwner,
+      actionType: selection.actionKey,
+      capability: consent.capability,
+      consentId: consent.consentId,
+      leaseId: scope.leaseId,
+      actorId: `agent:${consent.agentId}`,
+      governance: {
+        actor: { kind: "agent", id: `agent:${consent.agentId}`, attestation: "runtime-lease" },
+        ...(runtimeRisk ? { risk: runtimeRisk } : {}),
+        payload: {
           contractVersion: MARKETPLACE_PORTAL_HANDOFF_CONTRACT_VERSION,
+          phase: "execute",
+          portalOrgId: consent.portalOrgId,
+          productTenantId: consent.productTenantId,
+          workspaceId: consent.workspaceId,
+          deploymentId: consent.deploymentId,
+          agentId: consent.agentId,
           consentId: consent.consentId,
           leaseId: scope.leaseId,
-          ...(via === "app-grant" ? { via } : {}),
+          action: scopedAction.action,
+          selection: selection,
+          traceId,
         },
-        input: scopedAction.action,
-        output: result,
-      });
-      options.store.recordEvent({
-        type: "marketplace.runtime.execution.completed",
-        traceId,
-        workspaceSlug: organizationId,
-        pluginId: input.selection.pluginId,
-        actorId: `agent:${consent.agentId}`,
-        rulesDecisionId: "decisionId" in rules ? rules.decisionId : null,
-        payload: {
-          consentId: consent.consentId,
-          leaseId: scope.leaseId,
-          usageId: usage.id,
-          ...(via === "app-grant" ? { via } : {}),
-        },
-      });
-      const response = runtimeResponse({
-        ok: true,
-        traceId,
-        result,
-        usageId: usage.id,
-      });
-      options.store.finishMarketplaceRuntimeOperation({
-        id: operation.operation.id,
-        status: "succeeded",
-        response,
-      });
-      return response;
-    } catch (error) {
-      const detail = error instanceof Error && error.message === "runtime_result_too_large"
-        ? "Provider result exceeded the bounded runtime response size."
-        : "Provider dispatch may have completed; reconcile before retrying this idempotency key.";
-      const usage = options.store.recordUsage({
-        workspaceSlug: organizationId,
-        pluginId: input.selection.pluginId,
-        provider: listing.provider,
-        sourceExecutor: listing.executionOwner,
-        sourceActionKey: input.selection.actionKey,
-        productCapabilityKey: `connector.${listing.executionOwner}.${listing.provider}.${input.selection.actionKey}`,
-        scopesUsed: [consent.capability],
-        status: "failed",
-        runId: null,
-        sessionId: null,
-        error: error instanceof Error ? error.message : String(error),
-        metadata: { consentId: consent.consentId, leaseId: scope.leaseId },
-        input: scopedAction.action,
-        output: null,
-      });
-      const response = runtimeResponse({
-        ok: false,
-        traceId,
-        error: "runtime_operation_reconciliation_required",
-        detail,
-        usageId: usage.id,
-      });
-      options.store.finishMarketplaceRuntimeOperation({
-        id: operation.operation.id,
-        status: "reconciliation-required",
-        response,
-      });
-      options.store.recordEvent({
-        type: "marketplace.runtime.execution.failed",
-        traceId,
-        workspaceSlug: organizationId,
-        pluginId: consent.pluginId,
-        actorId: `agent:${consent.agentId}`,
-        payload: {
-          consentId: consent.consentId,
-          leaseId: scope.leaseId,
-          usageId: usage.id,
-          reconciliationRequired: true,
-        },
-      });
-      reply.code(502);
-      return response;
+      },
+      ledgerInput: scopedAction.action,
+      prepare: () => selectExecutionTarget(consentedExecutionTargets, executionContext).prepare(executionContext),
+    });
+  };
+
+  // --- Channels (spec v0.2, P1) --------------------------------------------------------------------
+  // Channel sends are executeConsentedCall calls: the shared head verifies the consent, the channel
+  // service resolves 3a–3d, and dispatchConsentedCall runs governance, idempotency, the channel-native
+  // target, the usage ledger and audit. The scheduler and the approval queue call the same function.
+  const channelClock = options.channelClock ?? (() => new Date());
+  const channelInstanceId = `marketplace-${randomUUID().slice(0, 8)}`;
+  const channelService = createChannelService({
+    store: options.store,
+    organizationId,
+    dataDir: path.dirname(runtimePath),
+    environment,
+    providers: options.channelProviders ?? defaultChannelProviders(),
+    now: channelClock,
+    eventFetch: options.channelEventFetch,
+    instanceId: channelInstanceId,
+  });
+  const channelsReady: Promise<void> = channelService.boot().catch((error: unknown) => {
+    // The error name only: provider errors can carry request details.
+    console.error(JSON.stringify({ event: "marketplace.channels.boot_failed", name: error instanceof Error ? error.name : typeof error }));
+  });
+  const consentScope = (consent: MarketplaceAgentConsent, leaseId: string): ConsentedCallScope => ({
+    portalOrgId: consent.portalOrgId,
+    productTenantId: consent.productTenantId,
+    workspaceId: consent.workspaceId,
+    deploymentId: consent.deploymentId,
+    agentId: consent.agentId,
+    consentId: consent.consentId,
+    leaseId,
+  });
+  const channelSelectionFor = (consent: MarketplaceAgentConsent, channelId: string) => {
+    const channel = options.store.channels.getChannel(organizationId, channelId);
+    const selection = classSelectionOfConsent(consent);
+    return channel && selection ? channelClassSelection(channel, selection.grantClass === "outward" ? "outward" : "read") : null;
+  };
+  /**
+   * The owner approved a held channel post (Approvals view or a verified proof). An immediate post is
+   * sent now, exactly once (`reserveHeldPost` moves it held → sending atomically); a scheduled one is
+   * sent by the scheduler at its send time.
+   */
+  const runApprovedChannelHold = async (approval: CompanyBoxApproval, traceId: string) => {
+    const post = options.store.channels.getPost(organizationId, String(approval.arguments.postId ?? ""));
+    const channel = post ? options.store.channels.getChannel(organizationId, post.channelId) : null;
+    if (!post || !channel) {
+      options.store.finishCompanyBoxApproval({ id: approval.id, state: "failed", error: "approval_target_unavailable" });
+      return { status: 409, response: { ok: false, schema: 1, traceId, error: "approval_target_unavailable" } as Record<string, unknown> };
+    }
+    const consent = options.store.getMarketplaceAgentConsentById(approval.sourceRef);
+    if (!consent || consent.state !== "active") {
+      if (post.status === "held") channelService.endPost(post, channel, "skipped", "consent_inactive");
+      options.store.finishCompanyBoxApproval({ id: approval.id, state: "failed", error: "approval_authority_revoked" });
+      return { status: 403, response: { ok: false, schema: 1, traceId, error: "approval_authority_revoked" } as Record<string, unknown> };
+    }
+    if (post.mode === "scheduled") {
+      return { status: 200, response: { ok: true, schema: 1, traceId, scheduled: true, postId: post.id, sendAt: post.sendAt } as Record<string, unknown> };
+    }
+    const selection = channelSelectionFor(consent, channel.id);
+    if (!selection) {
+      options.store.finishCompanyBoxApproval({ id: approval.id, state: "failed", error: "approval_target_unavailable" });
+      return { status: 409, response: { ok: false, schema: 1, traceId, error: "approval_target_unavailable" } as Record<string, unknown> };
+    }
+    const reply = detachedReply();
+    const response = (await executeConsentedCall({
+      reply,
+      traceId,
+      scope: consentScope(consent, `approval:${approval.id}`),
+      input: { consentId: consent.consentId, selection: null, input: {}, idempotencyKey: post.idempotencyKey },
+      via: "app-grant",
+      channel: { selection, channelId: channel.id, mode: "approved-hold", postId: post.id, approvalId: approval.id },
+    })) as Record<string, unknown>;
+    return { status: reply.statusCode, response };
+  };
+  /** Scheduler send of one claimed post. A refusal that left the row due ends it as `skipped`: never a silent retry. */
+  const runScheduledChannelPost = async (post: ChannelPostRecord, consent: MarketplaceAgentConsent, claimer: string) => {
+    const selection = channelSelectionFor(consent, post.channelId);
+    let response: Record<string, unknown> | null = null;
+    if (selection) {
+      response = (await executeConsentedCall({
+        reply: detachedReply(),
+        traceId: `channel-scheduler-${randomUUID()}`,
+        scope: consentScope(consent, `scheduler:${claimer}`),
+        input: { consentId: consent.consentId, selection: null, input: {}, idempotencyKey: post.idempotencyKey },
+        via: "app-grant",
+        channel: { selection, channelId: post.channelId, mode: "scheduled-send", postId: post.id, claimer },
+      })) as Record<string, unknown>;
+    }
+    const after = options.store.channels.getPost(organizationId, post.id);
+    if (after && (after.status === "scheduled" || after.status === "held")) {
+      const reason = typeof response?.error === "string" ? response.error : "send_refused";
+      const approval = after.status === "held" ? channelService.approvalForPost(after) : null;
+      channelService.endPost(
+        after,
+        options.store.channels.getChannel(organizationId, after.channelId),
+        "skipped",
+        reason,
+        after.status === "scheduled" ? claimer : undefined,
+      );
+      if (approval?.state === "executing") {
+        options.store.finishCompanyBoxApproval({ id: approval.id, state: "failed", error: reason });
+      }
     }
   };
+  const channelTick = async (now?: Date, claimer?: string) => {
+    await channelsReady;
+    return channelService.tick({ now: now ?? channelClock(), claimer: claimer ?? channelInstanceId, run: runScheduledChannelPost });
+  };
+  if (options.channelScheduler !== false) {
+    let ticking = false;
+    const timer = setInterval(() => {
+      if (ticking) return;
+      ticking = true;
+      void channelTick()
+        .catch((error: unknown) => {
+          console.error(JSON.stringify({ event: "marketplace.channels.tick_failed", name: error instanceof Error ? error.name : typeof error }));
+        })
+        .finally(() => {
+          ticking = false;
+        });
+    }, CHANNEL_SCHEDULER_INTERVAL_MS);
+    timer.unref();
+    app.addHook("onClose", async () => {
+      clearInterval(timer);
+    });
+  }
+  channelRuntimes.set(app, { ready: channelsReady, tick: channelTick });
+  registerChannelRoutes({
+    app,
+    store: options.store,
+    service: channelService,
+    organizationId,
+    now: channelClock,
+    ready: channelsReady,
+    portal: { issuer: portalIssuerUrl ?? "", deploymentId: portalConfiguration.deploymentId },
+    requireOperator: (request, reply) => {
+      const principal = requireOperator(request, reply);
+      return principal ? { id: principal.id, organizationId: principal.organizationId } : null;
+    },
+    agentGrant: (request, reply, operationId) => {
+      const caller = agentGrant(request, reply, operationId);
+      return caller ? { grant: { principalId: caller.grant.principalId, workspaceId: caller.grant.workspaceId }, agentId: caller.agentId } : null;
+    },
+    executeConsentedCall: async (call) => (await executeConsentedCall(call)) as Record<string, unknown>,
+    dispatch: async (input) => (await dispatchConsentedCall(input)) as Record<string, unknown>,
+    traceIdFrom,
+  });
 
   app.route({
     method: "POST",
@@ -7586,13 +8193,26 @@ export async function buildMarketplaceApp(
           consent.workspaceId === caller.grant.workspaceId,
       )
       .slice(0, AGENT_CONSENT_LIST_LIMIT)
-      .map((consent) => ({
-        consentId: consent.consentId,
-        // The Marketplace connector (plugin) the consent covers; one consent covers one action.
-        toolkit: consent.pluginId,
-        actions: [consent.actionKey],
-        state: consent.state,
-      }));
+      .map((consent) => {
+        const classSelection = classSelectionOfConsent(consent);
+        // A v1.4 class consent (a channel) names no single action: its class and group instead.
+        return classSelection
+          ? {
+              consentId: consent.consentId,
+              toolkit: consent.pluginId,
+              actions: [],
+              grantClass: classSelection.grantClass,
+              ...(classSelection.actionGroup ? { actionGroup: classSelection.actionGroup } : {}),
+              state: consent.state,
+            }
+          : {
+              consentId: consent.consentId,
+              // The Marketplace connector (plugin) the consent covers; one consent covers one action.
+              toolkit: consent.pluginId,
+              actions: [consent.actionKey],
+              state: consent.state,
+            };
+      });
     return { ok: true, schema: 1, consents };
   });
 
@@ -7680,6 +8300,159 @@ export async function buildMarketplaceApp(
       : executed;
   });
 
+  /**
+   * `marketplace.approvals.resolve` (Channels §6.3, K1 review): the kit forwards the owner's signed
+   * decision for the caller's own held call. Atomic and single-shot per approval: a guarded UPDATE moves
+   * the hold pending → resolving before any await; an invalid proof moves it back (no provider call
+   * happened); a valid proof is marked used instance-wide, then the call runs exactly once. Any other
+   * resolve while resolving or after the decision is 409 approval_already_resolved and never calls a
+   * provider. The kit's key `resolve.<approvalId>.<decision>` replays the stored answer after success.
+   */
+  const ownerApprovalVerifier = options.ownerApprovalVerifier ?? unsupportedOwnerApprovalVerifier;
+  app.post("/api/marketplace/v1/agent/approvals/:approvalId/resolve", { bodyLimit: 32_768 }, async (request, reply) => {
+    const traceId = traceIdFrom(request);
+    const caller = agentGrant(request, reply, AGENT_OPERATION.approvalsResolve);
+    if (!caller) return { ok: false, error: "agent_grant_required" };
+    await channelsReady;
+    const { approvalId } = request.params as { approvalId: string };
+    const key = headerValue(request, "idempotency-key");
+    const keyMatch = key ? RESOLVE_IDEMPOTENCY_KEY.exec(key) : null;
+    if (!key || !keyMatch || keyMatch[1] !== approvalId) {
+      reply.code(400);
+      return { ok: false, schema: 1, traceId, error: "idempotency_key_required" };
+    }
+    const keyDecision = keyMatch[2] as "approve" | "deny";
+    const proof = OwnerApprovalProofSchema.safeParse(request.body);
+    if (!proof.success) {
+      reply.code(400);
+      return { ok: false, schema: 1, traceId, error: "validation_failed" };
+    }
+    const approval = options.store.getCompanyBoxApproval(approvalId);
+    // Binds only to the caller's own held call; anything else looks unknown.
+    if (!approval || approval.workspaceSlug !== organizationId || approval.agentId !== caller.agentId) {
+      reply.code(404);
+      return { ok: false, schema: 1, traceId, error: "approval_not_found" };
+    }
+    const operationScope = `approval-resolve:${approval.id}`;
+    const previous = options.store.getMarketplaceRuntimeOperation({ consentId: operationScope, idempotencyKey: key });
+    if (previous) {
+      const stored = previous.response as { status?: number; body?: Record<string, unknown> } | null;
+      if (previous.status === "succeeded" && stored?.body) {
+        reply.code(stored.status ?? 200);
+        return { ...stored.body, replayed: true };
+      }
+      reply.code(409);
+      return { ok: false, schema: 1, traceId, error: "approval_already_resolved" };
+    }
+    const claim = options.store.claimCompanyBoxApprovalForResolve({
+      id: approval.id,
+      workspaceSlug: organizationId,
+      agentId: caller.agentId,
+      staleMs: RESOLVE_CLAIM_STALE_MS,
+    });
+    if (!claim) {
+      const current = options.store.getCompanyBoxApproval(approval.id);
+      reply.code(current?.state === "expired" ? 410 : 409);
+      return { ok: false, schema: 1, traceId, error: current?.state === "expired" ? "approval_expired" : "approval_already_resolved" };
+    }
+    const refuse = (status: number, error: string) => {
+      options.store.releaseCompanyBoxApprovalResolve({ id: approval.id, stamp: claim.stamp });
+      reply.code(status);
+      return { ok: false, schema: 1, traceId, error };
+    };
+    let verification;
+    try {
+      verification = await ownerApprovalVerifier.verify({
+        proof: proof.data,
+        approvalId: approval.id,
+        digest: approval.fingerprint,
+        binding: {
+          portalIssuer: portalIssuerUrl,
+          deploymentId: portalConfiguration.deploymentId,
+          portalOrgId: portalConfiguration.portalOrgId,
+          workspaceId: portalConfiguration.workspaceId,
+          instanceId: instanceClaim?.instanceId ?? null,
+          // TODO(K2/PO3): pin the owner's Nostr pubkey and user id from the Portal claim once it carries them.
+          ownerPubkey: null,
+          ownerUserId: null,
+        },
+        now: new Date(),
+      });
+    } catch {
+      return refuse(503, "approval_proof_unavailable");
+    }
+    if (!verification.ok) return refuse(verification.status, verification.error);
+    if (verification.decision !== keyDecision) return refuse(400, "approval_decision_mismatch");
+    const used = options.store.channels.markUsedApprovalProof({
+      proofId: `${verification.kind}:${verification.proofId}`,
+      kind: verification.kind,
+      expiresAt: verification.expiresAt,
+    });
+    if (!used.ok) return refuse(409, used.error);
+    let operation;
+    try {
+      operation = options.store.beginMarketplaceRuntimeOperation({
+        consentId: operationScope,
+        idempotencyKey: key,
+        fingerprint: createHash("sha256").update(`${approval.id}|${verification.decision}`).digest("hex"),
+      });
+    } catch {
+      return refuse(409, "approval_already_resolved");
+    }
+    const decided = options.store.decideResolvingCompanyBoxApproval({
+      id: approval.id,
+      stamp: claim.stamp,
+      decision: verification.decision,
+      decidedBy: verification.decidedBy,
+    });
+    if (!decided || !operation.created) {
+      reply.code(409);
+      return { ok: false, schema: 1, traceId, error: "approval_already_resolved" };
+    }
+    options.store.recordAudit({
+      workspaceSlug: decided.workspaceSlug,
+      pluginId: decided.pluginId,
+      eventType: verification.decision === "approve" ? "marketplace.company_box.approval.approved" : "marketplace.company_box.approval.denied",
+      actorId: verification.decidedBy,
+      metadata: {
+        approvalId: decided.id,
+        actionKey: decided.actionKey,
+        agentId: decided.agentId,
+        digest: decided.fingerprint,
+        proof: verification.kind,
+        via: "approvals.resolve",
+        ...(verification.device ? { device: verification.device } : {}),
+      },
+    });
+    let result: { status: number; body: Record<string, unknown> };
+    try {
+      if (verification.decision === "deny") {
+        if (decided.sourceKind === "channel-consent") channelService.onApprovalDenied(decided);
+        result = { status: 200, body: { ok: true, schema: 1, traceId, decision: "deny", ...agentApprovalView(decided) } };
+      } else if (decided.sourceKind === "channel-consent") {
+        const run = await runApprovedChannelHold(decided, traceId);
+        result = { status: run.status, body: { ...run.response, decision: "approve", approvalId: decided.id } };
+      } else {
+        const finished = await runApprovedCompanyBoxCall(decided, request, reply, verification.decidedBy, {
+          kind: "operator",
+          id: verification.decidedBy,
+        });
+        const answer = approvalReply(finished);
+        result = { status: answer.status, body: { ...answer.body, schema: 1, traceId, decision: "approve" } };
+      }
+    } catch (error) {
+      options.store.finishMarketplaceRuntimeOperation({
+        id: operation.operation.id,
+        status: "reconciliation-required",
+        response: { status: 502, body: { ok: false, schema: 1, traceId, error: "approval_execution_failed" } },
+      });
+      throw error;
+    }
+    options.store.finishMarketplaceRuntimeOperation({ id: operation.operation.id, status: "succeeded", response: result });
+    reply.code(result.status);
+    return result.body;
+  });
+
   app.post(
     "/api/marketplace/agent/grants/:grantId/revoke",
     async (request, reply) => {
@@ -7696,6 +8469,8 @@ export async function buildMarketplaceApp(
           return { ok: false, error: "agent_grant_tenant_mismatch" };
         }
         const revoked = options.store.revokeMarketplaceAgentConsent(grantId);
+        // Channels §4.4 rule 5: standing grants bound to this consent are suspended at once.
+        channelService.grants.suspendForConsent(durableConsent.productTenantId, durableConsent.id);
         const traceId = traceIdFrom(request);
         options.store.recordEvent({
           type: "marketplace.agent.consent.revoked",
