@@ -40,26 +40,43 @@ Invariants:
 
 ### 3.1 Provider capability declaration (pattern from PRD §2.2)
 
-Each provider adapter declares what it can do. **Static** in the manifest (`channels.providers[]`), **live** in readiness (`/readyz` and the Channels UI): `available`, `credential_missing`, `credential_invalid`, `paused`, `unavailable`. A live capability never exceeds the static one. Portal and the UI derive options from these values only.
+Channel-native features are first-class. Each provider adapter DECLARES what it supports. **Static** in the manifest (`channels.providers[]`), **live** in readiness (`/readyz` and the Channels UI): `available`, `credential_missing`, `credential_invalid`, `paused`, `unavailable`. A live capability never exceeds the static one. The agent operations (`channels.list` returns the effective capabilities per channel), the input schemas and the owner UI offer **only declared features**. An undeclared feature is refused with `channel_capability_unavailable` (C5), or, only where the adapter declares one, a **fallback** is applied and named in the receipt (`fallback: "voice→audio+transcript"`). A fallback never changes what the owner approves: the digest covers the post after the fallback is applied, and the approval view shows it.
 
-Closed vocabulary (`channelCapabilities: 1`):
+Closed vocabulary (`channelCapabilities: 1`; new keys need a contract minor bump):
 
-| Key | Values |
-|---|---|
-| `send.text` | bool |
-| `send.maxChars` | integer (Telegram 4096, caption 1024; Discord 2000; …) |
-| `send.files` | `{types: [...], maxBytes, maxCount}` or `false` |
-| `send.markup` | `plain` \| `markdown` \| `html` |
-| `send.mentions` | `suppressed` (always for broadcast mentions: `@everyone`, `@here`, `@channel`) |
-| `edit`, `delete` | bool (P2) |
-| `schedule.native` | bool (provider-side scheduling, e.g. Slack `chat.scheduleMessage`) |
-| `events.create` | bool (Discord guild scheduled events, P2) |
-| `discover` | `updates` \| `list` \| `manual` |
-| `inbound` | `webhook` \| `poll` \| `gateway` \| `none` |
-| `audience.count` | bool |
-| `limits` | `{perChatPerSecond?, perChatPerMinute?, retryAfter: honoured}` |
+| Key | Values | Telegram (P1) | Discord (P1) |
+|---|---|---|---|
+| `text` | `{maxChars}` | 4096 (caption 1024) | 2000 |
+| `markup` | `plain` \| `markdown-v2` \| `discord-markdown` \| `mrkdwn` \| `html` | `plain` (P1); `markdown-v2` P2 | `discord-markdown` |
+| `mentions` | `suppressed` (broadcast mentions never ping) | suppressed | suppressed (`allowed_mentions: {parse: []}`) |
+| `image` | `{types, maxBytes, album: maxCount}` or `false` | png/jpeg/webp 10 MiB, album 4 | png/jpeg/webp/gif, 4 per message |
+| `file` | `{types, maxBytes}` or `false` | pdf and others, 50 MiB (bot API) | 10 MiB (bot default) |
+| `audio` | `{types, maxBytes}` or `false` | mp3/m4a (`sendAudio`) | as a file attachment |
+| `voice` | `{native: true, types, maxBytes, maxSeconds}` \| `{fallback: "audio+transcript"}` \| `false` | **native** `sendVoice`, OGG/Opus, 1 MiB for the waveform player (P1) | **fallback** audio file + transcript text (P1); native voice message (flag `IS_VOICE_MESSAGE`, waveform, `duration_secs`) P2 |
+| `video` | `{types, maxBytes}` or `false` | mp4 (`sendVideo`) 50 MiB | as a file attachment |
+| `thread` | `{topics?: bool, replies?: bool}` | forum topics (P1); reply-to P2 | threads P2 |
+| `reactions` | bool | P2 | P2 |
+| `buttons` | `{url: bool, callback: bool}` | url buttons P2; callback buttons P4 (need inbound) | link buttons P2; components with callbacks P4 |
+| `poll` | bool | P2 (`sendPoll`) | P2 (Discord polls) |
+| `edit`, `delete` | bool | P2 | P2 |
+| `schedule.native` | bool | false (Marketplace scheduler) | false |
+| `events.create` | bool | false | P2 (guild scheduled events) |
+| `discover` | `updates` \| `list` \| `manual` | updates | list |
+| `inbound` | `webhook` \| `poll` \| `gateway` \| `none` | none (P4) | none (P4) |
+| `audience.count` | bool | P2 | P2 |
+| `limits` | `{perChatPerSecond?, perChatPerMinute?, retryAfter: "honoured"}` | 1/s per chat, 20/min per group | 5 per 5 s per channel |
 
-A text over `send.maxChars` is refused with `channel_text_too_long`. It is never silently cut (Henry lesson: Discord truncation, Telegram caption split).
+Post body (§5.1): `{text, attachments?: [{attachmentId, kind: image|file|audio|voice|video, transcript?}], campaign?}` (P2 adds `replyTo`, `buttons`, `poll`). `kind` must be declared by the provider; `voice` requires `transcript` when the provider's `voice` is a fallback, and the transcript is part of the digest. Text over `text.maxChars` is refused with `channel_text_too_long`; it is never silently cut (Henry lesson: Discord truncation, Telegram caption split).
+
+### 3.2 Vercel Chat SDK evaluation (Martin's question, 2026-10-09)
+
+`chat` + `@chat-adapter/{telegram,discord,slack,…}` (github.com/vercel/chat): MIT, TypeScript, v4.41.1 (2026-09-28), frequent releases; Telegram adapter since 2026-02, Discord since 2026-01. It is a framework for **conversational bots**: one `Adapter` interface (post, edit, delete, reactions, cards/buttons, threads, typing, fetch history, webhooks, state adapters), with a markdown AST layer (`unified`/`remark`) that converts one message format to each platform. Checked in the published 4.41.1 code: Telegram sends text, photo, document, audio, video, media groups, edits, deletes, reactions, inline keyboards and topics; it **parses inbound voice notes but has no `sendVoice`**. Discord depends on `discord.js` (gateway client) and supports components, threads and reactions; no outbound voice messages.
+
+Decision: **the outward send path stays on our thin raw-API adapters (PR #30); the Chat SDK is the reference and the candidate for inbound and interactive features (P4).** Reasons:
+1. **Approval binds exact bytes.** The owner approves a digest of the exact payload. The SDK's markdown conversion rewrites the text between approval and send, and its result types do not expose partial or uncertain delivery, which our never-double-post rule needs.
+2. **Native features we need first are missing there:** Telegram `sendVoice` and Discord voice messages.
+3. **Footprint:** `discord.js` and the remark stack for a send-only path; a fast-moving 4.x API to pin and re-review each month.
+4. **Where it helps most** (webhook handling, cards with callbacks, reactions, typing, history) is inbound and interactive work, P4. We re-evaluate it then, per adapter, behind the same capability declaration. Its per-platform markdown rules are the reference for `markdown-v2` (P2).
 
 ## 4. Records
 
@@ -241,8 +258,8 @@ Refusals: `429 channel_cap_per_day | channel_cap_per_hour | channel_min_interval
 
 ## 10. MVP: Telegram + Discord (Phase 1, Marketplace 0.2.0)
 
-- **Telegram:** Bot API over HTTPS (thin TS client on `fetch`; `@chat-adapter/telegram` only if it stays dependency-light). `sendMessage`, `sendPhoto`, `sendDocument` (multipart), `getMe`. Discovery: owner adds the bot, writes one message, Marketplace reads `getUpdates` (`message`, `channel_post`, `my_chat_member`) once per discovery; chat titles are untrusted text. Forum topics via `message_thread_id`. Receipt URL `https://t.me/<username>/<id>` for public, `https://t.me/c/<id>/<msg>` for private supergroups.
-- **Discord:** REST v10 with `discord-api-types`. `POST /channels/{id}/messages` with `allowed_mentions: {parse: []}` always; attachments via multipart `files[n]`. Discovery: `GET /users/@me/guilds` + `GET /guilds/{id}/channels` (text and announcement). Bot permissions: View Channels, Send Messages, Attach Files, Embed Links; Create Events only for P2. No privileged intents. No gateway in P1.
+- **Telegram:** Bot API over HTTPS (thin TS client on `fetch`, §3.2). `sendMessage`, `sendPhoto`, `sendDocument`, `sendMediaGroup`, `sendAudio`, `sendVideo`, **`sendVoice`** (OGG/Opus voice notes), `getMe`. Discovery: owner adds the bot, writes one message, Marketplace reads `getUpdates` (`message`, `channel_post`, `my_chat_member`) once per discovery; chat titles are untrusted text. Forum topics via `message_thread_id`. Receipt URL `https://t.me/<username>/<id>` for public, `https://t.me/c/<id>/<msg>` for private supergroups.
+- **Discord:** REST v10 with `discord-api-types`. `POST /channels/{id}/messages` with `allowed_mentions: {parse: []}` always; attachments via multipart `files[n]` (images, files, audio, video); voice → declared fallback: OGG/Opus audio file + transcript text in the same message (native voice messages P2). Discovery: `GET /users/@me/guilds` + `GET /guilds/{id}/channels` (text and announcement). Bot permissions: View Channels, Send Messages, Attach Files, Embed Links; Create Events only for P2. No privileged intents. No gateway in P1.
 - Owner UI (Channels tab): provider readiness, discover, create and edit channel and ceiling, grant to agent (→ Portal consent), standing-grant inbox (approve, narrow, decline, revoke), per-payload approvals (existing queue, with full text, image preview and file hashes), scheduled posts, receipts.
 - Scheduled posting under standing grants (§6).
 
@@ -252,7 +269,7 @@ Acceptance (dev, real test chat and test channel):
 3. On a channel without a grant, the post returns `202 approval_pending`; the owner approves in Marketplace; the retry with the same idempotency key posts exactly the approved digest. A changed text needs a new approval.
 4. A grant proposal wider than the ceiling is refused; the owner narrows a proposal and approves; the agent's widening `narrow` is refused.
 5. A scheduled post under a grant is sent on time; a grant revoked before `sendAt` gives a `skipped` receipt.
-6. Discord: `@everyone` in the text pings nobody; a photo posts with the text; a 429 is retried once.
+6. Discord: `@everyone` in the text pings nobody; a photo posts with the text; a 429 is retried once. Telegram: a voice note posts with `sendVoice` and plays as a voice message; Discord: the same post is delivered as an audio file + transcript and the receipt names the fallback; an undeclared kind (e.g. `poll`) is refused with `channel_capability_unavailable`.
 7. Revoking the Portal consent suspends the grant and refuses the next post.
 8. Hygiene: the bot tokens appear nowhere in DB rows, responses, receipts, logs, audit.
 9. Upgrade rehearsal 0.1.19 → 0.2.0 in place, then rollback to 0.1.19 on the same data directory starts and ignores the new tables.
