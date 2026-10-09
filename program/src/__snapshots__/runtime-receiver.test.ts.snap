@@ -1,0 +1,83 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`executeConsentedCall execution targets > keeps the response, usage-ledger row and audit rows of the Composio target > composio 1`] = `
+{
+  "audit": [
+    {
+      "actor_id": "agent:agent-1",
+      "event_type": "marketplace.runtime.execution.completed",
+      "metadata": "{"consentId":"consent-1","leaseId":"lease-1","usageId":"connector_usage_<uuid>","traceId":"<trace>","sourceProgram":"marketplace"}",
+      "plugin_id": "github-composio",
+      "rules_decision_id": "rules-runtime-allow",
+      "workspace_slug": "tenant-community",
+    },
+  ],
+  "ledger": [
+    {
+      "createdAt": "<time>",
+      "error": null,
+      "id": "connector_usage_<uuid>",
+      "inputShape": {
+        "per_page": "number",
+        "type": "string",
+        "visibility": "string",
+      },
+      "metadata": {
+        "consentId": "consent-1",
+        "contractVersion": "tealbrick.marketplace.operator-handoff.v1.1",
+        "leaseId": "lease-1",
+      },
+      "outputShape": {
+        "actionType": "string",
+        "capability": "string",
+        "details": "object",
+        "performedAt": "string",
+        "pluginId": "string",
+        "provider": "string",
+        "simulated": "boolean",
+        "summary": "string",
+        "workspaceSlug": "string",
+      },
+      "pluginId": "github-composio",
+      "productCapabilityKey": "connector.composio.github.github.list.repositories",
+      "provider": "github",
+      "runId": null,
+      "scopesUsed": [
+        "connector.observe",
+      ],
+      "sessionId": null,
+      "sourceActionKey": "github.list.repositories",
+      "sourceExecutor": "composio",
+      "status": "succeeded",
+      "workspaceSlug": "tenant-community",
+    },
+  ],
+  "response": {
+    "ok": true,
+    "result": {
+      "actionType": "github.list.repositories",
+      "capability": "connector.observe",
+      "details": {
+        "result": {
+          "access_token": "[redacted]",
+          "data": [
+            {
+              "name": "marketplace",
+            },
+          ],
+        },
+        "toolName": "GITHUB_LIST_REPOSITORIES",
+      },
+      "performedAt": "<time>",
+      "pluginId": "github-composio",
+      "provider": "github",
+      "simulated": false,
+      "summary": "Executed GITHUB_LIST_REPOSITORIES through Composio.",
+      "workspaceSlug": "tenant-community",
+    },
+    "schema": 1,
+    "traceId": "<trace>",
+    "usageId": "connector_usage_<uuid>",
+  },
+}
+`;

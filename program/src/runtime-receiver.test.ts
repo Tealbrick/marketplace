@@ -10,6 +10,7 @@ import {
   type PortalRuntimeScopeVerifier,
 } from "./portal-runtime-scope.js";
 import { SqliteMarketplaceStore } from "./store.js";
+import { runtimeAuditRows, seamSnapshot } from "./testing/seam-snapshot.js";
 
 const tempRoots: string[] = [];
 
@@ -402,5 +403,24 @@ describe("Marketplace v1.1 runtime receiver", () => {
     expect(outageResponse.json()).toMatchObject({ error: "portal_runtime_unavailable" });
     expect(outage.providerCalls).toBe(0);
     await outage.close();
+  });
+});
+
+describe("executeConsentedCall execution targets", () => {
+  it("keeps the response, usage-ledger row and audit rows of the Composio target", async () => {
+    const f = await fixture({ rulesEffect: "allow" });
+    const executed = await f.app.inject({
+      method: "POST",
+      url: "/api/marketplace/v1/runtime/composio/execute",
+      headers: { authorization: "Bearer portal-lease" },
+      payload: requestBody,
+    });
+    expect(executed.statusCode, executed.body).toBe(200);
+    expect(seamSnapshot({
+      response: executed.json(),
+      ledger: f.store.listUsage({ workspaceSlug: "tenant-community" }),
+      audit: runtimeAuditRows(f.store.listAudit({ workspaceSlug: "tenant-community", limit: 500 }) as unknown[], "github-composio"),
+    })).toMatchSnapshot("composio");
+    await f.close();
   });
 });
