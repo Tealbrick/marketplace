@@ -32,6 +32,15 @@ PR sequence (each reviewed by Lead · Miniapps): (1) 1a seam; (2) 1b + 1d store 
 
 Henry cutover (0.5 wd, after 0.2.0 is in prod): needs Martin to add the bot tokens through Account Connections (credentials are Martin's) and to approve Henry's first standing grants. Coordinated with Lead · Henry.
 
+## Review conditions from Lead · Miniapps (2026-10-09)
+
+1. 1a seam: identical ledger rows, audit events, idempotency keys and error codes; existing tests unchanged plus a snapshot (response, ledger row, runtime audit rows) per target, recorded on the old code first.
+2. 1g scheduler: row claims with `claimed_by` + lease expiry, even though a volume-backed Railway service runs one replica; redeploy overlap or a crash mid-send must not double-send; test a claim taken over after lease expiry.
+3. 1j rehearsal: 0.1.19 → 0.2.0 (create a channel and a scheduled post) → 0.1.19 → 0.2.0. Release notes say scheduled posts do not fire while on 0.1.19 and become `expired` after the return.
+4. Secrets: hosted tokens only via Account Connections (provider env, never persisted); self-hosted in `connector_secret` with the existing key; responses show keyed fingerprints only. Portal's `MARKETPLACE_ACCOUNT_KEYS` and pinned settings provenance change at cut time (Lead · Portal informed early).
+5. Every real send, including the 1j proof, goes only to Martin-owned test chats.
+6. New ops in `tealbrick.app.json` with effects and idempotency; Woodpecker conformance stays green.
+
 ## Phase 2: Marketplace 0.2.x, more providers (5.5–6.5 wd)
 
 - Email channel (SMTP or Resend; recipient allowlist; strangers become drafts) and Henry `henry_mail` cutover: 2 wd.
