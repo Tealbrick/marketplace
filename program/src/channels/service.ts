@@ -49,6 +49,8 @@ import {
  */
 
 export const CHANNEL_SEND_LEASE_MS = 300_000;
+/** Receipt retention (§7): 90 days by default. */
+export const CHANNEL_RECEIPT_RETENTION_MS = 90 * 86_400_000;
 export const CHANNEL_SCHEDULER_LEASE_MS = 120_000;
 export const CHANNEL_SCHEDULER_INTERVAL_MS = 30_000;
 /** A scheduled post more than this late (downtime) is `expired`, never sent. */
@@ -1165,6 +1167,8 @@ export function createChannelService(deps: ChannelServiceDeps) {
     run: (post: ChannelPostRecord, consent: MarketplaceAgentConsent, claimer: string) => Promise<void>;
   }) => {
     const report = { recovered: 0, expired: 0, sent: 0, skipped: 0, claimed: 0 };
+    // §7 retention: receipts of finished posts older than the retention go; open posts keep theirs (Q2).
+    channels.purgeReceipts(org, new Date(input.now.getTime() - CHANNEL_RECEIPT_RETENTION_MS));
     for (const post of channels.recoverStaleSending({ now: input.now })) {
       report.recovered += 1;
       const channel = channels.getChannel(post.workspaceSlug, post.channelId);

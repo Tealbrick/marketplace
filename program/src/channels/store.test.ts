@@ -252,8 +252,11 @@ describe("channel records", () => {
     expect(channels.listReceipts(WS, { agentId: "agent-a" })).toHaveLength(1);
     expect(channels.listReceipts(WS, { agentId: "agent-b" })).toHaveLength(0);
     expect(() => channels.upsertReceipt({ ...base, workspaceSlug: "org-2", status: "sent" })).toThrow(/another workspace/u);
-    expect(channels.purgeReceipts(WS, at(-1))).toBe(0);
-    expect(channels.purgeReceipts(WS, at(5))).toBe(1);
+    expect(channels.purgeReceipts(WS, at(-1))).toEqual({ purged: 0, skipped: 0 });
+    // Q2: the post is still `sending`, so its receipt is kept.
+    expect(channels.purgeReceipts(WS, at(5))).toEqual({ purged: 0, skipped: 1 });
+    channels.finishPost(WS, post.id, { status: "sent", from: ["sending"] });
+    expect(channels.purgeReceipts(WS, at(5))).toEqual({ purged: 1, skipped: 0 });
     expect(channels.getReceiptByPost(WS, post.id)).toBeNull();
   });
 });

@@ -311,6 +311,9 @@ export type ChannelReceiptRecord = {
   createdAt: string;
 };
 
+/** Posts that are not finished: their receipts and attachments are never purged. */
+export const NON_TERMINAL_POST_STATUSES = ["held", "scheduled", "sending", "uncertain"] as const;
+
 /** Statuses that count against caps (§4.4 rule 6, §6 step 4). */
 export const COUNTED_POST_STATUSES = ["sending", "sent", "uncertain"] as const;
 const COUNTED_SQL = COUNTED_POST_STATUSES.map((status) => `'${status}'`).join(", ");
@@ -1695,12 +1698,31 @@ export class ChannelStore {
     return rows.map(receiptFromRow);
   }
 
-  /** Retention (§7): deletes receipts created before `before`. Returns the count. */
-  purgeReceipts(workspaceSlug: string, before: Date | string): number {
-    const result = this.db
-      .prepare("DELETE FROM channel_receipt WHERE workspace_slug = ? AND created_at < ?")
-      .run(workspaceSlug, iso(before));
-    return Number(result.changes);
+  /**
+   * Retention (§7): deletes receipts created before `before` whose post is
+   * finished. A receipt of a post that is not terminal (`held`, `scheduled`,
+   * `sending`, `uncertain`) is kept and counted as skipped: it is still the
+   * record of something that may yet happen, or may have happened.
+   */
+  purgeReceipts(workspaceSlug: string, before: Date | string): { purged: number; skipped: number } {
+    const cutoff = iso(before);
+    const open = NON_TERMINAL_POST_STATUSES.map((status) => `'${status}'`).join(", ");
+    return this.immediate(() => {
+      const skipped = this.db
+        .prepare(
+          `SELECT COUNT(*) AS count FROM channel_receipt r JOIN channel_post p ON p.id = r.post_id AND p.workspace_slug = r.workspace_slug
+          WHERE r.workspace_slug = ? AND r.created_at < ? AND p.status IN (${open})`,
+        )
+        .get(workspaceSlug, cutoff) as { count: number };
+      const result = this.db
+        .prepare(
+          `DELETE FROM channel_receipt WHERE workspace_slug = ? AND created_at < ?
+          AND NOT EXISTS (SELECT 1 FROM channel_post p WHERE p.id = channel_receipt.post_id
+            AND p.workspace_slug = channel_receipt.workspace_slug AND p.status IN (${open}))`,
+        )
+        .run(workspaceSlug, cutoff);
+      return { purged: Number(result.changes), skipped: Number(skipped.count) };
+    });
   }
 
   // ----- used approval proofs (instance-wide, §6.3) -------------------------

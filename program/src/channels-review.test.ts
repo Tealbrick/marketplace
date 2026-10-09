@@ -429,3 +429,43 @@ describe("F3: the live event check does not follow redirects off the listing hos
     expect(f.telegram.sends).toHaveLength(1);
   });
 });
+
+describe("Q2: receipt purge only for finished posts", () => {
+  it("keeps receipts of held, scheduled and uncertain posts and reports {purged, skipped}", async () => {
+    const f = await setup();
+    const channel = await f.createChannel({ slug: "purge" });
+    f.consentFor("agent-1", channel);
+    await f.proposeAndApprove(channel.id);
+    const sent = await f.post(channel.id, { text: "Sent" }, key());
+    expect(sent.statusCode).toBe(200);
+    const scheduled = await f.agent("POST", `/api/marketplace/v1/agent/channels/${channel.id}/scheduled`, {
+      key: key(),
+      payload: { text: "Later", sendAt: new Date(f.now + 86_400_000).toISOString() },
+    });
+    expect(scheduled.json().receipt.status).toBe("pending");
+    f.telegram.reply({ status: "uncertain", resultIds: [], resultUrls: [], detail: "timeout" });
+    const uncertain = await f.post(channel.id, { text: "Unknown" }, key());
+    expect(uncertain.statusCode).toBe(502);
+    f.advance(60_000);
+    const purged = await f.owner("POST", "/api/marketplace/channels/receipts/purge", { olderThanDays: 0 });
+    expect(purged.json()).toMatchObject({ purged: 1, skipped: 2 });
+    expect(f.store.channels.getReceiptByPost(TENANT, sent.json().receipt.postId)).toBeNull();
+    expect(f.store.channels.getReceiptByPost(TENANT, scheduled.json().receipt.postId)).not.toBeNull();
+    expect(f.store.channels.getReceiptByPost(TENANT, uncertain.json().receipt.postId)).not.toBeNull();
+  });
+
+  it("the scheduler applies the 90-day retention to finished posts only", async () => {
+    const f = await setup();
+    const channel = await f.createChannel({ slug: "retention" });
+    f.consentFor("agent-1", channel);
+    await f.proposeAndApprove(channel.id);
+    const sent = await f.post(channel.id, { text: "Old" }, key());
+    f.telegram.reply({ status: "uncertain", resultIds: [], resultUrls: [], detail: "timeout" });
+    const uncertain = await f.post(channel.id, { text: "Old unknown" }, key());
+    const later = f.now + 91 * 86_400_000;
+    f.setClock(later);
+    await f.runtime.tick(new Date(later));
+    expect(f.store.channels.getReceiptByPost(TENANT, sent.json().receipt.postId)).toBeNull();
+    expect(f.store.channels.getReceiptByPost(TENANT, uncertain.json().receipt.postId)).not.toBeNull();
+  });
+});

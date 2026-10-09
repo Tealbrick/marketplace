@@ -963,14 +963,14 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
       .safeParse(request.body ?? {});
     if (!parsed.success) return fail(reply, 400, "validation_failed");
     const before = new Date(deps.now().getTime() - parsed.data.olderThanDays * DAY_MS);
-    const purged = channels.purgeReceipts(org, before);
+    const { purged, skipped } = channels.purgeReceipts(org, before);
     store.recordAudit({
       workspaceSlug: org,
       pluginId: null,
       eventType: "marketplace.channels.receipts.purged",
       actorId: principal.id,
-      metadata: { before: before.toISOString(), purged },
+      metadata: { before: before.toISOString(), purged, skipped },
     });
-    return { ok: true, schema: 1, purged, before: before.toISOString() };
+    return { ok: true, schema: 1, purged, skipped, before: before.toISOString() };
   });
 }
