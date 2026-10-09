@@ -1,12 +1,12 @@
 # Teal Brick miniapp contract
 
 Marketplace follows the Teal Brick miniapp contract (`tealbrick.miniapp/v1`,
-kit `@tealbrick/contract` pinned at `0.1.0-alpha.3`). The manifest is
+kit `@tealbrick/contract` pinned at `0.1.0-alpha.6`). The manifest is
 `tealbrick.app.json` at the repository root. It is validated at start-up and
 served at `/.well-known/tealbrick/manifest`. Validate it in CI with:
 
 ```sh
-npx -y @tealbrick/contract@0.1.0-alpha.3 validate tealbrick.app.json
+npx -y @tealbrick/contract@0.1.0-alpha.6 validate tealbrick.app.json
 ```
 
 Nothing in this document changes the existing Portal paths: the instance
