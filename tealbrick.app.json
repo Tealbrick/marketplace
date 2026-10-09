@@ -6,7 +6,7 @@
     "id": "marketplace",
     "name": "Marketplace",
     "major": 1,
-    "version": "0.1.18",
+    "version": "0.1.19",
     "summary": "Connector catalog, provider accounts, consent-gated tool execution and an owner approvals queue for a Teal Brick workspace.",
     "domain": "connectors, provider accounts, agent consents, consented tool calls, owner approvals"
   },
