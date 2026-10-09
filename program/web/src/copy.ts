@@ -324,6 +324,12 @@ export function errorCopy(error: Error): ErrorCopy {
     case "grant_not_revocable":
     case "grant_changed":
       return { title: "This grant changed in the meantime", detail: "It was decided, withdrawn or changed elsewhere. Refresh to see its current state.", reference };
+    case "channel_kind_unsupported":
+      return { title: "This provider doesn't serve that kind of channel", detail: "Choose one of the kinds listed for the provider.", reference };
+    case "channels_not_configured":
+      return { title: "Channels aren't set up yet", detail: CHANNEL_TOKEN_HINT, reference };
+    case "channel_post_not_cancellable":
+      return { title: "This post can't be cancelled any more", detail: "It was already sent, skipped or ended. Refresh to see its receipt.", reference };
     case "channel_post_not_uncertain":
       return { title: "This post is already resolved", detail: "Refresh to see its current state.", reference };
     case "channel_selection_mismatch":

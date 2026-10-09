@@ -1,8 +1,9 @@
-import { MAX_ATTACHMENTS_PER_POST, PROVIDER_DECLARATIONS, type ProviderDeclaration } from "./channel-declarations";
 import type {
   ChannelEffectiveCapabilities,
   ChannelPolicy,
   ChannelPolicyInput,
+  ChannelProviderCapabilities,
+  ChannelProviderEntry,
   ChannelProviderId,
   ChannelReceiptStatus,
   GrantPhase,
@@ -27,9 +28,28 @@ export function providerLabel(provider: string) {
   return isChannelProvider(provider) ? PROVIDER_LABEL[provider] : provider;
 }
 
-export function declarationFor(provider: string): ProviderDeclaration | null {
-  return isChannelProvider(provider) ? PROVIDER_DECLARATIONS[provider] : null;
+/** Most attachments in one post for every P1 provider (server `MAX_ATTACHMENTS_PER_MESSAGE`). */
+export const MAX_ATTACHMENTS_PER_POST = 4;
+
+type ProviderDeclaration = ChannelProviderCapabilities;
+
+/** The provider's static declaration from the owner browse answer (null before a credential exists). */
+export function declarationFor(providers: readonly ChannelProviderEntry[] | undefined, provider: string): ChannelProviderCapabilities | null {
+  return providers?.find((entry) => entry.id === provider)?.capabilities ?? null;
 }
+
+/** Channel kinds the provider serves, from the browse answer. */
+export function kindsFor(providers: readonly ChannelProviderEntry[] | undefined, provider: string): string[] {
+  return providers?.find((entry) => entry.id === provider)?.kinds ?? [];
+}
+
+export const KIND_LABEL: Record<string, string> = {
+  chat: "Chat (group, channel or topic)",
+  newsletter: "Newsletter (one list)",
+  email: "Email (one sending identity)",
+  social: "Social (one account or Page)",
+  community: "Community (one forum category)",
+};
 
 // ----- labels and slugs --------------------------------------------------------
 

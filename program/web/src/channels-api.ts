@@ -6,7 +6,9 @@ import type {
   ChannelProviderId,
   ChannelReceipt,
   ChannelReceiptExport,
-  ChannelsBrowseResponse,
+  ChannelPostStatus,
+  ChannelPostSummary,
+  ChannelsBrowseAnswer,
   ChannelView,
   GrantTerms,
   StandingGrantView,
@@ -26,7 +28,7 @@ export function newChannelKey(prefix: string) {
   return `${prefix}-${random}`.replace(/[^A-Za-z0-9_-]/gu, "").slice(0, 100);
 }
 
-export const getChannels = () => api<ChannelsBrowseResponse>(ROOT);
+export const getChannels = () => api<ChannelsBrowseAnswer>(ROOT);
 
 export const discoverChannels = (provider: ChannelProviderId) =>
   api<ChannelDiscoverResponse>(`${ROOT}/discover?provider=${encodeURIComponent(provider)}`);
@@ -66,6 +68,18 @@ export const revokeGrant = (grantId: string) =>
 
 export const resolveChannelPost = (postId: string, status: "sent" | "failed") =>
   api<{ ok: true; post: { id: string; status: string }; receipt?: ChannelReceipt }>(`${ROOT}/posts/${encodeURIComponent(postId)}/resolve`, { method: "POST", body: JSON.stringify({ status }) });
+
+/** Waiting posts (default held, scheduled and uncertain), soonest first; never the text. */
+export const listChannelPosts = (input: { statuses?: ChannelPostStatus[]; channelId?: string; limit?: number } = {}) => {
+  const query = new URLSearchParams({ limit: String(input.limit ?? 100) });
+  if (input.statuses?.length) query.set("status", input.statuses.join(","));
+  if (input.channelId) query.set("channelId", input.channelId);
+  return api<{ ok: true; posts: ChannelPostSummary[] }>(`${ROOT}/posts?${query.toString()}`);
+};
+
+/** Cancels a scheduled post (waiting for approval or for its send time). Cancelling only narrows. */
+export const cancelChannelPost = (postId: string) =>
+  api<{ ok: true; receipt?: ChannelReceipt; replayed?: boolean }>(`${ROOT}/posts/${encodeURIComponent(postId)}/cancel`, { method: "POST", body: JSON.stringify({}) });
 
 export const exportChannelReceipts = (input: { channelId?: string; limit?: number } = {}) => {
   const query = new URLSearchParams({ limit: String(input.limit ?? 1000) });

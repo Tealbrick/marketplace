@@ -631,14 +631,67 @@ export interface UncertainChannelPost {
   updatedAt: string;
 }
 
+export type ChannelMediaDeclaration = { types: string[]; maxBytes: number };
+
+/** A provider's static capability declaration (spec §3.1), from the owner browse answer. */
+export interface ChannelProviderCapabilities {
+  text: { maxChars: number; captionMaxChars?: number };
+  markup: string;
+  image: (ChannelMediaDeclaration & { albumMax?: number }) | false;
+  file: ChannelMediaDeclaration | false;
+  audio: ChannelMediaDeclaration | false;
+  voice: (ChannelMediaDeclaration & ({ native: true; maxSeconds?: number } | { fallback: string })) | false;
+  video: ChannelMediaDeclaration | false;
+}
+
+export interface ChannelProviderEntry {
+  id: string;
+  readiness: ChannelReadiness;
+  /** Present once the provider has a credential (not `credential_missing`). */
+  capabilities?: ChannelProviderCapabilities | null;
+  /** Channel kinds this provider serves. */
+  kinds?: string[];
+}
+
+/** Inert mode: no channel credentials are configured, so only provider readiness is reported. */
+export interface ChannelsInertResponse {
+  ok: true;
+  schema: 1;
+  configured: false;
+  providers: ChannelProviderEntry[];
+}
+
 export interface ChannelsBrowseResponse {
   ok: true;
   schema: 1;
+  configured: true;
+  providers: ChannelProviderEntry[];
   readiness: Partial<Record<ChannelProviderId, ChannelReadiness>>;
   connections: Partial<Record<ChannelProviderId, ChannelConnectionView | null>>;
   channels: ChannelView[];
   pendingGrants: StandingGrantView[];
   uncertainPosts: UncertainChannelPost[];
+}
+
+export type ChannelsBrowseAnswer = ChannelsBrowseResponse | ChannelsInertResponse;
+
+export type ChannelPostStatus = "held" | "scheduled" | "sending" | "sent" | "failed" | "uncertain" | "skipped" | "cancelled" | "expired";
+
+/** An owner posts-list row (marketplace.channel-posts.list); never the text. */
+export interface ChannelPostSummary {
+  id: string;
+  channelId: string;
+  channel: { slug: string; label: string; provider: string } | null;
+  agentId: string;
+  mode: "immediate" | "scheduled";
+  status: ChannelPostStatus;
+  sendAt: string | null;
+  digestPrefix: string;
+  authority: string | null;
+  reason: string | null;
+  attachments: number;
+  approval?: { id: string; state: string; expiresAt: string };
+  createdAt: string;
 }
 
 export interface ChannelDiscoverResponse {
@@ -675,6 +728,7 @@ export interface ChannelCreateInput {
   provider: ChannelProviderId;
   slug: string;
   label: string;
+  kind?: string;
   destination: { externalId: string; parentId?: string };
   audience?: string;
   language?: string;

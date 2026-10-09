@@ -8,6 +8,8 @@ import { createChannel, discoverChannels, newChannelKey, updateChannel } from ".
 import {
   CHANNEL_PROVIDERS,
   declarationFor,
+  KIND_LABEL,
+  kindsFor,
   formatBytes,
   formToPolicy,
   grantFieldLabel,
@@ -22,9 +24,8 @@ import {
   WEEKDAYS,
   type PolicyForm,
 } from "./channels-model";
-import type { ProviderDeclaration } from "./channel-declarations";
 import { DISCORD_DISCOVER_HINT, TELEGRAM_DISCOVER_HINT } from "./copy";
-import type { ChannelDestination, ChannelProviderId, ChannelsBrowseResponse, ChannelView, StandingGrantView } from "./types";
+import type { ChannelDestination, ChannelProviderCapabilities, ChannelProviderEntry, ChannelProviderId, ChannelsBrowseResponse, ChannelView, StandingGrantView } from "./types";
 import { InlineError } from "./ui";
 
 /** Field-level reasons from a refusal body (`fields` for grants, `errors` for policies). Plain text only. */
@@ -84,7 +85,7 @@ function LabeledField({ label, hint, error, className, children }: { label: stri
 }
 
 /** The owner ceiling (§4.3). File choices are limited to what the provider declares. */
-export function PolicyFields({ form, onChange, declaration, errors }: { form: PolicyForm; onChange: (form: PolicyForm) => void; declaration: ProviderDeclaration | null; errors: Partial<Record<keyof PolicyForm, string>> }) {
+export function PolicyFields({ form, onChange, declaration, errors }: { form: PolicyForm; onChange: (form: PolicyForm) => void; declaration: ChannelProviderCapabilities | null; errors: Partial<Record<keyof PolicyForm, string>> }) {
   const id = useId();
   const set = <K extends keyof PolicyForm>(key: K, value: PolicyForm[K]) => onChange({ ...form, [key]: value });
   const limits = declaration ? providerFileLimits(declaration) : null;
@@ -179,11 +180,12 @@ export function CreateChannelPanel({ browse, onCreated, onCancel }: { browse: Ch
   const [label, setLabel] = useState("");
   const [slug, setSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
-  const [kind, setKind] = useState("chat");
+  const [kindChoice, setKindChoice] = useState("");
   const [audience, setAudience] = useState("");
   const [language, setLanguage] = useState("");
   const [purpose, setPurpose] = useState("");
-  const declaration = provider ? declarationFor(provider) : null;
+  const declaration = provider ? declarationFor(browse.providers, provider) : null;
+  const kinds = provider ? kindsFor(browse.providers, provider) : [];
   const [policyForm, setPolicyForm] = useState<PolicyForm>(() => policyToForm(null, declaration));
   const [showErrors, setShowErrors] = useState(false);
   const [idempotencyKey, setIdempotencyKey] = useState(() => newChannelKey("channel-create"));
@@ -191,18 +193,21 @@ export function CreateChannelPanel({ browse, onCreated, onCancel }: { browse: Ch
   const destinations = discover.data?.provider === provider ? discover.data.destinations : [];
   const keyOf = (destination: ChannelDestination) => `${destination.externalId}|${destination.parentId ?? ""}`;
   const destination = destinations.find((entry) => keyOf(entry) === destinationKey) ?? null;
+  // Only kinds the provider lists; the only one is preselected.
+  const kind = kinds.includes(kindChoice) ? kindChoice : kinds.length === 1 ? kinds[0]! : "";
   const taken = useMemo(() => browse.channels.map((channel) => channel.slug), [browse.channels]);
   const policy = formToPolicy(policyForm, declaration);
   const problems = {
     label: labelProblem(label),
     slug: slugProblem(slug, taken),
   };
-  const valid = Boolean(provider && destination && !problems.label && !problems.slug && policy.policy);
+  const valid = Boolean(provider && destination && kind && !problems.label && !problems.slug && policy.policy);
   const create = useMutation({
     mutationFn: () => createChannel({
       provider: provider as ChannelProviderId,
       slug,
       label: label.trim(),
+      kind,
       destination: { externalId: destination!.externalId, ...(destination!.parentId ? { parentId: destination!.parentId } : {}) },
       ...(audience.trim() ? { audience: audience.trim() } : {}),
       ...(language.trim() ? { language: language.trim() } : {}),
@@ -214,7 +219,8 @@ export function CreateChannelPanel({ browse, onCreated, onCancel }: { browse: Ch
   const chooseProvider = (next: ChannelProviderId) => {
     setProvider(next);
     setDestinationKey("");
-    setPolicyForm(policyToForm(null, declarationFor(next)));
+    setPolicyForm(policyToForm(null, declarationFor(browse.providers, next)));
+    setKindChoice("");
     discover.reset();
   };
   const pick = (entry: ChannelDestination) => {
@@ -263,7 +269,7 @@ export function CreateChannelPanel({ browse, onCreated, onCancel }: { browse: Ch
           <div className="form-grid two">
             <LabeledField label="Label" error={showErrors ? problems.label ?? undefined : undefined}>{(props) => <input {...props} value={label} maxLength={80} required onChange={(event) => updateLabel(event.target.value)} />}</LabeledField>
             <LabeledField label="Slug" hint={<>Agents see it as <code>channel:{slug || "…"}</code>.</>} error={showErrors || slugTouched ? problems.slug ?? undefined : undefined}>{(props) => <input {...props} value={slug} maxLength={48} required spellCheck={false} autoCapitalize="none" onChange={(event) => { setSlugTouched(true); setSlug(event.target.value); }} />}</LabeledField>
-            <label>Kind<select value={kind} onChange={(event) => setKind(event.target.value)}><option value="chat">Chat (group, channel or topic)</option></select></label>
+            <LabeledField label="Kind" error={showErrors && !kind ? "This provider lists no channel kind." : undefined}>{(props) => <select {...props} value={kind} onChange={(event) => setKindChoice(event.target.value)}>{kinds.length !== 1 && <option value="" disabled>Choose a kind</option>}{kinds.map((entry) => <option key={entry} value={entry}>{KIND_LABEL[entry] ?? entry}</option>)}</select>}</LabeledField>
             <label>Language<input value={language} maxLength={40} onChange={(event) => setLanguage(event.target.value)} placeholder="en, zh-TW…" /></label>
             <label>Audience<input value={audience} maxLength={500} onChange={(event) => setAudience(event.target.value)} placeholder="Who reads this channel" /></label>
             <label>Purpose<input value={purpose} maxLength={500} onChange={(event) => setPurpose(event.target.value)} placeholder="What agents may post here" /></label>
@@ -278,9 +284,9 @@ export function CreateChannelPanel({ browse, onCreated, onCancel }: { browse: Ch
 }
 
 /** Edit text and ceiling. Lowering the ceiling suspends grants above it (§4.4 rule 5). */
-export function EditChannelPanel({ channel, onSaved, onCancel }: { channel: ChannelView; onSaved: (channel: ChannelView, suspended: StandingGrantView[]) => void; onCancel: () => void }) {
+export function EditChannelPanel({ channel, providers, onSaved, onCancel }: { channel: ChannelView; providers: ChannelProviderEntry[]; onSaved: (channel: ChannelView, suspended: StandingGrantView[]) => void; onCancel: () => void }) {
   const id = useId();
-  const declaration = declarationFor(channel.provider);
+  const declaration = declarationFor(providers, channel.provider);
   const [label, setLabel] = useState(channel.label);
   const [audience, setAudience] = useState(channel.audience);
   const [language, setLanguage] = useState(channel.language);
