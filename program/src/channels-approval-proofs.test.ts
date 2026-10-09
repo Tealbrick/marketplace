@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+
+import { Ajv } from "ajv";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -12,8 +15,10 @@ import {
 
 import { nostrKey, ownerAssertion, portalSigner, seededPin, signedApproval, signJws, type NostrKey, type OwnerAssertionClaims, type PortalSigner } from "./channels/approval-test-support.js";
 import { GRANT_ALL, PORTAL, SERVICE, TENANT, channelFixture, type ChannelFixture } from "./channels/app-fixture.js";
+import { NOSTR_AMBIGUITY_WINDOW_MS, NOSTR_MIN_PREFIX_HEX } from "./channels/approvals.js";
+import { canonicalJson } from "./channels/canonical-json.js";
 import { ownerKeyFingerprint, parseOwnerNostrPubkey } from "./channels/owner-key.js";
-import type { OwnerClaimBinding, OwnerPinSource } from "./channels/owner-pin.js";
+import { NO_OWNER_PIN, readAttestedOwnerNostrPubkey, type OwnerClaimBinding, type OwnerPinSource } from "./channels/owner-pin.js";
 import { MARKETPLACE_MANIFEST } from "./contract.js";
 import { MarketplaceOperatorSessionManager } from "./operator-auth.js";
 
@@ -128,6 +133,48 @@ async function setup(input: SetupOptions = {}) {
   return { f, signer, pin, channel, ownerLogin, putKey, setKey, hold, resolve, nostr, portal, claims, state, audit, jwksFetches: () => jwksFetches };
 }
 
+/**
+ * Reviewer probe (PR #39): Brent's cycle finding over the first 48 bits of the payload digest. Returns a benign
+ * and a malicious text whose digests share the same 12-hex prefix (about a minute of hashing).
+ */
+function collide12(render: (text: string) => string, benign: string, malicious: string, maxTries = 8) {
+  for (let salt = 0; salt < maxTries; salt += 1) {
+    const textOf = (x: string) => (parseInt(x[11]!, 16) & 1 ? `${malicious} [${salt}:${x}]` : `${benign} [${salt}:${x}]`);
+    const f = (x: string) => createHash("sha256").update(render(textOf(x))).digest("hex").slice(0, 12);
+    const x0 = createHash("sha256").update(`start-${salt}`).digest("hex").slice(0, 12);
+    let power = 1;
+    let lam = 1;
+    let tortoise = x0;
+    let hare = f(x0);
+    while (tortoise !== hare) {
+      if (power === lam) {
+        tortoise = hare;
+        power *= 2;
+        lam = 0;
+      }
+      hare = f(hare);
+      lam += 1;
+    }
+    tortoise = x0;
+    hare = x0;
+    for (let i = 0; i < lam; i += 1) hare = f(hare);
+    let prevT: string | null = null;
+    let prevH: string | null = null;
+    while (tortoise !== hare) {
+      prevT = tortoise;
+      prevH = hare;
+      tortoise = f(tortoise);
+      hare = f(hare);
+    }
+    if (prevT === null || prevH === null || prevT === prevH) continue;
+    const a = textOf(prevT);
+    const b = textOf(prevH);
+    if (a.startsWith(benign) === b.startsWith(benign)) continue;
+    return a.startsWith(benign) ? { benign: a, malicious: b } : { benign: b, malicious: a };
+  }
+  return null;
+}
+
 const approve = (held: { digest: string }, k: NostrKey = OWNER, extra: Partial<Parameters<typeof signedApproval>[0]> = {}) =>
   signedApproval({ key: k, channel: CHANNEL, digest: held.digest, ...extra });
 
@@ -185,7 +232,7 @@ describe("proof: nostr (verifyNostrApprovalProof)", () => {
     const t = await setup();
     await t.setKey(OWNER.pubkey);
     const held = await t.hold();
-    const wrong = `${held.digest[0] === "0" ? "1" : "0"}${held.digest.slice(1, 12)}`;
+    const wrong = `${held.digest[0] === "0" ? "1" : "0"}${held.digest.slice(1, NOSTR_MIN_PREFIX_HEX)}`;
     const refused = await t.nostr(held.approvalId, approve(held, OWNER, { content: `approve ${wrong}` }));
     expect(refused.statusCode).toBe(403);
     expect(refused.json()).toMatchObject({ reason: "wrong_digest" });
@@ -195,12 +242,12 @@ describe("proof: nostr (verifyNostrApprovalProof)", () => {
   it("uses an event id once, instance-wide", async () => {
     const t = await setup();
     await t.setKey(OWNER.pubkey);
-    // Same text, same channel: two holds with the same digest; one owner event approves only one of them.
+    // Same text, same channel: the second hold has the same digest; the first owner event cannot approve it.
     const first = await t.hold("Same text twice");
-    const second = await t.hold("Same text twice");
-    expect(second.digest).toBe(first.digest);
     const event = approve(first);
     expect((await t.nostr(first.approvalId, event)).statusCode).toBe(200);
+    const second = await t.hold("Same text twice");
+    expect(second.digest).toBe(first.digest);
     const reused = await t.nostr(second.approvalId, event);
     expect(reused.statusCode).toBe(409);
     expect(reused.json()).toMatchObject({ error: "approval_proof_reused" });
@@ -240,6 +287,9 @@ describe("owner key change (§6.3 key v1 conditions)", () => {
     expect(t.state(held.approvalId)).toBe("pending");
     const view = await t.f.owner("GET", `/api/marketplace/company-box/approvals/${held.approvalId}`);
     expect(view.json().approval.ownerKey).toEqual({ fingerprint: ownerKeyFingerprint(OWNER.pubkey), status: "key_changed" });
+    // The owner UI still approves the invalidated hold.
+    const owner = await t.f.owner("POST", `/api/marketplace/company-box/approvals/${held.approvalId}/approve`, {});
+    expect(owner.json()).toMatchObject({ approval: { state: "succeeded" } });
     // Back to the first key: a re-request is pinned again, but the proof signed before the change stays dead.
     await t.setKey(OWNER.pubkey);
     const again = await t.hold();
@@ -248,9 +298,6 @@ describe("owner key change (§6.3 key v1 conditions)", () => {
     expect(dead.statusCode).toBe(403);
     expect(dead.json()).toMatchObject({ reason: "key_changed" });
     expect((await t.nostr(again.approvalId, approve(again))).statusCode).toBe(200);
-    // The owner UI still approves the invalidated hold.
-    const owner = await t.f.owner("POST", `/api/marketplace/company-box/approvals/${held.approvalId}/approve`, {});
-    expect(owner.json()).toMatchObject({ approval: { state: "succeeded" } });
     const changes = t.audit().filter((row) => row.event_type === "marketplace.approvals.owner_key.changed").map((row) => ({ actor: row.actor_id, ...JSON.parse(row.metadata) }));
     expect(changes.map(({ change, oldFingerprint, newFingerprint, actor }) => ({ change, oldFingerprint, newFingerprint, actor })).reverse()).toEqual([
       { change: "set", oldFingerprint: null, newFingerprint: ownerKeyFingerprint(OWNER.pubkey), actor: "operator:owner-1" },
@@ -495,6 +542,244 @@ describe("proof: portal (verifyOwnerApprovalAssertion)", () => {
     const clearedHold = await cleared.hold();
     expect((await cleared.portal(clearedHold)).json()).toMatchObject({ error: "approval_owner_unbound" });
     expect(t.jwksFetches() + cleared.jwksFetches()).toBe(0);
+  });
+});
+
+describe("review findings (PR #39)", () => {
+  const launchAs = (t: Awaited<ReturnType<typeof setup>>, userId: string) =>
+    t.f.portalReplies.set("/api/deployment-browser/redeem", () =>
+      new Response(
+        JSON.stringify({ schema: 1, authorized: true, product: "marketplace", deploymentId: "deployment-1", workspaceId: TENANT, orgId: "portal-org-1", productTenantId: TENANT, userId, endpoint: ORIGIN, session: "s".repeat(43), expiresAt: Date.now() + 3_600_000 }),
+        { status: 200 },
+      ),
+    );
+
+  it("M1/P1: only the pinned owner sets the Buzz key; with no pin nobody can (409 approval_owner_unbound)", async () => {
+    // No ownerSubject pin (today's default): a member's Portal launch cannot set a key, nor can the owner's.
+    const unpinned = await setup({ pin: null });
+    for (const user of ["mallory-member", "owner-1"]) {
+      launchAs(unpinned, user);
+      const session = await unpinned.ownerLogin();
+      const refused = await unpinned.putKey(OTHER.pubkey, { cookie: session.cookie, "x-csrf-token": session.csrf });
+      expect(refused.statusCode, user).toBe(409);
+      expect(refused.json()).toMatchObject({ error: "approval_owner_unbound" });
+      const cleared = await unpinned.f.app.inject({ method: "DELETE", url: "/api/marketplace/approvals/owner-key", headers: { origin: BROWSER, cookie: session.cookie, "x-csrf-token": session.csrf } });
+      expect(cleared.statusCode, user).toBe(409);
+    }
+    expect(unpinned.f.store.channels.getOwnerKey(TENANT)).toBeNull();
+    expect(unpinned.audit().filter((row) => row.event_type === "marketplace.approvals.owner_key.changed")).toHaveLength(0);
+    const status = await unpinned.f.owner("GET", "/api/marketplace/approvals/owner-key");
+    expect(status.json().ownerKey).toMatchObject({ ownerPin: "unbound", ownerKeyStatus: "unset" });
+    // So the member's own Nostr key never approves anything.
+    const held = await unpinned.hold();
+    expect((await unpinned.nostr(held.approvalId, approve(held, OTHER))).json()).toMatchObject({ error: "approval_owner_unbound" });
+    expect(unpinned.f.telegram.sends).toHaveLength(0);
+
+    // Pinned owner-1: another launch user is refused, the owner succeeds.
+    const pinned = await setup();
+    launchAs(pinned, "mallory-member");
+    const member = await pinned.ownerLogin();
+    expect((await pinned.putKey(OTHER.pubkey, { cookie: member.cookie, "x-csrf-token": member.csrf })).statusCode).toBe(403);
+    expect(pinned.f.store.channels.getOwnerKey(TENANT)).toBeNull();
+    launchAs(pinned, "owner-1");
+    expect(await pinned.setKey(OWNER.pubkey)).toMatchObject({ changed: true, ownerKey: { ownerPin: "pinned", fingerprint: ownerKeyFingerprint(OWNER.pubkey) } });
+  });
+
+  /** An approval row injected straight into the store (another call whose digest is chosen by the test). */
+  const inject = (t: Awaited<ReturnType<typeof setup>>, fingerprint: string, workspaceSlug = TENANT) =>
+    t.f.store.createCompanyBoxApproval({
+      workspaceSlug,
+      pluginId: "channels-telegram",
+      actionKey: "channel.post",
+      capability: "connector.dispatch",
+      agentId: "agent-9",
+      sourceKind: "channel-consent",
+      sourceRef: "consent-x",
+      idempotencyKey: `twin-${fingerprint.slice(-8)}-${workspaceSlug}`,
+      fingerprint,
+      arguments: {},
+      argumentsPreview: "twin",
+      ttlMs: 600_000,
+    });
+  /** Same first NOSTR_MIN_PREFIX_HEX hex as `digest`, different after. */
+  const twinOf = (digest: string) => `${digest.slice(0, NOSTR_MIN_PREFIX_HEX)}${digest[NOSTR_MIN_PREFIX_HEX] === "0" ? "1" : "0"}${"9".repeat(63 - NOSTR_MIN_PREFIX_HEX)}`;
+
+  it("B1: a Buzz reply shorter than the local minimum is refused before the contract verifier and burns nothing", async () => {
+    const t = await setup();
+    await t.setKey(OWNER.pubkey);
+    const held = await t.hold();
+    const event = approve(held, OWNER, { prefixLength: NOSTR_MIN_PREFIX_HEX - 1 });
+    const refused = await t.nostr(held.approvalId, event);
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json()).toMatchObject({ error: "approval_proof_prefix_too_short" });
+    // The contract's own (alpha.6) minimum would have accepted 12.
+    const twelve = await t.nostr(held.approvalId, approve(held, OWNER, { prefixLength: 12 }));
+    expect(twelve.json()).toMatchObject({ error: "approval_proof_prefix_too_short" });
+    expect(t.state(held.approvalId)).toBe("pending");
+    expect(t.f.store.channels.isApprovalProofUsed(`nostr:${event.id}`)).toBe(false);
+    expect((await t.nostr(held.approvalId, approve(held))).statusCode).toBe(200);
+  });
+
+  it("B1(a): a reply whose prefix also names another recent call of the workspace (any state) or another live call is ambiguous", async () => {
+    const t = await setup();
+    await t.setKey(OWNER.pubkey);
+    const held = await t.hold();
+    // A terminal (denied) call of the same workspace, created just now, sharing the prefix.
+    const denied = inject(t, twinOf(held.digest));
+    expect(t.f.store.decideCompanyBoxApproval({ id: denied.id, workspaceSlug: TENANT, decision: "deny", decidedBy: "test" })).not.toBeNull();
+    const ambiguous = await t.nostr(held.approvalId, approve(held));
+    expect(ambiguous.statusCode).toBe(409);
+    expect(ambiguous.json()).toMatchObject({ error: "approval_proof_ambiguous" });
+    expect(t.state(held.approvalId)).toBe("pending");
+    // Older than 15 min + 5 min skew: no longer counts.
+    const raw = (t.f.store as unknown as { db: { prepare(sql: string): { run(...args: unknown[]): unknown } } }).db;
+    raw.prepare("UPDATE company_box_approval SET created_at = ? WHERE id = ?").run(new Date(Date.now() - NOSTR_AMBIGUITY_WINDOW_MS - 60_000).toISOString(), denied.id);
+    // A live call in another workspace of the instance still counts.
+    inject(t, twinOf(held.digest), "another-workspace");
+    expect((await t.nostr(held.approvalId, approve(held))).json()).toMatchObject({ error: "approval_proof_ambiguous" });
+    // The full digest tells them apart and approves only this hold; the ambiguous event was not burned.
+    expect((await t.nostr(held.approvalId, approve(held, OWNER, { prefixLength: 64 }))).statusCode).toBe(200);
+    expect(t.f.telegram.sends).toHaveLength(1);
+  });
+
+  it("B1(b): a hold whose prefix collides with a live hold is refused (409 channel_digest_prefix_collision); nothing is consumed", async () => {
+    const t = await setup();
+    const first = await t.f.post(t.channel.id, { text: "Same words" }, "collide-key-0001");
+    expect(first.statusCode).toBe(202);
+    // The same text under another key would be a second live hold with the same digest.
+    const same = await t.f.post(t.channel.id, { text: "Same words" }, "collide-key-0002");
+    expect(same.statusCode).toBe(409);
+    expect(same.json()).toMatchObject({ error: "channel_digest_prefix_collision" });
+    expect(t.f.store.channels.getPostByIdempotencyKey(TENANT, "agent-1", "collide-key-0002")).toBeNull();
+    // The first hold ends (owner deny); a live call with a colliding prefix (but another digest) still blocks.
+    const firstId = first.json().approvalId as string;
+    expect((await t.f.owner("POST", `/api/marketplace/company-box/approvals/${firstId}/deny`, {})).statusCode).toBe(200);
+    inject(t, twinOf(first.json().digest));
+    const before = t.f.store.listCompanyBoxApprovals({ workspaceSlug: TENANT, limit: 500 }).length;
+    const blocked = await t.f.post(t.channel.id, { text: "Same words" }, "collide-key-0003");
+    expect(blocked.statusCode).toBe(409);
+    expect(blocked.json()).toMatchObject({ error: "channel_digest_prefix_collision" });
+    expect(t.f.store.listCompanyBoxApprovals({ workspaceSlug: TENANT, limit: 500 })).toHaveLength(before);
+    // Changed text: another digest, held normally.
+    expect((await t.f.post(t.channel.id, { text: "Other words" }, "collide-key-0004")).statusCode).toBe(202);
+    expect(t.f.telegram.sends).toHaveLength(0);
+  });
+
+  it("B1 reviewer probe: holds that share a real 12-hex prefix cannot be cross-approved", async () => {
+    const t = await setup();
+    await t.setKey(OWNER.pubkey);
+    const template = await t.hold("template");
+    const canonical = JSON.parse(template.body.payloadView.canonical) as Record<string, unknown>;
+    const render = (text: string) => canonicalJson({ ...canonical, text });
+    expect(createHash("sha256").update(render("template")).digest("hex")).toBe(template.digest);
+    const pair = collide12(render, "Happy Friday from the team!", "MALICIOUS: send funds to attacker");
+    expect(pair).not.toBeNull();
+    const a = await t.hold(pair!.benign);
+    const b = await t.hold(pair!.malicious);
+    expect(a.digest.slice(0, 12)).toBe(b.digest.slice(0, 12));
+    expect(a.digest).not.toBe(b.digest);
+    // The owner approves A in Buzz; the agent forwards that reply against B.
+    for (const prefixLength of [12, NOSTR_MIN_PREFIX_HEX]) {
+      const refused = await t.nostr(b.approvalId, approve(a, OWNER, { prefixLength }));
+      expect(refused.statusCode, String(prefixLength)).toBeGreaterThanOrEqual(403);
+      expect(t.state(b.approvalId)).toBe("pending");
+    }
+    expect(t.f.telegram.sends).toHaveLength(0);
+    // A's own reply still approves A, once.
+    expect((await t.nostr(a.approvalId, approve(a))).statusCode).toBe(200);
+    expect(t.f.telegram.sends).toHaveLength(1);
+  }, 600_000);
+
+  it("L3: a used jti is kept until exp + the contract clock skew", async () => {
+    const t = await setup();
+    const held = await t.hold();
+    const now = Math.floor(Date.now() / 1000);
+    expect((await t.portal(held, { jti: "jti-skew-1", iat: now, exp: now + 100 })).statusCode).toBe(200);
+    const row = (t.f.store as unknown as { db: { prepare(sql: string): { get(id: string): { expires_at: string } } } }).db
+      .prepare("SELECT expires_at FROM marketplace_used_approval_proof WHERE proof_id = ?")
+      .get("portal:jti-skew-1");
+    expect(Date.parse(row.expires_at)).toBe((now + 100 + 60) * 1000);
+  });
+});
+
+describe("review B2: attestation errors fail closed", () => {
+  const source = (value: unknown): OwnerPinSource => ({ read: () => ({ portalIssuer: PORTAL, instanceId: "i", ownerNostrPubkey: value }) as OwnerClaimBinding });
+
+  it("reads absent, attested (hex or npub) and error, never treating an error as absent", async () => {
+    expect(await readAttestedOwnerNostrPubkey(source(undefined))).toEqual({ status: "absent" });
+    expect(await readAttestedOwnerNostrPubkey(NO_OWNER_PIN)).toEqual({ status: "absent" });
+    expect(await readAttestedOwnerNostrPubkey(source("npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg"))).toEqual({
+      status: "attested",
+      pubkey: "7e7e9c42a91bfef19fa929e5fda1b72e0ebc1a4c1141673e2794234d86addf4e",
+    });
+    expect(await readAttestedOwnerNostrPubkey(source("zz"))).toEqual({ status: "error" });
+    expect(await readAttestedOwnerNostrPubkey(source(42))).toEqual({ status: "error" });
+    expect(await readAttestedOwnerNostrPubkey({ read: () => { throw new Error("db down"); } })).toEqual({ status: "error" });
+    expect(await readAttestedOwnerNostrPubkey({ read: async () => Promise.reject(new Error("db down")) })).toEqual({ status: "error" });
+  });
+
+  it("a malformed attestation shows ownerKeyStatus error and refuses Buzz proofs", async () => {
+    const signer = portalSigner();
+    const t = await setup({ signer, pin: seededPin({ portalIssuer: PORTAL, jwksUri: `${PORTAL}${JWKS_PATH}`, grantKids: [signer.kid], ownerNostrPubkey: "not-a-key" }) });
+    await t.setKey(OWNER.pubkey);
+    const status = await t.f.owner("GET", "/api/marketplace/approvals/owner-key");
+    expect(status.json().ownerKey).toMatchObject({ ownerKeyStatus: "error", attestedFingerprint: null });
+    const held = await t.hold();
+    const refused = await t.nostr(held.approvalId, approve(held));
+    expect(refused.statusCode).toBe(503);
+    expect(refused.json()).toMatchObject({ error: "approval_owner_key_mismatch" });
+    expect(t.state(held.approvalId)).toBe("pending");
+  });
+
+  it("an unreadable pin store refuses: status error, owner unbound, no key writes, no Buzz approvals", async () => {
+    let broken = false;
+    const signer = portalSigner();
+    const healthy = seededPin({ portalIssuer: PORTAL, jwksUri: `${PORTAL}${JWKS_PATH}`, grantKids: [signer.kid] });
+    const flaky: OwnerPinSource = { read: () => { if (broken) throw new Error("db down"); return healthy.current; } };
+    const t = await setup({ signer, pin: flaky });
+    await t.setKey(OWNER.pubkey);
+    const held = await t.hold();
+    broken = true;
+    const status = await t.f.owner("GET", "/api/marketplace/approvals/owner-key");
+    expect(status.json().ownerKey).toMatchObject({ ownerKeyStatus: "error", ownerPin: "unbound" });
+    expect((await t.nostr(held.approvalId, approve(held))).json()).toMatchObject({ error: "approval_owner_key_mismatch" });
+    const { cookie, csrf } = await t.ownerLogin();
+    expect((await t.putKey(OTHER.pubkey, { cookie, "x-csrf-token": csrf })).statusCode).toBe(409);
+    expect(t.f.telegram.sends).toHaveLength(0);
+  });
+});
+
+describe("review B3: manifest output schema and guidance", () => {
+  const validator = () => {
+    const ajv = new Ajv({ strict: false });
+    const schemas = (MARKETPLACE_MANIFEST as unknown as { schemas: Record<string, unknown> }).schemas;
+    const rewrite = (value: unknown): unknown => JSON.parse(JSON.stringify(value).replaceAll('"#/schemas/', '"#/$defs/'));
+    return ajv.compile({ ...(rewrite(schemas.ChannelPostResult) as object), $defs: rewrite(schemas) });
+  };
+
+  it("ChannelPostResult matches the strict 202 body and the 200 receipt", async () => {
+    const validate = validator();
+    const t = await setup();
+    const held = await t.hold("schema check");
+    expect(validate(held.body), JSON.stringify(validate.errors)).toBe(true);
+    // The held branch is strict: the pre-1k extra keys are refused by it.
+    const heldBranch = new Ajv({ strict: false }).compile((MARKETPLACE_MANIFEST as unknown as { schemas: { ChannelPostResult: { oneOf: object[] } } }).schemas.ChannelPostResult.oneOf[1]!);
+    expect(heldBranch(held.body)).toBe(true);
+    expect(heldBranch({ ...held.body, postId: held.postId, digestPrefix: held.digest.slice(0, 12) })).toBe(false);
+    const scheduled = await t.f.agent("POST", `/api/marketplace/v1/agent/channels/${t.channel.id}/scheduled`, { key: key(), payload: { text: "Later", sendAt: new Date(t.f.now + 3_600_000).toISOString() } });
+    expect(validate(scheduled.json()), JSON.stringify(validate.errors)).toBe(true);
+    await t.f.proposeAndApprove(t.channel.id);
+    const sent = await t.f.post(t.channel.id, { text: "Under the grant" }, key());
+    expect(sent.statusCode, sent.body).toBe(200);
+    expect(validate(sent.json()), JSON.stringify(validate.errors)).toBe(true);
+  });
+
+  it("tells agents where the post id of a held or scheduled post is", async () => {
+    const t = await setup({ channel: false });
+    const guidance = await t.f.app.inject({ method: "GET", url: "/.well-known/tealbrick/guidance/1", headers: { authorization: `Bearer ${GRANT_ALL}` } });
+    expect(guidance.statusCode, guidance.body).toBe(200);
+    expect(guidance.body).toContain("Tealbrick-Post-Id");
+    expect(guidance.body).toContain("channel_digest_prefix_collision");
   });
 });
 
