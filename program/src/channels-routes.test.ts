@@ -55,8 +55,11 @@ describe("channels: post with a standing grant (§10 item 1)", () => {
     expect(f.telegram.sends).toHaveLength(1);
     expect(f.telegram.sends[0]!.message.text).toBe("Meetup tonight at 7");
     // Same ledger and audit as every consented call: shapes only, metadata + SHA-256 only.
-    const usage = f.store.listUsageLedger?.({ workspaceSlug: TENANT }) as Array<Record<string, unknown>> | undefined;
-    if (usage) expect(JSON.stringify(usage)).not.toContain("Meetup tonight");
+    const usage = f.store.listUsage({ workspaceSlug: TENANT, provider: "telegram" });
+    expect(usage).toEqual([
+      expect.objectContaining({ pluginId: "channels-telegram", sourceExecutor: "native", sourceActionKey: "channel.post", status: "succeeded" }),
+    ]);
+    expect(JSON.stringify(usage)).not.toContain("Meetup tonight");
     const audit = JSON.stringify(f.store.listAudit({ workspaceSlug: TENANT, limit: 500 }));
     expect(audit).toContain("marketplace.channels.post.sent");
     expect(audit).toContain("marketplace.runtime.execution.completed");

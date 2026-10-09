@@ -34,6 +34,9 @@ with that `upstream`.
 | owner | `marketplace.plugins.install` / `.uninstall` / `.register` / `.unregister`, `marketplace.catalog.import` | `/api/marketplace/plugins/{pluginId}/...`, `/api/marketplace/catalog/composio/import` |
 | owner | `marketplace.settings.get` / `.update` / `.clear` | `/api/settings/providers/composio` |
 | owner | `marketplace.approvals.list` / `.get` / `.approve` / `.deny` | `/api/marketplace/company-box/approvals...` |
+| agent | `marketplace.approvals.resolve` | `POST /api/marketplace/v1/agent/approvals/{approvalId}/resolve` |
+| agent | Channels: `marketplace.channels.*`, `marketplace.channel-*` | see [Channels](#channels) |
+| owner | Channels: `marketplace.channels.*`, `marketplace.channel-*` | see [Channels](#channels) |
 
 Owner operations are for the owner's UI session (or the internal service
 bearer). A Portal app grant never reaches them: the answer is `403
@@ -125,3 +128,155 @@ beside `MARKETPLACE_INTERNAL_AUTH_TOKEN` as an instance credential.
 Rules is an optional companion (`enhanced-by`). `GET .../companions` reports
 it bound only when `RULES_BASE_URL` and `RULES_INTERNAL_AUTH_TOKEN` are set.
 Without Rules, Marketplace stays in owner approval mode.
+
+## Channels
+
+Spec: `docs/channels-spec.md` v0.2 (branch `claude/channels-spec`). A channel is
+an owner-registered outward destination (P1: a Telegram chat or a Discord
+channel). Every send goes through `executeConsentedCall` (C1): the shared head
+verifies the Portal consent, the channel path resolves the post (§6 3a channel
+and capability, 3b content, 3c authority, 3d caps), and the shared tail runs
+governance, the `channel-native` execution target, idempotency
+(`marketplace_runtime_operation`), the usage ledger (shapes only) and audit
+(metadata and the payload SHA-256 only). Receipt text lives only in
+`channel_receipt`.
+
+Contract alpha.3 operation ids are exactly `<app>.<resource>.<verb>`, so the
+spec's sub-resource ids use a hyphenated resource
+(`marketplace.channels.grants.propose` is `marketplace.channel-grants.propose`).
+
+### Agent operations (Portal app grant, `tbag_`)
+
+| Operation | Route | Effects | Idempotency |
+| --- | --- | --- | --- |
+| `marketplace.channels.list` | `GET /api/marketplace/v1/agent/channels` | read-only | none |
+| `marketplace.channels.get` | `GET /api/marketplace/v1/agent/channels/{channelId}` | read-only | none |
+| `marketplace.channel-attachments.upload` | `POST /api/marketplace/v1/agent/channels/attachments?name=<file>` | writes-app-state | required |
+| `marketplace.channels.post` | `POST /api/marketplace/v1/agent/channels/{channelId}/posts` | external-effects | required |
+| `marketplace.channels.schedule` | `POST /api/marketplace/v1/agent/channels/{channelId}/scheduled` | external-effects | required |
+| `marketplace.channel-scheduled.cancel` | `POST /api/marketplace/v1/agent/channels/{channelId}/scheduled/{postId}/cancel` | writes-app-state | supported |
+| `marketplace.channel-receipts.list` | `GET /api/marketplace/v1/agent/channels/receipts` | read-only | none |
+| `marketplace.channel-grants.list` | `GET /api/marketplace/v1/agent/channels/grants` | read-only | none |
+| `marketplace.channel-grants.propose` | `POST /api/marketplace/v1/agent/channels/{channelId}/grants` | writes-app-state | required |
+| `marketplace.channel-grants.narrow` | `POST /api/marketplace/v1/agent/channels/grants/{grantId}/narrow` | writes-app-state | required |
+| `marketplace.channel-grants.withdraw` | `POST /api/marketplace/v1/agent/channels/grants/{grantId}/withdraw` | writes-app-state | supported |
+| `marketplace.approvals.resolve` | `POST /api/marketplace/v1/agent/approvals/{approvalId}/resolve` | writes-app-state | required (`resolve.<approvalId>.<decision>`) |
+
+Consent: a Portal v1.4 class grant `{pluginId: channels-<provider>, accountId:
+<connectionId>, resourceKind: <provider>.connected-account, resourceRef:
+account:<connectionId>, grantClass, actionGroup: channel:<slug>}`. `outward`
+is needed to post, schedule, cancel, upload and propose; `read` suffices for
+list, get, receipts and grants. A channel without such a consent for the
+caller answers `404 channel_not_found`, the same as an unknown channel.
+Marketplace requires the `actionGroup` (a whole-connection class consent does
+not reach channels in P1).
+
+Post body: `{text, attachments?: [{attachmentId, kind, transcript?}],
+campaign?: {ref?, phase?}}` (`schedule` adds `sendAt`, now + 60 s to now + 30
+days). `kind` is `image|file|audio|voice|video` and must be declared by the
+channel's provider. Declared fallbacks (Discord voice → audio + `Transcript:`
+line) are applied before the content rules and before the digest, so a
+transcript passes the same deny patterns and the owner approves exactly what is
+sent. Attachments must be the caller's own uploads; unknown or foreign ids are
+refused, never dropped.
+
+Answers:
+
+* `200 {ok: true, schema: 1, traceId, usageId, receipt}` (a replay of the same
+  key adds `replayed: true`). Receipt: `{resultIds, resultUrls, status,
+  detail, channelId, postId, digest, authority, approvedAt, sentAt, provider,
+  fallback?}`; `status` is `sent|failed|uncertain|pending|skipped|cancelled|
+  expired`; `authority` is `grant:<id>`, `approval:<id>` or `owner-test`. A
+  scheduled post answers `pending`.
+* `202 {ok: false, error: "approval_pending", approvalId, postId, digest,
+  digestPrefix, expiresAt, payloadView: {canonical, files: [{name, sha256,
+  contentType}]}}`: no grant covers the post, so it waits for the owner in the
+  existing approvals queue. Retry with the same key; after the owner approves,
+  the post is sent exactly once and the retry returns its receipt. A changed
+  payload needs a new approval. A scheduled hold's approval expires at
+  `sendAt`.
+* `502 channel_send_failed` (nothing was delivered; does not count) or `502
+  channel_send_uncertain` (may have been delivered; counts and blocks the key
+  until the owner resolves it), both with the receipt.
+
+Errors: `400 idempotency_key_required | validation_failed`, `403
+channel_outward_consent_required | approval_denied`, `404 channel_not_found |
+channel_attachment_not_found | channel_post_not_found | grant_not_found`, `409
+channel_idempotency_conflict | channel_not_active |
+channel_connection_unavailable | channel_digest_mismatch |
+channel_post_uncertain | channel_post_in_progress | channel_post_<status> |
+standing_grants_disabled | approval_already_resolved | approval_proof_reused`,
+`410 approval_expired`, `413 channel_attachment_too_large |
+channel_payload_view_too_large`, `415 channel_attachment_type_invalid`, `422
+channel_capability_unavailable | channel_text_too_long |
+channel_content_denied | channel_event_unconfirmed | channel_outside_window |
+channel_file_type_not_allowed | channel_file_too_large |
+channel_too_many_files | channel_voice_transcript_required |
+channel_send_at_invalid | grant_exceeds_ceiling | grant_widening_refused`,
+`429 channel_cap_per_day | channel_cap_per_hour | channel_min_interval |
+channel_phase_duplicate` (with `retryAfterSeconds`) `| approval_queue_full`,
+`501 approval_proof_unsupported`, `503 channel_credential_unavailable`.
+
+Order and consumption (§6 3a–3e): nothing is held, reserved or consumed before
+every earlier check passed. At send time (immediate, approved, scheduled) the
+digest is recomputed from the stored post, the current channel destination and
+the attachment bytes read from disk; a mismatch is `channel_digest_mismatch`
+and the post is `skipped`.
+
+### `marketplace.approvals.resolve`
+
+Body `{proof: "nostr", event, channel}` or `{proof: "portal", token}`, key
+`resolve.<approvalId>.<approve|deny>`. Only the caller's own held call
+(otherwise `404 approval_not_found`). Single-shot: a guarded update moves the
+hold `pending → resolving` before any await; a refused proof moves it back; a
+valid proof is recorded as used (instance-wide), then the decision runs once.
+Any other resolve while resolving or after the decision is `409
+approval_already_resolved` and never calls a provider; the same key after
+success replays the stored answer. Until kit rc.14 (`verifyOwnerApproval`) and
+contract alpha.6 (`verifyOwnerApprovalAssertion`) are published, every proof is
+refused with `501 approval_proof_unsupported`. The owner Approvals view uses the
+same states.
+
+### Owner operations (`audience: owner`)
+
+| Operation | Route |
+| --- | --- |
+| `marketplace.channels.browse` | `GET /api/marketplace/channels` (channels, provider readiness, connections, pending grants, uncertain posts) |
+| `marketplace.channels.discover` | `GET /api/marketplace/channels/discover?provider=` |
+| `marketplace.channels.create` | `POST /api/marketplace/channels` (Idempotency-Key; destination from discovery only) |
+| `marketplace.channels.update` | `PATCH /api/marketplace/channels/{channelId}` (bumps `revision`, re-checks grants) |
+| `marketplace.channels.pause` / `.resume` / `.archive` | `POST /api/marketplace/channels/{channelId}/pause|resume|archive` |
+| `marketplace.channels.test` | `POST /api/marketplace/channels/{channelId}/test` (fixed text, authority `owner-test`) |
+| `marketplace.channel-grants.approve` / `.decline` / `.revoke` | `POST /api/marketplace/channels/grants/{grantId}/approve|decline|revoke` (approve takes an optional narrower `final`) |
+| `marketplace.channel-posts.resolve` | `POST /api/marketplace/channels/posts/{postId}/resolve` `{status: sent|failed}` |
+| `marketplace.channel-receipts.export` / `.purge` | `GET /api/marketplace/channels/receipts/export`, `POST /api/marketplace/channels/receipts/purge` `{olderThanDays}` (default 90) |
+
+"Grant to agent" is `marketplace.consents.request` with the channel's class
+selection (each channel in `browse` carries it as `grantSelection`, with the
+display-only `actionGroupLabel`, plain text of at most 80 characters, which
+Portal never stores and Marketplace never persists). Per-payload approvals are
+the existing `marketplace.approvals.*` queue; channel holds show the channel,
+the digest and, on `get`, the exact payload view.
+
+### Credentials and readiness
+
+Bot tokens come from `MARKETPLACE_CHANNELS_TELEGRAM_BOT_TOKEN` and
+`MARKETPLACE_CHANNELS_DISCORD_BOT_TOKEN` (settings group `channels`,
+account-sourced provider env, read at start), or self-hosted from the encrypted
+`connector_secret` `botToken` under `channels-<provider>`. Each is verified once
+at start; the connection row keeps only `{botId, botUsername, verifiedAt,
+credentialRef}`. Readiness per provider (`available | credential_missing |
+credential_invalid | unavailable`) is in `browse` and in
+`/api/portal/readiness` (`channels.providers`). Tokens are never in responses,
+receipts, rows, logs, audit or errors; provider text is redacted before it is
+written.
+
+### Scheduler
+
+In-process, every 30 s (`channelScheduler: false` disables it). Each tick:
+rows stuck in `sending` past their lease become `uncertain` (never re-sent);
+due `scheduled` rows are claimed with a guarded update (claimer + 120 s lease,
+taken over only after expiry) and rechecked at send time (consent, grant,
+channel, content, digest); held scheduled posts are sent if approved or expire;
+any refusal is `skipped` with the reason; more than 15 minutes late is
+`expired`.
