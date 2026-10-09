@@ -222,14 +222,14 @@ Receipt (returned to the agent, kept in `channel_receipt`), compatible with the 
 | Provider | Credential | Hosted (Railway) | Self-hosted |
 |---|---|---|---|
 | Telegram | bot token | Account Connections writes the Railway shared variable `MARKETPLACE_CHANNELS_TELEGRAM_BOT_TOKEN` (settings field `source: "account"`, `destination: "provider-env"`) | `app-api` settings PUT → encrypted `connector_secret` |
-| Discord | bot token, application id | `MARKETPLACE_CHANNELS_DISCORD_BOT_TOKEN`, `…_APPLICATION_ID` | same |
+| Discord | bot token | `MARKETPLACE_CHANNELS_DISCORD_BOT_TOKEN` | same |
 | Slack (P2) | bot token `xoxb-` | `MARKETPLACE_CHANNELS_SLACK_BOT_TOKEN` | same |
 | Listmonk (P2) | base URL, API user, token | `MARKETPLACE_CHANNELS_LISTMONK_{URL,USER,TOKEN}` | same |
 | Email (P2) | SMTP host/user/password or Resend key | `MARKETPLACE_CHANNELS_SMTP_*` / `…_RESEND_API_KEY` | same |
 | Gmail (later) | OAuth | Clerk token at use time (§12.4.1, `gmail.send`) | — |
 | X, LinkedIn Page, Facebook Page, Instagram (P3) | OAuth | existing Composio connected account | same |
 
-Rules: Portal and Marketplace never persist hosted credentials (Marketplace reads the env at start; rotation = edit the shared variable, redeploy). Readiness verifies each credential (`getMe`, `GET /users/@me`, `auth.test`) and reports `credential_missing|credential_invalid` without echoing it. Hygiene tests assert the token never appears in DB rows, responses, receipts, logs, audit or error reports. LinkedIn Page posting needs restricted scopes, so it stays on Composio until §12.4.1 allows it.
+Shared variables reach every Marketplace in the same Railway environment. Sending is safe for several consumers of one bot token; inbound (Telegram webhook or `getUpdates`, Discord gateway, P4) is not, so Marketplace takes a consumer lease and reports `channel_consumer_conflict` if another instance holds it. Rules: Portal and Marketplace never persist hosted credentials (Marketplace reads the env at start; rotation = edit the shared variable, redeploy). Readiness verifies each credential (`getMe`, `GET /users/@me`, `auth.test`) and reports `credential_missing|credential_invalid` without echoing it. Hygiene tests assert the token never appears in DB rows, responses, receipts, logs, audit or error reports. LinkedIn Page posting needs restricted scopes, so it stays on Composio until §12.4.1 allows it.
 
 ## 9. Rate caps (three layers)
 
