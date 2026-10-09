@@ -255,7 +255,7 @@ same states.
 | `marketplace.channel-posts.list` | `GET /api/marketplace/channels/posts?status=held,scheduled,uncertain&channelId=` (send time, channel, agent, digest prefix, approval state; no text) |
 | `marketplace.channel-posts.cancel` | `POST /api/marketplace/channels/posts/{postId}/cancel` (scheduled posts; closes a waiting approval, fails an approved one) |
 | `marketplace.channel-posts.resolve` | `POST /api/marketplace/channels/posts/{postId}/resolve` `{status: sent|failed}` |
-| `marketplace.channel-receipts.export` / `.purge` | `GET /api/marketplace/channels/receipts/export`, `POST /api/marketplace/channels/receipts/purge` `{olderThanDays}` (default 90) |
+| `marketplace.channel-receipts.export` / `.purge` | `GET /api/marketplace/channels/receipts/export`, `POST /api/marketplace/channels/receipts/purge` `{olderThanDays}` (default 90; finished posts only; answers `{purged, skipped}`) |
 
 "Grant to agent" is `marketplace.consents.request` with the channel's class
 selection (each channel in `browse` carries it as `grantSelection`, with the
@@ -307,6 +307,20 @@ PDF, OGG, MP3, MP4/M4A, ZIP, UTF-8 text) and the file name extension must
 belong to it (`422 channel_attachment_type_mismatch`);
 `application/octet-stream` is accepted only where a provider declares it and is
 never re-typed.
+
+Attachment quota and cleanup: each agent may keep at most 200 MiB of stored
+attachments per workspace and upload at most 50 files in any 24 hours (`429
+channel_attachment_quota_exceeded` with `limit: bytes | uploads_per_day`,
+checked in the upload transaction before any byte is written; a refused key
+may be retried). The scheduler tick (only when Channels is configured) deletes,
+in batches of 100, attachments no post references after 24 hours, and
+attachments of finished posts once their receipts are purged or after the
+90-day receipt retention. An attachment used by a post that is not finished
+(`held`, `scheduled`, `sending`, `uncertain`) is never deleted; a file goes
+with the last row of its SHA-256.
+
+Receipt purge (owner op and the 90-day retention in the tick) deletes only
+receipts of finished posts and answers `{purged, skipped}`.
 
 Resolve: a proof is verified only against a pinned owner (Nostr pubkey for
 `nostr`, Portal user id for `portal`); without the pin the answer is `503

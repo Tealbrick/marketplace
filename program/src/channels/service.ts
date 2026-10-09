@@ -51,6 +51,14 @@ import {
 export const CHANNEL_SEND_LEASE_MS = 300_000;
 /** Receipt retention (§7): 90 days by default. */
 export const CHANNEL_RECEIPT_RETENTION_MS = 90 * 86_400_000;
+/** Stored attachment bytes per (workspace, agent): 200 MiB (follow-up Q1). */
+export const CHANNEL_ATTACHMENT_QUOTA_BYTES = 200 * 1024 * 1024;
+/** Uploads per agent in any 24 h window (follow-up Q1). */
+export const CHANNEL_ATTACHMENT_UPLOADS_PER_DAY = 50;
+/** An attachment no post references is deleted after this (follow-up Q1). */
+export const CHANNEL_ATTACHMENT_UNREFERENCED_MS = 86_400_000;
+/** Most attachment rows one tick cleans up. */
+export const CHANNEL_ATTACHMENT_CLEANUP_BATCH = 100;
 export const CHANNEL_SCHEDULER_LEASE_MS = 120_000;
 export const CHANNEL_SCHEDULER_INTERVAL_MS = 30_000;
 /** A scheduled post more than this late (downtime) is `expired`, never sent. */
@@ -1152,6 +1160,15 @@ export function createChannelService(deps: ChannelServiceDeps) {
     return { ok: true as const, post: resolved };
   };
 
+  const cleanupAttachments = (now: Date) =>
+    channels.cleanupAttachments({
+      rootDir: attachmentsDir,
+      now,
+      unreferencedAfterMs: CHANNEL_ATTACHMENT_UNREFERENCED_MS,
+      retentionMs: CHANNEL_RECEIPT_RETENTION_MS,
+      limit: CHANNEL_ATTACHMENT_CLEANUP_BATCH,
+    });
+
   // ----- scheduler tick (1g) --------------------------------------------------
 
   /**
@@ -1169,6 +1186,8 @@ export function createChannelService(deps: ChannelServiceDeps) {
     const report = { recovered: 0, expired: 0, sent: 0, skipped: 0, claimed: 0 };
     // §7 retention: receipts of finished posts older than the retention go; open posts keep theirs (Q2).
     channels.purgeReceipts(org, new Date(input.now.getTime() - CHANNEL_RECEIPT_RETENTION_MS));
+    // Q1: unreferenced attachments after 24 h, finished posts' attachments after purge or retention (bounded).
+    cleanupAttachments(input.now);
     for (const post of channels.recoverStaleSending({ now: input.now })) {
       report.recovered += 1;
       const channel = channels.getChannel(post.workspaceSlug, post.channelId);
@@ -1259,6 +1278,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
 
   return {
     configured,
+    cleanupAttachments,
     boot,
     readinessView,
     providerFor,

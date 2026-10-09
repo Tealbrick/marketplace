@@ -1611,6 +1611,92 @@ export class ChannelStore {
     return this.getAttachment(input.workspaceSlug, id)!;
   }
 
+  /**
+   * Upload with the per-agent quota (follow-up Q1), in one `BEGIN IMMEDIATE`
+   * transaction: the agent's stored bytes plus this upload stay within
+   * `maxBytes` and its uploads in the last 24 h stay below `maxPerDay`; only
+   * then `write` stores the bytes and the row is inserted. A refusal writes
+   * nothing. Serialised with `cleanupAttachments`, so a file is never deleted
+   * between its write and its row.
+   */
+  insertAttachmentWithinQuota(input: {
+    workspaceSlug: string;
+    sha256: string;
+    contentType: string;
+    bytes: number;
+    name: string;
+    createdBy: string;
+    now: Date | string;
+    maxBytes: number;
+    maxPerDay: number;
+    write: () => void;
+  }): { ok: true; record: ChannelAttachmentRecord } | { ok: false; error: "channel_attachment_quota_exceeded"; limit: "bytes" | "uploads_per_day" } {
+    const now = iso(input.now);
+    return this.immediate(() => {
+      const usage = this.db
+        .prepare(
+          `SELECT COALESCE(SUM(bytes), 0) AS total,
+            COALESCE(SUM(CASE WHEN created_at > ? THEN 1 ELSE 0 END), 0) AS today
+          FROM channel_attachment WHERE workspace_slug = ? AND created_by = ?`,
+        )
+        .get(new Date(Date.parse(now) - DAY_MS).toISOString(), input.workspaceSlug, input.createdBy) as { total: number; today: number };
+      if (Number(usage.today) >= input.maxPerDay) return { ok: false, error: "channel_attachment_quota_exceeded", limit: "uploads_per_day" };
+      if (Number(usage.total) + input.bytes > input.maxBytes) return { ok: false, error: "channel_attachment_quota_exceeded", limit: "bytes" };
+      input.write();
+      const record = this.insertAttachment({ ...input, now });
+      return { ok: true, record };
+    });
+  }
+
+  /**
+   * Attachment cleanup (follow-up Q1), bounded to `limit` rows per call. A row
+   * older than `unreferencedAfterMs` goes when no post references it, or when
+   * every post that references it is finished and its receipt was purged or
+   * the post finished more than `retentionMs` ago. A row referenced by a
+   * post that is not finished (`held`, `scheduled`, `sending`, `uncertain`)
+   * is never deleted. The file goes with the last row of its SHA-256 (in any
+   * workspace: the store is content-addressed).
+   */
+  cleanupAttachments(input: {
+    rootDir: string;
+    now: Date | string;
+    unreferencedAfterMs: number;
+    retentionMs: number;
+    limit?: number;
+  }): { deleted: number; filesDeleted: number } {
+    const nowMs = Date.parse(iso(input.now));
+    const createdBefore = new Date(nowMs - input.unreferencedAfterMs).toISOString();
+    const finishedBefore = new Date(nowMs - input.retentionMs).toISOString();
+    const open = NON_TERMINAL_POST_STATUSES.map((status) => `'${status}'`).join(", ");
+    const references = `p.workspace_slug = a.workspace_slug AND instr(p.attachment_ids_json, '"' || a.id || '"') > 0`;
+    return this.immediate(() => {
+      const rows = this.db
+        .prepare(
+          `SELECT a.id, a.workspace_slug, a.sha256 FROM channel_attachment a
+          WHERE a.created_at < ?
+            AND NOT EXISTS (SELECT 1 FROM channel_post p WHERE ${references} AND p.status IN (${open}))
+            AND NOT EXISTS (SELECT 1 FROM channel_post p WHERE ${references} AND p.status NOT IN (${open})
+              AND p.updated_at >= ? AND EXISTS (SELECT 1 FROM channel_receipt r WHERE r.post_id = p.id))
+          ORDER BY a.created_at, a.id LIMIT ?`,
+        )
+        .all(createdBefore, finishedBefore, Math.min(Math.max(input.limit ?? 100, 1), 1000)) as Array<{ id: string; workspace_slug: string; sha256: string }>;
+      let filesDeleted = 0;
+      for (const row of rows) {
+        this.db.prepare("DELETE FROM channel_attachment WHERE id = ?").run(row.id);
+        const shared = this.db.prepare("SELECT 1 FROM channel_attachment WHERE sha256 = ? LIMIT 1").get(row.sha256);
+        if (!shared && SHA256_PATTERN.test(row.sha256)) {
+          try {
+            fs.rmSync(path.join(input.rootDir, row.sha256));
+            filesDeleted += 1;
+          } catch (error) {
+            if ((error as { code?: string }).code !== "ENOENT") throw error;
+          }
+        }
+      }
+      return { deleted: rows.length, filesDeleted };
+    });
+  }
+
   getAttachment(workspaceSlug: string, id: string): ChannelAttachmentRecord | null {
     const row = this.db
       .prepare("SELECT * FROM channel_attachment WHERE workspace_slug = ? AND id = ?")
