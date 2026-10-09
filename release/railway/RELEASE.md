@@ -1,11 +1,11 @@
-# Marketplace standalone 0.1.18 image
+# Marketplace standalone 0.1.19 image
 
-This bundle is the public Marketplace 0.1.18 release line and supersedes
-0.1.17 with contract conformance, consent operations for agents and the canonical claim path.
+This bundle is the public Marketplace 0.1.19 release line and supersedes
+0.1.18 with connector status per card and the use of existing Composio auth configs.
 
-Source snapshot: `c52695dd71902c726537001932375809ff95c3c9`
-Source archive SHA256: `0619f49ed18ea4eae5c6a4f1fec529a7c2daece3f4a0fc3e6a294d023401a23e`
-Image: `ghcr.io/tealbrick/marketplace:0.1.18`
+Source snapshot: `f6ff983f025e053651fa48b2a396fbaff55931b4`
+Source archive SHA256: `30c2a77e57f5131f8583eb7de7c4acce42ae3003c65045d04cf4cd4e28a33e94`
+Image: `ghcr.io/tealbrick/marketplace:0.1.19`
 
 ## Runtime contract
 
@@ -23,13 +23,24 @@ Image: `ghcr.io/tealbrick/marketplace:0.1.18`
   into the image or returned to browser code.
 
 The source-backed Railway path uses the fixed public release branch
-`release-marketplace-v0.1.18` (slash-free so the Railway template editor
+`release-marketplace-v0.1.19` (slash-free so the Railway template editor
 accepts it); its exact tag target, branch ruleset, and image
 digest are recorded in the successor receipt. Set the service root directory
 to `release/railway`, keep the Dockerfile entrypoint, and use the relay
 contract in `deploy/railway/recipe.json` and `deploy/railway/railway-blueprint.json`.
 GHCR is optional for the source-build path; no template ID or publication is
 implied by these files.
+
+## v0.1.19 connector status and Composio auth configs
+
+This successor merges Tealbrick/marketplace#26 and #28:
+- every catalog card reports a connect mode (`connected`, `needs_credentials`, `no_auth`, `ready_managed`, `ready_user_key`, `ready_auth_config`, `needs_auth_config`, `not_supported`); the catalog shows a status badge, a status filter and counts per status;
+- Composio connect now uses an auth config the owner already created: a passed `authConfigId` (checked for toolkit and enabled state), then an existing custom config, then an existing managed config, before it creates one; a toolkit that needs owner setup answers 409 `composio_auth_config_required` instead of 500;
+- the Connect dialog has an optional auth config ID field;
+- the catalog sync records only auth-config ids and schemes, never credentials;
+- the release-image publish check looks for `entrypoint.mjs`.
+
+There is no schema change. Upgrades keep the volume, variables, encrypted connector secrets and the instance claim identity. Rollback to 0.1.18 needs no data change.
 
 ## v0.1.18 contract conformance disposition
 

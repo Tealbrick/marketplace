@@ -74075,6 +74075,2769 @@ function providerBackedListings(now = (/* @__PURE__ */ new Date()).toISOString()
   ];
 }
 
+// src/company-box.ts
+import fs2 from "node:fs";
+import path3 from "node:path";
+import { fileURLToPath } from "node:url";
+
+// src/custom-mcp.ts
+import { createHash } from "node:crypto";
+
+// src/legacy-ids.ts
+import fs from "node:fs";
+import os from "node:os";
+import path2 from "node:path";
+var LEGACY_IDS = {
+  /** Rules gateway RPC method (Rules introspection + evaluate request). */
+  "tealbrick.rules.evaluate": "doppelganger.rules.evaluate",
+  /** Agent connector grant contract carried in Rules payloads. */
+  "tealbrick.marketplace.agent-connector-grant.v1": "doppelganger.marketplace.agent-connector-grant.v1",
+  /** Cross-app broker execute request contract. */
+  "tealbrick.cross-app.marketplace.broker-execute.v1": "doppelganger.cross-app.marketplace.broker-execute.v1",
+  /** Reserved agent actor id. */
+  "tealbrick-agent": "doppelganger-agent",
+  /** Plugin/product manifest namespace key. */
+  tealbrick: "doppelganger"
+};
+function acceptedIds(current) {
+  return [current, LEGACY_IDS[current]];
+}
+function isAcceptedId(current, value) {
+  return value === current || value === LEGACY_IDS[current];
+}
+function manifestNamespace(manifest) {
+  for (const key of acceptedIds("tealbrick")) {
+    const value = manifest?.[key];
+    if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+      return value;
+    }
+  }
+  return void 0;
+}
+var ENV_PREFIX = "TEALBRICK_";
+var LEGACY_ENV_PREFIX = "DOPPELGANGER_";
+var warned = /* @__PURE__ */ new Set();
+var defaultWarn = (message) => {
+  console.warn(message);
+};
+function warnOnce(key, message, warn = defaultWarn) {
+  if (warned.has(key)) return;
+  warned.add(key);
+  warn(message);
+}
+function readCompatEnv(env, name, warn) {
+  const current = env[`${ENV_PREFIX}${name}`]?.trim();
+  if (current) return current;
+  const legacy = env[`${LEGACY_ENV_PREFIX}${name}`]?.trim();
+  if (legacy) {
+    warnOnce(
+      `env:${name}`,
+      `[marketplace] ${LEGACY_ENV_PREFIX}${name} is deprecated; set ${ENV_PREFIX}${name} instead. The old name still works for now.`,
+      warn
+    );
+    return legacy;
+  }
+  return void 0;
+}
+function compatDebugEnabled(env = process.env) {
+  return readCompatEnv(env, "DEBUG") === "1";
+}
+var STATE_HOME_DIRNAME = ".tealbrick";
+var LEGACY_STATE_HOME_DIRNAME = ".doppelganger";
+var MARKETPLACE_STATE_SEGMENTS = ["programs", "marketplace"];
+function isDirectory(target) {
+  try {
+    return fs.statSync(target).isDirectory();
+  } catch {
+    return false;
+  }
+}
+function resolveDefaultStateRoot(options = {}) {
+  const homeDir = options.homeDir ?? os.homedir();
+  const warn = options.warn ?? defaultWarn;
+  const root = path2.join(homeDir, STATE_HOME_DIRNAME, ...MARKETPLACE_STATE_SEGMENTS);
+  const legacyRoot = path2.join(
+    homeDir,
+    LEGACY_STATE_HOME_DIRNAME,
+    ...MARKETPLACE_STATE_SEGMENTS
+  );
+  const legacyIsLink = (() => {
+    try {
+      return fs.lstatSync(legacyRoot).isSymbolicLink();
+    } catch {
+      return false;
+    }
+  })();
+  if (isDirectory(root)) {
+    if (!legacyIsLink && isDirectory(legacyRoot)) {
+      warnOnce(
+        `state:both:${legacyRoot}`,
+        `[marketplace] Using ${root}. A legacy state directory still exists at ${legacyRoot}; it was not modified or removed.`,
+        warn
+      );
+      return { root, status: "both-present" };
+    }
+    return { root, status: "current" };
+  }
+  if (!isDirectory(legacyRoot)) {
+    return { root, status: "fresh" };
+  }
+  if (!options.migrate) {
+    return { root: legacyRoot, status: "legacy-in-place" };
+  }
+  try {
+    fs.mkdirSync(path2.dirname(root), { recursive: true });
+    fs.renameSync(legacyRoot, root);
+  } catch (error62) {
+    warnOnce(
+      `state:stay:${legacyRoot}`,
+      `[marketplace] Could not move legacy state ${legacyRoot} to ${root} (${error62?.code ?? String(error62)}); continuing to use the legacy path. Move it manually or set MARKETPLACE_DATA_DIR.`,
+      warn
+    );
+    return { root: legacyRoot, status: "legacy-in-place" };
+  }
+  try {
+    fs.symlinkSync(root, legacyRoot, "dir");
+  } catch {
+  }
+  warnOnce(
+    `state:migrated:${legacyRoot}`,
+    `[marketplace] Moved state from ${legacyRoot} to ${root} (a symlink remains at the old path).`,
+    warn
+  );
+  return { root, status: "migrated" };
+}
+
+// src/hub.ts
+function recordValue2(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value : void 0;
+}
+function legacyHubMetadata(listing) {
+  return recordValue2(listing.manifest.skillsHub) ?? {};
+}
+function listingIsRequired(listing) {
+  const hub = legacyHubMetadata(listing);
+  const directSystem = recordValue2(listing.manifest.system);
+  const namespacedSystem = recordValue2(
+    manifestNamespace(recordValue2(listing.manifest))?.system
+  );
+  return hub.required === true || directSystem?.required === true || namespacedSystem?.required === true;
+}
+function listingIsCustomMcp(listing) {
+  return listing.source === "mcp" && legacyHubMetadata(listing).custom === true;
+}
+function listingIsOperatorCustomMcp(listing) {
+  return listingIsCustomMcp(listing) && legacyHubMetadata(listing).operatorManaged === true && typeof listing.ownerWorkspaceSlug === "string";
+}
+
+// src/custom-mcp.ts
+var CUSTOM_MCP_MAX_HEADERS = 20;
+var CUSTOM_MCP_MAX_SECRET_HEADERS = 10;
+var MAX_HEADER_VALUE_LENGTH = 4096;
+var MAX_INPUT_SCHEMA_BYTES = 16384;
+var MAX_TOOL_DESCRIPTION = 1e3;
+var MAX_TOOL_TITLE = 200;
+var MAX_ACTION_KEY_LENGTH = 128;
+var ACTION_KEY_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*){1,7}$/u;
+var STDIO_ONLY_FIELDS = ["command", "args", "env", "cwd"];
+var HEADER_NAME_PATTERN = /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,64}$/u;
+var RESERVED_HEADER_NAMES = /* @__PURE__ */ new Set([
+  "accept",
+  "connection",
+  "content-length",
+  "content-type",
+  "host",
+  "keep-alive",
+  "last-event-id",
+  "mcp-protocol-version",
+  "mcp-session-id",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade"
+]);
+var CustomMcpInputError = class extends Error {
+  constructor(code, field) {
+    super(code);
+    this.code = code;
+    this.field = field;
+  }
+  code;
+  field;
+};
+var TransportSchema = external_exports.enum(["streamable-http", "sse"]);
+var CustomMcpCreateSchema = external_exports.object({
+  displayName: external_exports.string().trim().min(1).max(80),
+  slug: external_exports.string().trim().min(1).max(40).optional(),
+  description: external_exports.string().trim().max(500).optional(),
+  transport: TransportSchema.default("streamable-http"),
+  url: external_exports.string().trim().min(1).max(2048),
+  headers: external_exports.record(external_exports.string()).optional(),
+  secretHeaders: external_exports.record(external_exports.string()).optional()
+});
+var CustomMcpPatchSchema = external_exports.object({
+  displayName: external_exports.string().trim().min(1).max(80).optional(),
+  description: external_exports.string().trim().max(500).optional(),
+  transport: TransportSchema.optional(),
+  url: external_exports.string().trim().min(1).max(2048).optional(),
+  headers: external_exports.record(external_exports.string()).optional(),
+  /** string = set/replace, null = remove, omitted = keep. */
+  secretHeaders: external_exports.record(external_exports.string().nullable()).optional()
+});
+function requestsStdioTransport(body) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return false;
+  const record2 = body;
+  return record2.transport === "stdio" || STDIO_ONLY_FIELDS.some((field) => field in record2);
+}
+function normalizeHeaderName(name, field) {
+  const trimmed = name.trim();
+  if (!HEADER_NAME_PATTERN.test(trimmed)) {
+    throw new CustomMcpInputError("custom_mcp_header_invalid", field);
+  }
+  const lower = trimmed.toLowerCase();
+  if (RESERVED_HEADER_NAMES.has(lower) || lower.startsWith("proxy-")) {
+    throw new CustomMcpInputError("custom_mcp_header_invalid", field);
+  }
+  return lower;
+}
+function validHeaderValue(value) {
+  return value.length <= MAX_HEADER_VALUE_LENGTH && // Visible ASCII/Latin-1 plus space and tab; no CR, LF, or NUL.
+  /^[\t\x20-\x7e\x80-\xff]*$/u.test(value);
+}
+function normalizePlainHeaders(headers) {
+  const entries = Object.entries(headers ?? {});
+  if (entries.length > CUSTOM_MCP_MAX_HEADERS) {
+    throw new CustomMcpInputError("custom_mcp_header_limit", "headers");
+  }
+  const normalized2 = {};
+  for (const [name, value] of entries) {
+    const key = normalizeHeaderName(name, "headers");
+    const trimmed = value.trim();
+    if (!validHeaderValue(trimmed) || key in normalized2) {
+      throw new CustomMcpInputError("custom_mcp_header_invalid", "headers");
+    }
+    normalized2[key] = trimmed;
+  }
+  return normalized2;
+}
+function normalizeSecretHeaderChanges(headers) {
+  const changes = /* @__PURE__ */ new Map();
+  for (const [name, value] of Object.entries(headers ?? {})) {
+    const key = normalizeHeaderName(name, "secretHeaders");
+    if (changes.has(key)) {
+      throw new CustomMcpInputError("custom_mcp_header_invalid", "secretHeaders");
+    }
+    if (value === null) {
+      changes.set(key, null);
+      continue;
+    }
+    const trimmed = value.trim();
+    if (!trimmed || !validHeaderValue(trimmed)) {
+      throw new CustomMcpInputError("custom_mcp_header_invalid", "secretHeaders");
+    }
+    changes.set(key, trimmed);
+  }
+  return changes;
+}
+function assertHeaderSets(input2) {
+  const plain = new Set(input2.plainNames);
+  const secret = [...new Set(input2.secretNames)];
+  if (secret.length > CUSTOM_MCP_MAX_SECRET_HEADERS) {
+    throw new CustomMcpInputError("custom_mcp_header_limit", "secretHeaders");
+  }
+  if (secret.some((name) => plain.has(name))) {
+    throw new CustomMcpInputError("custom_mcp_header_conflict");
+  }
+}
+function workspaceHash(workspaceSlug) {
+  return createHash("sha256").update(workspaceSlug).digest("hex").slice(0, 8);
+}
+function customMcpPluginId(input2) {
+  let slug2 = normalizeConnectorSlug(input2.slug ?? input2.displayName);
+  if (!slug2) slug2 = "connector";
+  if (!/^[a-z]/u.test(slug2)) slug2 = `c-${slug2}`;
+  slug2 = slug2.slice(0, 40).replace(/-+$/u, "");
+  return `mcp-${slug2}-${workspaceHash(input2.workspaceSlug)}`;
+}
+function displayUrl(value) {
+  try {
+    const url2 = new URL(value);
+    return `${url2.origin}${url2.pathname}`;
+  } catch {
+    return "";
+  }
+}
+function recordValue3(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+function isCapability(value) {
+  return value === "connector.observe" || value === "connector.dispatch" || value === "connector.admin";
+}
+function customMcpManifest(listing) {
+  const mcp = recordValue3(listing.manifest.mcp) ?? {};
+  const headers = recordValue3(mcp.headers) ?? {};
+  const lastRefresh = recordValue3(mcp.lastRefresh);
+  const companyBox = recordValue3(mcp.companyBox);
+  return {
+    operatorManaged: true,
+    transport: mcp.transport === "sse" ? "sse" : "streamable-http",
+    url: typeof mcp.url === "string" ? mcp.url : "",
+    headers: Object.fromEntries(
+      Object.entries(headers).filter(
+        (entry) => typeof entry[1] === "string"
+      )
+    ),
+    tools: (Array.isArray(mcp.tools) ? mcp.tools : []).flatMap((entry) => {
+      const tool = recordValue3(entry);
+      if (!tool || typeof tool.name !== "string" || typeof tool.action !== "string" || !isCapability(tool.capability)) {
+        return [];
+      }
+      return [
+        {
+          name: tool.name,
+          action: tool.action,
+          ...typeof tool.title === "string" ? { title: tool.title } : {},
+          ...typeof tool.description === "string" ? { description: tool.description } : {},
+          capability: tool.capability,
+          inputSchema: recordValue3(tool.inputSchema) ?? { type: "object" },
+          annotations: recordValue3(tool.annotations) ?? {}
+        }
+      ];
+    }),
+    lastRefresh: lastRefresh ? {
+      at: String(lastRefresh.at ?? ""),
+      ok: lastRefresh.ok === true,
+      errorCode: typeof lastRefresh.errorCode === "string" ? lastRefresh.errorCode : null
+    } : null,
+    ...typeof companyBox?.entryId === "string" ? {
+      companyBox: {
+        entryId: companyBox.entryId,
+        ...typeof companyBox.baseUrl === "string" ? { baseUrl: companyBox.baseUrl } : {}
+      }
+    } : {}
+  };
+}
+function customMcpListing(input2) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const { manifest } = input2;
+  const capabilities2 = ["connector.observe", "connector.dispatch", "connector.admin"].filter(
+    (capability) => manifest.tools.some((tool) => tool.capability === capability)
+  );
+  return {
+    pluginId: input2.pluginId,
+    displayName: input2.displayName,
+    kind: "toolset",
+    provider: input2.pluginId,
+    description: input2.description?.trim() || "Custom connector using a remote MCP server.",
+    capabilities: capabilities2,
+    actions: manifest.tools.map((tool) => tool.action),
+    source: "mcp",
+    authOwner: "program",
+    executionOwner: "mcp",
+    runtimeSources: [
+      {
+        runtimeSourceId: `${input2.pluginId}-mcp`,
+        kind: "mcp",
+        label: "Custom MCP server",
+        primary: true,
+        mcpServerId: input2.pluginId
+      }
+    ],
+    enabledByDefault: false,
+    ownerWorkspaceSlug: input2.workspaceSlug,
+    manifest: {
+      version: input2.version ?? "0.1.0",
+      kind: "plugin",
+      actionRequirements: Object.fromEntries(
+        manifest.tools.map((tool) => [
+          tool.action,
+          { kind: input2.pluginId, capability: tool.capability }
+        ])
+      ),
+      mcp: manifest,
+      skillsHub: {
+        custom: true,
+        operatorManaged: true,
+        required: false,
+        unitId: input2.pluginId,
+        contributions: [],
+        adapter: {
+          type: "mcp",
+          // Origin + path only: a query string may carry credentials.
+          mcp: { transport: manifest.transport, url: displayUrl(manifest.url), config: {} }
+        }
+      }
+    },
+    createdAt: input2.createdAt ?? now,
+    updatedAt: now
+  };
+}
+function actionSegment(name) {
+  let segment = name.toLowerCase().replace(/[^a-z0-9]+/gu, "-").replace(/^-+|-+$/gu, "");
+  if (!segment) segment = "tool";
+  if (!/^[a-z]/u.test(segment)) segment = `tool-${segment}`;
+  return segment;
+}
+function deriveActionKeys(provider, toolNames) {
+  const used = /* @__PURE__ */ new Set();
+  const budget = MAX_ACTION_KEY_LENGTH - provider.length - 1 - 4;
+  return toolNames.map((name) => {
+    const base = actionSegment(name).slice(0, Math.max(1, budget)).replace(/-+$/u, "");
+    let candidate = `${provider}.${base}`;
+    for (let suffix = 2; used.has(candidate); suffix += 1) {
+      candidate = `${provider}.${base}-${suffix}`;
+    }
+    if (!ACTION_KEY_PATTERN.test(candidate) || candidate.length > MAX_ACTION_KEY_LENGTH) {
+      throw new Error(`Derived action key ${candidate} is invalid.`);
+    }
+    used.add(candidate);
+    return candidate;
+  });
+}
+function capabilityForTool(tool, actionSegmentValue) {
+  const annotations = tool.annotations ?? {};
+  if (annotations.readOnlyHint === true) return "connector.observe";
+  if (annotations.destructiveHint === true) return "connector.admin";
+  if (typeof annotations.readOnlyHint === "boolean" || typeof annotations.destructiveHint === "boolean") {
+    return "connector.dispatch";
+  }
+  return inferConnectorCapabilityFromAction(actionSegmentValue);
+}
+function boundedText(value, max) {
+  if (typeof value !== "string") return void 0;
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, max) : void 0;
+}
+function toolRecordsFromRemote(provider, tools) {
+  const actions = deriveActionKeys(
+    provider,
+    tools.map((tool) => tool.name)
+  );
+  return tools.map((tool, index) => {
+    const action = actions[index];
+    const schema = recordValue3(tool.inputSchema);
+    const schemaJson = schema ? JSON.stringify(schema) : "";
+    const annotations = recordValue3(tool.annotations) ?? {};
+    const title = boundedText(tool.title, MAX_TOOL_TITLE) ?? boundedText(typeof annotations.title === "string" ? annotations.title : void 0, MAX_TOOL_TITLE);
+    const description = boundedText(tool.description, MAX_TOOL_DESCRIPTION);
+    return {
+      name: tool.name,
+      action,
+      ...title ? { title } : {},
+      ...description ? { description } : {},
+      capability: capabilityForTool(tool, action.slice(provider.length + 1)),
+      inputSchema: schema && Buffer.byteLength(schemaJson) <= MAX_INPUT_SCHEMA_BYTES ? schema : { type: "object" },
+      annotations: Object.fromEntries(
+        Object.entries(annotations).filter(
+          ([key, value]) => ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"].includes(key) && typeof value === "boolean"
+        )
+      )
+    };
+  });
+}
+function customMcpToolForAction(listing, action) {
+  return customMcpManifest(listing).tools.find((tool) => tool.action === action) ?? null;
+}
+function customConnectorView(store2, workspaceSlug, listing) {
+  const manifest = customMcpManifest(listing);
+  const install = store2.getInstall(workspaceSlug, listing.pluginId);
+  const connection = store2.getConnection(workspaceSlug, listing.pluginId);
+  return {
+    pluginId: listing.pluginId,
+    displayName: listing.displayName,
+    description: listing.description,
+    transport: manifest.transport,
+    url: displayUrl(manifest.url),
+    headers: Object.entries(manifest.headers).map(([name, value]) => ({ name, value })),
+    secretHeaders: store2.listConnectorSecrets({ workspaceSlug, pluginId: listing.pluginId }).map((secret) => ({ name: secret.name, configured: true, fingerprint: secret.fingerprint })),
+    tools: manifest.tools.map((tool) => ({
+      name: tool.name,
+      action: tool.action,
+      title: tool.title ?? null,
+      description: tool.description ?? null,
+      capability: tool.capability
+    })),
+    lastRefresh: manifest.lastRefresh,
+    install: {
+      installed: install?.lifecycle === "installed",
+      enabled: install?.lifecycle === "installed" && install.enabled,
+      lifecycle: install?.lifecycle ?? null
+    },
+    connection: connection ? { state: connection.state, detail: connection.detail, updatedAt: connection.updatedAt } : null,
+    createdAt: listing.createdAt,
+    updatedAt: listing.updatedAt
+  };
+}
+function bindCustomMcpForWorkspace(store2, workspaceSlug, listing) {
+  store2.registerPlugin(listing.pluginId);
+  for (const capability of listing.capabilities) {
+    if (!store2.getCapabilityBinding(workspaceSlug, listing.pluginId, capability)) {
+      store2.bindCapability({ workspaceSlug, pluginId: listing.pluginId, capability, enabled: true });
+    }
+  }
+  for (const actionKey of listing.actions) {
+    if (!store2.getActionBinding(workspaceSlug, listing.pluginId, actionKey)) {
+      store2.bindAction({ workspaceSlug, pluginId: listing.pluginId, actionKey, enabled: true });
+    }
+  }
+}
+
+// src/openapi-validate.ts
+var import_ajv = __toESM(require_ajv(), 1);
+var Ajv = import_ajv.default.default ?? import_ajv.default;
+function newAjv() {
+  return new Ajv({
+    strict: false,
+    allErrors: false,
+    coerceTypes: false,
+    useDefaults: false,
+    removeAdditional: false,
+    validateFormats: false,
+    validateSchema: false
+  });
+}
+function compileArgumentValidator(schema) {
+  const validate2 = newAjv().compile(schema);
+  return (args) => {
+    if (validate2(args)) return { ok: true };
+    const error62 = validate2.errors?.[0];
+    const path10 = (error62?.instancePath ?? "").split("/").filter(Boolean).join(".");
+    const missing = error62?.keyword === "required" && typeof error62.params?.missingProperty === "string" ? error62.params.missingProperty : error62?.keyword === "additionalProperties" && typeof error62.params?.additionalProperty === "string" ? error62.params.additionalProperty : null;
+    return {
+      ok: false,
+      field: [path10, missing].filter(Boolean).join(".") || "arguments",
+      reason: error62?.keyword === "additionalProperties" ? "not declared by the operation" : error62?.message ?? "invalid"
+    };
+  };
+}
+
+// src/openapi-adapter.ts
+import { createHash as createHash2 } from "node:crypto";
+var OPENAPI_METHODS = [
+  "get",
+  "put",
+  "post",
+  "delete",
+  "options",
+  "head",
+  "patch",
+  "trace"
+];
+var WEBDAV_METHODS = [
+  "propfind",
+  "proppatch",
+  "mkcol",
+  "move",
+  "copy",
+  "report",
+  "lock",
+  "unlock"
+];
+var READ_METHODS = /* @__PURE__ */ new Set(["get", "head", "options", "propfind", "report"]);
+var OPENAPI_MAX_ACTION_KEY_LENGTH = 128;
+var OPENAPI_ACTION_KEY_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*){1,7}$/u;
+var OPENAPI_TOOL_SCHEMA_MAX_BYTES = 16384;
+var OPENAPI_TITLE_MAX = 200;
+var OPENAPI_SUMMARY_MAX = 300;
+var OPENAPI_DESCRIPTION_MAX = 1e3;
+var OPENAPI_FULL_DESCRIPTION_MAX = 2e4;
+var MAX_REF_DEPTH = 64;
+var INLINE_NODE_BUDGET = 4e3;
+var OpenApiSpecError = class extends Error {
+  constructor(code, message) {
+    super(message);
+    this.code = code;
+  }
+  code;
+};
+function parameterDefault(parameter) {
+  if ("const" in parameter.schema) return parameter.schema.const;
+  if ("default" in parameter.schema) return parameter.schema.default;
+  return void 0;
+}
+function parameterHasDefault(parameter) {
+  return parameter.in === "header" && parameterDefault(parameter) !== void 0;
+}
+function parameterNeedsArgument(parameter) {
+  return parameter.required && !parameterHasDefault(parameter);
+}
+function recordValue4(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+function stringValue2(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+function operationIdentity(method, path10) {
+  return `${method.toUpperCase()} ${path10}`;
+}
+function decodePointerToken(token) {
+  return token.replace(/~1/gu, "/").replace(/~0/gu, "~");
+}
+function resolvePointer(document, ref) {
+  if (!ref.startsWith("#")) {
+    throw new OpenApiSpecError("openapi_external_ref", `External $ref ${ref} is not supported.`);
+  }
+  const pointer2 = ref.slice(1);
+  if (pointer2 === "") return document;
+  if (!pointer2.startsWith("/")) {
+    throw new OpenApiSpecError("openapi_ref_unresolved", `Unresolvable $ref ${ref}.`);
+  }
+  let current = document;
+  for (const raw of pointer2.slice(1).split("/")) {
+    const token = decodePointerToken(decodeURIComponent(raw));
+    if (Array.isArray(current)) {
+      current = current[Number(token)];
+    } else {
+      const record2 = recordValue4(current);
+      current = record2 ? record2[token] : void 0;
+    }
+    if (current === void 0) {
+      throw new OpenApiSpecError("openapi_ref_unresolved", `Unresolvable $ref ${ref}.`);
+    }
+  }
+  return current;
+}
+function derefObject(document, value) {
+  let current = recordValue4(value);
+  for (let depth = 0; current && typeof current.$ref === "string"; depth += 1) {
+    if (depth > MAX_REF_DEPTH) {
+      throw new OpenApiSpecError("openapi_ref_unresolved", "Circular $ref chain.");
+    }
+    current = recordValue4(resolvePointer(document, current.$ref));
+  }
+  return current;
+}
+function rewriteSchema(context, value, seen = /* @__PURE__ */ new Set()) {
+  if (Array.isArray(value)) return value.map((item) => rewriteSchema(context, item, seen));
+  const record2 = recordValue4(value);
+  if (!record2) return value;
+  if (typeof record2.$ref === "string") {
+    const ref = record2.$ref;
+    for (const prefix of context.defPrefixes) {
+      if (ref.startsWith(prefix)) {
+        const { $ref: _ignored, ...siblings } = record2;
+        const rewritten = { $ref: `#/$defs/${ref.slice(prefix.length)}` };
+        return Object.keys(siblings).length ? { allOf: [rewritten], ...rewriteSchema(context, siblings, seen) } : rewritten;
+      }
+    }
+    if (seen.has(ref) || seen.size > MAX_REF_DEPTH) {
+      return { description: `Recursive reference ${ref}.` };
+    }
+    const target = resolvePointer(context.document, ref);
+    return rewriteSchema(context, target, /* @__PURE__ */ new Set([...seen, ref]));
+  }
+  const out = {};
+  for (const [key, child] of Object.entries(record2)) {
+    out[key] = rewriteSchema(context, child, seen);
+  }
+  return nullableWithoutType(out);
+}
+function nullableWithoutType(schema) {
+  if (typeof schema.nullable !== "boolean" || "type" in schema) return schema;
+  const { nullable: nullable2, ...rest } = schema;
+  return nullable2 ? { anyOf: [rest, { type: "null" }] } : rest;
+}
+function collectDefRefs(value, into) {
+  if (Array.isArray(value)) {
+    for (const item of value) collectDefRefs(item, into);
+    return;
+  }
+  const record2 = recordValue4(value);
+  if (!record2) return;
+  if (typeof record2.$ref === "string" && record2.$ref.startsWith("#/$defs/")) {
+    const name = decodePointerToken(record2.$ref.slice("#/$defs/".length).split("/")[0] ?? "");
+    if (name) into.add(name);
+  }
+  for (const child of Object.values(record2)) collectDefRefs(child, into);
+}
+function reachableDefs(schema, defs) {
+  const names = /* @__PURE__ */ new Set();
+  collectDefRefs(schema, names);
+  const out = {};
+  const queue = [...names];
+  while (queue.length) {
+    const name = queue.shift();
+    if (name in out) continue;
+    const def = defs[name];
+    if (!def) {
+      throw new OpenApiSpecError("openapi_ref_unresolved", `Unresolvable schema ${name}.`);
+    }
+    out[name] = def;
+    const nested = /* @__PURE__ */ new Set();
+    collectDefRefs(def, nested);
+    for (const next of nested) if (!(next in out)) queue.push(next);
+  }
+  return out;
+}
+function inlineDefs(schema, defs) {
+  let nodes = 0;
+  const walk = (value, stack) => {
+    nodes += 1;
+    if (nodes > INLINE_NODE_BUDGET) throw new Error("budget");
+    if (Array.isArray(value)) return value.map((item) => walk(item, stack));
+    const record2 = recordValue4(value);
+    if (!record2) return value;
+    if (typeof record2.$ref === "string" && record2.$ref.startsWith("#/$defs/")) {
+      const path10 = record2.$ref.slice("#/$defs/".length).split("/").map(decodePointerToken);
+      const name = path10[0];
+      if (stack.includes(name)) throw new Error("cycle");
+      let target = defs[name];
+      for (const token of path10.slice(1)) target = recordValue4(target)?.[token];
+      if (target === void 0) throw new Error("missing");
+      const { $ref: _ref, ...siblings } = record2;
+      const resolved = walk(target, [...stack, name]);
+      if (!Object.keys(siblings).length) return resolved;
+      const extra = walk(siblings, stack);
+      return recordValue4(resolved) ? { ...resolved, ...extra } : { allOf: [resolved], ...extra };
+    }
+    const out = {};
+    for (const [key, child] of Object.entries(record2)) out[key] = walk(child, stack);
+    return out;
+  };
+  try {
+    return walk(schema, []);
+  } catch {
+    return null;
+  }
+}
+function swaggerParameterSchema(parameter) {
+  const schema = {};
+  for (const key of [
+    "type",
+    "format",
+    "items",
+    "enum",
+    "default",
+    "minimum",
+    "maximum",
+    "exclusiveMinimum",
+    "exclusiveMaximum",
+    "minLength",
+    "maxLength",
+    "pattern",
+    "minItems",
+    "maxItems",
+    "uniqueItems",
+    "multipleOf"
+  ]) {
+    if (key in parameter) schema[key] = parameter[key];
+  }
+  if (schema.type === "file") {
+    schema.type = "string";
+    schema.format = "binary";
+  }
+  return schema;
+}
+var BODY_CONTENT_PREFERENCE = [
+  "application/json",
+  "application/x-www-form-urlencoded",
+  "multipart/form-data",
+  "text/plain",
+  "application/octet-stream"
+];
+function preferredContentType(contentTypes) {
+  const lower = contentTypes.map((type) => type.toLowerCase());
+  for (const preferred of BODY_CONTENT_PREFERENCE) {
+    const index = lower.findIndex((type) => type.split(";")[0].trim() === preferred);
+    if (index >= 0) return contentTypes[index];
+    if (preferred === "application/json") {
+      const json2 = lower.findIndex((type) => /\+json\b/u.test(type) || type.endsWith("/json"));
+      if (json2 >= 0) return contentTypes[json2];
+    }
+  }
+  return contentTypes[0] ?? "application/json";
+}
+function mergeParameters(document, pathLevel, operationLevel) {
+  const merged = /* @__PURE__ */ new Map();
+  for (const list of [pathLevel, operationLevel]) {
+    for (const raw of Array.isArray(list) ? list : []) {
+      const parameter = derefObject(document, raw);
+      const name = stringValue2(parameter?.name);
+      const location = stringValue2(parameter?.in);
+      if (!parameter || !name || !location) {
+        throw new OpenApiSpecError("openapi_spec_invalid", "A parameter is missing name or in.");
+      }
+      merged.set(`${location}\0${name}`, parameter);
+    }
+  }
+  return [...merged.values()];
+}
+function boundedText2(value, max) {
+  const text2 = stringValue2(value);
+  return text2 ? text2.slice(0, max) : null;
+}
+function parseOpenApiDocument(raw) {
+  const document = recordValue4(raw);
+  if (!document) throw new OpenApiSpecError("openapi_spec_invalid", "The spec is not a JSON object.");
+  const openapi = stringValue2(document.openapi);
+  const swagger = stringValue2(document.swagger);
+  let format;
+  if (openapi && /^3\.\d+(\.\d+)?$/u.test(openapi)) format = "openapi-3";
+  else if (swagger === "2.0") format = "swagger-2";
+  else {
+    throw new OpenApiSpecError(
+      "openapi_spec_unsupported_version",
+      "Only OpenAPI 3.x and Swagger 2.0 documents are supported."
+    );
+  }
+  const paths = recordValue4(document.paths);
+  if (!paths) throw new OpenApiSpecError("openapi_spec_invalid", "The spec has no paths object.");
+  const context = {
+    document,
+    defPrefixes: format === "openapi-3" ? ["#/components/schemas/"] : ["#/definitions/"]
+  };
+  const rawDefs = format === "openapi-3" ? recordValue4(recordValue4(document.components)?.schemas) ?? {} : recordValue4(document.definitions) ?? {};
+  const defs = {};
+  for (const [name, schema] of Object.entries(rawDefs)) {
+    defs[name] = recordValue4(rewriteSchema(context, schema)) ?? {};
+  }
+  const info = recordValue4(document.info) ?? {};
+  let basePath = "";
+  if (format === "swagger-2") {
+    basePath = stringValue2(document.basePath) ?? "";
+  } else {
+    const server = stringValue2(recordValue4(document.servers?.[0])?.url);
+    if (server) {
+      try {
+        basePath = new URL(server, "http://placeholder.invalid").pathname;
+      } catch {
+        basePath = "";
+      }
+    }
+  }
+  basePath = basePath.replace(/\/+$/u, "");
+  if (basePath && !basePath.startsWith("/")) basePath = `/${basePath}`;
+  const globalConsumes = Array.isArray(document.consumes) ? document.consumes.filter((item) => typeof item === "string") : [];
+  const operations = [];
+  for (const [path10, rawItem] of Object.entries(paths)) {
+    const item = derefObject(document, rawItem);
+    if (!item) continue;
+    for (const method of [...OPENAPI_METHODS, ...WEBDAV_METHODS]) {
+      const operation = recordValue4(
+        WEBDAV_METHODS.includes(method) ? item[`x-${method}`] : item[method]
+      );
+      if (!operation) continue;
+      const operationId = stringValue2(operation.operationId);
+      const parameters = [];
+      const unsupportedParameters = [];
+      let requestBody = null;
+      const formFields = [];
+      for (const parameter of mergeParameters(document, item.parameters, operation.parameters)) {
+        const name = String(parameter.name);
+        const location = String(parameter.in);
+        const description = boundedText2(parameter.description, OPENAPI_DESCRIPTION_MAX);
+        if (format === "swagger-2" && location === "body") {
+          const schema2 = recordValue4(rewriteSchema(context, parameter.schema ?? {})) ?? {};
+          const consumes = Array.isArray(operation.consumes) ? operation.consumes.filter((type) => typeof type === "string") : globalConsumes;
+          const contentTypes = consumes.length ? consumes : ["application/json"];
+          requestBody = {
+            required: parameter.required === true,
+            contentType: preferredContentType(contentTypes),
+            contentTypes,
+            schema: schema2,
+            ...description ? { description } : {}
+          };
+          continue;
+        }
+        if (format === "swagger-2" && location === "formData") {
+          formFields.push({
+            name,
+            required: parameter.required === true,
+            schema: swaggerParameterSchema(parameter),
+            file: parameter.type === "file"
+          });
+          continue;
+        }
+        if (location !== "path" && location !== "query" && location !== "header") {
+          unsupportedParameters.push({ name, in: location });
+          continue;
+        }
+        const schema = format === "swagger-2" ? recordValue4(rewriteSchema(context, swaggerParameterSchema(parameter))) ?? {} : recordValue4(
+          rewriteSchema(
+            context,
+            parameter.schema ?? recordValue4(Object.values(recordValue4(parameter.content) ?? {})[0])?.schema ?? {}
+          )
+        ) ?? {};
+        const lowerName = name.toLowerCase();
+        const constrained = location === "header" && lowerName === "overwrite" ? { ...schema, type: "string", enum: ["T", "F"] } : location === "header" && lowerName === "depth" ? { ...schema, type: "string", enum: ["0", "1", "infinity"] } : schema;
+        parameters.push({
+          name,
+          in: location,
+          required: location === "path" ? true : parameter.required === true,
+          schema: location === "path" && parameter["x-multi-segment"] === true ? { description: "A path; may contain / between segments (no empty, . or .. segments).", ...constrained, "x-multi-segment": true } : location === "header" && lowerName === "destination" ? { description: "Destination path relative to the app (not a URL); Marketplace builds the full address.", ...constrained } : constrained,
+          ...location === "path" && parameter["x-multi-segment"] === true ? { multiSegment: true } : {},
+          ...location === "header" && lowerName === "destination" && typeof parameter["x-destination-template"] === "string" ? { destinationTemplate: parameter["x-destination-template"] } : {},
+          ...description ? { description } : {},
+          ...typeof parameter.style === "string" ? { style: parameter.style } : {},
+          ...typeof parameter.explode === "boolean" ? { explode: parameter.explode } : {},
+          ...format === "swagger-2" && parameter.collectionFormat === "multi" ? { explode: true } : format === "swagger-2" && parameter.type === "array" ? { explode: false } : {}
+        });
+      }
+      if (formFields.length) {
+        const multipart = formFields.some((field) => field.file);
+        const consumes = Array.isArray(operation.consumes) ? operation.consumes.filter((type) => typeof type === "string") : globalConsumes;
+        const contentType = multipart ? "multipart/form-data" : consumes.find((type) => type.startsWith("multipart/form-data")) ?? "application/x-www-form-urlencoded";
+        requestBody = {
+          required: formFields.some((field) => field.required),
+          contentType,
+          contentTypes: [contentType],
+          schema: {
+            type: "object",
+            properties: Object.fromEntries(formFields.map((field) => [field.name, field.schema])),
+            required: formFields.filter((field) => field.required).map((field) => field.name)
+          }
+        };
+      }
+      if (format === "openapi-3" && operation.requestBody !== void 0) {
+        const body = derefObject(document, operation.requestBody);
+        const content = recordValue4(body?.content) ?? {};
+        const contentTypes = Object.keys(content);
+        if (contentTypes.length) {
+          const contentType = preferredContentType(contentTypes);
+          const description = boundedText2(body?.description, OPENAPI_DESCRIPTION_MAX);
+          requestBody = {
+            required: body?.required === true,
+            contentType,
+            contentTypes,
+            schema: recordValue4(rewriteSchema(context, recordValue4(content[contentType])?.schema ?? {})) ?? {},
+            ...description ? { description } : {}
+          };
+        }
+      }
+      for (const match of path10.matchAll(/\{([^}]+)\}/gu)) {
+        const name = match[1];
+        if (!parameters.some((parameter) => parameter.in === "path" && parameter.name === name)) {
+          parameters.push({ name, in: "path", required: true, schema: { type: "string" } });
+        }
+      }
+      if (requestBody) {
+        requestBody = { ...requestBody, schema: fileAwareBodySchema(requestBody.contentType, requestBody.schema, defs) };
+      }
+      operations.push({
+        ref: operationId ?? operationIdentity(method, path10),
+        operationId,
+        method,
+        path: path10,
+        summary: boundedText2(operation.summary, OPENAPI_TITLE_MAX),
+        description: boundedText2(operation.description, OPENAPI_FULL_DESCRIPTION_MAX),
+        tags: Array.isArray(operation.tags) ? operation.tags.filter((tag) => typeof tag === "string").slice(0, 20) : [],
+        deprecated: operation.deprecated === true,
+        parameters,
+        unsupportedParameters,
+        requestBody
+      });
+    }
+  }
+  return {
+    format,
+    specVersion: openapi ?? swagger,
+    title: stringValue2(info.title) ?? "API",
+    apiVersion: stringValue2(info.version) ?? "",
+    basePath,
+    defs,
+    operations
+  };
+}
+function kebab(value) {
+  return value.replace(/([a-z0-9])([A-Z])/gu, "$1-$2").replace(/([A-Z]+)([A-Z][a-z])/gu, "$1-$2").toLowerCase().replace(/[^a-z0-9]+/gu, "-").replace(/^-+|-+$/gu, "");
+}
+function shortHash(value, length) {
+  return createHash2("sha256").update(value).digest("hex").slice(0, length);
+}
+function operationKeySegment(operation) {
+  let segment = operation.operationId ? kebab(operation.operationId) : kebab(`${operation.method} ${operation.path.replace(/\{([^}]*)\}/gu, " by $1 ")}`);
+  if (!segment) segment = "operation";
+  if (!/^[a-z]/u.test(segment)) segment = `op-${segment}`;
+  return segment;
+}
+function deriveOperationActionKeys(provider, operations) {
+  const budget = OPENAPI_MAX_ACTION_KEY_LENGTH - provider.length - 1;
+  if (budget < 16) throw new Error(`Provider ${provider} is too long for action keys.`);
+  const bases = operations.map(
+    (operation) => operationKeySegment(operation).slice(0, budget).replace(/-+$/u, "")
+  );
+  const groups = /* @__PURE__ */ new Map();
+  bases.forEach((base, index) => groups.set(base, [...groups.get(base) ?? [], index]));
+  const keys = new Array(operations.length);
+  const used = /* @__PURE__ */ new Set();
+  for (const [base, members2] of groups) {
+    if (members2.length === 1) {
+      keys[members2[0]] = `${provider}.${base}`;
+      used.add(keys[members2[0]]);
+    }
+  }
+  for (const [base, members2] of groups) {
+    if (members2.length === 1) continue;
+    const sorted = [...members2].sort((left, right) => {
+      const a = operationIdentity(operations[left].method, operations[left].path);
+      const b = operationIdentity(operations[right].method, operations[right].path);
+      return a < b ? -1 : a > b ? 1 : left - right;
+    });
+    sorted.forEach((index, position) => {
+      if (position === 0 && !used.has(`${provider}.${base}`)) {
+        keys[index] = `${provider}.${base}`;
+        used.add(keys[index]);
+        return;
+      }
+      const identity = operationIdentity(operations[index].method, operations[index].path);
+      for (let length = 6; length <= 64; length += 2) {
+        const suffix = `-${shortHash(identity, length)}`;
+        const trimmed = base.slice(0, budget - suffix.length).replace(/-+$/u, "");
+        const candidate = `${provider}.${trimmed}${suffix}`;
+        if (!used.has(candidate)) {
+          keys[index] = candidate;
+          used.add(candidate);
+          return;
+        }
+      }
+      throw new Error(`Could not derive a unique action key for ${identity}.`);
+    });
+  }
+  for (const key of keys) {
+    if (!OPENAPI_ACTION_KEY_PATTERN.test(key) || key.length > OPENAPI_MAX_ACTION_KEY_LENGTH) {
+      throw new Error(`Derived action key ${key} is invalid.`);
+    }
+  }
+  return keys;
+}
+function operationPatternMatches(pattern, operation) {
+  const regex = new RegExp(
+    `^${pattern.trim().split("*").map((part) => part.replace(/[.+?^${}()|[\]\\]/gu, "\\$&")).join(".*")}$`,
+    "iu"
+  );
+  return operation.operationId !== null && regex.test(operation.operationId) || regex.test(operationIdentity(operation.method, operation.path));
+}
+var READS_DOWNGRADABLE_METHODS = /* @__PURE__ */ new Set(["post", "query"]);
+function copyMayOverwrite(parameters) {
+  const overwrite = (parameters ?? []).find(
+    (parameter) => parameter.in === "header" && parameter.name.toLowerCase() === "overwrite"
+  );
+  return !(overwrite && overwrite.schema.const === "F");
+}
+function operationRisk(operation, patterns) {
+  const readMethod = READ_METHODS.has(operation.method);
+  const readClass = READS_DOWNGRADABLE_METHODS.has(operation.method) && (patterns.reads ?? []).some((pattern) => operationPatternMatches(pattern, operation));
+  const write = !readMethod && !readClass;
+  const destructive = operation.method === "delete" || operation.method === "move" || operation.method === "copy" && copyMayOverwrite(operation.parameters) || patterns.destructive.some((pattern) => operationPatternMatches(pattern, operation));
+  const outward = patterns.outward.some((pattern) => operationPatternMatches(pattern, operation));
+  return {
+    capability: destructive ? "connector.admin" : write ? "connector.dispatch" : "connector.observe",
+    write: write || destructive,
+    outward,
+    destructive
+  };
+}
+function operationGroup(operation) {
+  const tag = operation.tags.map(kebab).find(Boolean);
+  if (tag) return tag;
+  const segment = operation.path.split("/").filter((part) => part && !part.startsWith("{")).map(kebab).find(Boolean);
+  return segment ?? "general";
+}
+function groupSchema(parameters) {
+  return {
+    type: "object",
+    properties: Object.fromEntries(
+      parameters.map((parameter) => [
+        parameter.name,
+        parameter.description && !("description" in parameter.schema) ? { ...parameter.schema, description: parameter.description } : parameter.schema
+      ])
+    ),
+    required: parameters.filter(parameterNeedsArgument).map((parameter) => parameter.name),
+    additionalProperties: false
+  };
+}
+function operationArgumentGroups(operation) {
+  const groups = [];
+  for (const location of ["path", "query", "header"]) {
+    if (operation.parameters.some((parameter) => parameter.in === location)) groups.push(location);
+  }
+  if (operation.requestBody) groups.push("body");
+  return groups;
+}
+function operationInputSchema(operation, defs) {
+  const properties = {};
+  const required2 = [];
+  for (const location of ["path", "query", "header"]) {
+    const parameters = operation.parameters.filter((parameter) => parameter.in === location);
+    if (!parameters.length) continue;
+    properties[location] = groupSchema(parameters);
+    if (parameters.some(parameterNeedsArgument)) required2.push(location);
+  }
+  if (operation.requestBody) {
+    properties.body = {
+      ...operation.requestBody.schema,
+      ...operation.requestBody.description && !("description" in operation.requestBody.schema) ? { description: operation.requestBody.description } : {},
+      "x-content-type": operation.requestBody.contentType
+    };
+    if (operation.requestBody.required) required2.push("body");
+  }
+  const schema = {
+    type: "object",
+    properties,
+    required: required2,
+    additionalProperties: false
+  };
+  const reachable = reachableDefs(schema, defs);
+  return Object.keys(reachable).length ? { ...schema, $defs: reachable } : schema;
+}
+function byteLength(value) {
+  return Buffer.byteLength(JSON.stringify(value));
+}
+function boundedToolSchema(full, maxBytes = OPENAPI_TOOL_SCHEMA_MAX_BYTES) {
+  const { $defs, ...rest } = full;
+  if ($defs) {
+    const inlined = inlineDefs(rest, $defs);
+    if (inlined && byteLength(inlined) <= maxBytes) {
+      return { schema: inlined, truncated: false };
+    }
+  }
+  if (byteLength(full) <= maxBytes) return { schema: full, truncated: false };
+  const note = "Schema too large to list. Call operations.describe for the full schema.";
+  const properties = recordValue4(full.properties) ?? {};
+  const outline = {};
+  for (const [group, value] of Object.entries(properties)) {
+    const groupSchemaValue = recordValue4(value) ?? {};
+    const small = { ...groupSchemaValue };
+    delete small.$defs;
+    outline[group] = group !== "body" && byteLength(small) <= maxBytes / 4 && !JSON.stringify(small).includes("#/$defs/") ? small : {
+      ...typeof groupSchemaValue.type === "string" ? { type: groupSchemaValue.type } : {},
+      description: note
+    };
+  }
+  const truncated = {
+    type: "object",
+    properties: outline,
+    required: Array.isArray(full.required) ? full.required : [],
+    description: note,
+    "x-truncated": true
+  };
+  return byteLength(truncated) <= maxBytes ? { schema: truncated, truncated: true } : { schema: { type: "object", description: note, "x-truncated": true }, truncated: true };
+}
+function sha256Hex(value) {
+  return createHash2("sha256").update(value).digest("hex");
+}
+function applyMergePatch(target, patch) {
+  if (!patch || typeof patch !== "object" || Array.isArray(patch)) return patch;
+  const base = target && typeof target === "object" && !Array.isArray(target) ? { ...target } : {};
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null) delete base[key];
+    else base[key] = applyMergePatch(base[key], value);
+  }
+  return base;
+}
+var FILE_UPLOAD_SCHEMA = {
+  type: "object",
+  description: "File upload: base64-encoded content, with an optional file name and media type.",
+  required: ["base64"],
+  properties: {
+    base64: { type: "string", description: "File content, base64-encoded." },
+    filename: { type: "string", maxLength: 255 },
+    contentType: { type: "string", maxLength: 255 }
+  },
+  additionalProperties: false,
+  "x-file-upload": true
+};
+function isBinarySchema(schema) {
+  const record2 = recordValue4(schema);
+  if (!record2) return false;
+  return record2.format === "binary" || typeof record2.contentMediaType === "string" && record2.type !== "object" && record2.type !== "array" || typeof record2.contentEncoding === "string";
+}
+function fileAware(schema) {
+  if (isBinarySchema(schema)) return FILE_UPLOAD_SCHEMA;
+  const record2 = recordValue4(schema);
+  if (record2?.type === "array" && isBinarySchema(record2.items)) return { ...record2, items: FILE_UPLOAD_SCHEMA };
+  return schema;
+}
+function fileAwareBodySchema(contentType, schema, defs) {
+  const base = contentType.split(";")[0].trim().toLowerCase();
+  if (base === "application/octet-stream" || base.startsWith("image/") || base.startsWith("video/") || base.startsWith("audio/")) {
+    return !Object.keys(schema).length || isBinarySchema(schema) ? FILE_UPLOAD_SCHEMA : schema;
+  }
+  if (base !== "multipart/form-data") return schema;
+  let target = schema;
+  if (typeof schema.$ref === "string" && schema.$ref.startsWith("#/$defs/")) {
+    const name = decodePointerToken(schema.$ref.slice("#/$defs/".length));
+    if (!name.includes("/") && defs[name]) target = { ...defs[name] };
+  }
+  const properties = recordValue4(target.properties);
+  if (!properties) return schema;
+  const next = Object.fromEntries(Object.entries(properties).map(([key, value]) => [key, fileAware(value)]));
+  return Object.values(next).some((value, index) => value !== Object.values(properties)[index]) ? { ...target, properties: next } : schema;
+}
+
+// src/mcp-url-policy.ts
+import { lookup as dnsLookup } from "node:dns/promises";
+import { isIP } from "node:net";
+
+// src/tailnet.ts
+var import_undici = __toESM(require_undici(), 1);
+import { connect } from "node:net";
+var TailnetUnavailableError = class extends Error {
+  code = "tailnet_unavailable";
+  constructor() {
+    super("The tailnet is not reachable from Marketplace right now.");
+  }
+};
+function ipv4Octets(value) {
+  const parts = value.split(".");
+  if (parts.length !== 4 || !parts.every((part) => /^\d{1,3}$/u.test(part))) return null;
+  const octets = parts.map(Number);
+  return octets.every((octet) => octet <= 255) ? octets : null;
+}
+function isTailnetAddress(value) {
+  const octets = ipv4Octets(value);
+  return octets !== null && octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127;
+}
+function isTailnetHostname(value) {
+  const host = value.toLowerCase().replace(/\.$/u, "");
+  return host.endsWith(".ts.net") && host.length > ".ts.net".length;
+}
+function isTailnetHost(hostname3) {
+  const host = hostname3.replace(/^\[|\]$/gu, "");
+  return isTailnetHostname(host) || isTailnetAddress(host);
+}
+function loopbackProxy(value) {
+  if (!value?.trim()) return null;
+  try {
+    const url2 = new URL(value.trim());
+    const loopback = ["127.0.0.1", "localhost", "[::1]"].includes(url2.hostname);
+    if (url2.protocol !== "http:" || !loopback || url2.username || url2.password || !url2.port) return null;
+    return url2.origin;
+  } catch {
+    return null;
+  }
+}
+function tailnetConfig(env = process.env) {
+  const proxyUrl = loopbackProxy(env.MARKETPLACE_TAILNET_PROXY);
+  if (proxyUrl) return { mode: "proxy", proxyUrl };
+  if (env.MARKETPLACE_TAILNET_PROXY?.trim() || env.MARKETPLACE_TAILNET_STATE === "unavailable") {
+    return { mode: "unavailable", proxyUrl: null };
+  }
+  return { mode: "disabled", proxyUrl: null };
+}
+function routeOutbound(url2, env = process.env) {
+  if (!isTailnetHost(url2.hostname)) return { kind: "direct" };
+  const config3 = tailnetConfig(env);
+  if (config3.mode === "proxy") return { kind: "proxy", proxyUrl: config3.proxyUrl };
+  if (config3.mode === "unavailable") throw new TailnetUnavailableError();
+  return { kind: "direct" };
+}
+function tailnetResolvesHostname(hostname3, env = process.env) {
+  return isTailnetHostname(hostname3) && tailnetConfig(env).mode === "proxy";
+}
+var agents = /* @__PURE__ */ new Map();
+function proxyAgent(proxyUrl) {
+  let agent = agents.get(proxyUrl);
+  if (!agent) {
+    agent = new import_undici.ProxyAgent({ uri: proxyUrl });
+    agents.set(proxyUrl, agent);
+  }
+  return agent;
+}
+var pinnedAgents = /* @__PURE__ */ new Map();
+function pinnedAgent(lookup) {
+  let agent = pinnedAgents.get(lookup);
+  if (!agent) {
+    agent = new import_undici.Agent({ connect: { lookup: policyCheckedLookup(lookup) } });
+    pinnedAgents.set(lookup, agent);
+  }
+  return agent;
+}
+function tailnetAwareFetch(env = process.env, fetchImpl, lookup) {
+  return (async (input2, init) => {
+    const url2 = new URL(input2 instanceof Request ? input2.url : String(input2));
+    const route = routeOutbound(url2, env);
+    if (route.kind === "direct") {
+      if (fetchImpl || configuredMcpAllowedOrigins(env).has(url2.origin)) return (fetchImpl ?? fetch)(input2, init);
+      return await (0, import_undici.fetch)(url2, {
+        ...init,
+        ...await undiciBody(init),
+        dispatcher: pinnedAgent(lookup)
+      });
+    }
+    return await (0, import_undici.fetch)(url2, {
+      ...init,
+      ...await undiciBody(init),
+      dispatcher: proxyAgent(route.proxyUrl)
+    });
+  });
+}
+async function undiciBody(init) {
+  let body = init?.body;
+  const headers = new Headers(init?.headers);
+  if (body instanceof FormData) {
+    const encoded = new Response(body);
+    headers.set("content-type", encoded.headers.get("content-type"));
+    body = new Uint8Array(await encoded.arrayBuffer());
+  }
+  return {
+    headers: Object.fromEntries(headers),
+    ...body === void 0 || body === null ? {} : { body }
+  };
+}
+var healthCache = null;
+function proxyListening(proxyUrl, timeoutMs) {
+  const url2 = new URL(proxyUrl);
+  return new Promise((resolve) => {
+    const socket = connect({ host: url2.hostname.replace(/^\[|\]$/gu, ""), port: Number(url2.port) });
+    const done = (ok) => {
+      socket.destroy();
+      resolve(ok);
+    };
+    socket.setTimeout(timeoutMs, () => done(false));
+    socket.once("connect", () => done(true));
+    socket.once("error", () => done(false));
+  });
+}
+async function tailnetHealth(env = process.env, options = {}) {
+  const config3 = tailnetConfig(env);
+  if (config3.mode === "disabled") return "disabled";
+  if (config3.mode === "unavailable") return "unavailable";
+  const now = Date.now();
+  if (healthCache && healthCache.key === config3.proxyUrl && now - healthCache.at < (options.cacheMs ?? 5e3)) {
+    return healthCache.value;
+  }
+  const value = await proxyListening(config3.proxyUrl, options.timeoutMs ?? 500) ? "connected" : "unavailable";
+  healthCache = { key: config3.proxyUrl, at: now, value };
+  return value;
+}
+
+// src/mcp-url-policy.ts
+var McpUrlPolicyError = class extends Error {
+  constructor(reason) {
+    super(`MCP server URL is not allowed (${reason}).`);
+    this.reason = reason;
+  }
+  reason;
+  code = "custom_mcp_url_not_allowed";
+};
+var defaultMcpLookup = async (hostname3) => dnsLookup(hostname3, { all: true, verbatim: true });
+function configuredMcpAllowedOrigins(env = process.env) {
+  return new Set(
+    (env.MARKETPLACE_MCP_ALLOWED_ORIGINS ?? "").split(",").map((origin) => origin.trim()).filter(Boolean)
+  );
+}
+function ipv4Octets2(address2) {
+  const parts = address2.split(".");
+  if (parts.length !== 4) return null;
+  const octets = parts.map((part) => /^\d{1,3}$/u.test(part) ? Number(part) : NaN);
+  return octets.every((octet) => Number.isInteger(octet) && octet >= 0 && octet <= 255) ? octets : null;
+}
+function forbiddenIpv4(octets) {
+  const [a, b] = octets;
+  if (a === 0) return true;
+  if (a === 10) return true;
+  if (a === 127) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 192 && b === 0 && octets[2] === 0) return true;
+  if (a === 198 && (b === 18 || b === 19)) return true;
+  if (a >= 224) return true;
+  return false;
+}
+function expandIpv6(address2) {
+  let value = address2.toLowerCase();
+  const zone = value.indexOf("%");
+  if (zone >= 0) value = value.slice(0, zone);
+  let tail = [];
+  const lastColon = value.lastIndexOf(":");
+  const maybeV4 = value.slice(lastColon + 1);
+  if (maybeV4.includes(".")) {
+    const octets = ipv4Octets2(maybeV4);
+    if (!octets) return null;
+    tail = [octets[0] << 8 | octets[1], octets[2] << 8 | octets[3]];
+    value = `${value.slice(0, lastColon + 1)}0:0`;
+  }
+  const halves = value.split("::");
+  if (halves.length > 2) return null;
+  const parse3 = (part) => part ? part.split(":").map((group) => /^[0-9a-f]{1,4}$/u.test(group) ? parseInt(group, 16) : NaN) : [];
+  const head = parse3(halves[0] ?? "");
+  const rest = halves.length === 2 ? parse3(halves[1] ?? "") : [];
+  const fill = halves.length === 2 ? 8 - head.length - rest.length : 0;
+  if (fill < 0) return null;
+  const groups = [...head, ...Array(fill).fill(0), ...rest];
+  if (groups.length !== 8 || groups.some((group) => Number.isNaN(group))) return null;
+  if (tail.length) {
+    groups[6] = tail[0];
+    groups[7] = tail[1];
+  }
+  return groups;
+}
+function forbiddenIpv6(groups) {
+  const [g0, , , , , g5, g6, g7] = groups;
+  if (groups.every((group) => group === 0)) return true;
+  if (groups.slice(0, 7).every((group) => group === 0) && g7 === 1) return true;
+  if ((g0 & 65024) === 64512) return true;
+  if ((g0 & 65472) === 65152) return true;
+  if ((g0 & 65472) === 65216) return true;
+  if ((g0 & 65280) === 65280) return true;
+  if (g0 === 8193 && groups[1] === 3512) return true;
+  const embedded = [g6 >> 8, g6 & 255, g7 >> 8, g7 & 255];
+  if (groups.slice(0, 5).every((group) => group === 0) && (g5 === 65535 || g5 === 0)) {
+    return forbiddenIpv4(embedded);
+  }
+  if (g0 === 100 && groups[1] === 65435 && groups.slice(2, 6).every((group) => group === 0)) {
+    return forbiddenIpv4(embedded);
+  }
+  return false;
+}
+function isForbiddenMcpAddress(address2) {
+  const family = isIP(address2.replace(/^\[|\]$/gu, "").split("%")[0] ?? "");
+  const bare = address2.replace(/^\[|\]$/gu, "");
+  if (family === 4) {
+    const octets = ipv4Octets2(bare);
+    return !octets || forbiddenIpv4(octets);
+  }
+  if (family === 6) {
+    const groups = expandIpv6(bare);
+    return !groups || forbiddenIpv6(groups);
+  }
+  return true;
+}
+function forbiddenHostname(hostname3) {
+  const host = hostname3.toLowerCase().replace(/\.$/u, "");
+  return host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal") || host === "" || // Single-label names resolve through local search domains.
+  !host.includes(".") && isIP(host) === 0;
+}
+function checkMcpUrlSyntax(value, env = process.env) {
+  let url2;
+  try {
+    url2 = new URL(value);
+  } catch {
+    throw new McpUrlPolicyError("invalid_url");
+  }
+  if (configuredMcpAllowedOrigins(env).has(url2.origin)) {
+    if (url2.username || url2.password) throw new McpUrlPolicyError("userinfo_not_allowed");
+    return { url: url2, allowlisted: true };
+  }
+  if (url2.protocol !== "https:") throw new McpUrlPolicyError("scheme_not_https");
+  if (url2.username || url2.password) throw new McpUrlPolicyError("userinfo_not_allowed");
+  if (url2.hash) throw new McpUrlPolicyError("fragment_not_allowed");
+  if (url2.search) throw new McpUrlPolicyError("query_not_allowed");
+  const hostname3 = url2.hostname.replace(/^\[|\]$/gu, "");
+  if (isIP(hostname3)) {
+    if (isForbiddenMcpAddress(hostname3)) throw new McpUrlPolicyError("address_not_allowed");
+    return { url: url2, allowlisted: false };
+  }
+  if (forbiddenHostname(hostname3)) throw new McpUrlPolicyError("hostname_not_allowed");
+  return { url: url2, allowlisted: false };
+}
+async function assertMcpUrlAllowed(value, options = {}) {
+  const { url: url2, allowlisted } = checkMcpUrlSyntax(value, options.env);
+  if (allowlisted) return url2;
+  const hostname3 = url2.hostname.replace(/^\[|\]$/gu, "");
+  if (isIP(hostname3)) return url2;
+  if (tailnetResolvesHostname(hostname3, options.env)) return url2;
+  let answers;
+  try {
+    answers = await (options.lookup ?? defaultMcpLookup)(hostname3);
+  } catch {
+    throw new McpUrlPolicyError("dns_lookup_failed");
+  }
+  if (answers.length === 0) throw new McpUrlPolicyError("dns_lookup_failed");
+  if (answers.some((answer) => isForbiddenMcpAddress(answer.address))) {
+    throw new McpUrlPolicyError("address_not_allowed");
+  }
+  return url2;
+}
+function policyCheckedLookup(lookup = defaultMcpLookup) {
+  return (hostname3, options, callback) => {
+    const all = typeof options === "object" && options !== null && options.all === true;
+    lookup(hostname3).then(
+      (answers) => {
+        if (answers.length === 0) {
+          callback(Object.assign(new Error(`DNS lookup failed for ${hostname3}`), { code: "ENOTFOUND" }), "");
+          return;
+        }
+        if (answers.some((answer) => isForbiddenMcpAddress(answer.address))) {
+          callback(Object.assign(new McpUrlPolicyError("address_not_allowed"), { code: "EADDRNOTAVAIL" }), "");
+          return;
+        }
+        if (all) callback(null, answers.map((answer) => ({ address: answer.address, family: answer.family })));
+        else callback(null, answers[0].address, answers[0].family);
+      },
+      (error62) => callback(error62, "")
+    );
+  };
+}
+
+// package.json
+var package_default = {
+  name: "@tealbrick/marketplace-program",
+  version: "0.1.19",
+  private: true,
+  type: "module",
+  packageManager: "pnpm@9.15.4",
+  engines: {
+    node: ">=22.22.0",
+    pnpm: ">=9.15.4"
+  },
+  scripts: {
+    dev: "tsx watch src/index.ts",
+    "dev:web": "vite --config web/vite.config.ts",
+    build: "pnpm run build:web",
+    "build:web": "vite build --config web/vite.config.ts",
+    "build:miniapp": "pnpm run build:web && node scripts/build-miniapp.mjs",
+    "dev:miniapp": "node scripts/run-miniapp.mjs",
+    "start:miniapp": "node dist/marketplace-program.mjs",
+    "smoke:live-app-home": "tsx ../smoke/live-app-home-smoke.ts",
+    "smoke:operator-pov": "node ../smoke/operator-pov-workflow.mjs",
+    typecheck: "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
+    test: "vitest run && vitest run --config web/vitest.config.ts",
+    "test:e2e": "pnpm run build:web && playwright test --config web/playwright.config.ts",
+    lint: "tsc -p tsconfig.json --noEmit",
+    "company-box:coverage": "tsx scripts/company-box-coverage.ts",
+    "composio:coverage": "tsx scripts/composio-coverage.ts"
+  },
+  dependencies: {
+    "@fastify/static": "^8.3.0",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "@tanstack/react-query": "^5.90.20",
+    "@tealbrick/contract": "0.1.0-alpha.3",
+    "@tealbrick/ui": "0.2.2",
+    ajv: "8.20.0",
+    fastify: "^5.6.1",
+    "lucide-react": "^0.468.0",
+    react: "^19.2.3",
+    "react-dom": "^19.2.3",
+    undici: "7.29.0",
+    zod: "^3.25.76"
+  },
+  devDependencies: {
+    "@playwright/test": "^1.58.2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^24.12.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.4",
+    esbuild: "^0.28.1",
+    jsdom: "^28.0.0",
+    tsx: "^4.20.6",
+    typescript: "^5.9.3",
+    vite: "^7.3.1",
+    vitest: "^3.2.4"
+  }
+};
+
+// src/version.ts
+var MARKETPLACE_VERSION = package_default.version;
+
+// src/openapi-http.ts
+var OPENAPI_CALL_TIMEOUT_MS = 3e4;
+var OPENAPI_MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+var OPENAPI_MAX_BINARY_BYTES = 512 * 1024;
+var OPENAPI_DEFAULT_MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+function companyBoxMaxUploadBytes(env = process.env) {
+  const value = Number(env.MARKETPLACE_COMPANY_BOX_MAX_UPLOAD_BYTES);
+  return Number.isInteger(value) && value > 0 ? value : OPENAPI_DEFAULT_MAX_UPLOAD_BYTES;
+}
+var MAX_ERROR_BODY_CHARS = 4096;
+var OpenApiCallError = class extends Error {
+  constructor(code, message, detail = {}) {
+    super(message);
+    this.code = code;
+    this.detail = detail;
+  }
+  code;
+  detail;
+};
+var FORBIDDEN_HEADER_NAMES = /* @__PURE__ */ new Set([
+  "accept-encoding",
+  "authorization",
+  "connection",
+  "content-length",
+  "content-type",
+  "cookie",
+  "host",
+  "keep-alive",
+  "proxy-authorization",
+  "proxy-connection",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade"
+]);
+var RESPONSE_HEADER_ALLOWLIST = /* @__PURE__ */ new Set([
+  "content-type",
+  "etag",
+  "last-modified",
+  "link",
+  "x-total-count",
+  "x-total",
+  "x-page",
+  "x-per-page",
+  "x-next-page",
+  "x-request-id",
+  "retry-after"
+]);
+function recordValue5(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+function argumentError(field, reason) {
+  throw new OpenApiCallError("openapi_argument_invalid", `Argument ${field} is invalid (${reason}).`, {
+    field,
+    reason
+  });
+}
+function scalarString(value, field) {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return argumentError(field, "expected a string, number or boolean");
+}
+function headerValueValid(value) {
+  return value.length <= 4096 && /^[\t\x20-\x7e\x80-\xff]*$/u.test(value);
+}
+function credentialValues(credentials, auth) {
+  const values = Object.entries(credentials).filter(([field, value]) => field !== "username" && value.length >= 4).map(([, value]) => value);
+  if (auth.type === "basic" && credentials.username !== void 0 && credentials.password !== void 0) {
+    values.push(Buffer.from(`${credentials.username}:${credentials.password}`).toString("base64"));
+  }
+  return values;
+}
+function secretVariants(secret) {
+  const json2 = JSON.stringify(secret).slice(1, -1);
+  const forms = /* @__PURE__ */ new Set([
+    secret,
+    encodeURIComponent(secret),
+    encodeURI(secret),
+    encodeURIComponent(secret).replace(/%20/gu, "+"),
+    json2,
+    json2.replace(/\//gu, "\\/"),
+    secret.replace(/\//gu, "\\/"),
+    Buffer.from(secret).toString("base64"),
+    Buffer.from(secret).toString("base64url"),
+    Buffer.from(secret).toString("base64").replace(/=+$/u, "")
+  ]);
+  forms.add(encodeURIComponent(secret).replace(/%[0-9A-F]{2}/gu, (escape3) => escape3.toLowerCase()));
+  return [...forms].filter((form) => form.length >= 4).sort((left, right) => right.length - left.length);
+}
+function scrubSecrets(text2, secrets) {
+  let out = text2;
+  for (const secret of secrets) {
+    if (!secret) continue;
+    for (const form of secretVariants(secret)) {
+      out = out.split(form).join("[redacted]");
+    }
+  }
+  return out;
+}
+function scrubDeep(value, secrets) {
+  if (typeof value === "string") return scrubSecrets(value, secrets);
+  if (Array.isArray(value)) return value.map((item) => scrubDeep(item, secrets));
+  const record2 = recordValue5(value);
+  if (!record2) return value;
+  return Object.fromEntries(
+    Object.entries(record2).map(([key, child]) => [scrubSecrets(key, secrets), scrubDeep(child, secrets)])
+  );
+}
+function groupArgs(args, group) {
+  const value = args[group];
+  if (value === void 0 || value === null) return {};
+  const record2 = recordValue5(value);
+  if (!record2) argumentError(group, "expected an object");
+  return record2;
+}
+function declared(parameters, location) {
+  return new Map(
+    parameters.filter((parameter) => parameter.in === location).map((parameter) => [parameter.name, parameter])
+  );
+}
+function checkUnknown(group, supplied, known) {
+  for (const name of Object.keys(supplied)) {
+    if (!known.has(name)) argumentError(`${group}.${name}`, "not declared by the operation");
+  }
+}
+function reservedParameterName(name, auth) {
+  const lower = name.toLowerCase();
+  return lower === "_method" || lower.startsWith("x-http-method") || lower.startsWith("x-method-override") || auth.type === "query" && lower === auth.name.toLowerCase();
+}
+function appendQuery(search, parameter, value, auth) {
+  const field = `query.${parameter.name}`;
+  if (value === void 0 || value === null) return;
+  if (Array.isArray(value)) {
+    const items = value.map((item) => scalarString(item, field));
+    if (parameter.explode === false) search.append(parameter.name, items.join(","));
+    else for (const item of items) search.append(parameter.name, item);
+    return;
+  }
+  const record2 = recordValue5(value);
+  if (record2) {
+    const properties = recordValue5(parameter.schema.properties);
+    if (parameter.schema.type !== "object" || !properties) argumentError(field, "expected a scalar or array");
+    for (const key of Object.keys(record2)) {
+      if (!(key in properties)) argumentError(`${field}.${key}`, "not declared by the operation");
+      if (reservedParameterName(key, auth)) argumentError(`${field}.${key}`, "reserved parameter name");
+    }
+    if (parameter.style === "deepObject") {
+      for (const [key, child] of Object.entries(record2)) {
+        search.append(`${parameter.name}[${key}]`, scalarString(child, field));
+      }
+    } else if (parameter.explode === false) {
+      search.append(
+        parameter.name,
+        Object.entries(record2).flatMap(([key, child]) => [key, scalarString(child, field)]).join(",")
+      );
+    } else {
+      for (const [key, child] of Object.entries(record2)) search.append(key, scalarString(child, field));
+    }
+    return;
+  }
+  search.append(parameter.name, scalarString(value, field));
+}
+function fileArgument(value) {
+  const record2 = recordValue5(value);
+  return record2 && typeof record2.base64 === "string" ? record2 : null;
+}
+function decodeFile(file2, field, budget) {
+  const text2 = file2.base64.replace(/\s+/gu, "");
+  if (!/^[A-Za-z0-9+/_-]*={0,2}$/u.test(text2) || text2.length % 4 === 1) {
+    argumentError(`${field}.base64`, "not valid base64");
+  }
+  const estimated = Math.floor(text2.length * 3 / 4);
+  if (estimated - 2 > budget.remaining) {
+    throw new OpenApiCallError(
+      "openapi_upload_too_large",
+      `Uploads are limited to ${budget.max} bytes per call.`,
+      { field, reason: `limit ${budget.max} bytes` }
+    );
+  }
+  const bytes = new Uint8Array(Buffer.from(text2, text2.includes("-") || text2.includes("_") ? "base64url" : "base64"));
+  if (bytes.byteLength > budget.remaining) {
+    throw new OpenApiCallError("openapi_upload_too_large", `Uploads are limited to ${budget.max} bytes per call.`, {
+      field,
+      reason: `limit ${budget.max} bytes`
+    });
+  }
+  budget.remaining -= bytes.byteLength;
+  return bytes;
+}
+function buildBody(operation, value, maxUploadBytes = OPENAPI_DEFAULT_MAX_UPLOAD_BYTES) {
+  const budget = { remaining: maxUploadBytes, max: maxUploadBytes };
+  const requestBody = operation.requestBody;
+  if (value === void 0) {
+    if (requestBody?.required) argumentError("body", "required");
+    return {};
+  }
+  if (!requestBody) argumentError("body", "the operation takes no request body");
+  const contentType = requestBody.contentType;
+  const base = contentType.split(";")[0].trim().toLowerCase();
+  if (base === "application/json" || base.endsWith("+json") || base.endsWith("/json")) {
+    return { body: JSON.stringify(value), contentType };
+  }
+  if (base === "application/x-www-form-urlencoded") {
+    const record2 = recordValue5(value) ?? argumentError("body", "expected an object");
+    const form = new URLSearchParams();
+    for (const [key, child] of Object.entries(record2)) {
+      if (Array.isArray(child)) for (const item of child) form.append(key, scalarString(item, `body.${key}`));
+      else if (child !== void 0 && child !== null) form.append(key, scalarString(child, `body.${key}`));
+    }
+    return { body: form.toString(), contentType };
+  }
+  if (base === "multipart/form-data") {
+    const record2 = recordValue5(value) ?? argumentError("body", "expected an object");
+    const form = new FormData();
+    const appendPart = (key, child, field) => {
+      const file3 = fileArgument(child);
+      if (file3) {
+        const bytes = decodeFile(file3, field, budget);
+        form.append(
+          key,
+          new Blob([bytes], {
+            type: typeof file3.contentType === "string" && file3.contentType ? file3.contentType : "application/octet-stream"
+          }),
+          typeof file3.filename === "string" && file3.filename ? file3.filename : key
+        );
+      } else if (child !== void 0 && child !== null) {
+        form.append(key, typeof child === "object" ? JSON.stringify(child) : scalarString(child, field));
+      }
+    };
+    for (const [key, child] of Object.entries(record2)) {
+      if (Array.isArray(child) && child.some((item) => fileArgument(item))) {
+        child.forEach((item, index) => appendPart(key, item, `body.${key}.${index}`));
+      } else {
+        appendPart(key, child, `body.${key}`);
+      }
+    }
+    return { body: form };
+  }
+  if (base.startsWith("text/") || base === "application/xml") {
+    return { body: scalarString(value, "body"), contentType };
+  }
+  const file2 = fileArgument(value);
+  if (file2) {
+    return { body: decodeFile(file2, "body", budget), contentType };
+  }
+  if (typeof value === "string") return { body: value, contentType };
+  return { body: JSON.stringify(value), contentType };
+}
+function validSegment(text2) {
+  const decodedDots = text2.replace(/%2e/giu, ".");
+  return !(text2 === "" || /[/\\]/u.test(text2) || /%(2f|5c)/iu.test(text2) || decodedDots === "." || decodedDots === "..");
+}
+function renderPathValue(text2, field, multiSegment) {
+  const encode3 = (segment) => {
+    try {
+      return encodeURIComponent(segment);
+    } catch {
+      return argumentError(field, "not valid Unicode");
+    }
+  };
+  if (!multiSegment) {
+    if (!validSegment(text2)) argumentError(field, "not a valid path segment");
+    return encode3(text2);
+  }
+  const segments = text2.replace(/^\//u, "").replace(/\/$/u, "").split("/");
+  if (!segments.every(validSegment)) argumentError(field, "not a valid path");
+  return segments.map(encode3).join("/");
+}
+function renderPathTemplate(template, value) {
+  return template.replace(/\{([^}]+)\}/gu, (_match, name) => value(name));
+}
+function buildOpenApiRequest(options, base) {
+  const { operation, args, auth, credentials } = options;
+  for (const key of Object.keys(args)) {
+    if (!["path", "query", "header", "body"].includes(key)) {
+      argumentError(key, "arguments are grouped as path, query, header and body");
+    }
+  }
+  if (options.validateArguments) {
+    const validation = options.validateArguments(args);
+    if (!validation.ok) argumentError(validation.field, validation.reason);
+  }
+  const pathArgs = groupArgs(args, "path");
+  const queryArgs = groupArgs(args, "query");
+  const headerArgs = groupArgs(args, "header");
+  const pathParams = declared(operation.parameters, "path");
+  const queryParams = declared(operation.parameters, "query");
+  const headerParams = declared(operation.parameters, "header");
+  checkUnknown("path", pathArgs, pathParams);
+  checkUnknown("query", queryArgs, queryParams);
+  checkUnknown("header", headerArgs, headerParams);
+  for (const [group, supplied] of [["query", queryArgs], ["header", headerArgs], ["path", pathArgs]]) {
+    for (const name of Object.keys(supplied)) {
+      if (reservedParameterName(name, auth)) argumentError(`${group}.${name}`, "reserved parameter name");
+    }
+  }
+  const renderedPath = renderPathTemplate(operation.path, (name) => {
+    const value = pathArgs[name];
+    if (value === void 0 || value === null) argumentError(`path.${name}`, "required");
+    return renderPathValue(scalarString(value, `path.${name}`), `path.${name}`, pathParams.get(name)?.multiSegment === true);
+  });
+  const prefix = base.pathname.replace(/\/+$/u, "");
+  const apiBase = (options.apiBasePath ?? "").replace(/\/+$/u, "");
+  const url2 = new URL(base.origin);
+  url2.pathname = `${prefix}${apiBase}${renderedPath.startsWith("/") ? "" : "/"}${renderedPath}`;
+  if (url2.origin !== base.origin || !url2.pathname.startsWith(`${prefix}${apiBase}`)) {
+    argumentError("path", "the request left the configured base URL");
+  }
+  for (const [name, parameter] of queryParams) {
+    if (parameter.required && (queryArgs[name] === void 0 || queryArgs[name] === null)) {
+      argumentError(`query.${name}`, "required");
+    }
+    appendQuery(url2.searchParams, parameter, queryArgs[name], auth);
+  }
+  const headers = new Headers();
+  headers.set("accept", "application/json, text/plain;q=0.9, */*;q=0.8");
+  headers.set("user-agent", `TealBrick-Marketplace/${MARKETPLACE_VERSION}`);
+  const authHeaderName = auth.type === "header" ? auth.name.toLowerCase() : auth.type === "basic" ? "authorization" : null;
+  for (const [name, parameter] of headerParams) {
+    const value = headerArgs[name] ?? parameterDefault(parameter);
+    if (value === void 0 || value === null) {
+      if (parameter.required) argumentError(`header.${name}`, "required");
+      continue;
+    }
+    const lower = name.toLowerCase();
+    if (FORBIDDEN_HEADER_NAMES.has(lower) || lower.startsWith("proxy-") || lower === authHeaderName || reservedParameterName(name, auth)) {
+      argumentError(`header.${name}`, "reserved header");
+    }
+    const text2 = scalarString(value, `header.${name}`);
+    if ("const" in parameter.schema && text2 !== scalarString(parameter.schema.const, `header.${name}`)) {
+      argumentError(`header.${name}`, `must be ${String(parameter.schema.const)}`);
+    }
+    if (!headerValueValid(text2)) argumentError(`header.${name}`, "invalid header value");
+    if (lower === "overwrite" && text2 !== "T" && text2 !== "F") argumentError(`header.${name}`, "must be T or F");
+    if (lower === "depth" && !["0", "1", "infinity"].includes(text2)) argumentError(`header.${name}`, "must be 0, 1 or infinity");
+    if (lower === "destination") {
+      if (!parameter.destinationTemplate) argumentError(`header.${name}`, "reserved header");
+      const rendered = renderPathTemplate(parameter.destinationTemplate, (placeholder) => {
+        if (placeholder.toLowerCase() === "destination" || placeholder === name) {
+          return renderPathValue(text2, `header.${name}`, true);
+        }
+        const pathValue = pathArgs[placeholder];
+        if (pathValue === void 0 || pathValue === null) argumentError(`path.${placeholder}`, "required");
+        return renderPathValue(
+          scalarString(pathValue, `path.${placeholder}`),
+          `path.${placeholder}`,
+          pathParams.get(placeholder)?.multiSegment === true
+        );
+      });
+      const destination = new URL(base.origin);
+      destination.pathname = `${prefix}${apiBase}${rendered.startsWith("/") ? "" : "/"}${rendered}`;
+      if (destination.origin !== base.origin || !destination.pathname.startsWith(`${prefix}${apiBase}/`)) {
+        argumentError(`header.${name}`, "the destination left the configured base URL");
+      }
+      headers.set(lower, destination.toString());
+      continue;
+    }
+    headers.set(lower, text2);
+  }
+  if (auth.type === "header") {
+    const token = credentials.token;
+    if (!token) throw new OpenApiCallError("openapi_credentials_missing", "The connector has no API token configured.");
+    headers.set(auth.name.toLowerCase(), `${auth.prefix ?? ""}${token}`);
+  } else if (auth.type === "basic") {
+    if (credentials.username === void 0 || credentials.password === void 0) {
+      throw new OpenApiCallError("openapi_credentials_missing", "The connector has no username and password configured.");
+    }
+    headers.set(
+      "authorization",
+      `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString("base64")}`
+    );
+  } else if (auth.type === "query") {
+    const key = credentials.apiKey;
+    if (!key) throw new OpenApiCallError("openapi_credentials_missing", "The connector has no API key configured.");
+    for (const name of queryParams.keys()) {
+      if (name.toLowerCase() === auth.name.toLowerCase() && queryArgs[name] !== void 0) {
+        argumentError(`query.${name}`, "reserved for the API key");
+      }
+    }
+    url2.searchParams.set(auth.name, key);
+  }
+  const { body, contentType } = buildBody(operation, args.body, options.maxUploadBytes);
+  if (contentType) headers.set("content-type", contentType);
+  return { url: url2, method: operation.method.toUpperCase(), headers, body };
+}
+function validateOpenApiArguments(operation, args, auth, validateArguments, maxUploadBytes) {
+  buildOpenApiRequest(
+    {
+      baseUrl: "https://validation.invalid",
+      operation,
+      args,
+      auth,
+      ...validateArguments ? { validateArguments } : {},
+      ...maxUploadBytes ? { maxUploadBytes } : {},
+      credentials: { token: "validation", username: "validation", password: "validation", apiKey: "validation" }
+    },
+    new URL("https://validation.invalid")
+  );
+}
+function isAbort(error62) {
+  return error62 instanceof Error && (error62.name === "AbortError" || error62.name === "TimeoutError");
+}
+async function readCapped(response, maxBytes) {
+  const declaredLength = Number(response.headers.get("content-length") ?? "");
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    await response.body?.cancel().catch(() => void 0);
+    throw new OpenApiCallError("openapi_response_too_large", "The app's response was too large.", {
+      status: response.status
+    });
+  }
+  if (!response.body) return Buffer.alloc(0);
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  for (; ; ) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => void 0);
+      throw new OpenApiCallError("openapi_response_too_large", "The app's response was too large.", {
+        status: response.status
+      });
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks);
+}
+function textual(contentType) {
+  if (!contentType) return true;
+  const base = contentType.split(";")[0].trim().toLowerCase();
+  return base.startsWith("text/") || base.endsWith("/json") || base.endsWith("+json") || base.endsWith("/xml") || base.endsWith("+xml") || base === "application/javascript" || base === "application/x-www-form-urlencoded" || base === "application/yaml" || base === "application/x-yaml";
+}
+function decodeResponse(bytes, contentType, secrets, maxBinaryBytes, status) {
+  if (bytes.length === 0) return { bodyKind: "empty" };
+  if (textual(contentType)) {
+    const text2 = scrubSecrets(bytes.toString("utf8"), secrets);
+    const base = (contentType ?? "").split(";")[0].trim().toLowerCase();
+    if (!contentType || base.endsWith("json")) {
+      try {
+        return { bodyKind: "json", body: JSON.parse(text2) };
+      } catch {
+      }
+    }
+    return { bodyKind: "text", text: text2 };
+  }
+  if (bytes.length > maxBinaryBytes) {
+    throw new OpenApiCallError("openapi_response_too_large", "The app's binary response was too large.", {
+      status
+    });
+  }
+  return { bodyKind: "binary", base64: bytes.toString("base64") };
+}
+async function callOpenApiOperation(options) {
+  let base;
+  try {
+    base = await assertMcpUrlAllowed(options.baseUrl, { env: options.env, lookup: options.lookup });
+    routeOutbound(base, options.env);
+  } catch (error62) {
+    if (error62 instanceof TailnetUnavailableError) {
+      throw new OpenApiCallError("tailnet_unavailable", error62.message);
+    }
+    if (error62 instanceof McpUrlPolicyError) {
+      throw new OpenApiCallError("openapi_base_url_not_allowed", "The app address is not allowed.", {
+        reason: error62.reason
+      });
+    }
+    throw error62;
+  }
+  const request = buildOpenApiRequest(options, base);
+  const secrets = credentialValues(options.credentials, options.auth);
+  let response;
+  try {
+    response = await tailnetAwareFetch(options.env, options.fetchImpl, options.lookup)(request.url, {
+      method: request.method,
+      headers: request.headers,
+      ...request.body === void 0 ? {} : { body: request.body },
+      redirect: "error",
+      signal: AbortSignal.timeout(options.timeoutMs ?? OPENAPI_CALL_TIMEOUT_MS)
+    });
+  } catch (error62) {
+    if (isAbort(error62)) throw new OpenApiCallError("openapi_timeout", "The app did not respond in time.");
+    throw new OpenApiCallError("openapi_unreachable", "The app could not be reached.");
+  }
+  let bytes;
+  try {
+    bytes = await readCapped(response, options.maxResponseBytes ?? OPENAPI_MAX_RESPONSE_BYTES);
+  } catch (error62) {
+    if (error62 instanceof OpenApiCallError) throw error62;
+    if (isAbort(error62)) throw new OpenApiCallError("openapi_timeout", "The app did not respond in time.");
+    throw new OpenApiCallError("openapi_unreachable", "The app could not be reached.");
+  }
+  const contentType = response.headers.get("content-type");
+  if (!response.ok) {
+    let body;
+    if (textual(contentType) && bytes.length) {
+      const text2 = scrubSecrets(bytes.toString("utf8"), secrets);
+      let parsed = text2;
+      try {
+        parsed = scrubDeep(JSON.parse(text2), secrets);
+      } catch {
+        parsed = text2;
+      }
+      const serialized = typeof parsed === "string" ? parsed : JSON.stringify(parsed);
+      body = serialized.length <= MAX_ERROR_BODY_CHARS ? parsed : `${serialized.slice(0, MAX_ERROR_BODY_CHARS - 14)}\u2026 [truncated]`;
+    }
+    const status = response.status;
+    throw new OpenApiCallError(
+      status === 401 || status === 403 ? "openapi_auth_rejected" : "openapi_http_error",
+      status === 401 || status === 403 ? "The app rejected the credentials." : `The app answered HTTP ${status}.`,
+      { status, ...body === void 0 ? {} : { body } }
+    );
+  }
+  const decoded = decodeResponse(
+    bytes,
+    contentType,
+    secrets,
+    options.maxBinaryBytes ?? OPENAPI_MAX_BINARY_BYTES,
+    response.status
+  );
+  const headers = {};
+  response.headers.forEach((value, name) => {
+    if (RESPONSE_HEADER_ALLOWLIST.has(name.toLowerCase())) {
+      headers[name.toLowerCase()] = scrubSecrets(value, secrets);
+    }
+  });
+  return {
+    status: response.status,
+    contentType,
+    bytes: bytes.length,
+    headers,
+    ...decoded.body === void 0 ? {} : { body: scrubDeep(decoded.body, secrets) },
+    ...decoded.text === void 0 ? {} : { text: decoded.text },
+    ...decoded.base64 === void 0 ? {} : { base64: decoded.base64 },
+    bodyKind: decoded.bodyKind
+  };
+}
+
+// src/company-box.ts
+var COMPANY_BOX_COLLECTION = {
+  id: "company-box",
+  label: "Company Box",
+  description: "Your self-hosted apps, whole. Each one installs once for the workspace with its full API, reached over your tailnet."
+};
+var COMPANY_BOX_DEFAULT_DIRECT_MAX_OPERATIONS = 64;
+var COMPANY_BOX_PLUGIN_PREFIX = "company-box-";
+var COMPANY_BOX_MCP_SLUG_PREFIX = "cb-";
+var COMPANY_BOX_SEARCH_DEFAULT_LIMIT = 25;
+var COMPANY_BOX_SEARCH_MAX_LIMIT = 100;
+var MAX_SPEC_BYTES = 64 * 1024 * 1024;
+var DEFAULT_COMPANY_BOX_CATALOG_DIR = path3.resolve(
+  path3.dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "catalog",
+  "company-box"
+);
+function companyBoxCatalogDir(env = process.env) {
+  return env.MARKETPLACE_COMPANY_BOX_DIR?.trim() || DEFAULT_COMPANY_BOX_CATALOG_DIR;
+}
+function companyBoxDirectMaxOperations(env = process.env) {
+  const value = Number(env.MARKETPLACE_COMPANY_BOX_DIRECT_MAX_OPERATIONS);
+  return Number.isInteger(value) && value > 0 ? value : COMPANY_BOX_DEFAULT_DIRECT_MAX_OPERATIONS;
+}
+var ENTRY_ID_PATTERN = /^[a-z][a-z0-9-]{0,30}[a-z0-9]$/u;
+var HEADER_NAME_PATTERN2 = /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,64}$/u;
+var SHA256_PATTERN = /^[0-9a-f]{64}$/u;
+var RELATIVE_FILE_PATTERN = /^[A-Za-z0-9._-]{1,120}$/u;
+var AuthSchema = external_exports.discriminatedUnion("type", [
+  external_exports.object({ type: external_exports.literal("none") }).strict(),
+  external_exports.object({
+    type: external_exports.literal("header"),
+    name: external_exports.string().regex(HEADER_NAME_PATTERN2),
+    prefix: external_exports.string().max(40).optional(),
+    label: external_exports.string().trim().min(1).max(80).optional()
+  }).strict(),
+  external_exports.object({ type: external_exports.literal("basic") }).strict(),
+  external_exports.object({
+    type: external_exports.literal("query"),
+    name: external_exports.string().regex(/^[A-Za-z0-9_.-]{1,64}$/u),
+    label: external_exports.string().trim().min(1).max(80).optional()
+  }).strict()
+]);
+var ExclusionSchema = external_exports.object({
+  /** operationId, `METHOD /path`, or (mcp) a tool name. Exact match. */
+  operation: external_exports.string().trim().min(1).max(300),
+  /** Required; the coverage report fails on a missing or empty reason. */
+  reason: external_exports.string().max(500).optional()
+}).strict();
+var CompanyBoxEntrySchema = external_exports.object({
+  schema: external_exports.literal(1),
+  id: external_exports.string().regex(ENTRY_ID_PATTERN),
+  displayName: external_exports.string().trim().min(1).max(80),
+  description: external_exports.string().trim().min(1).max(500),
+  category: external_exports.string().trim().max(40).optional(),
+  app: external_exports.object({
+    /** Pinned upstream app version the spec was taken from. */
+    version: external_exports.string().trim().min(1).max(40),
+    homepage: external_exports.string().url().optional(),
+    license: external_exports.string().trim().max(60).optional(),
+    specSource: external_exports.string().url().optional()
+  }).strict(),
+  source: external_exports.enum(["openapi", "mcp"]),
+  openapi: external_exports.object({
+    spec: external_exports.string().regex(RELATIVE_FILE_PATTERN),
+    sha256: external_exports.string().regex(SHA256_PATTERN),
+    /** Overrides the spec's basePath / server path. "" disables it. */
+    basePath: external_exports.string().max(200).optional(),
+    /**
+     * JSON merge patch (RFC 7396) applied to the vendored spec before it is
+     * parsed, so supplements live outside the upstream file. Pinned too.
+     */
+    overlay: external_exports.object({ file: external_exports.string().regex(RELATIVE_FILE_PATTERN), sha256: external_exports.string().regex(SHA256_PATTERN) }).strict().optional()
+  }).strict().optional(),
+  mcp: external_exports.object({
+    /** `{baseUrl}` is replaced with the operator's base URL. */
+    urlTemplate: external_exports.string().min(1).max(500),
+    transport: external_exports.enum(["streamable-http", "sse"]).default("streamable-http"),
+    tools: external_exports.string().regex(RELATIVE_FILE_PATTERN),
+    sha256: external_exports.string().regex(SHA256_PATTERN)
+  }).strict().optional(),
+  auth: AuthSchema,
+  baseUrlExample: external_exports.string().max(300).optional(),
+  /** openapi: one safe GET operation (operationId or `GET /path`) used as the connection test. */
+  healthOperation: external_exports.string().trim().min(1).max(300).optional(),
+  /** Patterns (`*` wildcard) for operations that reach outside the workspace. */
+  outward: external_exports.array(external_exports.string().trim().min(1).max(300)).max(500).default([]),
+  /** Patterns for destructive operations beyond DELETE. */
+  destructive: external_exports.array(external_exports.string().trim().min(1).max(300)).max(500).default([]),
+  /** Patterns for POST/PUT/… operations that only read (search, GraphQL queries). */
+  reads: external_exports.array(external_exports.string().trim().min(1).max(300)).max(500).default([]),
+  exposure: external_exports.enum(["auto", "direct", "discovery"]).default("auto"),
+  excluded: external_exports.array(ExclusionSchema).max(5e3).default([])
+}).strict().superRefine((entry, context) => {
+  if (entry.source === "openapi" && !entry.openapi) {
+    context.addIssue({ code: "custom", path: ["openapi"], message: "openapi entries need an openapi block" });
+  }
+  if (entry.source === "openapi" && !entry.healthOperation) {
+    context.addIssue({ code: "custom", path: ["healthOperation"], message: "openapi entries need a healthOperation" });
+  }
+  if (entry.source === "mcp" && !entry.mcp) {
+    context.addIssue({ code: "custom", path: ["mcp"], message: "mcp entries need an mcp block" });
+  }
+  if (entry.source === "mcp" && entry.auth.type === "query") {
+    context.addIssue({ code: "custom", path: ["auth"], message: "mcp entries cannot send credentials in the URL" });
+  }
+  if (entry.mcp && !entry.mcp.urlTemplate.includes("{baseUrl}")) {
+    context.addIssue({ code: "custom", path: ["mcp", "urlTemplate"], message: "urlTemplate must contain {baseUrl}" });
+  }
+});
+function credentialFieldsFor(auth) {
+  switch (auth.type) {
+    case "header":
+      return [{ key: "token", label: auth.label ?? "API token", secret: true }];
+    case "basic":
+      return [
+        { key: "username", label: "Username", secret: false },
+        { key: "password", label: "Password", secret: true }
+      ];
+    case "query":
+      return [{ key: "apiKey", label: auth.label ?? "API key", secret: true }];
+    default:
+      return [];
+  }
+}
+function runtimeAuthFor(auth) {
+  switch (auth.type) {
+    case "header":
+      return { type: "header", name: auth.name, ...auth.prefix ? { prefix: auth.prefix } : {} };
+    case "basic":
+      return { type: "basic" };
+    case "query":
+      return { type: "query", name: auth.name };
+    default:
+      return { type: "none" };
+  }
+}
+function companyBoxPluginId(entryId) {
+  return `${COMPANY_BOX_PLUGIN_PREFIX}${entryId}`;
+}
+function companyBoxMcpPluginId(entryId, workspaceSlug, displayName) {
+  return customMcpPluginId({ workspaceSlug, slug: `${COMPANY_BOX_MCP_SLUG_PREFIX}${entryId}`, displayName });
+}
+function bounded(value, max) {
+  const text2 = typeof value === "string" ? value.trim() : "";
+  return text2.length > max ? `${text2.slice(0, max - 1)}\u2026` : text2;
+}
+function exclusionMatches(exclusion, operation) {
+  const trimmed = exclusion.trim();
+  if (operation.operationId !== null && trimmed === operation.operationId) return true;
+  const space = trimmed.indexOf(" ");
+  if (space < 0) return false;
+  return trimmed.slice(0, space).toLowerCase() === operation.method && trimmed.slice(space + 1).trim() === operation.path;
+}
+function exposureFor(entry, count, directMax) {
+  if (entry.exposure === "direct" || entry.exposure === "discovery") return entry.exposure;
+  return count > directMax ? "discovery" : "direct";
+}
+function checkExclusions(entry, matchedBy, errors) {
+  const seen = /* @__PURE__ */ new Set();
+  entry.excluded.forEach((exclusion, index) => {
+    if (!exclusion.reason?.trim()) {
+      errors.push(`Exclusion "${exclusion.operation}" has no reason.`);
+    }
+    if (seen.has(exclusion.operation)) {
+      errors.push(`Exclusion "${exclusion.operation}" is listed twice.`);
+    }
+    seen.add(exclusion.operation);
+    if (!matchedBy.has(index)) {
+      errors.push(`Exclusion "${exclusion.operation}" matches no operation in the pinned spec.`);
+    }
+  });
+}
+function readPinnedFile(dir, file2, sha2562) {
+  const resolved = path3.resolve(dir, file2);
+  if (path3.dirname(resolved) !== path3.resolve(dir)) throw new Error(`${file2} must sit next to entry.json.`);
+  const stat = fs2.statSync(resolved);
+  if (stat.size > MAX_SPEC_BYTES) throw new Error(`${file2} is larger than ${MAX_SPEC_BYTES} bytes.`);
+  const bytes = fs2.readFileSync(resolved);
+  const actual = sha256Hex(bytes);
+  if (actual !== sha2562) {
+    throw new Error(`${file2} does not match its pinned sha256 (expected ${sha2562}, found ${actual}).`);
+  }
+  return { bytes, sha256: actual };
+}
+function compileOpenApi(entry, dir, directMax) {
+  const pluginId = companyBoxPluginId(entry.id);
+  const pinned = readPinnedFile(dir, entry.openapi.spec, entry.openapi.sha256);
+  let raw = JSON.parse(pinned.bytes.toString("utf8"));
+  if (entry.openapi.overlay) {
+    const overlay = readPinnedFile(dir, entry.openapi.overlay.file, entry.openapi.overlay.sha256);
+    raw = applyMergePatch(raw, JSON.parse(overlay.bytes.toString("utf8")));
+  }
+  const document = parseOpenApiDocument(raw);
+  const errors = [];
+  const warnings = [];
+  const authHeader = entry.auth.type === "header" ? entry.auth.name.toLowerCase() : entry.auth.type === "basic" ? "authorization" : null;
+  const authQuery = entry.auth.type === "query" ? entry.auth.name.toLowerCase() : null;
+  let droppedAuthParams = 0;
+  for (const operation of document.operations) {
+    const before = operation.parameters.length;
+    operation.parameters = operation.parameters.filter(
+      (parameter) => !(parameter.in === "header" && parameter.name.toLowerCase() === authHeader || parameter.in === "query" && parameter.name.toLowerCase() === authQuery)
+    );
+    droppedAuthParams += before - operation.parameters.length;
+  }
+  if (droppedAuthParams) {
+    warnings.push(`${droppedAuthParams} declared credential parameter(s) dropped; Marketplace sets the credential itself.`);
+  }
+  const matchedBy = /* @__PURE__ */ new Map();
+  const excludedAt = /* @__PURE__ */ new Map();
+  const autoExcluded = /* @__PURE__ */ new Set();
+  document.operations.forEach((operation, index) => {
+    entry.excluded.forEach((exclusion, exclusionIndex) => {
+      if (exclusionMatches(exclusion.operation, operation)) {
+        if (excludedAt.has(index)) {
+          errors.push(`Operation ${operation.ref} is excluded more than once.`);
+        }
+        excludedAt.set(index, exclusion.reason);
+        matchedBy.set(exclusionIndex, index);
+      }
+    });
+  });
+  checkExclusions(entry, matchedBy, errors);
+  document.operations.forEach((operation, index) => {
+    if ((operation.method === "get" || operation.method === "head") && operation.requestBody && !excludedAt.has(index)) {
+      excludedAt.set(index, "auto: GET/HEAD operation with a request body; bodies are not sent on GET");
+      autoExcluded.add(index);
+    }
+  });
+  const exposedIndexes = document.operations.map((_operation, index) => index).filter((index) => !excludedAt.has(index));
+  const keys = deriveOperationActionKeys(
+    pluginId,
+    exposedIndexes.map((index) => document.operations[index])
+  );
+  const patterns = { outward: entry.outward, destructive: entry.destructive, reads: entry.reads };
+  const coverage = new Array(document.operations.length);
+  const operations = [];
+  for (const [index, reason] of excludedAt) {
+    const operation = document.operations[index];
+    coverage[index] = {
+      ref: operation.ref,
+      method: operation.method.toUpperCase(),
+      path: operation.path,
+      status: "excluded",
+      ...reason ? { reason } : {},
+      ...autoExcluded.has(index) ? { auto: true } : {}
+    };
+  }
+  exposedIndexes.forEach((index, position) => {
+    const operation = document.operations[index];
+    const key = keys[position];
+    const risk = operationRisk(operation, patterns);
+    try {
+      const reserved = operation.parameters.find(
+        (parameter) => (parameter.in === "header" || parameter.in === "query") && reservedParameterName(parameter.name, runtimeAuthFor(entry.auth))
+      );
+      if (reserved) {
+        throw new Error(`Parameter ${reserved.in} ${reserved.name} is a reserved name (method override or credential).`);
+      }
+      const overwrite = operation.parameters.find(
+        (parameter) => parameter.in === "header" && parameter.name.toLowerCase() === "overwrite"
+      );
+      if (overwrite && "default" in overwrite.schema && overwrite.schema.default !== "F") {
+        throw new Error("An Overwrite header default must be F; overwriting must be asked for explicitly.");
+      }
+      const destination = operation.parameters.find(
+        (parameter) => parameter.in === "header" && parameter.name.toLowerCase() === "destination"
+      );
+      if (destination && !destination.destinationTemplate) {
+        throw new Error("A Destination header needs x-destination-template; Marketplace never forwards a caller-supplied URL.");
+      }
+      const inputSchema = operationInputSchema(operation, document.defs);
+      const tool = boundedToolSchema(inputSchema);
+      const validateArguments = compileArgumentValidator(inputSchema);
+      const compiled = {
+        key,
+        ref: operation.ref,
+        operationId: operation.operationId,
+        method: operation.method,
+        path: operation.path,
+        title: bounded(operation.summary ?? operation.operationId ?? operationIdentity(operation.method, operation.path), OPENAPI_TITLE_MAX),
+        summary: bounded(operation.summary ?? operation.description ?? "", OPENAPI_SUMMARY_MAX),
+        description: operation.description ?? operation.summary ?? "",
+        tags: operation.tags,
+        group: operationGroup(operation),
+        deprecated: operation.deprecated,
+        argumentGroups: operationArgumentGroups(operation),
+        operation,
+        inputSchema,
+        validateArguments,
+        toolSchema: tool.schema,
+        schemaTruncated: tool.truncated,
+        ...risk
+      };
+      operations.push(compiled);
+      coverage[index] = {
+        ref: operation.ref,
+        method: operation.method.toUpperCase(),
+        path: operation.path,
+        status: "exposed",
+        key,
+        capability: risk.capability,
+        outward: risk.outward,
+        destructive: risk.destructive
+      };
+      if (operation.unsupportedParameters.length) {
+        warnings.push(
+          `${operation.ref}: ${operation.unsupportedParameters.map((parameter) => `${parameter.in} parameter ${parameter.name}`).join(", ")} cannot be sent.`
+        );
+      }
+    } catch (error62) {
+      coverage[index] = {
+        ref: operation.ref,
+        method: operation.method.toUpperCase(),
+        path: operation.path,
+        status: "failed",
+        reason: error62 instanceof Error ? error62.message : String(error62)
+      };
+      errors.push(`${operation.ref}: ${error62 instanceof Error ? error62.message : String(error62)}`);
+    }
+  });
+  for (const [kind, list] of [["outward", entry.outward], ["destructive", entry.destructive], ["reads", entry.reads]]) {
+    for (const pattern of list) {
+      if (!document.operations.some((operation) => operationPatternMatches(pattern, operation))) {
+        warnings.push(`${kind} pattern "${pattern}" matches no operation.`);
+      }
+    }
+  }
+  for (const pattern of entry.reads) {
+    for (const operation of document.operations) {
+      if (operationPatternMatches(pattern, operation) && !READ_METHODS.has(operation.method) && !READS_DOWNGRADABLE_METHODS.has(operation.method)) {
+        warnings.push(
+          `reads pattern "${pattern}" ignored for ${operationIdentity(operation.method, operation.path)}: only POST can be read-class.`
+        );
+      }
+    }
+  }
+  const byKey = new Map(operations.map((operation) => [operation.key, operation]));
+  const health = entry.healthOperation ? operations.find((operation) => exclusionMatches(entry.healthOperation, operation.operation)) ?? null : null;
+  if (!health) {
+    errors.push(`healthOperation "${entry.healthOperation}" is not an exposed operation.`);
+  } else if (!READ_METHODS.has(health.method)) {
+    errors.push(`healthOperation "${entry.healthOperation}" must be a read (GET, HEAD, PROPFIND, \u2026) operation.`);
+  } else if (health.operation.parameters.some(parameterNeedsArgument) || health.operation.requestBody?.required) {
+    errors.push(`healthOperation "${entry.healthOperation}" must not need arguments.`);
+  }
+  const apiBasePath = (entry.openapi.basePath ?? document.basePath).replace(/\/+$/u, "");
+  return {
+    kind: "openapi",
+    entry,
+    dir,
+    pluginId,
+    specSha256: pinned.sha256,
+    spec: {
+      format: document.format,
+      specVersion: document.specVersion,
+      title: document.title,
+      apiVersion: document.apiVersion
+    },
+    apiBasePath: apiBasePath && !apiBasePath.startsWith("/") ? `/${apiBasePath}` : apiBasePath,
+    operations,
+    byKey,
+    healthOperation: health,
+    coverage,
+    errors,
+    warnings,
+    exposure: exposureFor(entry, operations.length, directMax)
+  };
+}
+var ToolsSnapshotSchema = external_exports.object({
+  server: external_exports.object({ name: external_exports.string(), version: external_exports.string() }).partial().optional(),
+  capturedAt: external_exports.string().optional(),
+  tools: external_exports.array(
+    external_exports.object({
+      name: external_exports.string().min(1).max(200),
+      title: external_exports.string().optional(),
+      description: external_exports.string().optional(),
+      inputSchema: external_exports.unknown().optional(),
+      annotations: external_exports.record(external_exports.unknown()).optional()
+    }).passthrough()
+  )
+}).passthrough();
+function companyBoxMcpToolRisk(entry, tool, actionSegment2) {
+  const asOperation = { operationId: tool.name, method: "post", path: "" };
+  const destructivePattern = entry.destructive.some((pattern) => operationPatternMatches(pattern, asOperation));
+  const readPattern = (entry.reads ?? []).some((pattern) => operationPatternMatches(pattern, asOperation));
+  const capability = destructivePattern ? "connector.admin" : readPattern ? "connector.observe" : capabilityForTool(tool, actionSegment2);
+  return {
+    capability,
+    write: capability !== "connector.observe",
+    outward: entry.outward.some((pattern) => operationPatternMatches(pattern, asOperation)),
+    destructive: capability === "connector.admin"
+  };
+}
+function compileMcp(entry, dir, directMax) {
+  const pinned = readPinnedFile(dir, entry.mcp.tools, entry.mcp.sha256);
+  const snapshot = ToolsSnapshotSchema.parse(JSON.parse(pinned.bytes.toString("utf8")));
+  const errors = [];
+  const warnings = [];
+  const matchedBy = /* @__PURE__ */ new Map();
+  const excludedAt = /* @__PURE__ */ new Map();
+  const names = /* @__PURE__ */ new Set();
+  snapshot.tools.forEach((tool, index) => {
+    if (names.has(tool.name)) errors.push(`Tool ${tool.name} appears twice in the snapshot.`);
+    names.add(tool.name);
+    entry.excluded.forEach((exclusion, exclusionIndex) => {
+      if (exclusion.operation === tool.name) {
+        excludedAt.set(index, exclusion.reason);
+        matchedBy.set(exclusionIndex, index);
+      }
+    });
+  });
+  checkExclusions(entry, matchedBy, errors);
+  const sampleProvider = companyBoxMcpPluginId(entry.id, "workspace", entry.displayName);
+  const exposedIndexes = snapshot.tools.map((_tool, index) => index).filter((index) => !excludedAt.has(index));
+  const keys = deriveActionKeys(
+    sampleProvider,
+    exposedIndexes.map((index) => snapshot.tools[index].name)
+  );
+  const coverage = new Array(snapshot.tools.length);
+  for (const [index, reason] of excludedAt) {
+    coverage[index] = { ref: snapshot.tools[index].name, status: "excluded", ...reason ? { reason } : {} };
+  }
+  const tools = exposedIndexes.map((index, position) => {
+    const tool = snapshot.tools[index];
+    const key = keys[position];
+    const risk = companyBoxMcpToolRisk(entry, tool, key.slice(sampleProvider.length + 1));
+    coverage[index] = {
+      ref: tool.name,
+      status: "exposed",
+      key,
+      capability: risk.capability,
+      outward: risk.outward,
+      destructive: risk.destructive
+    };
+    const schema = tool.inputSchema && typeof tool.inputSchema === "object" && !Array.isArray(tool.inputSchema) ? tool.inputSchema : null;
+    return {
+      name: tool.name,
+      inputSchema: schema,
+      inputSchemaBytes: schema ? Buffer.byteLength(JSON.stringify(schema)) : 0,
+      sampleKey: key,
+      title: bounded(tool.title ?? tool.name, OPENAPI_TITLE_MAX),
+      description: bounded(tool.description ?? "", OPENAPI_DESCRIPTION_MAX),
+      ...risk
+    };
+  });
+  for (const [kind, list] of [["outward", entry.outward], ["destructive", entry.destructive], ["reads", entry.reads]]) {
+    for (const pattern of list) {
+      if (!snapshot.tools.some((tool) => operationPatternMatches(pattern, { operationId: tool.name, method: "post", path: "" }))) {
+        warnings.push(`${kind} pattern "${pattern}" matches no tool.`);
+      }
+    }
+  }
+  const server = snapshot.server?.name ? { name: snapshot.server.name, version: snapshot.server.version ?? "" } : null;
+  return {
+    kind: "mcp",
+    entry,
+    dir,
+    snapshotSha256: pinned.sha256,
+    server,
+    tools,
+    excludedToolNames: new Set(
+      entry.excluded.map((exclusion) => exclusion.operation).filter((name) => names.has(name))
+    ),
+    coverage,
+    errors,
+    warnings,
+    exposure: exposureFor(entry, tools.length, directMax)
+  };
+}
+function compileCompanyBoxEntry(dir, options = {}) {
+  const entry = CompanyBoxEntrySchema.parse(
+    JSON.parse(fs2.readFileSync(path3.join(dir, "entry.json"), "utf8"))
+  );
+  if (path3.basename(dir) !== entry.id) {
+    throw new Error(`entry.json id "${entry.id}" must match its directory name.`);
+  }
+  const directMax = options.directMaxOperations ?? COMPANY_BOX_DEFAULT_DIRECT_MAX_OPERATIONS;
+  return entry.source === "openapi" ? compileOpenApi(entry, dir, directMax) : compileMcp(entry, dir, directMax);
+}
+function loadErrorCode(error62) {
+  if (error62 instanceof OpenApiSpecError) return error62.code;
+  if (error62 instanceof external_exports.ZodError) return "company_box_entry_invalid";
+  if (error62 instanceof SyntaxError) return "company_box_json_invalid";
+  return "company_box_entry_unreadable";
+}
+function loadErrorMessage(error62) {
+  if (error62 instanceof external_exports.ZodError) {
+    return error62.issues.map((issue2) => `${issue2.path.join(".") || "entry"}: ${issue2.message}`).join("; ");
+  }
+  return error62 instanceof Error ? error62.message : String(error62);
+}
+var CompanyBoxCatalog = class _CompanyBoxCatalog {
+  constructor(dir, entries, loadErrors) {
+    this.dir = dir;
+    this.entries = [...entries].sort((left, right) => left.entry.displayName.localeCompare(right.entry.displayName));
+    this.loadErrors = loadErrors;
+    this.byId = new Map(entries.map((entry) => [entry.entry.id, entry]));
+    this.byPluginId = new Map(
+      entries.flatMap((entry) => entry.kind === "openapi" ? [[entry.pluginId, entry]] : [])
+    );
+  }
+  dir;
+  entries;
+  loadErrors;
+  byId;
+  byPluginId;
+  static empty() {
+    return new _CompanyBoxCatalog("", [], []);
+  }
+  get(entryId) {
+    return this.byId.get(entryId) ?? null;
+  }
+  /** Usable entries: compiled with no errors. */
+  usable() {
+    return this.entries.filter((entry) => entry.errors.length === 0);
+  }
+  openApiForPluginId(pluginId) {
+    const entry = this.byPluginId.get(pluginId);
+    return entry && entry.errors.length === 0 ? entry : null;
+  }
+};
+function loadCompanyBoxCatalog(dir, options = {}) {
+  if (!dir || !fs2.existsSync(dir)) return new CompanyBoxCatalog(dir, [], []);
+  const entries = [];
+  const loadErrors = [];
+  for (const name of fs2.readdirSync(dir).sort()) {
+    const entryDir = path3.join(dir, name);
+    if (!fs2.statSync(entryDir).isDirectory() || !fs2.existsSync(path3.join(entryDir, "entry.json"))) continue;
+    try {
+      entries.push(compileCompanyBoxEntry(entryDir, options));
+    } catch (error62) {
+      loadErrors.push({ entry: name, code: loadErrorCode(error62), message: loadErrorMessage(error62) });
+    }
+  }
+  return new CompanyBoxCatalog(dir, entries, loadErrors);
+}
+function companyBoxListing(compiled, createdAt) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const { entry, pluginId } = compiled;
+  const capabilities2 = ["connector.observe", "connector.dispatch", "connector.admin"].filter(
+    (capability) => compiled.operations.some((operation) => operation.capability === capability)
+  );
+  const manifest = {
+    entryId: entry.id,
+    collection: COMPANY_BOX_COLLECTION.id,
+    source: "openapi",
+    specSha256: compiled.specSha256,
+    appVersion: entry.app.version,
+    exposure: compiled.exposure,
+    operationCount: compiled.operations.length,
+    excludedCount: compiled.coverage.filter((item) => item.status === "excluded").length,
+    operations: compiled.operations.map((operation) => ({
+      key: operation.key,
+      ref: operation.ref,
+      method: operation.method.toUpperCase(),
+      path: operation.path,
+      title: operation.title,
+      summary: operation.summary,
+      tags: operation.tags,
+      group: operation.group,
+      capability: operation.capability,
+      outward: operation.outward,
+      destructive: operation.destructive,
+      args: operation.argumentGroups
+    }))
+  };
+  return {
+    pluginId,
+    displayName: entry.displayName,
+    kind: "toolset",
+    provider: pluginId,
+    description: entry.description,
+    capabilities: capabilities2,
+    actions: compiled.operations.map((operation) => operation.key),
+    source: "openapi",
+    authOwner: "program",
+    executionOwner: "openapi",
+    runtimeSources: [
+      {
+        runtimeSourceId: `${pluginId}-openapi`,
+        kind: "native-api",
+        label: "Company Box REST adapter",
+        primary: true
+      }
+    ],
+    enabledByDefault: false,
+    manifest: {
+      version: entry.app.version,
+      kind: "plugin",
+      collection: COMPANY_BOX_COLLECTION.id,
+      actionRequirements: Object.fromEntries(
+        compiled.operations.map((operation) => [operation.key, { kind: pluginId, capability: operation.capability }])
+      ),
+      companyBox: manifest
+    },
+    createdAt: createdAt ?? now,
+    updatedAt: now
+  };
+}
+function retiredCompanyBoxListing(listing) {
+  return {
+    ...listing,
+    capabilities: [],
+    actions: [],
+    manifest: { ...listing.manifest, actionRequirements: {}, companyBox: { ...companyBoxManifest(listing), operations: [], operationCount: 0, retired: true } },
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
+function recordValue6(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+function listingIsCompanyBoxOpenApi(listing) {
+  return listing.source === "openapi" && listing.executionOwner === "openapi" && listing.pluginId.startsWith(COMPANY_BOX_PLUGIN_PREFIX) && recordValue6(listing.manifest.companyBox) !== null;
+}
+function companyBoxManifest(listing) {
+  const raw = recordValue6(listing.manifest.companyBox) ?? {};
+  return {
+    entryId: typeof raw.entryId === "string" ? raw.entryId : "",
+    collection: COMPANY_BOX_COLLECTION.id,
+    source: "openapi",
+    specSha256: typeof raw.specSha256 === "string" ? raw.specSha256 : "",
+    appVersion: typeof raw.appVersion === "string" ? raw.appVersion : "",
+    exposure: raw.exposure === "discovery" ? "discovery" : "direct",
+    operationCount: typeof raw.operationCount === "number" ? raw.operationCount : 0,
+    excludedCount: typeof raw.excludedCount === "number" ? raw.excludedCount : 0,
+    operations: (Array.isArray(raw.operations) ? raw.operations : []).flatMap((value) => {
+      const operation = recordValue6(value);
+      if (!operation || typeof operation.key !== "string") return [];
+      return [operation];
+    })
+  };
+}
+function companyBoxOperationSummary(listing, actionKey) {
+  return companyBoxManifest(listing).operations.find((operation) => operation.key === actionKey) ?? null;
+}
+function companyBoxMcpUrl(entry, baseUrl) {
+  return entry.mcp.urlTemplate.split("{baseUrl}").join(baseUrl.replace(/\/+$/u, ""));
+}
+function companyBoxMcpSecretHeader(entry, credentials) {
+  if (entry.auth.type === "header" && credentials.token) {
+    return { name: entry.auth.name.toLowerCase(), value: `${entry.auth.prefix ?? ""}${credentials.token}` };
+  }
+  if (entry.auth.type === "basic" && credentials.username !== void 0 && credentials.password !== void 0) {
+    return {
+      name: "authorization",
+      value: `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString("base64")}`
+    };
+  }
+  return null;
+}
+function searchAgentOperations(operations, input2) {
+  const terms = (input2.query ?? "").toLowerCase().split(/\s+/u).filter(Boolean);
+  const tag = input2.tag?.trim().toLowerCase();
+  const filtered = operations.filter((operation) => {
+    if (tag && operation.group !== tag && !operation.tags.some((value) => value.toLowerCase() === tag)) return false;
+    if (input2.capability && operation.capability !== input2.capability) return false;
+    if (!terms.length) return true;
+    const haystack = `${operation.key} ${operation.title} ${operation.summary} ${operation.group} ${operation.tags.join(" ")}`.toLowerCase();
+    return terms.every((term) => haystack.includes(term));
+  });
+  const offset = input2.cursor && /^\d{1,7}$/u.test(input2.cursor) ? Number(input2.cursor) : 0;
+  const limit = Math.min(Math.max(input2.limit ?? COMPANY_BOX_SEARCH_DEFAULT_LIMIT, 1), COMPANY_BOX_SEARCH_MAX_LIMIT);
+  const page = filtered.slice(offset, offset + limit);
+  return {
+    total: filtered.length,
+    offset,
+    limit,
+    nextCursor: offset + limit < filtered.length ? String(offset + limit) : null,
+    operations: page
+  };
+}
+
 // src/provider-health.ts
 function hasValue(env, key) {
   return Boolean(env[key]?.trim());
@@ -74091,7 +76854,7 @@ function readUrl(env, ...keys) {
 function objectValue(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value : void 0;
 }
-function stringValue2(value) {
+function stringValue3(value) {
   return typeof value === "string" && value.trim() ? value.trim() : void 0;
 }
 function dropUndefined(input2) {
@@ -74284,7 +77047,7 @@ async function fetchComposioCatalog(env = process.env, fetchImpl = fetch) {
     if (typeof body.total_items === "number") {
       reportedTotal = body.total_items;
     }
-    const nextCursor = stringValue2(body.next_cursor ?? body.nextCursor);
+    const nextCursor = stringValue3(body.next_cursor ?? body.nextCursor);
     if (!nextCursor || seenCursors.has(nextCursor)) {
       cursor = void 0;
     } else {
@@ -74329,21 +77092,21 @@ async function fetchComposioConnectedAccounts(env = process.env, fetchImpl = fet
     for (const rawItem of pageItems) {
       const item = objectValue(rawItem) ?? {};
       const toolkit = objectValue(item.toolkit);
-      const id = stringValue2(item.id);
-      const toolkitSlug = stringValue2(toolkit?.slug ?? item.toolkit_slug);
+      const id = stringValue3(item.id);
+      const toolkitSlug = stringValue3(toolkit?.slug ?? item.toolkit_slug);
       if (!id || !toolkitSlug) {
         continue;
       }
       items.push({
         id,
         toolkit: toolkitSlug.toLowerCase(),
-        status: stringValue2(item.status) ?? "UNKNOWN",
+        status: stringValue3(item.status) ?? "UNKNOWN",
         disabled: item.is_disabled === true,
-        updatedAt: stringValue2(item.updated_at) ?? null,
-        userId: stringValue2(item.user_id) ?? null
+        updatedAt: stringValue3(item.updated_at) ?? null,
+        userId: stringValue3(item.user_id) ?? null
       });
     }
-    const nextCursor = stringValue2(body.next_cursor ?? body.nextCursor);
+    const nextCursor = stringValue3(body.next_cursor ?? body.nextCursor);
     if (!nextCursor || seenCursors.has(nextCursor)) {
       cursor = void 0;
     } else {
@@ -74391,11 +77154,12 @@ async function createComposioAuthLink(input2) {
   }
   const baseUrl = readUrl(env, "COMPOSIO_BASE_URL") ?? "https://backend.composio.dev/api/v3.1";
   const connectBaseUrl = readUrl(env, "COMPOSIO_CONNECT_BASE_URL") ?? baseUrl.replace(/\/v3\.1$/u, "/v3");
-  const authConfigId = input2.authConfigId?.trim() || await getOrCreateComposioAuthConfig({
+  const authConfigId = await getOrCreateComposioAuthConfig({
     baseUrl,
     apiKey,
     toolkit: input2.toolkit,
     fetchImpl,
+    authConfigId: input2.authConfigId,
     authSchemes: input2.authSchemes,
     managedAuthSchemes: input2.managedAuthSchemes,
     noAuth: input2.noAuth
@@ -74417,13 +77181,13 @@ async function createComposioAuthLink(input2) {
     body
   });
   const record2 = objectValue(response) ?? {};
-  const connectedAccountId = stringValue2(record2.connected_account_id) ?? stringValue2(record2.connectedAccountId) ?? stringValue2(record2.connection_id) ?? stringValue2(record2.id) ?? null;
-  const redirectUrl = stringValue2(record2.redirect_url) ?? stringValue2(record2.redirectUrl) ?? stringValue2(record2.url) ?? stringValue2(record2.link) ?? null;
+  const connectedAccountId = stringValue3(record2.connected_account_id) ?? stringValue3(record2.connectedAccountId) ?? stringValue3(record2.connection_id) ?? stringValue3(record2.id) ?? null;
+  const redirectUrl = stringValue3(record2.redirect_url) ?? stringValue3(record2.redirectUrl) ?? stringValue3(record2.url) ?? stringValue3(record2.link) ?? null;
   return {
     authConfigId,
     connectedAccountId,
     redirectUrl,
-    status: stringValue2(record2.status) ?? (redirectUrl ? "PENDING" : "UNKNOWN"),
+    status: stringValue3(record2.status) ?? (redirectUrl ? "PENDING" : "UNKNOWN"),
     upstream: redactSensitiveFields(response)
   };
 }
@@ -74447,9 +77211,152 @@ async function executeComposioTool(input2) {
     body
   });
 }
+var COMPOSIO_USER_KEY_AUTH_SCHEMES = ["API_KEY", "BEARER_TOKEN", "BASIC"];
+var COMPOSIO_OWNER_CONFIGURED_AUTH_SCHEMES = [
+  "OAUTH2",
+  "OAUTH1",
+  "OAUTH1A",
+  "DCR_OAUTH",
+  "S2S_OAUTH2",
+  "GOOGLE_SERVICE_ACCOUNT",
+  "SERVICE_ACCOUNT",
+  "BASIC_WITH_JWT"
+];
+var ComposioAuthConfigError = class extends Error {
+  code;
+  statusCode;
+  constructor(code, statusCode, message) {
+    super(message);
+    this.name = "ComposioAuthConfigError";
+    this.code = code;
+    this.statusCode = statusCode;
+  }
+};
+function summarizeComposioAuthConfig(value) {
+  const record2 = objectValue(value);
+  const nested = objectValue(record2?.auth_config) ?? objectValue(record2?.authConfig);
+  const source = nested && !stringValue3(record2?.id) ? nested : record2;
+  const id = stringValue3(source?.id) ?? stringValue3(source?.nanoid) ?? stringValue3(source?.nanoId);
+  if (!source || !id) {
+    return null;
+  }
+  const toolkit = objectValue(source.toolkit);
+  const managed = source.is_composio_managed ?? source.isComposioManaged;
+  const status = stringValue3(source.status)?.toUpperCase();
+  return {
+    id,
+    toolkit: stringValue3(toolkit?.slug) ?? stringValue3(source.toolkit_slug) ?? stringValue3(source.toolkit) ?? null,
+    authScheme: (stringValue3(source.auth_scheme) ?? stringValue3(source.authScheme))?.toUpperCase() ?? null,
+    composioManaged: typeof managed === "boolean" ? managed : null,
+    enabled: status !== "DISABLED" && source.is_disabled !== true && source.disabled !== true
+  };
+}
+function sameToolkit(left, right) {
+  return left.trim().toLowerCase() === right.trim().toLowerCase();
+}
+async function fetchComposioAuthConfigs(env = process.env, fetchImpl = fetch) {
+  const apiKey = env.COMPOSIO_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error("COMPOSIO_API_KEY is required for Composio auth-config fetch.");
+  }
+  const baseUrl = readUrl(env, "COMPOSIO_BASE_URL") ?? "https://backend.composio.dev/api/v3.1";
+  const items = [];
+  const seenCursors = /* @__PURE__ */ new Set();
+  let cursor;
+  do {
+    const params = new URLSearchParams({ limit: "1000" });
+    if (cursor) {
+      params.set("cursor", cursor);
+    }
+    const response = await probeJson({
+      url: `${baseUrl}/auth_configs?${params.toString()}`,
+      fetchImpl,
+      headers: { "x-api-key": apiKey }
+    });
+    if (response.statusCode === null || response.statusCode < 200 || response.statusCode >= 300) {
+      throw new Error(
+        response.error ?? `Composio auth-config fetch failed with status ${response.statusCode ?? "unknown"}.`
+      );
+    }
+    const body = objectValue(response.json) ?? {};
+    const pageItems = Array.isArray(body.items) ? body.items : Array.isArray(body.data) ? body.data : [];
+    for (const item of pageItems) {
+      const summary = summarizeComposioAuthConfig(item);
+      if (summary) {
+        items.push(summary);
+      }
+    }
+    const nextCursor = stringValue3(body.next_cursor ?? body.nextCursor);
+    if (!nextCursor || seenCursors.has(nextCursor)) {
+      cursor = void 0;
+    } else {
+      seenCursors.add(nextCursor);
+      cursor = nextCursor;
+    }
+  } while (cursor);
+  return items;
+}
+async function fetchComposioAuthConfigById(input2) {
+  const response = await probeJson({
+    url: `${input2.baseUrl}/auth_configs/${encodeURIComponent(input2.authConfigId)}`,
+    fetchImpl: input2.fetchImpl,
+    headers: { "x-api-key": input2.apiKey }
+  });
+  if (response.statusCode === 404 || response.statusCode === 400) {
+    throw new ComposioAuthConfigError(
+      "composio_auth_config_not_found",
+      400,
+      "The Composio auth config was not found in this Composio project."
+    );
+  }
+  if (response.statusCode === null || response.statusCode < 200 || response.statusCode >= 300) {
+    throw new ComposioAuthConfigError(
+      "composio_auth_config_lookup_failed",
+      502,
+      `Composio auth config lookup failed with status ${response.statusCode ?? "unknown"}.`
+    );
+  }
+  const summary = summarizeComposioAuthConfig(response.json);
+  if (!summary) {
+    throw new ComposioAuthConfigError(
+      "composio_auth_config_not_found",
+      400,
+      "The Composio auth config was not found in this Composio project."
+    );
+  }
+  return summary;
+}
 async function getOrCreateComposioAuthConfig(input2) {
+  const requestedId = input2.authConfigId?.trim();
+  if (requestedId) {
+    const config3 = await fetchComposioAuthConfigById({
+      baseUrl: input2.baseUrl,
+      apiKey: input2.apiKey,
+      authConfigId: requestedId,
+      fetchImpl: input2.fetchImpl
+    });
+    if (!config3.toolkit || !sameToolkit(config3.toolkit, input2.toolkit)) {
+      throw new ComposioAuthConfigError(
+        "composio_auth_config_toolkit_mismatch",
+        400,
+        `The Composio auth config belongs to ${config3.toolkit ?? "an unknown toolkit"}, not ${input2.toolkit}.`
+      );
+    }
+    if (!config3.enabled) {
+      throw new ComposioAuthConfigError(
+        "composio_auth_config_disabled",
+        400,
+        "The Composio auth config is disabled. Enable it in the Composio dashboard, then connect again."
+      );
+    }
+    return config3.id;
+  }
   if (input2.noAuth) {
-    throw new Error(`Composio toolkit ${input2.toolkit} does not require an auth configuration.`);
+    throw new ComposioAuthConfigError(
+      "composio_toolkit_no_auth",
+      409,
+      `Composio toolkit ${input2.toolkit} does not require an auth configuration.`
+    );
   }
   const authSchemes = (input2.authSchemes ?? []).map(
     (scheme) => scheme.trim().toUpperCase()
@@ -74458,17 +77365,11 @@ async function getOrCreateComposioAuthConfig(input2) {
     (scheme) => scheme.trim().toUpperCase()
   );
   const customAuthScheme = authSchemes.find(
-    (scheme) => ["API_KEY", "BEARER_TOKEN", "BASIC"].includes(scheme)
+    (scheme) => COMPOSIO_USER_KEY_AUTH_SCHEMES.includes(scheme)
   );
   const usesManagedAuth = managedAuthSchemes.length > 0 || authSchemes.length === 0;
-  if (!usesManagedAuth && !customAuthScheme) {
-    throw new Error(
-      `Composio toolkit ${input2.toolkit} requires custom ${authSchemes.join(", ") || "authentication"} configuration before it can be connected.`
-    );
-  }
   const params = new URLSearchParams({
     toolkit_slug: input2.toolkit,
-    is_composio_managed: String(usesManagedAuth),
     limit: "100"
   });
   const existingResponse = await probeJson({
@@ -74476,9 +77377,27 @@ async function getOrCreateComposioAuthConfig(input2) {
     fetchImpl: input2.fetchImpl,
     headers: { "x-api-key": input2.apiKey }
   });
-  const existing = authConfigIdFromPayload(existingResponse.json, input2.toolkit);
-  if (existing) {
-    return existing;
+  const listed = existingResponse.statusCode !== null && existingResponse.statusCode >= 200 && existingResponse.statusCode < 300 ? objectValue(existingResponse.json) : void 0;
+  const rawItems = Array.isArray(listed?.items) ? listed.items : Array.isArray(listed?.data) ? listed.data : [];
+  const candidates = rawItems.map(summarizeComposioAuthConfig).filter(
+    (config3) => config3 !== null && config3.enabled && (config3.toolkit === null || sameToolkit(config3.toolkit, input2.toolkit))
+  );
+  const existingCustom = candidates.find(
+    (config3) => config3.composioManaged === false && (config3.authScheme === null || authSchemes.length === 0 || authSchemes.includes(config3.authScheme))
+  );
+  if (existingCustom) {
+    return existingCustom.id;
+  }
+  const existingManaged = candidates.find((config3) => config3.composioManaged === true) ?? candidates.find((config3) => config3.composioManaged === null);
+  if (existingManaged) {
+    return existingManaged.id;
+  }
+  if (!usesManagedAuth && !customAuthScheme) {
+    throw new ComposioAuthConfigError(
+      "composio_auth_config_required",
+      409,
+      `Composio toolkit ${input2.toolkit} requires custom ${authSchemes.join(", ") || "authentication"} configuration before it can be connected.`
+    );
   }
   const created = await postComposioJson({
     url: `${input2.baseUrl}/auth_configs`,
@@ -74523,12 +77442,12 @@ async function postComposioJson(input2) {
 }
 function authConfigIdFromPayload(payload, toolkit) {
   const record2 = objectValue(payload);
-  const direct = stringValue2(record2?.id) ?? stringValue2(record2?.nanoid) ?? stringValue2(record2?.nanoId);
+  const direct = stringValue3(record2?.id) ?? stringValue3(record2?.nanoid) ?? stringValue3(record2?.nanoId);
   if (direct) {
     return direct;
   }
   const nested = objectValue(record2?.auth_config) ?? objectValue(record2?.authConfig);
-  const nestedId = stringValue2(nested?.id) ?? stringValue2(nested?.nanoid) ?? stringValue2(nested?.nanoId);
+  const nestedId = stringValue3(nested?.id) ?? stringValue3(nested?.nanoid) ?? stringValue3(nested?.nanoId);
   if (nestedId) {
     return nestedId;
   }
@@ -74536,11 +77455,11 @@ function authConfigIdFromPayload(payload, toolkit) {
   for (const item of items) {
     const itemRecord = objectValue(item);
     const itemToolkit = objectValue(itemRecord?.toolkit);
-    const slug2 = stringValue2(itemToolkit?.slug) ?? toolkit;
+    const slug2 = stringValue3(itemToolkit?.slug) ?? toolkit;
     if (slug2 !== toolkit) {
       continue;
     }
-    const itemId = stringValue2(itemRecord?.id) ?? stringValue2(itemRecord?.nanoid) ?? stringValue2(itemRecord?.nanoId);
+    const itemId = stringValue3(itemRecord?.id) ?? stringValue3(itemRecord?.nanoid) ?? stringValue3(itemRecord?.nanoId);
     if (itemId) {
       return itemId;
     }
@@ -74548,9 +77467,99 @@ function authConfigIdFromPayload(payload, toolkit) {
   return null;
 }
 
+// src/connect-mode.ts
+var CONNECT_MODES = [
+  "connected",
+  "no_auth",
+  "ready_auth_config",
+  "ready_managed",
+  "ready_user_key",
+  "needs_auth_config",
+  "needs_credentials",
+  "not_supported"
+];
+function recordValue7(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+function upperStrings(value) {
+  return Array.isArray(value) ? value.filter((entry) => typeof entry === "string" && entry.trim() !== "").map((entry) => entry.trim().toUpperCase()) : [];
+}
+function composioAuthProfile(listing) {
+  const composio = recordValue7(recordValue7(listing.manifest)?.composio);
+  const catalog = recordValue7(composio?.catalog);
+  const customAuthConfigs = Array.isArray(catalog?.customAuthConfigs) ? catalog.customAuthConfigs.flatMap((entry) => {
+    const record2 = recordValue7(entry);
+    const id = typeof record2?.id === "string" ? record2.id.trim() : "";
+    if (!id) return [];
+    const authScheme = typeof record2?.authScheme === "string" ? record2.authScheme.trim().toUpperCase() : null;
+    return [{ id, authScheme }];
+  }) : [];
+  return {
+    authSchemes: upperStrings(catalog?.authSchemes),
+    managedAuthSchemes: upperStrings(catalog?.managedAuthSchemes),
+    noAuth: catalog?.noAuth === true,
+    customAuthConfigs
+  };
+}
+function listingNeedsComposioAccount(listing) {
+  return listing.source === "composio" && listing.authOwner === "composio" && listing.pluginId !== "composio-bootstrap";
+}
+function connectMode(listing, connections, options = {}) {
+  const own2 = (Array.isArray(connections) ? connections : connections ? [connections] : []).filter((connection) => connection.pluginId === listing.pluginId);
+  if (own2.some((connection) => connection.state === "connected")) {
+    return "connected";
+  }
+  if (listingIsOperatorCustomMcp(listing)) {
+    const ownedHere = listing.executionOwner === "mcp" && (options.workspaceSlug === void 0 || listing.ownerWorkspaceSlug === options.workspaceSlug);
+    return ownedHere ? "needs_credentials" : "not_supported";
+  }
+  if (listingIsCompanyBoxOpenApi(listing)) {
+    return "needs_credentials";
+  }
+  if (listing.executionOwner !== "composio") {
+    return "not_supported";
+  }
+  if (!listingNeedsComposioAccount(listing)) {
+    return "no_auth";
+  }
+  const profile = composioAuthProfile(listing);
+  if (profile.noAuth || profile.authSchemes.includes("NO_AUTH")) {
+    return "no_auth";
+  }
+  const knownFromConnection = own2.some(
+    (connection) => typeof connection.metadata?.authConfigId === "string" && connection.metadata.authConfigId.trim() !== ""
+  );
+  const knownCustomConfig = profile.customAuthConfigs.some(
+    (config3) => config3.authScheme === null || profile.authSchemes.length === 0 || profile.authSchemes.includes(config3.authScheme)
+  );
+  if (knownCustomConfig) {
+    return "ready_auth_config";
+  }
+  if (profile.managedAuthSchemes.length > 0 || profile.authSchemes.length === 0) {
+    return "ready_managed";
+  }
+  if (profile.authSchemes.some((scheme) => COMPOSIO_USER_KEY_AUTH_SCHEMES.includes(scheme))) {
+    return "ready_user_key";
+  }
+  if (knownFromConnection) {
+    return "ready_auth_config";
+  }
+  if (profile.authSchemes.some((scheme) => COMPOSIO_OWNER_CONFIGURED_AUTH_SCHEMES.includes(scheme))) {
+    return "needs_auth_config";
+  }
+  return "not_supported";
+}
+function countConnectModes(modes) {
+  const counts = Object.fromEntries(CONNECT_MODES.map((mode) => [mode, 0]));
+  for (const mode of modes) {
+    counts[mode] += 1;
+  }
+  return counts;
+}
+
 // src/store.ts
-import fs2 from "node:fs";
-import path3 from "node:path";
+import fs3 from "node:fs";
+import path4 from "node:path";
 import {
   createCipheriv,
   createDecipheriv,
@@ -74561,11 +77570,11 @@ import {
 import { DatabaseSync } from "node:sqlite";
 
 // src/usage-ledger.ts
-import { createHash } from "node:crypto";
+import { createHash as createHash3 } from "node:crypto";
 var STORED_OUTPUT_MAX_BYTES = 64 * 1024;
 function outputDigest(value) {
   const json2 = JSON.stringify(value ?? null);
-  return { bytes: Buffer.byteLength(json2), sha256: createHash("sha256").update(json2).digest("hex") };
+  return { bytes: Buffer.byteLength(json2), sha256: createHash3("sha256").update(json2).digest("hex") };
 }
 function boundedStoredOutput(value, maxBytes = STORED_OUTPUT_MAX_BYTES) {
   const digest2 = outputDigest(value);
@@ -74581,131 +77590,6 @@ function shapeOf(value) {
       Array.isArray(nested) ? "array" : nested === null ? "null" : typeof nested
     ])
   );
-}
-
-// src/legacy-ids.ts
-import fs from "node:fs";
-import os from "node:os";
-import path2 from "node:path";
-var LEGACY_IDS = {
-  /** Rules gateway RPC method (Rules introspection + evaluate request). */
-  "tealbrick.rules.evaluate": "doppelganger.rules.evaluate",
-  /** Agent connector grant contract carried in Rules payloads. */
-  "tealbrick.marketplace.agent-connector-grant.v1": "doppelganger.marketplace.agent-connector-grant.v1",
-  /** Cross-app broker execute request contract. */
-  "tealbrick.cross-app.marketplace.broker-execute.v1": "doppelganger.cross-app.marketplace.broker-execute.v1",
-  /** Reserved agent actor id. */
-  "tealbrick-agent": "doppelganger-agent",
-  /** Plugin/product manifest namespace key. */
-  tealbrick: "doppelganger"
-};
-function acceptedIds(current) {
-  return [current, LEGACY_IDS[current]];
-}
-function isAcceptedId(current, value) {
-  return value === current || value === LEGACY_IDS[current];
-}
-function manifestNamespace(manifest) {
-  for (const key of acceptedIds("tealbrick")) {
-    const value = manifest?.[key];
-    if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-      return value;
-    }
-  }
-  return void 0;
-}
-var ENV_PREFIX = "TEALBRICK_";
-var LEGACY_ENV_PREFIX = "DOPPELGANGER_";
-var warned = /* @__PURE__ */ new Set();
-var defaultWarn = (message) => {
-  console.warn(message);
-};
-function warnOnce(key, message, warn = defaultWarn) {
-  if (warned.has(key)) return;
-  warned.add(key);
-  warn(message);
-}
-function readCompatEnv(env, name, warn) {
-  const current = env[`${ENV_PREFIX}${name}`]?.trim();
-  if (current) return current;
-  const legacy = env[`${LEGACY_ENV_PREFIX}${name}`]?.trim();
-  if (legacy) {
-    warnOnce(
-      `env:${name}`,
-      `[marketplace] ${LEGACY_ENV_PREFIX}${name} is deprecated; set ${ENV_PREFIX}${name} instead. The old name still works for now.`,
-      warn
-    );
-    return legacy;
-  }
-  return void 0;
-}
-function compatDebugEnabled(env = process.env) {
-  return readCompatEnv(env, "DEBUG") === "1";
-}
-var STATE_HOME_DIRNAME = ".tealbrick";
-var LEGACY_STATE_HOME_DIRNAME = ".doppelganger";
-var MARKETPLACE_STATE_SEGMENTS = ["programs", "marketplace"];
-function isDirectory(target) {
-  try {
-    return fs.statSync(target).isDirectory();
-  } catch {
-    return false;
-  }
-}
-function resolveDefaultStateRoot(options = {}) {
-  const homeDir = options.homeDir ?? os.homedir();
-  const warn = options.warn ?? defaultWarn;
-  const root = path2.join(homeDir, STATE_HOME_DIRNAME, ...MARKETPLACE_STATE_SEGMENTS);
-  const legacyRoot = path2.join(
-    homeDir,
-    LEGACY_STATE_HOME_DIRNAME,
-    ...MARKETPLACE_STATE_SEGMENTS
-  );
-  const legacyIsLink = (() => {
-    try {
-      return fs.lstatSync(legacyRoot).isSymbolicLink();
-    } catch {
-      return false;
-    }
-  })();
-  if (isDirectory(root)) {
-    if (!legacyIsLink && isDirectory(legacyRoot)) {
-      warnOnce(
-        `state:both:${legacyRoot}`,
-        `[marketplace] Using ${root}. A legacy state directory still exists at ${legacyRoot}; it was not modified or removed.`,
-        warn
-      );
-      return { root, status: "both-present" };
-    }
-    return { root, status: "current" };
-  }
-  if (!isDirectory(legacyRoot)) {
-    return { root, status: "fresh" };
-  }
-  if (!options.migrate) {
-    return { root: legacyRoot, status: "legacy-in-place" };
-  }
-  try {
-    fs.mkdirSync(path2.dirname(root), { recursive: true });
-    fs.renameSync(legacyRoot, root);
-  } catch (error62) {
-    warnOnce(
-      `state:stay:${legacyRoot}`,
-      `[marketplace] Could not move legacy state ${legacyRoot} to ${root} (${error62?.code ?? String(error62)}); continuing to use the legacy path. Move it manually or set MARKETPLACE_DATA_DIR.`,
-      warn
-    );
-    return { root: legacyRoot, status: "legacy-in-place" };
-  }
-  try {
-    fs.symlinkSync(root, legacyRoot, "dir");
-  } catch {
-  }
-  warnOnce(
-    `state:migrated:${legacyRoot}`,
-    `[marketplace] Moved state from ${legacyRoot} to ${root} (a symlink remains at the old path).`,
-    warn
-  );
-  return { root, status: "migrated" };
 }
 
 // src/store.ts
@@ -75074,9 +77958,9 @@ function brokerGrantFromRow(row) {
 var SqliteMarketplaceStore = class {
   constructor(dbPath, options = {}) {
     this.dbPath = dbPath;
-    fs2.mkdirSync(path3.dirname(dbPath), { recursive: true });
-    this.logPath = options.logPath ?? path3.join(
-      path3.dirname(path3.dirname(dbPath)),
+    fs3.mkdirSync(path4.dirname(dbPath), { recursive: true });
+    this.logPath = options.logPath ?? path4.join(
+      path4.dirname(path4.dirname(dbPath)),
       "logs",
       "marketplace-debug.jsonl"
     );
@@ -75084,7 +77968,7 @@ var SqliteMarketplaceStore = class {
     this.handoffEncryptionKey = encryptionKeyFromSecret(
       options.handoffEncryptionKey ?? process.env.MARKETPLACE_HANDOFF_ENCRYPTION_KEY
     );
-    fs2.mkdirSync(path3.dirname(this.logPath), { recursive: true });
+    fs3.mkdirSync(path4.dirname(this.logPath), { recursive: true });
     this.db = new DatabaseSync(dbPath);
     try {
       this.migrate();
@@ -76809,7 +79693,7 @@ var SqliteMarketplaceStore = class {
       createdAt
     );
     if (this.debug && this.logPath) {
-      fs2.appendFileSync(
+      fs3.appendFileSync(
         this.logPath,
         `${JSON.stringify({
           id: eventId,
@@ -76869,7 +79753,7 @@ var SqliteMarketplaceStore = class {
       envelope.occurredAt
     );
     if (this.debug && this.logPath) {
-      fs2.appendFileSync(this.logPath, `${JSON.stringify(envelope)}
+      fs3.appendFileSync(this.logPath, `${JSON.stringify(envelope)}
 `);
     }
     return envelope;
@@ -76973,743 +79857,6 @@ var SqliteMarketplaceStore = class {
   }
 };
 
-// src/custom-mcp.ts
-import { createHash as createHash2 } from "node:crypto";
-
-// src/hub.ts
-function recordValue2(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value) ? value : void 0;
-}
-function legacyHubMetadata(listing) {
-  return recordValue2(listing.manifest.skillsHub) ?? {};
-}
-function listingIsRequired(listing) {
-  const hub = legacyHubMetadata(listing);
-  const directSystem = recordValue2(listing.manifest.system);
-  const namespacedSystem = recordValue2(
-    manifestNamespace(recordValue2(listing.manifest))?.system
-  );
-  return hub.required === true || directSystem?.required === true || namespacedSystem?.required === true;
-}
-function listingIsCustomMcp(listing) {
-  return listing.source === "mcp" && legacyHubMetadata(listing).custom === true;
-}
-function listingIsOperatorCustomMcp(listing) {
-  return listingIsCustomMcp(listing) && legacyHubMetadata(listing).operatorManaged === true && typeof listing.ownerWorkspaceSlug === "string";
-}
-
-// src/custom-mcp.ts
-var CUSTOM_MCP_MAX_HEADERS = 20;
-var CUSTOM_MCP_MAX_SECRET_HEADERS = 10;
-var MAX_HEADER_VALUE_LENGTH = 4096;
-var MAX_INPUT_SCHEMA_BYTES = 16384;
-var MAX_TOOL_DESCRIPTION = 1e3;
-var MAX_TOOL_TITLE = 200;
-var MAX_ACTION_KEY_LENGTH = 128;
-var ACTION_KEY_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*){1,7}$/u;
-var STDIO_ONLY_FIELDS = ["command", "args", "env", "cwd"];
-var HEADER_NAME_PATTERN = /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,64}$/u;
-var RESERVED_HEADER_NAMES = /* @__PURE__ */ new Set([
-  "accept",
-  "connection",
-  "content-length",
-  "content-type",
-  "host",
-  "keep-alive",
-  "last-event-id",
-  "mcp-protocol-version",
-  "mcp-session-id",
-  "te",
-  "trailer",
-  "transfer-encoding",
-  "upgrade"
-]);
-var CustomMcpInputError = class extends Error {
-  constructor(code, field) {
-    super(code);
-    this.code = code;
-    this.field = field;
-  }
-  code;
-  field;
-};
-var TransportSchema = external_exports.enum(["streamable-http", "sse"]);
-var CustomMcpCreateSchema = external_exports.object({
-  displayName: external_exports.string().trim().min(1).max(80),
-  slug: external_exports.string().trim().min(1).max(40).optional(),
-  description: external_exports.string().trim().max(500).optional(),
-  transport: TransportSchema.default("streamable-http"),
-  url: external_exports.string().trim().min(1).max(2048),
-  headers: external_exports.record(external_exports.string()).optional(),
-  secretHeaders: external_exports.record(external_exports.string()).optional()
-});
-var CustomMcpPatchSchema = external_exports.object({
-  displayName: external_exports.string().trim().min(1).max(80).optional(),
-  description: external_exports.string().trim().max(500).optional(),
-  transport: TransportSchema.optional(),
-  url: external_exports.string().trim().min(1).max(2048).optional(),
-  headers: external_exports.record(external_exports.string()).optional(),
-  /** string = set/replace, null = remove, omitted = keep. */
-  secretHeaders: external_exports.record(external_exports.string().nullable()).optional()
-});
-function requestsStdioTransport(body) {
-  if (!body || typeof body !== "object" || Array.isArray(body)) return false;
-  const record2 = body;
-  return record2.transport === "stdio" || STDIO_ONLY_FIELDS.some((field) => field in record2);
-}
-function normalizeHeaderName(name, field) {
-  const trimmed = name.trim();
-  if (!HEADER_NAME_PATTERN.test(trimmed)) {
-    throw new CustomMcpInputError("custom_mcp_header_invalid", field);
-  }
-  const lower = trimmed.toLowerCase();
-  if (RESERVED_HEADER_NAMES.has(lower) || lower.startsWith("proxy-")) {
-    throw new CustomMcpInputError("custom_mcp_header_invalid", field);
-  }
-  return lower;
-}
-function validHeaderValue(value) {
-  return value.length <= MAX_HEADER_VALUE_LENGTH && // Visible ASCII/Latin-1 plus space and tab; no CR, LF, or NUL.
-  /^[\t\x20-\x7e\x80-\xff]*$/u.test(value);
-}
-function normalizePlainHeaders(headers) {
-  const entries = Object.entries(headers ?? {});
-  if (entries.length > CUSTOM_MCP_MAX_HEADERS) {
-    throw new CustomMcpInputError("custom_mcp_header_limit", "headers");
-  }
-  const normalized2 = {};
-  for (const [name, value] of entries) {
-    const key = normalizeHeaderName(name, "headers");
-    const trimmed = value.trim();
-    if (!validHeaderValue(trimmed) || key in normalized2) {
-      throw new CustomMcpInputError("custom_mcp_header_invalid", "headers");
-    }
-    normalized2[key] = trimmed;
-  }
-  return normalized2;
-}
-function normalizeSecretHeaderChanges(headers) {
-  const changes = /* @__PURE__ */ new Map();
-  for (const [name, value] of Object.entries(headers ?? {})) {
-    const key = normalizeHeaderName(name, "secretHeaders");
-    if (changes.has(key)) {
-      throw new CustomMcpInputError("custom_mcp_header_invalid", "secretHeaders");
-    }
-    if (value === null) {
-      changes.set(key, null);
-      continue;
-    }
-    const trimmed = value.trim();
-    if (!trimmed || !validHeaderValue(trimmed)) {
-      throw new CustomMcpInputError("custom_mcp_header_invalid", "secretHeaders");
-    }
-    changes.set(key, trimmed);
-  }
-  return changes;
-}
-function assertHeaderSets(input2) {
-  const plain = new Set(input2.plainNames);
-  const secret = [...new Set(input2.secretNames)];
-  if (secret.length > CUSTOM_MCP_MAX_SECRET_HEADERS) {
-    throw new CustomMcpInputError("custom_mcp_header_limit", "secretHeaders");
-  }
-  if (secret.some((name) => plain.has(name))) {
-    throw new CustomMcpInputError("custom_mcp_header_conflict");
-  }
-}
-function workspaceHash(workspaceSlug) {
-  return createHash2("sha256").update(workspaceSlug).digest("hex").slice(0, 8);
-}
-function customMcpPluginId(input2) {
-  let slug2 = normalizeConnectorSlug(input2.slug ?? input2.displayName);
-  if (!slug2) slug2 = "connector";
-  if (!/^[a-z]/u.test(slug2)) slug2 = `c-${slug2}`;
-  slug2 = slug2.slice(0, 40).replace(/-+$/u, "");
-  return `mcp-${slug2}-${workspaceHash(input2.workspaceSlug)}`;
-}
-function displayUrl(value) {
-  try {
-    const url2 = new URL(value);
-    return `${url2.origin}${url2.pathname}`;
-  } catch {
-    return "";
-  }
-}
-function recordValue3(value) {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
-}
-function isCapability(value) {
-  return value === "connector.observe" || value === "connector.dispatch" || value === "connector.admin";
-}
-function customMcpManifest(listing) {
-  const mcp = recordValue3(listing.manifest.mcp) ?? {};
-  const headers = recordValue3(mcp.headers) ?? {};
-  const lastRefresh = recordValue3(mcp.lastRefresh);
-  const companyBox = recordValue3(mcp.companyBox);
-  return {
-    operatorManaged: true,
-    transport: mcp.transport === "sse" ? "sse" : "streamable-http",
-    url: typeof mcp.url === "string" ? mcp.url : "",
-    headers: Object.fromEntries(
-      Object.entries(headers).filter(
-        (entry) => typeof entry[1] === "string"
-      )
-    ),
-    tools: (Array.isArray(mcp.tools) ? mcp.tools : []).flatMap((entry) => {
-      const tool = recordValue3(entry);
-      if (!tool || typeof tool.name !== "string" || typeof tool.action !== "string" || !isCapability(tool.capability)) {
-        return [];
-      }
-      return [
-        {
-          name: tool.name,
-          action: tool.action,
-          ...typeof tool.title === "string" ? { title: tool.title } : {},
-          ...typeof tool.description === "string" ? { description: tool.description } : {},
-          capability: tool.capability,
-          inputSchema: recordValue3(tool.inputSchema) ?? { type: "object" },
-          annotations: recordValue3(tool.annotations) ?? {}
-        }
-      ];
-    }),
-    lastRefresh: lastRefresh ? {
-      at: String(lastRefresh.at ?? ""),
-      ok: lastRefresh.ok === true,
-      errorCode: typeof lastRefresh.errorCode === "string" ? lastRefresh.errorCode : null
-    } : null,
-    ...typeof companyBox?.entryId === "string" ? {
-      companyBox: {
-        entryId: companyBox.entryId,
-        ...typeof companyBox.baseUrl === "string" ? { baseUrl: companyBox.baseUrl } : {}
-      }
-    } : {}
-  };
-}
-function customMcpListing(input2) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const { manifest } = input2;
-  const capabilities2 = ["connector.observe", "connector.dispatch", "connector.admin"].filter(
-    (capability) => manifest.tools.some((tool) => tool.capability === capability)
-  );
-  return {
-    pluginId: input2.pluginId,
-    displayName: input2.displayName,
-    kind: "toolset",
-    provider: input2.pluginId,
-    description: input2.description?.trim() || "Custom connector using a remote MCP server.",
-    capabilities: capabilities2,
-    actions: manifest.tools.map((tool) => tool.action),
-    source: "mcp",
-    authOwner: "program",
-    executionOwner: "mcp",
-    runtimeSources: [
-      {
-        runtimeSourceId: `${input2.pluginId}-mcp`,
-        kind: "mcp",
-        label: "Custom MCP server",
-        primary: true,
-        mcpServerId: input2.pluginId
-      }
-    ],
-    enabledByDefault: false,
-    ownerWorkspaceSlug: input2.workspaceSlug,
-    manifest: {
-      version: input2.version ?? "0.1.0",
-      kind: "plugin",
-      actionRequirements: Object.fromEntries(
-        manifest.tools.map((tool) => [
-          tool.action,
-          { kind: input2.pluginId, capability: tool.capability }
-        ])
-      ),
-      mcp: manifest,
-      skillsHub: {
-        custom: true,
-        operatorManaged: true,
-        required: false,
-        unitId: input2.pluginId,
-        contributions: [],
-        adapter: {
-          type: "mcp",
-          // Origin + path only: a query string may carry credentials.
-          mcp: { transport: manifest.transport, url: displayUrl(manifest.url), config: {} }
-        }
-      }
-    },
-    createdAt: input2.createdAt ?? now,
-    updatedAt: now
-  };
-}
-function actionSegment(name) {
-  let segment = name.toLowerCase().replace(/[^a-z0-9]+/gu, "-").replace(/^-+|-+$/gu, "");
-  if (!segment) segment = "tool";
-  if (!/^[a-z]/u.test(segment)) segment = `tool-${segment}`;
-  return segment;
-}
-function deriveActionKeys(provider, toolNames) {
-  const used = /* @__PURE__ */ new Set();
-  const budget = MAX_ACTION_KEY_LENGTH - provider.length - 1 - 4;
-  return toolNames.map((name) => {
-    const base = actionSegment(name).slice(0, Math.max(1, budget)).replace(/-+$/u, "");
-    let candidate = `${provider}.${base}`;
-    for (let suffix = 2; used.has(candidate); suffix += 1) {
-      candidate = `${provider}.${base}-${suffix}`;
-    }
-    if (!ACTION_KEY_PATTERN.test(candidate) || candidate.length > MAX_ACTION_KEY_LENGTH) {
-      throw new Error(`Derived action key ${candidate} is invalid.`);
-    }
-    used.add(candidate);
-    return candidate;
-  });
-}
-function capabilityForTool(tool, actionSegmentValue) {
-  const annotations = tool.annotations ?? {};
-  if (annotations.readOnlyHint === true) return "connector.observe";
-  if (annotations.destructiveHint === true) return "connector.admin";
-  if (typeof annotations.readOnlyHint === "boolean" || typeof annotations.destructiveHint === "boolean") {
-    return "connector.dispatch";
-  }
-  return inferConnectorCapabilityFromAction(actionSegmentValue);
-}
-function boundedText(value, max) {
-  if (typeof value !== "string") return void 0;
-  const trimmed = value.trim();
-  return trimmed ? trimmed.slice(0, max) : void 0;
-}
-function toolRecordsFromRemote(provider, tools) {
-  const actions = deriveActionKeys(
-    provider,
-    tools.map((tool) => tool.name)
-  );
-  return tools.map((tool, index) => {
-    const action = actions[index];
-    const schema = recordValue3(tool.inputSchema);
-    const schemaJson = schema ? JSON.stringify(schema) : "";
-    const annotations = recordValue3(tool.annotations) ?? {};
-    const title = boundedText(tool.title, MAX_TOOL_TITLE) ?? boundedText(typeof annotations.title === "string" ? annotations.title : void 0, MAX_TOOL_TITLE);
-    const description = boundedText(tool.description, MAX_TOOL_DESCRIPTION);
-    return {
-      name: tool.name,
-      action,
-      ...title ? { title } : {},
-      ...description ? { description } : {},
-      capability: capabilityForTool(tool, action.slice(provider.length + 1)),
-      inputSchema: schema && Buffer.byteLength(schemaJson) <= MAX_INPUT_SCHEMA_BYTES ? schema : { type: "object" },
-      annotations: Object.fromEntries(
-        Object.entries(annotations).filter(
-          ([key, value]) => ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"].includes(key) && typeof value === "boolean"
-        )
-      )
-    };
-  });
-}
-function customMcpToolForAction(listing, action) {
-  return customMcpManifest(listing).tools.find((tool) => tool.action === action) ?? null;
-}
-function customConnectorView(store2, workspaceSlug, listing) {
-  const manifest = customMcpManifest(listing);
-  const install = store2.getInstall(workspaceSlug, listing.pluginId);
-  const connection = store2.getConnection(workspaceSlug, listing.pluginId);
-  return {
-    pluginId: listing.pluginId,
-    displayName: listing.displayName,
-    description: listing.description,
-    transport: manifest.transport,
-    url: displayUrl(manifest.url),
-    headers: Object.entries(manifest.headers).map(([name, value]) => ({ name, value })),
-    secretHeaders: store2.listConnectorSecrets({ workspaceSlug, pluginId: listing.pluginId }).map((secret) => ({ name: secret.name, configured: true, fingerprint: secret.fingerprint })),
-    tools: manifest.tools.map((tool) => ({
-      name: tool.name,
-      action: tool.action,
-      title: tool.title ?? null,
-      description: tool.description ?? null,
-      capability: tool.capability
-    })),
-    lastRefresh: manifest.lastRefresh,
-    install: {
-      installed: install?.lifecycle === "installed",
-      enabled: install?.lifecycle === "installed" && install.enabled,
-      lifecycle: install?.lifecycle ?? null
-    },
-    connection: connection ? { state: connection.state, detail: connection.detail, updatedAt: connection.updatedAt } : null,
-    createdAt: listing.createdAt,
-    updatedAt: listing.updatedAt
-  };
-}
-function bindCustomMcpForWorkspace(store2, workspaceSlug, listing) {
-  store2.registerPlugin(listing.pluginId);
-  for (const capability of listing.capabilities) {
-    if (!store2.getCapabilityBinding(workspaceSlug, listing.pluginId, capability)) {
-      store2.bindCapability({ workspaceSlug, pluginId: listing.pluginId, capability, enabled: true });
-    }
-  }
-  for (const actionKey of listing.actions) {
-    if (!store2.getActionBinding(workspaceSlug, listing.pluginId, actionKey)) {
-      store2.bindAction({ workspaceSlug, pluginId: listing.pluginId, actionKey, enabled: true });
-    }
-  }
-}
-
-// src/mcp-url-policy.ts
-import { lookup as dnsLookup } from "node:dns/promises";
-import { isIP } from "node:net";
-
-// src/tailnet.ts
-var import_undici = __toESM(require_undici(), 1);
-import { connect } from "node:net";
-var TailnetUnavailableError = class extends Error {
-  code = "tailnet_unavailable";
-  constructor() {
-    super("The tailnet is not reachable from Marketplace right now.");
-  }
-};
-function ipv4Octets(value) {
-  const parts = value.split(".");
-  if (parts.length !== 4 || !parts.every((part) => /^\d{1,3}$/u.test(part))) return null;
-  const octets = parts.map(Number);
-  return octets.every((octet) => octet <= 255) ? octets : null;
-}
-function isTailnetAddress(value) {
-  const octets = ipv4Octets(value);
-  return octets !== null && octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127;
-}
-function isTailnetHostname(value) {
-  const host = value.toLowerCase().replace(/\.$/u, "");
-  return host.endsWith(".ts.net") && host.length > ".ts.net".length;
-}
-function isTailnetHost(hostname3) {
-  const host = hostname3.replace(/^\[|\]$/gu, "");
-  return isTailnetHostname(host) || isTailnetAddress(host);
-}
-function loopbackProxy(value) {
-  if (!value?.trim()) return null;
-  try {
-    const url2 = new URL(value.trim());
-    const loopback = ["127.0.0.1", "localhost", "[::1]"].includes(url2.hostname);
-    if (url2.protocol !== "http:" || !loopback || url2.username || url2.password || !url2.port) return null;
-    return url2.origin;
-  } catch {
-    return null;
-  }
-}
-function tailnetConfig(env = process.env) {
-  const proxyUrl = loopbackProxy(env.MARKETPLACE_TAILNET_PROXY);
-  if (proxyUrl) return { mode: "proxy", proxyUrl };
-  if (env.MARKETPLACE_TAILNET_PROXY?.trim() || env.MARKETPLACE_TAILNET_STATE === "unavailable") {
-    return { mode: "unavailable", proxyUrl: null };
-  }
-  return { mode: "disabled", proxyUrl: null };
-}
-function routeOutbound(url2, env = process.env) {
-  if (!isTailnetHost(url2.hostname)) return { kind: "direct" };
-  const config3 = tailnetConfig(env);
-  if (config3.mode === "proxy") return { kind: "proxy", proxyUrl: config3.proxyUrl };
-  if (config3.mode === "unavailable") throw new TailnetUnavailableError();
-  return { kind: "direct" };
-}
-function tailnetResolvesHostname(hostname3, env = process.env) {
-  return isTailnetHostname(hostname3) && tailnetConfig(env).mode === "proxy";
-}
-var agents = /* @__PURE__ */ new Map();
-function proxyAgent(proxyUrl) {
-  let agent = agents.get(proxyUrl);
-  if (!agent) {
-    agent = new import_undici.ProxyAgent({ uri: proxyUrl });
-    agents.set(proxyUrl, agent);
-  }
-  return agent;
-}
-var pinnedAgents = /* @__PURE__ */ new Map();
-function pinnedAgent(lookup) {
-  let agent = pinnedAgents.get(lookup);
-  if (!agent) {
-    agent = new import_undici.Agent({ connect: { lookup: policyCheckedLookup(lookup) } });
-    pinnedAgents.set(lookup, agent);
-  }
-  return agent;
-}
-function tailnetAwareFetch(env = process.env, fetchImpl, lookup) {
-  return (async (input2, init) => {
-    const url2 = new URL(input2 instanceof Request ? input2.url : String(input2));
-    const route = routeOutbound(url2, env);
-    if (route.kind === "direct") {
-      if (fetchImpl || configuredMcpAllowedOrigins(env).has(url2.origin)) return (fetchImpl ?? fetch)(input2, init);
-      return await (0, import_undici.fetch)(url2, {
-        ...init,
-        ...await undiciBody(init),
-        dispatcher: pinnedAgent(lookup)
-      });
-    }
-    return await (0, import_undici.fetch)(url2, {
-      ...init,
-      ...await undiciBody(init),
-      dispatcher: proxyAgent(route.proxyUrl)
-    });
-  });
-}
-async function undiciBody(init) {
-  let body = init?.body;
-  const headers = new Headers(init?.headers);
-  if (body instanceof FormData) {
-    const encoded = new Response(body);
-    headers.set("content-type", encoded.headers.get("content-type"));
-    body = new Uint8Array(await encoded.arrayBuffer());
-  }
-  return {
-    headers: Object.fromEntries(headers),
-    ...body === void 0 || body === null ? {} : { body }
-  };
-}
-var healthCache = null;
-function proxyListening(proxyUrl, timeoutMs) {
-  const url2 = new URL(proxyUrl);
-  return new Promise((resolve) => {
-    const socket = connect({ host: url2.hostname.replace(/^\[|\]$/gu, ""), port: Number(url2.port) });
-    const done = (ok) => {
-      socket.destroy();
-      resolve(ok);
-    };
-    socket.setTimeout(timeoutMs, () => done(false));
-    socket.once("connect", () => done(true));
-    socket.once("error", () => done(false));
-  });
-}
-async function tailnetHealth(env = process.env, options = {}) {
-  const config3 = tailnetConfig(env);
-  if (config3.mode === "disabled") return "disabled";
-  if (config3.mode === "unavailable") return "unavailable";
-  const now = Date.now();
-  if (healthCache && healthCache.key === config3.proxyUrl && now - healthCache.at < (options.cacheMs ?? 5e3)) {
-    return healthCache.value;
-  }
-  const value = await proxyListening(config3.proxyUrl, options.timeoutMs ?? 500) ? "connected" : "unavailable";
-  healthCache = { key: config3.proxyUrl, at: now, value };
-  return value;
-}
-
-// src/mcp-url-policy.ts
-var McpUrlPolicyError = class extends Error {
-  constructor(reason) {
-    super(`MCP server URL is not allowed (${reason}).`);
-    this.reason = reason;
-  }
-  reason;
-  code = "custom_mcp_url_not_allowed";
-};
-var defaultMcpLookup = async (hostname3) => dnsLookup(hostname3, { all: true, verbatim: true });
-function configuredMcpAllowedOrigins(env = process.env) {
-  return new Set(
-    (env.MARKETPLACE_MCP_ALLOWED_ORIGINS ?? "").split(",").map((origin) => origin.trim()).filter(Boolean)
-  );
-}
-function ipv4Octets2(address2) {
-  const parts = address2.split(".");
-  if (parts.length !== 4) return null;
-  const octets = parts.map((part) => /^\d{1,3}$/u.test(part) ? Number(part) : NaN);
-  return octets.every((octet) => Number.isInteger(octet) && octet >= 0 && octet <= 255) ? octets : null;
-}
-function forbiddenIpv4(octets) {
-  const [a, b] = octets;
-  if (a === 0) return true;
-  if (a === 10) return true;
-  if (a === 127) return true;
-  if (a === 169 && b === 254) return true;
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  if (a === 192 && b === 168) return true;
-  if (a === 192 && b === 0 && octets[2] === 0) return true;
-  if (a === 198 && (b === 18 || b === 19)) return true;
-  if (a >= 224) return true;
-  return false;
-}
-function expandIpv6(address2) {
-  let value = address2.toLowerCase();
-  const zone = value.indexOf("%");
-  if (zone >= 0) value = value.slice(0, zone);
-  let tail = [];
-  const lastColon = value.lastIndexOf(":");
-  const maybeV4 = value.slice(lastColon + 1);
-  if (maybeV4.includes(".")) {
-    const octets = ipv4Octets2(maybeV4);
-    if (!octets) return null;
-    tail = [octets[0] << 8 | octets[1], octets[2] << 8 | octets[3]];
-    value = `${value.slice(0, lastColon + 1)}0:0`;
-  }
-  const halves = value.split("::");
-  if (halves.length > 2) return null;
-  const parse3 = (part) => part ? part.split(":").map((group) => /^[0-9a-f]{1,4}$/u.test(group) ? parseInt(group, 16) : NaN) : [];
-  const head = parse3(halves[0] ?? "");
-  const rest = halves.length === 2 ? parse3(halves[1] ?? "") : [];
-  const fill = halves.length === 2 ? 8 - head.length - rest.length : 0;
-  if (fill < 0) return null;
-  const groups = [...head, ...Array(fill).fill(0), ...rest];
-  if (groups.length !== 8 || groups.some((group) => Number.isNaN(group))) return null;
-  if (tail.length) {
-    groups[6] = tail[0];
-    groups[7] = tail[1];
-  }
-  return groups;
-}
-function forbiddenIpv6(groups) {
-  const [g0, , , , , g5, g6, g7] = groups;
-  if (groups.every((group) => group === 0)) return true;
-  if (groups.slice(0, 7).every((group) => group === 0) && g7 === 1) return true;
-  if ((g0 & 65024) === 64512) return true;
-  if ((g0 & 65472) === 65152) return true;
-  if ((g0 & 65472) === 65216) return true;
-  if ((g0 & 65280) === 65280) return true;
-  if (g0 === 8193 && groups[1] === 3512) return true;
-  const embedded = [g6 >> 8, g6 & 255, g7 >> 8, g7 & 255];
-  if (groups.slice(0, 5).every((group) => group === 0) && (g5 === 65535 || g5 === 0)) {
-    return forbiddenIpv4(embedded);
-  }
-  if (g0 === 100 && groups[1] === 65435 && groups.slice(2, 6).every((group) => group === 0)) {
-    return forbiddenIpv4(embedded);
-  }
-  return false;
-}
-function isForbiddenMcpAddress(address2) {
-  const family = isIP(address2.replace(/^\[|\]$/gu, "").split("%")[0] ?? "");
-  const bare = address2.replace(/^\[|\]$/gu, "");
-  if (family === 4) {
-    const octets = ipv4Octets2(bare);
-    return !octets || forbiddenIpv4(octets);
-  }
-  if (family === 6) {
-    const groups = expandIpv6(bare);
-    return !groups || forbiddenIpv6(groups);
-  }
-  return true;
-}
-function forbiddenHostname(hostname3) {
-  const host = hostname3.toLowerCase().replace(/\.$/u, "");
-  return host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal") || host === "" || // Single-label names resolve through local search domains.
-  !host.includes(".") && isIP(host) === 0;
-}
-function checkMcpUrlSyntax(value, env = process.env) {
-  let url2;
-  try {
-    url2 = new URL(value);
-  } catch {
-    throw new McpUrlPolicyError("invalid_url");
-  }
-  if (configuredMcpAllowedOrigins(env).has(url2.origin)) {
-    if (url2.username || url2.password) throw new McpUrlPolicyError("userinfo_not_allowed");
-    return { url: url2, allowlisted: true };
-  }
-  if (url2.protocol !== "https:") throw new McpUrlPolicyError("scheme_not_https");
-  if (url2.username || url2.password) throw new McpUrlPolicyError("userinfo_not_allowed");
-  if (url2.hash) throw new McpUrlPolicyError("fragment_not_allowed");
-  if (url2.search) throw new McpUrlPolicyError("query_not_allowed");
-  const hostname3 = url2.hostname.replace(/^\[|\]$/gu, "");
-  if (isIP(hostname3)) {
-    if (isForbiddenMcpAddress(hostname3)) throw new McpUrlPolicyError("address_not_allowed");
-    return { url: url2, allowlisted: false };
-  }
-  if (forbiddenHostname(hostname3)) throw new McpUrlPolicyError("hostname_not_allowed");
-  return { url: url2, allowlisted: false };
-}
-async function assertMcpUrlAllowed(value, options = {}) {
-  const { url: url2, allowlisted } = checkMcpUrlSyntax(value, options.env);
-  if (allowlisted) return url2;
-  const hostname3 = url2.hostname.replace(/^\[|\]$/gu, "");
-  if (isIP(hostname3)) return url2;
-  if (tailnetResolvesHostname(hostname3, options.env)) return url2;
-  let answers;
-  try {
-    answers = await (options.lookup ?? defaultMcpLookup)(hostname3);
-  } catch {
-    throw new McpUrlPolicyError("dns_lookup_failed");
-  }
-  if (answers.length === 0) throw new McpUrlPolicyError("dns_lookup_failed");
-  if (answers.some((answer) => isForbiddenMcpAddress(answer.address))) {
-    throw new McpUrlPolicyError("address_not_allowed");
-  }
-  return url2;
-}
-function policyCheckedLookup(lookup = defaultMcpLookup) {
-  return (hostname3, options, callback) => {
-    const all = typeof options === "object" && options !== null && options.all === true;
-    lookup(hostname3).then(
-      (answers) => {
-        if (answers.length === 0) {
-          callback(Object.assign(new Error(`DNS lookup failed for ${hostname3}`), { code: "ENOTFOUND" }), "");
-          return;
-        }
-        if (answers.some((answer) => isForbiddenMcpAddress(answer.address))) {
-          callback(Object.assign(new McpUrlPolicyError("address_not_allowed"), { code: "EADDRNOTAVAIL" }), "");
-          return;
-        }
-        if (all) callback(null, answers.map((answer) => ({ address: answer.address, family: answer.family })));
-        else callback(null, answers[0].address, answers[0].family);
-      },
-      (error62) => callback(error62, "")
-    );
-  };
-}
-
-// package.json
-var package_default = {
-  name: "@tealbrick/marketplace-program",
-  version: "0.1.18",
-  private: true,
-  type: "module",
-  packageManager: "pnpm@9.15.4",
-  engines: {
-    node: ">=22.22.0",
-    pnpm: ">=9.15.4"
-  },
-  scripts: {
-    dev: "tsx watch src/index.ts",
-    "dev:web": "vite --config web/vite.config.ts",
-    build: "pnpm run build:web",
-    "build:web": "vite build --config web/vite.config.ts",
-    "build:miniapp": "pnpm run build:web && node scripts/build-miniapp.mjs",
-    "dev:miniapp": "node scripts/run-miniapp.mjs",
-    "start:miniapp": "node dist/marketplace-program.mjs",
-    "smoke:live-app-home": "tsx ../smoke/live-app-home-smoke.ts",
-    "smoke:operator-pov": "node ../smoke/operator-pov-workflow.mjs",
-    typecheck: "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
-    test: "vitest run && vitest run --config web/vitest.config.ts",
-    "test:e2e": "pnpm run build:web && playwright test --config web/playwright.config.ts",
-    lint: "tsc -p tsconfig.json --noEmit",
-    "company-box:coverage": "tsx scripts/company-box-coverage.ts",
-    "composio:coverage": "tsx scripts/composio-coverage.ts"
-  },
-  dependencies: {
-    "@fastify/static": "^8.3.0",
-    "@radix-ui/react-dialog": "^1.1.15",
-    "@radix-ui/react-tabs": "^1.1.13",
-    "@tanstack/react-query": "^5.90.20",
-    "@tealbrick/contract": "0.1.0-alpha.3",
-    "@tealbrick/ui": "0.2.2",
-    ajv: "8.20.0",
-    fastify: "^5.6.1",
-    "lucide-react": "^0.468.0",
-    react: "^19.2.3",
-    "react-dom": "^19.2.3",
-    undici: "7.29.0",
-    zod: "^3.25.76"
-  },
-  devDependencies: {
-    "@playwright/test": "^1.58.2",
-    "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/react": "^16.3.2",
-    "@types/node": "^24.12.0",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^5.1.4",
-    esbuild: "^0.28.1",
-    jsdom: "^28.0.0",
-    tsx: "^4.20.6",
-    typescript: "^5.9.3",
-    vite: "^7.3.1",
-    vitest: "^3.2.4"
-  }
-};
-
-// src/version.ts
-var MARKETPLACE_VERSION = package_default.version;
-
 // src/mcp-remote-client.ts
 var MCP_PROTOCOL_VERSION = "2025-06-18";
 var MCP_CONNECT_TIMEOUT_MS = 1e4;
@@ -77727,7 +79874,7 @@ var McpRemoteError = class extends Error {
   code;
   detail;
 };
-function recordValue4(value) {
+function recordValue8(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : null;
 }
 function isAbortError(error62) {
@@ -77902,7 +80049,7 @@ var StreamableHttpSession = class {
       }
       const parsed = parseJson(await readCappedText(response, this.maxBytes));
       const messages = Array.isArray(parsed) ? parsed : [parsed];
-      const reply = messages.map((entry) => recordValue4(entry)).find((entry) => entry?.id === expectId);
+      const reply = messages.map((entry) => recordValue8(entry)).find((entry) => entry?.id === expectId);
       if (!reply) {
         throw new McpRemoteError("mcp_protocol_error", "The MCP server did not answer the request.");
       }
@@ -77923,7 +80070,7 @@ var StreamableHttpSession = class {
     let reply = null;
     const parser = new SseParser((event) => {
       if (reply || event.event !== "message") return;
-      const message = recordValue4(parseJson(event.data));
+      const message = recordValue8(parseJson(event.data));
       if (message?.id === expectId && ("result" in message || "error" in message)) {
         reply = message;
       }
@@ -78056,7 +80203,7 @@ var LegacySseSession = class {
       return;
     }
     if (event.event !== "message") return;
-    const message = recordValue4(parseJson(event.data));
+    const message = recordValue8(parseJson(event.data));
     if (!message || typeof message.id !== "number") return;
     const pending = this.pending.get(message.id);
     if (!pending || !("result" in message || "error" in message)) return;
@@ -78187,7 +80334,7 @@ var McpRemoteClient = class _McpRemoteClient {
       session = new StreamableHttpSession(url2, options, fetchImpl, maxBytes);
     }
     try {
-      const initialized = recordValue4(
+      const initialized = recordValue8(
         await session.request(
           "initialize",
           {
@@ -78215,7 +80362,7 @@ var McpRemoteClient = class _McpRemoteClient {
     const seenCursors = /* @__PURE__ */ new Set();
     let cursor;
     for (let page = 0; page < MCP_MAX_TOOL_PAGES && tools.length < maxTools; page += 1) {
-      const result = recordValue4(
+      const result = recordValue8(
         await this.session.request(
           "tools/list",
           cursor ? { cursor } : {},
@@ -78226,14 +80373,14 @@ var McpRemoteClient = class _McpRemoteClient {
         throw new McpRemoteError("mcp_protocol_error", "The MCP server sent an invalid tools/list result.");
       }
       for (const entry of result.tools) {
-        const tool = recordValue4(entry);
+        const tool = recordValue8(entry);
         if (!tool || typeof tool.name !== "string" || !tool.name.trim()) continue;
         tools.push({
           name: tool.name,
           ...typeof tool.title === "string" ? { title: tool.title } : {},
           ...typeof tool.description === "string" ? { description: tool.description } : {},
           ..."inputSchema" in tool ? { inputSchema: tool.inputSchema } : {},
-          ...recordValue4(tool.annotations) ? { annotations: recordValue4(tool.annotations) } : {}
+          ...recordValue8(tool.annotations) ? { annotations: recordValue8(tool.annotations) } : {}
         });
         if (tools.length >= maxTools) break;
       }
@@ -78245,7 +80392,7 @@ var McpRemoteClient = class _McpRemoteClient {
     return tools;
   }
   async callTool(name, args) {
-    const result = recordValue4(
+    const result = recordValue8(
       await this.session.request(
         "tools/call",
         { name, arguments: args },
@@ -78280,1907 +80427,6 @@ async function callMcpTool(options, name, args) {
   } finally {
     await client.close();
   }
-}
-
-// src/company-box.ts
-import fs3 from "node:fs";
-import path4 from "node:path";
-import { fileURLToPath } from "node:url";
-
-// src/openapi-validate.ts
-var import_ajv = __toESM(require_ajv(), 1);
-var Ajv = import_ajv.default.default ?? import_ajv.default;
-function newAjv() {
-  return new Ajv({
-    strict: false,
-    allErrors: false,
-    coerceTypes: false,
-    useDefaults: false,
-    removeAdditional: false,
-    validateFormats: false,
-    validateSchema: false
-  });
-}
-function compileArgumentValidator(schema) {
-  const validate2 = newAjv().compile(schema);
-  return (args) => {
-    if (validate2(args)) return { ok: true };
-    const error62 = validate2.errors?.[0];
-    const path10 = (error62?.instancePath ?? "").split("/").filter(Boolean).join(".");
-    const missing = error62?.keyword === "required" && typeof error62.params?.missingProperty === "string" ? error62.params.missingProperty : error62?.keyword === "additionalProperties" && typeof error62.params?.additionalProperty === "string" ? error62.params.additionalProperty : null;
-    return {
-      ok: false,
-      field: [path10, missing].filter(Boolean).join(".") || "arguments",
-      reason: error62?.keyword === "additionalProperties" ? "not declared by the operation" : error62?.message ?? "invalid"
-    };
-  };
-}
-
-// src/openapi-adapter.ts
-import { createHash as createHash3 } from "node:crypto";
-var OPENAPI_METHODS = [
-  "get",
-  "put",
-  "post",
-  "delete",
-  "options",
-  "head",
-  "patch",
-  "trace"
-];
-var WEBDAV_METHODS = [
-  "propfind",
-  "proppatch",
-  "mkcol",
-  "move",
-  "copy",
-  "report",
-  "lock",
-  "unlock"
-];
-var READ_METHODS = /* @__PURE__ */ new Set(["get", "head", "options", "propfind", "report"]);
-var OPENAPI_MAX_ACTION_KEY_LENGTH = 128;
-var OPENAPI_ACTION_KEY_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*){1,7}$/u;
-var OPENAPI_TOOL_SCHEMA_MAX_BYTES = 16384;
-var OPENAPI_TITLE_MAX = 200;
-var OPENAPI_SUMMARY_MAX = 300;
-var OPENAPI_DESCRIPTION_MAX = 1e3;
-var OPENAPI_FULL_DESCRIPTION_MAX = 2e4;
-var MAX_REF_DEPTH = 64;
-var INLINE_NODE_BUDGET = 4e3;
-var OpenApiSpecError = class extends Error {
-  constructor(code, message) {
-    super(message);
-    this.code = code;
-  }
-  code;
-};
-function parameterDefault(parameter) {
-  if ("const" in parameter.schema) return parameter.schema.const;
-  if ("default" in parameter.schema) return parameter.schema.default;
-  return void 0;
-}
-function parameterHasDefault(parameter) {
-  return parameter.in === "header" && parameterDefault(parameter) !== void 0;
-}
-function parameterNeedsArgument(parameter) {
-  return parameter.required && !parameterHasDefault(parameter);
-}
-function recordValue5(value) {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
-}
-function stringValue3(value) {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-function operationIdentity(method, path10) {
-  return `${method.toUpperCase()} ${path10}`;
-}
-function decodePointerToken(token) {
-  return token.replace(/~1/gu, "/").replace(/~0/gu, "~");
-}
-function resolvePointer(document, ref) {
-  if (!ref.startsWith("#")) {
-    throw new OpenApiSpecError("openapi_external_ref", `External $ref ${ref} is not supported.`);
-  }
-  const pointer2 = ref.slice(1);
-  if (pointer2 === "") return document;
-  if (!pointer2.startsWith("/")) {
-    throw new OpenApiSpecError("openapi_ref_unresolved", `Unresolvable $ref ${ref}.`);
-  }
-  let current = document;
-  for (const raw of pointer2.slice(1).split("/")) {
-    const token = decodePointerToken(decodeURIComponent(raw));
-    if (Array.isArray(current)) {
-      current = current[Number(token)];
-    } else {
-      const record2 = recordValue5(current);
-      current = record2 ? record2[token] : void 0;
-    }
-    if (current === void 0) {
-      throw new OpenApiSpecError("openapi_ref_unresolved", `Unresolvable $ref ${ref}.`);
-    }
-  }
-  return current;
-}
-function derefObject(document, value) {
-  let current = recordValue5(value);
-  for (let depth = 0; current && typeof current.$ref === "string"; depth += 1) {
-    if (depth > MAX_REF_DEPTH) {
-      throw new OpenApiSpecError("openapi_ref_unresolved", "Circular $ref chain.");
-    }
-    current = recordValue5(resolvePointer(document, current.$ref));
-  }
-  return current;
-}
-function rewriteSchema(context, value, seen = /* @__PURE__ */ new Set()) {
-  if (Array.isArray(value)) return value.map((item) => rewriteSchema(context, item, seen));
-  const record2 = recordValue5(value);
-  if (!record2) return value;
-  if (typeof record2.$ref === "string") {
-    const ref = record2.$ref;
-    for (const prefix of context.defPrefixes) {
-      if (ref.startsWith(prefix)) {
-        const { $ref: _ignored, ...siblings } = record2;
-        const rewritten = { $ref: `#/$defs/${ref.slice(prefix.length)}` };
-        return Object.keys(siblings).length ? { allOf: [rewritten], ...rewriteSchema(context, siblings, seen) } : rewritten;
-      }
-    }
-    if (seen.has(ref) || seen.size > MAX_REF_DEPTH) {
-      return { description: `Recursive reference ${ref}.` };
-    }
-    const target = resolvePointer(context.document, ref);
-    return rewriteSchema(context, target, /* @__PURE__ */ new Set([...seen, ref]));
-  }
-  const out = {};
-  for (const [key, child] of Object.entries(record2)) {
-    out[key] = rewriteSchema(context, child, seen);
-  }
-  return nullableWithoutType(out);
-}
-function nullableWithoutType(schema) {
-  if (typeof schema.nullable !== "boolean" || "type" in schema) return schema;
-  const { nullable: nullable2, ...rest } = schema;
-  return nullable2 ? { anyOf: [rest, { type: "null" }] } : rest;
-}
-function collectDefRefs(value, into) {
-  if (Array.isArray(value)) {
-    for (const item of value) collectDefRefs(item, into);
-    return;
-  }
-  const record2 = recordValue5(value);
-  if (!record2) return;
-  if (typeof record2.$ref === "string" && record2.$ref.startsWith("#/$defs/")) {
-    const name = decodePointerToken(record2.$ref.slice("#/$defs/".length).split("/")[0] ?? "");
-    if (name) into.add(name);
-  }
-  for (const child of Object.values(record2)) collectDefRefs(child, into);
-}
-function reachableDefs(schema, defs) {
-  const names = /* @__PURE__ */ new Set();
-  collectDefRefs(schema, names);
-  const out = {};
-  const queue = [...names];
-  while (queue.length) {
-    const name = queue.shift();
-    if (name in out) continue;
-    const def = defs[name];
-    if (!def) {
-      throw new OpenApiSpecError("openapi_ref_unresolved", `Unresolvable schema ${name}.`);
-    }
-    out[name] = def;
-    const nested = /* @__PURE__ */ new Set();
-    collectDefRefs(def, nested);
-    for (const next of nested) if (!(next in out)) queue.push(next);
-  }
-  return out;
-}
-function inlineDefs(schema, defs) {
-  let nodes = 0;
-  const walk = (value, stack) => {
-    nodes += 1;
-    if (nodes > INLINE_NODE_BUDGET) throw new Error("budget");
-    if (Array.isArray(value)) return value.map((item) => walk(item, stack));
-    const record2 = recordValue5(value);
-    if (!record2) return value;
-    if (typeof record2.$ref === "string" && record2.$ref.startsWith("#/$defs/")) {
-      const path10 = record2.$ref.slice("#/$defs/".length).split("/").map(decodePointerToken);
-      const name = path10[0];
-      if (stack.includes(name)) throw new Error("cycle");
-      let target = defs[name];
-      for (const token of path10.slice(1)) target = recordValue5(target)?.[token];
-      if (target === void 0) throw new Error("missing");
-      const { $ref: _ref, ...siblings } = record2;
-      const resolved = walk(target, [...stack, name]);
-      if (!Object.keys(siblings).length) return resolved;
-      const extra = walk(siblings, stack);
-      return recordValue5(resolved) ? { ...resolved, ...extra } : { allOf: [resolved], ...extra };
-    }
-    const out = {};
-    for (const [key, child] of Object.entries(record2)) out[key] = walk(child, stack);
-    return out;
-  };
-  try {
-    return walk(schema, []);
-  } catch {
-    return null;
-  }
-}
-function swaggerParameterSchema(parameter) {
-  const schema = {};
-  for (const key of [
-    "type",
-    "format",
-    "items",
-    "enum",
-    "default",
-    "minimum",
-    "maximum",
-    "exclusiveMinimum",
-    "exclusiveMaximum",
-    "minLength",
-    "maxLength",
-    "pattern",
-    "minItems",
-    "maxItems",
-    "uniqueItems",
-    "multipleOf"
-  ]) {
-    if (key in parameter) schema[key] = parameter[key];
-  }
-  if (schema.type === "file") {
-    schema.type = "string";
-    schema.format = "binary";
-  }
-  return schema;
-}
-var BODY_CONTENT_PREFERENCE = [
-  "application/json",
-  "application/x-www-form-urlencoded",
-  "multipart/form-data",
-  "text/plain",
-  "application/octet-stream"
-];
-function preferredContentType(contentTypes) {
-  const lower = contentTypes.map((type) => type.toLowerCase());
-  for (const preferred of BODY_CONTENT_PREFERENCE) {
-    const index = lower.findIndex((type) => type.split(";")[0].trim() === preferred);
-    if (index >= 0) return contentTypes[index];
-    if (preferred === "application/json") {
-      const json2 = lower.findIndex((type) => /\+json\b/u.test(type) || type.endsWith("/json"));
-      if (json2 >= 0) return contentTypes[json2];
-    }
-  }
-  return contentTypes[0] ?? "application/json";
-}
-function mergeParameters(document, pathLevel, operationLevel) {
-  const merged = /* @__PURE__ */ new Map();
-  for (const list of [pathLevel, operationLevel]) {
-    for (const raw of Array.isArray(list) ? list : []) {
-      const parameter = derefObject(document, raw);
-      const name = stringValue3(parameter?.name);
-      const location = stringValue3(parameter?.in);
-      if (!parameter || !name || !location) {
-        throw new OpenApiSpecError("openapi_spec_invalid", "A parameter is missing name or in.");
-      }
-      merged.set(`${location}\0${name}`, parameter);
-    }
-  }
-  return [...merged.values()];
-}
-function boundedText2(value, max) {
-  const text2 = stringValue3(value);
-  return text2 ? text2.slice(0, max) : null;
-}
-function parseOpenApiDocument(raw) {
-  const document = recordValue5(raw);
-  if (!document) throw new OpenApiSpecError("openapi_spec_invalid", "The spec is not a JSON object.");
-  const openapi = stringValue3(document.openapi);
-  const swagger = stringValue3(document.swagger);
-  let format;
-  if (openapi && /^3\.\d+(\.\d+)?$/u.test(openapi)) format = "openapi-3";
-  else if (swagger === "2.0") format = "swagger-2";
-  else {
-    throw new OpenApiSpecError(
-      "openapi_spec_unsupported_version",
-      "Only OpenAPI 3.x and Swagger 2.0 documents are supported."
-    );
-  }
-  const paths = recordValue5(document.paths);
-  if (!paths) throw new OpenApiSpecError("openapi_spec_invalid", "The spec has no paths object.");
-  const context = {
-    document,
-    defPrefixes: format === "openapi-3" ? ["#/components/schemas/"] : ["#/definitions/"]
-  };
-  const rawDefs = format === "openapi-3" ? recordValue5(recordValue5(document.components)?.schemas) ?? {} : recordValue5(document.definitions) ?? {};
-  const defs = {};
-  for (const [name, schema] of Object.entries(rawDefs)) {
-    defs[name] = recordValue5(rewriteSchema(context, schema)) ?? {};
-  }
-  const info = recordValue5(document.info) ?? {};
-  let basePath = "";
-  if (format === "swagger-2") {
-    basePath = stringValue3(document.basePath) ?? "";
-  } else {
-    const server = stringValue3(recordValue5(document.servers?.[0])?.url);
-    if (server) {
-      try {
-        basePath = new URL(server, "http://placeholder.invalid").pathname;
-      } catch {
-        basePath = "";
-      }
-    }
-  }
-  basePath = basePath.replace(/\/+$/u, "");
-  if (basePath && !basePath.startsWith("/")) basePath = `/${basePath}`;
-  const globalConsumes = Array.isArray(document.consumes) ? document.consumes.filter((item) => typeof item === "string") : [];
-  const operations = [];
-  for (const [path10, rawItem] of Object.entries(paths)) {
-    const item = derefObject(document, rawItem);
-    if (!item) continue;
-    for (const method of [...OPENAPI_METHODS, ...WEBDAV_METHODS]) {
-      const operation = recordValue5(
-        WEBDAV_METHODS.includes(method) ? item[`x-${method}`] : item[method]
-      );
-      if (!operation) continue;
-      const operationId = stringValue3(operation.operationId);
-      const parameters = [];
-      const unsupportedParameters = [];
-      let requestBody = null;
-      const formFields = [];
-      for (const parameter of mergeParameters(document, item.parameters, operation.parameters)) {
-        const name = String(parameter.name);
-        const location = String(parameter.in);
-        const description = boundedText2(parameter.description, OPENAPI_DESCRIPTION_MAX);
-        if (format === "swagger-2" && location === "body") {
-          const schema2 = recordValue5(rewriteSchema(context, parameter.schema ?? {})) ?? {};
-          const consumes = Array.isArray(operation.consumes) ? operation.consumes.filter((type) => typeof type === "string") : globalConsumes;
-          const contentTypes = consumes.length ? consumes : ["application/json"];
-          requestBody = {
-            required: parameter.required === true,
-            contentType: preferredContentType(contentTypes),
-            contentTypes,
-            schema: schema2,
-            ...description ? { description } : {}
-          };
-          continue;
-        }
-        if (format === "swagger-2" && location === "formData") {
-          formFields.push({
-            name,
-            required: parameter.required === true,
-            schema: swaggerParameterSchema(parameter),
-            file: parameter.type === "file"
-          });
-          continue;
-        }
-        if (location !== "path" && location !== "query" && location !== "header") {
-          unsupportedParameters.push({ name, in: location });
-          continue;
-        }
-        const schema = format === "swagger-2" ? recordValue5(rewriteSchema(context, swaggerParameterSchema(parameter))) ?? {} : recordValue5(
-          rewriteSchema(
-            context,
-            parameter.schema ?? recordValue5(Object.values(recordValue5(parameter.content) ?? {})[0])?.schema ?? {}
-          )
-        ) ?? {};
-        const lowerName = name.toLowerCase();
-        const constrained = location === "header" && lowerName === "overwrite" ? { ...schema, type: "string", enum: ["T", "F"] } : location === "header" && lowerName === "depth" ? { ...schema, type: "string", enum: ["0", "1", "infinity"] } : schema;
-        parameters.push({
-          name,
-          in: location,
-          required: location === "path" ? true : parameter.required === true,
-          schema: location === "path" && parameter["x-multi-segment"] === true ? { description: "A path; may contain / between segments (no empty, . or .. segments).", ...constrained, "x-multi-segment": true } : location === "header" && lowerName === "destination" ? { description: "Destination path relative to the app (not a URL); Marketplace builds the full address.", ...constrained } : constrained,
-          ...location === "path" && parameter["x-multi-segment"] === true ? { multiSegment: true } : {},
-          ...location === "header" && lowerName === "destination" && typeof parameter["x-destination-template"] === "string" ? { destinationTemplate: parameter["x-destination-template"] } : {},
-          ...description ? { description } : {},
-          ...typeof parameter.style === "string" ? { style: parameter.style } : {},
-          ...typeof parameter.explode === "boolean" ? { explode: parameter.explode } : {},
-          ...format === "swagger-2" && parameter.collectionFormat === "multi" ? { explode: true } : format === "swagger-2" && parameter.type === "array" ? { explode: false } : {}
-        });
-      }
-      if (formFields.length) {
-        const multipart = formFields.some((field) => field.file);
-        const consumes = Array.isArray(operation.consumes) ? operation.consumes.filter((type) => typeof type === "string") : globalConsumes;
-        const contentType = multipart ? "multipart/form-data" : consumes.find((type) => type.startsWith("multipart/form-data")) ?? "application/x-www-form-urlencoded";
-        requestBody = {
-          required: formFields.some((field) => field.required),
-          contentType,
-          contentTypes: [contentType],
-          schema: {
-            type: "object",
-            properties: Object.fromEntries(formFields.map((field) => [field.name, field.schema])),
-            required: formFields.filter((field) => field.required).map((field) => field.name)
-          }
-        };
-      }
-      if (format === "openapi-3" && operation.requestBody !== void 0) {
-        const body = derefObject(document, operation.requestBody);
-        const content = recordValue5(body?.content) ?? {};
-        const contentTypes = Object.keys(content);
-        if (contentTypes.length) {
-          const contentType = preferredContentType(contentTypes);
-          const description = boundedText2(body?.description, OPENAPI_DESCRIPTION_MAX);
-          requestBody = {
-            required: body?.required === true,
-            contentType,
-            contentTypes,
-            schema: recordValue5(rewriteSchema(context, recordValue5(content[contentType])?.schema ?? {})) ?? {},
-            ...description ? { description } : {}
-          };
-        }
-      }
-      for (const match of path10.matchAll(/\{([^}]+)\}/gu)) {
-        const name = match[1];
-        if (!parameters.some((parameter) => parameter.in === "path" && parameter.name === name)) {
-          parameters.push({ name, in: "path", required: true, schema: { type: "string" } });
-        }
-      }
-      if (requestBody) {
-        requestBody = { ...requestBody, schema: fileAwareBodySchema(requestBody.contentType, requestBody.schema, defs) };
-      }
-      operations.push({
-        ref: operationId ?? operationIdentity(method, path10),
-        operationId,
-        method,
-        path: path10,
-        summary: boundedText2(operation.summary, OPENAPI_TITLE_MAX),
-        description: boundedText2(operation.description, OPENAPI_FULL_DESCRIPTION_MAX),
-        tags: Array.isArray(operation.tags) ? operation.tags.filter((tag) => typeof tag === "string").slice(0, 20) : [],
-        deprecated: operation.deprecated === true,
-        parameters,
-        unsupportedParameters,
-        requestBody
-      });
-    }
-  }
-  return {
-    format,
-    specVersion: openapi ?? swagger,
-    title: stringValue3(info.title) ?? "API",
-    apiVersion: stringValue3(info.version) ?? "",
-    basePath,
-    defs,
-    operations
-  };
-}
-function kebab(value) {
-  return value.replace(/([a-z0-9])([A-Z])/gu, "$1-$2").replace(/([A-Z]+)([A-Z][a-z])/gu, "$1-$2").toLowerCase().replace(/[^a-z0-9]+/gu, "-").replace(/^-+|-+$/gu, "");
-}
-function shortHash(value, length) {
-  return createHash3("sha256").update(value).digest("hex").slice(0, length);
-}
-function operationKeySegment(operation) {
-  let segment = operation.operationId ? kebab(operation.operationId) : kebab(`${operation.method} ${operation.path.replace(/\{([^}]*)\}/gu, " by $1 ")}`);
-  if (!segment) segment = "operation";
-  if (!/^[a-z]/u.test(segment)) segment = `op-${segment}`;
-  return segment;
-}
-function deriveOperationActionKeys(provider, operations) {
-  const budget = OPENAPI_MAX_ACTION_KEY_LENGTH - provider.length - 1;
-  if (budget < 16) throw new Error(`Provider ${provider} is too long for action keys.`);
-  const bases = operations.map(
-    (operation) => operationKeySegment(operation).slice(0, budget).replace(/-+$/u, "")
-  );
-  const groups = /* @__PURE__ */ new Map();
-  bases.forEach((base, index) => groups.set(base, [...groups.get(base) ?? [], index]));
-  const keys = new Array(operations.length);
-  const used = /* @__PURE__ */ new Set();
-  for (const [base, members2] of groups) {
-    if (members2.length === 1) {
-      keys[members2[0]] = `${provider}.${base}`;
-      used.add(keys[members2[0]]);
-    }
-  }
-  for (const [base, members2] of groups) {
-    if (members2.length === 1) continue;
-    const sorted = [...members2].sort((left, right) => {
-      const a = operationIdentity(operations[left].method, operations[left].path);
-      const b = operationIdentity(operations[right].method, operations[right].path);
-      return a < b ? -1 : a > b ? 1 : left - right;
-    });
-    sorted.forEach((index, position) => {
-      if (position === 0 && !used.has(`${provider}.${base}`)) {
-        keys[index] = `${provider}.${base}`;
-        used.add(keys[index]);
-        return;
-      }
-      const identity = operationIdentity(operations[index].method, operations[index].path);
-      for (let length = 6; length <= 64; length += 2) {
-        const suffix = `-${shortHash(identity, length)}`;
-        const trimmed = base.slice(0, budget - suffix.length).replace(/-+$/u, "");
-        const candidate = `${provider}.${trimmed}${suffix}`;
-        if (!used.has(candidate)) {
-          keys[index] = candidate;
-          used.add(candidate);
-          return;
-        }
-      }
-      throw new Error(`Could not derive a unique action key for ${identity}.`);
-    });
-  }
-  for (const key of keys) {
-    if (!OPENAPI_ACTION_KEY_PATTERN.test(key) || key.length > OPENAPI_MAX_ACTION_KEY_LENGTH) {
-      throw new Error(`Derived action key ${key} is invalid.`);
-    }
-  }
-  return keys;
-}
-function operationPatternMatches(pattern, operation) {
-  const regex = new RegExp(
-    `^${pattern.trim().split("*").map((part) => part.replace(/[.+?^${}()|[\]\\]/gu, "\\$&")).join(".*")}$`,
-    "iu"
-  );
-  return operation.operationId !== null && regex.test(operation.operationId) || regex.test(operationIdentity(operation.method, operation.path));
-}
-var READS_DOWNGRADABLE_METHODS = /* @__PURE__ */ new Set(["post", "query"]);
-function copyMayOverwrite(parameters) {
-  const overwrite = (parameters ?? []).find(
-    (parameter) => parameter.in === "header" && parameter.name.toLowerCase() === "overwrite"
-  );
-  return !(overwrite && overwrite.schema.const === "F");
-}
-function operationRisk(operation, patterns) {
-  const readMethod = READ_METHODS.has(operation.method);
-  const readClass = READS_DOWNGRADABLE_METHODS.has(operation.method) && (patterns.reads ?? []).some((pattern) => operationPatternMatches(pattern, operation));
-  const write = !readMethod && !readClass;
-  const destructive = operation.method === "delete" || operation.method === "move" || operation.method === "copy" && copyMayOverwrite(operation.parameters) || patterns.destructive.some((pattern) => operationPatternMatches(pattern, operation));
-  const outward = patterns.outward.some((pattern) => operationPatternMatches(pattern, operation));
-  return {
-    capability: destructive ? "connector.admin" : write ? "connector.dispatch" : "connector.observe",
-    write: write || destructive,
-    outward,
-    destructive
-  };
-}
-function operationGroup(operation) {
-  const tag = operation.tags.map(kebab).find(Boolean);
-  if (tag) return tag;
-  const segment = operation.path.split("/").filter((part) => part && !part.startsWith("{")).map(kebab).find(Boolean);
-  return segment ?? "general";
-}
-function groupSchema(parameters) {
-  return {
-    type: "object",
-    properties: Object.fromEntries(
-      parameters.map((parameter) => [
-        parameter.name,
-        parameter.description && !("description" in parameter.schema) ? { ...parameter.schema, description: parameter.description } : parameter.schema
-      ])
-    ),
-    required: parameters.filter(parameterNeedsArgument).map((parameter) => parameter.name),
-    additionalProperties: false
-  };
-}
-function operationArgumentGroups(operation) {
-  const groups = [];
-  for (const location of ["path", "query", "header"]) {
-    if (operation.parameters.some((parameter) => parameter.in === location)) groups.push(location);
-  }
-  if (operation.requestBody) groups.push("body");
-  return groups;
-}
-function operationInputSchema(operation, defs) {
-  const properties = {};
-  const required2 = [];
-  for (const location of ["path", "query", "header"]) {
-    const parameters = operation.parameters.filter((parameter) => parameter.in === location);
-    if (!parameters.length) continue;
-    properties[location] = groupSchema(parameters);
-    if (parameters.some(parameterNeedsArgument)) required2.push(location);
-  }
-  if (operation.requestBody) {
-    properties.body = {
-      ...operation.requestBody.schema,
-      ...operation.requestBody.description && !("description" in operation.requestBody.schema) ? { description: operation.requestBody.description } : {},
-      "x-content-type": operation.requestBody.contentType
-    };
-    if (operation.requestBody.required) required2.push("body");
-  }
-  const schema = {
-    type: "object",
-    properties,
-    required: required2,
-    additionalProperties: false
-  };
-  const reachable = reachableDefs(schema, defs);
-  return Object.keys(reachable).length ? { ...schema, $defs: reachable } : schema;
-}
-function byteLength(value) {
-  return Buffer.byteLength(JSON.stringify(value));
-}
-function boundedToolSchema(full, maxBytes = OPENAPI_TOOL_SCHEMA_MAX_BYTES) {
-  const { $defs, ...rest } = full;
-  if ($defs) {
-    const inlined = inlineDefs(rest, $defs);
-    if (inlined && byteLength(inlined) <= maxBytes) {
-      return { schema: inlined, truncated: false };
-    }
-  }
-  if (byteLength(full) <= maxBytes) return { schema: full, truncated: false };
-  const note = "Schema too large to list. Call operations.describe for the full schema.";
-  const properties = recordValue5(full.properties) ?? {};
-  const outline = {};
-  for (const [group, value] of Object.entries(properties)) {
-    const groupSchemaValue = recordValue5(value) ?? {};
-    const small = { ...groupSchemaValue };
-    delete small.$defs;
-    outline[group] = group !== "body" && byteLength(small) <= maxBytes / 4 && !JSON.stringify(small).includes("#/$defs/") ? small : {
-      ...typeof groupSchemaValue.type === "string" ? { type: groupSchemaValue.type } : {},
-      description: note
-    };
-  }
-  const truncated = {
-    type: "object",
-    properties: outline,
-    required: Array.isArray(full.required) ? full.required : [],
-    description: note,
-    "x-truncated": true
-  };
-  return byteLength(truncated) <= maxBytes ? { schema: truncated, truncated: true } : { schema: { type: "object", description: note, "x-truncated": true }, truncated: true };
-}
-function sha256Hex(value) {
-  return createHash3("sha256").update(value).digest("hex");
-}
-function applyMergePatch(target, patch) {
-  if (!patch || typeof patch !== "object" || Array.isArray(patch)) return patch;
-  const base = target && typeof target === "object" && !Array.isArray(target) ? { ...target } : {};
-  for (const [key, value] of Object.entries(patch)) {
-    if (value === null) delete base[key];
-    else base[key] = applyMergePatch(base[key], value);
-  }
-  return base;
-}
-var FILE_UPLOAD_SCHEMA = {
-  type: "object",
-  description: "File upload: base64-encoded content, with an optional file name and media type.",
-  required: ["base64"],
-  properties: {
-    base64: { type: "string", description: "File content, base64-encoded." },
-    filename: { type: "string", maxLength: 255 },
-    contentType: { type: "string", maxLength: 255 }
-  },
-  additionalProperties: false,
-  "x-file-upload": true
-};
-function isBinarySchema(schema) {
-  const record2 = recordValue5(schema);
-  if (!record2) return false;
-  return record2.format === "binary" || typeof record2.contentMediaType === "string" && record2.type !== "object" && record2.type !== "array" || typeof record2.contentEncoding === "string";
-}
-function fileAware(schema) {
-  if (isBinarySchema(schema)) return FILE_UPLOAD_SCHEMA;
-  const record2 = recordValue5(schema);
-  if (record2?.type === "array" && isBinarySchema(record2.items)) return { ...record2, items: FILE_UPLOAD_SCHEMA };
-  return schema;
-}
-function fileAwareBodySchema(contentType, schema, defs) {
-  const base = contentType.split(";")[0].trim().toLowerCase();
-  if (base === "application/octet-stream" || base.startsWith("image/") || base.startsWith("video/") || base.startsWith("audio/")) {
-    return !Object.keys(schema).length || isBinarySchema(schema) ? FILE_UPLOAD_SCHEMA : schema;
-  }
-  if (base !== "multipart/form-data") return schema;
-  let target = schema;
-  if (typeof schema.$ref === "string" && schema.$ref.startsWith("#/$defs/")) {
-    const name = decodePointerToken(schema.$ref.slice("#/$defs/".length));
-    if (!name.includes("/") && defs[name]) target = { ...defs[name] };
-  }
-  const properties = recordValue5(target.properties);
-  if (!properties) return schema;
-  const next = Object.fromEntries(Object.entries(properties).map(([key, value]) => [key, fileAware(value)]));
-  return Object.values(next).some((value, index) => value !== Object.values(properties)[index]) ? { ...target, properties: next } : schema;
-}
-
-// src/openapi-http.ts
-var OPENAPI_CALL_TIMEOUT_MS = 3e4;
-var OPENAPI_MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
-var OPENAPI_MAX_BINARY_BYTES = 512 * 1024;
-var OPENAPI_DEFAULT_MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
-function companyBoxMaxUploadBytes(env = process.env) {
-  const value = Number(env.MARKETPLACE_COMPANY_BOX_MAX_UPLOAD_BYTES);
-  return Number.isInteger(value) && value > 0 ? value : OPENAPI_DEFAULT_MAX_UPLOAD_BYTES;
-}
-var MAX_ERROR_BODY_CHARS = 4096;
-var OpenApiCallError = class extends Error {
-  constructor(code, message, detail = {}) {
-    super(message);
-    this.code = code;
-    this.detail = detail;
-  }
-  code;
-  detail;
-};
-var FORBIDDEN_HEADER_NAMES = /* @__PURE__ */ new Set([
-  "accept-encoding",
-  "authorization",
-  "connection",
-  "content-length",
-  "content-type",
-  "cookie",
-  "host",
-  "keep-alive",
-  "proxy-authorization",
-  "proxy-connection",
-  "te",
-  "trailer",
-  "transfer-encoding",
-  "upgrade"
-]);
-var RESPONSE_HEADER_ALLOWLIST = /* @__PURE__ */ new Set([
-  "content-type",
-  "etag",
-  "last-modified",
-  "link",
-  "x-total-count",
-  "x-total",
-  "x-page",
-  "x-per-page",
-  "x-next-page",
-  "x-request-id",
-  "retry-after"
-]);
-function recordValue6(value) {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
-}
-function argumentError(field, reason) {
-  throw new OpenApiCallError("openapi_argument_invalid", `Argument ${field} is invalid (${reason}).`, {
-    field,
-    reason
-  });
-}
-function scalarString(value, field) {
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  return argumentError(field, "expected a string, number or boolean");
-}
-function headerValueValid(value) {
-  return value.length <= 4096 && /^[\t\x20-\x7e\x80-\xff]*$/u.test(value);
-}
-function credentialValues(credentials, auth) {
-  const values = Object.entries(credentials).filter(([field, value]) => field !== "username" && value.length >= 4).map(([, value]) => value);
-  if (auth.type === "basic" && credentials.username !== void 0 && credentials.password !== void 0) {
-    values.push(Buffer.from(`${credentials.username}:${credentials.password}`).toString("base64"));
-  }
-  return values;
-}
-function secretVariants(secret) {
-  const json2 = JSON.stringify(secret).slice(1, -1);
-  const forms = /* @__PURE__ */ new Set([
-    secret,
-    encodeURIComponent(secret),
-    encodeURI(secret),
-    encodeURIComponent(secret).replace(/%20/gu, "+"),
-    json2,
-    json2.replace(/\//gu, "\\/"),
-    secret.replace(/\//gu, "\\/"),
-    Buffer.from(secret).toString("base64"),
-    Buffer.from(secret).toString("base64url"),
-    Buffer.from(secret).toString("base64").replace(/=+$/u, "")
-  ]);
-  forms.add(encodeURIComponent(secret).replace(/%[0-9A-F]{2}/gu, (escape3) => escape3.toLowerCase()));
-  return [...forms].filter((form) => form.length >= 4).sort((left, right) => right.length - left.length);
-}
-function scrubSecrets(text2, secrets) {
-  let out = text2;
-  for (const secret of secrets) {
-    if (!secret) continue;
-    for (const form of secretVariants(secret)) {
-      out = out.split(form).join("[redacted]");
-    }
-  }
-  return out;
-}
-function scrubDeep(value, secrets) {
-  if (typeof value === "string") return scrubSecrets(value, secrets);
-  if (Array.isArray(value)) return value.map((item) => scrubDeep(item, secrets));
-  const record2 = recordValue6(value);
-  if (!record2) return value;
-  return Object.fromEntries(
-    Object.entries(record2).map(([key, child]) => [scrubSecrets(key, secrets), scrubDeep(child, secrets)])
-  );
-}
-function groupArgs(args, group) {
-  const value = args[group];
-  if (value === void 0 || value === null) return {};
-  const record2 = recordValue6(value);
-  if (!record2) argumentError(group, "expected an object");
-  return record2;
-}
-function declared(parameters, location) {
-  return new Map(
-    parameters.filter((parameter) => parameter.in === location).map((parameter) => [parameter.name, parameter])
-  );
-}
-function checkUnknown(group, supplied, known) {
-  for (const name of Object.keys(supplied)) {
-    if (!known.has(name)) argumentError(`${group}.${name}`, "not declared by the operation");
-  }
-}
-function reservedParameterName(name, auth) {
-  const lower = name.toLowerCase();
-  return lower === "_method" || lower.startsWith("x-http-method") || lower.startsWith("x-method-override") || auth.type === "query" && lower === auth.name.toLowerCase();
-}
-function appendQuery(search, parameter, value, auth) {
-  const field = `query.${parameter.name}`;
-  if (value === void 0 || value === null) return;
-  if (Array.isArray(value)) {
-    const items = value.map((item) => scalarString(item, field));
-    if (parameter.explode === false) search.append(parameter.name, items.join(","));
-    else for (const item of items) search.append(parameter.name, item);
-    return;
-  }
-  const record2 = recordValue6(value);
-  if (record2) {
-    const properties = recordValue6(parameter.schema.properties);
-    if (parameter.schema.type !== "object" || !properties) argumentError(field, "expected a scalar or array");
-    for (const key of Object.keys(record2)) {
-      if (!(key in properties)) argumentError(`${field}.${key}`, "not declared by the operation");
-      if (reservedParameterName(key, auth)) argumentError(`${field}.${key}`, "reserved parameter name");
-    }
-    if (parameter.style === "deepObject") {
-      for (const [key, child] of Object.entries(record2)) {
-        search.append(`${parameter.name}[${key}]`, scalarString(child, field));
-      }
-    } else if (parameter.explode === false) {
-      search.append(
-        parameter.name,
-        Object.entries(record2).flatMap(([key, child]) => [key, scalarString(child, field)]).join(",")
-      );
-    } else {
-      for (const [key, child] of Object.entries(record2)) search.append(key, scalarString(child, field));
-    }
-    return;
-  }
-  search.append(parameter.name, scalarString(value, field));
-}
-function fileArgument(value) {
-  const record2 = recordValue6(value);
-  return record2 && typeof record2.base64 === "string" ? record2 : null;
-}
-function decodeFile(file2, field, budget) {
-  const text2 = file2.base64.replace(/\s+/gu, "");
-  if (!/^[A-Za-z0-9+/_-]*={0,2}$/u.test(text2) || text2.length % 4 === 1) {
-    argumentError(`${field}.base64`, "not valid base64");
-  }
-  const estimated = Math.floor(text2.length * 3 / 4);
-  if (estimated - 2 > budget.remaining) {
-    throw new OpenApiCallError(
-      "openapi_upload_too_large",
-      `Uploads are limited to ${budget.max} bytes per call.`,
-      { field, reason: `limit ${budget.max} bytes` }
-    );
-  }
-  const bytes = new Uint8Array(Buffer.from(text2, text2.includes("-") || text2.includes("_") ? "base64url" : "base64"));
-  if (bytes.byteLength > budget.remaining) {
-    throw new OpenApiCallError("openapi_upload_too_large", `Uploads are limited to ${budget.max} bytes per call.`, {
-      field,
-      reason: `limit ${budget.max} bytes`
-    });
-  }
-  budget.remaining -= bytes.byteLength;
-  return bytes;
-}
-function buildBody(operation, value, maxUploadBytes = OPENAPI_DEFAULT_MAX_UPLOAD_BYTES) {
-  const budget = { remaining: maxUploadBytes, max: maxUploadBytes };
-  const requestBody = operation.requestBody;
-  if (value === void 0) {
-    if (requestBody?.required) argumentError("body", "required");
-    return {};
-  }
-  if (!requestBody) argumentError("body", "the operation takes no request body");
-  const contentType = requestBody.contentType;
-  const base = contentType.split(";")[0].trim().toLowerCase();
-  if (base === "application/json" || base.endsWith("+json") || base.endsWith("/json")) {
-    return { body: JSON.stringify(value), contentType };
-  }
-  if (base === "application/x-www-form-urlencoded") {
-    const record2 = recordValue6(value) ?? argumentError("body", "expected an object");
-    const form = new URLSearchParams();
-    for (const [key, child] of Object.entries(record2)) {
-      if (Array.isArray(child)) for (const item of child) form.append(key, scalarString(item, `body.${key}`));
-      else if (child !== void 0 && child !== null) form.append(key, scalarString(child, `body.${key}`));
-    }
-    return { body: form.toString(), contentType };
-  }
-  if (base === "multipart/form-data") {
-    const record2 = recordValue6(value) ?? argumentError("body", "expected an object");
-    const form = new FormData();
-    const appendPart = (key, child, field) => {
-      const file3 = fileArgument(child);
-      if (file3) {
-        const bytes = decodeFile(file3, field, budget);
-        form.append(
-          key,
-          new Blob([bytes], {
-            type: typeof file3.contentType === "string" && file3.contentType ? file3.contentType : "application/octet-stream"
-          }),
-          typeof file3.filename === "string" && file3.filename ? file3.filename : key
-        );
-      } else if (child !== void 0 && child !== null) {
-        form.append(key, typeof child === "object" ? JSON.stringify(child) : scalarString(child, field));
-      }
-    };
-    for (const [key, child] of Object.entries(record2)) {
-      if (Array.isArray(child) && child.some((item) => fileArgument(item))) {
-        child.forEach((item, index) => appendPart(key, item, `body.${key}.${index}`));
-      } else {
-        appendPart(key, child, `body.${key}`);
-      }
-    }
-    return { body: form };
-  }
-  if (base.startsWith("text/") || base === "application/xml") {
-    return { body: scalarString(value, "body"), contentType };
-  }
-  const file2 = fileArgument(value);
-  if (file2) {
-    return { body: decodeFile(file2, "body", budget), contentType };
-  }
-  if (typeof value === "string") return { body: value, contentType };
-  return { body: JSON.stringify(value), contentType };
-}
-function validSegment(text2) {
-  const decodedDots = text2.replace(/%2e/giu, ".");
-  return !(text2 === "" || /[/\\]/u.test(text2) || /%(2f|5c)/iu.test(text2) || decodedDots === "." || decodedDots === "..");
-}
-function renderPathValue(text2, field, multiSegment) {
-  const encode3 = (segment) => {
-    try {
-      return encodeURIComponent(segment);
-    } catch {
-      return argumentError(field, "not valid Unicode");
-    }
-  };
-  if (!multiSegment) {
-    if (!validSegment(text2)) argumentError(field, "not a valid path segment");
-    return encode3(text2);
-  }
-  const segments = text2.replace(/^\//u, "").replace(/\/$/u, "").split("/");
-  if (!segments.every(validSegment)) argumentError(field, "not a valid path");
-  return segments.map(encode3).join("/");
-}
-function renderPathTemplate(template, value) {
-  return template.replace(/\{([^}]+)\}/gu, (_match, name) => value(name));
-}
-function buildOpenApiRequest(options, base) {
-  const { operation, args, auth, credentials } = options;
-  for (const key of Object.keys(args)) {
-    if (!["path", "query", "header", "body"].includes(key)) {
-      argumentError(key, "arguments are grouped as path, query, header and body");
-    }
-  }
-  if (options.validateArguments) {
-    const validation = options.validateArguments(args);
-    if (!validation.ok) argumentError(validation.field, validation.reason);
-  }
-  const pathArgs = groupArgs(args, "path");
-  const queryArgs = groupArgs(args, "query");
-  const headerArgs = groupArgs(args, "header");
-  const pathParams = declared(operation.parameters, "path");
-  const queryParams = declared(operation.parameters, "query");
-  const headerParams = declared(operation.parameters, "header");
-  checkUnknown("path", pathArgs, pathParams);
-  checkUnknown("query", queryArgs, queryParams);
-  checkUnknown("header", headerArgs, headerParams);
-  for (const [group, supplied] of [["query", queryArgs], ["header", headerArgs], ["path", pathArgs]]) {
-    for (const name of Object.keys(supplied)) {
-      if (reservedParameterName(name, auth)) argumentError(`${group}.${name}`, "reserved parameter name");
-    }
-  }
-  const renderedPath = renderPathTemplate(operation.path, (name) => {
-    const value = pathArgs[name];
-    if (value === void 0 || value === null) argumentError(`path.${name}`, "required");
-    return renderPathValue(scalarString(value, `path.${name}`), `path.${name}`, pathParams.get(name)?.multiSegment === true);
-  });
-  const prefix = base.pathname.replace(/\/+$/u, "");
-  const apiBase = (options.apiBasePath ?? "").replace(/\/+$/u, "");
-  const url2 = new URL(base.origin);
-  url2.pathname = `${prefix}${apiBase}${renderedPath.startsWith("/") ? "" : "/"}${renderedPath}`;
-  if (url2.origin !== base.origin || !url2.pathname.startsWith(`${prefix}${apiBase}`)) {
-    argumentError("path", "the request left the configured base URL");
-  }
-  for (const [name, parameter] of queryParams) {
-    if (parameter.required && (queryArgs[name] === void 0 || queryArgs[name] === null)) {
-      argumentError(`query.${name}`, "required");
-    }
-    appendQuery(url2.searchParams, parameter, queryArgs[name], auth);
-  }
-  const headers = new Headers();
-  headers.set("accept", "application/json, text/plain;q=0.9, */*;q=0.8");
-  headers.set("user-agent", `TealBrick-Marketplace/${MARKETPLACE_VERSION}`);
-  const authHeaderName = auth.type === "header" ? auth.name.toLowerCase() : auth.type === "basic" ? "authorization" : null;
-  for (const [name, parameter] of headerParams) {
-    const value = headerArgs[name] ?? parameterDefault(parameter);
-    if (value === void 0 || value === null) {
-      if (parameter.required) argumentError(`header.${name}`, "required");
-      continue;
-    }
-    const lower = name.toLowerCase();
-    if (FORBIDDEN_HEADER_NAMES.has(lower) || lower.startsWith("proxy-") || lower === authHeaderName || reservedParameterName(name, auth)) {
-      argumentError(`header.${name}`, "reserved header");
-    }
-    const text2 = scalarString(value, `header.${name}`);
-    if ("const" in parameter.schema && text2 !== scalarString(parameter.schema.const, `header.${name}`)) {
-      argumentError(`header.${name}`, `must be ${String(parameter.schema.const)}`);
-    }
-    if (!headerValueValid(text2)) argumentError(`header.${name}`, "invalid header value");
-    if (lower === "overwrite" && text2 !== "T" && text2 !== "F") argumentError(`header.${name}`, "must be T or F");
-    if (lower === "depth" && !["0", "1", "infinity"].includes(text2)) argumentError(`header.${name}`, "must be 0, 1 or infinity");
-    if (lower === "destination") {
-      if (!parameter.destinationTemplate) argumentError(`header.${name}`, "reserved header");
-      const rendered = renderPathTemplate(parameter.destinationTemplate, (placeholder) => {
-        if (placeholder.toLowerCase() === "destination" || placeholder === name) {
-          return renderPathValue(text2, `header.${name}`, true);
-        }
-        const pathValue = pathArgs[placeholder];
-        if (pathValue === void 0 || pathValue === null) argumentError(`path.${placeholder}`, "required");
-        return renderPathValue(
-          scalarString(pathValue, `path.${placeholder}`),
-          `path.${placeholder}`,
-          pathParams.get(placeholder)?.multiSegment === true
-        );
-      });
-      const destination = new URL(base.origin);
-      destination.pathname = `${prefix}${apiBase}${rendered.startsWith("/") ? "" : "/"}${rendered}`;
-      if (destination.origin !== base.origin || !destination.pathname.startsWith(`${prefix}${apiBase}/`)) {
-        argumentError(`header.${name}`, "the destination left the configured base URL");
-      }
-      headers.set(lower, destination.toString());
-      continue;
-    }
-    headers.set(lower, text2);
-  }
-  if (auth.type === "header") {
-    const token = credentials.token;
-    if (!token) throw new OpenApiCallError("openapi_credentials_missing", "The connector has no API token configured.");
-    headers.set(auth.name.toLowerCase(), `${auth.prefix ?? ""}${token}`);
-  } else if (auth.type === "basic") {
-    if (credentials.username === void 0 || credentials.password === void 0) {
-      throw new OpenApiCallError("openapi_credentials_missing", "The connector has no username and password configured.");
-    }
-    headers.set(
-      "authorization",
-      `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString("base64")}`
-    );
-  } else if (auth.type === "query") {
-    const key = credentials.apiKey;
-    if (!key) throw new OpenApiCallError("openapi_credentials_missing", "The connector has no API key configured.");
-    for (const name of queryParams.keys()) {
-      if (name.toLowerCase() === auth.name.toLowerCase() && queryArgs[name] !== void 0) {
-        argumentError(`query.${name}`, "reserved for the API key");
-      }
-    }
-    url2.searchParams.set(auth.name, key);
-  }
-  const { body, contentType } = buildBody(operation, args.body, options.maxUploadBytes);
-  if (contentType) headers.set("content-type", contentType);
-  return { url: url2, method: operation.method.toUpperCase(), headers, body };
-}
-function validateOpenApiArguments(operation, args, auth, validateArguments, maxUploadBytes) {
-  buildOpenApiRequest(
-    {
-      baseUrl: "https://validation.invalid",
-      operation,
-      args,
-      auth,
-      ...validateArguments ? { validateArguments } : {},
-      ...maxUploadBytes ? { maxUploadBytes } : {},
-      credentials: { token: "validation", username: "validation", password: "validation", apiKey: "validation" }
-    },
-    new URL("https://validation.invalid")
-  );
-}
-function isAbort(error62) {
-  return error62 instanceof Error && (error62.name === "AbortError" || error62.name === "TimeoutError");
-}
-async function readCapped(response, maxBytes) {
-  const declaredLength = Number(response.headers.get("content-length") ?? "");
-  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
-    await response.body?.cancel().catch(() => void 0);
-    throw new OpenApiCallError("openapi_response_too_large", "The app's response was too large.", {
-      status: response.status
-    });
-  }
-  if (!response.body) return Buffer.alloc(0);
-  const reader = response.body.getReader();
-  const chunks = [];
-  let total = 0;
-  for (; ; ) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > maxBytes) {
-      await reader.cancel().catch(() => void 0);
-      throw new OpenApiCallError("openapi_response_too_large", "The app's response was too large.", {
-        status: response.status
-      });
-    }
-    chunks.push(value);
-  }
-  return Buffer.concat(chunks);
-}
-function textual(contentType) {
-  if (!contentType) return true;
-  const base = contentType.split(";")[0].trim().toLowerCase();
-  return base.startsWith("text/") || base.endsWith("/json") || base.endsWith("+json") || base.endsWith("/xml") || base.endsWith("+xml") || base === "application/javascript" || base === "application/x-www-form-urlencoded" || base === "application/yaml" || base === "application/x-yaml";
-}
-function decodeResponse(bytes, contentType, secrets, maxBinaryBytes, status) {
-  if (bytes.length === 0) return { bodyKind: "empty" };
-  if (textual(contentType)) {
-    const text2 = scrubSecrets(bytes.toString("utf8"), secrets);
-    const base = (contentType ?? "").split(";")[0].trim().toLowerCase();
-    if (!contentType || base.endsWith("json")) {
-      try {
-        return { bodyKind: "json", body: JSON.parse(text2) };
-      } catch {
-      }
-    }
-    return { bodyKind: "text", text: text2 };
-  }
-  if (bytes.length > maxBinaryBytes) {
-    throw new OpenApiCallError("openapi_response_too_large", "The app's binary response was too large.", {
-      status
-    });
-  }
-  return { bodyKind: "binary", base64: bytes.toString("base64") };
-}
-async function callOpenApiOperation(options) {
-  let base;
-  try {
-    base = await assertMcpUrlAllowed(options.baseUrl, { env: options.env, lookup: options.lookup });
-    routeOutbound(base, options.env);
-  } catch (error62) {
-    if (error62 instanceof TailnetUnavailableError) {
-      throw new OpenApiCallError("tailnet_unavailable", error62.message);
-    }
-    if (error62 instanceof McpUrlPolicyError) {
-      throw new OpenApiCallError("openapi_base_url_not_allowed", "The app address is not allowed.", {
-        reason: error62.reason
-      });
-    }
-    throw error62;
-  }
-  const request = buildOpenApiRequest(options, base);
-  const secrets = credentialValues(options.credentials, options.auth);
-  let response;
-  try {
-    response = await tailnetAwareFetch(options.env, options.fetchImpl, options.lookup)(request.url, {
-      method: request.method,
-      headers: request.headers,
-      ...request.body === void 0 ? {} : { body: request.body },
-      redirect: "error",
-      signal: AbortSignal.timeout(options.timeoutMs ?? OPENAPI_CALL_TIMEOUT_MS)
-    });
-  } catch (error62) {
-    if (isAbort(error62)) throw new OpenApiCallError("openapi_timeout", "The app did not respond in time.");
-    throw new OpenApiCallError("openapi_unreachable", "The app could not be reached.");
-  }
-  let bytes;
-  try {
-    bytes = await readCapped(response, options.maxResponseBytes ?? OPENAPI_MAX_RESPONSE_BYTES);
-  } catch (error62) {
-    if (error62 instanceof OpenApiCallError) throw error62;
-    if (isAbort(error62)) throw new OpenApiCallError("openapi_timeout", "The app did not respond in time.");
-    throw new OpenApiCallError("openapi_unreachable", "The app could not be reached.");
-  }
-  const contentType = response.headers.get("content-type");
-  if (!response.ok) {
-    let body;
-    if (textual(contentType) && bytes.length) {
-      const text2 = scrubSecrets(bytes.toString("utf8"), secrets);
-      let parsed = text2;
-      try {
-        parsed = scrubDeep(JSON.parse(text2), secrets);
-      } catch {
-        parsed = text2;
-      }
-      const serialized = typeof parsed === "string" ? parsed : JSON.stringify(parsed);
-      body = serialized.length <= MAX_ERROR_BODY_CHARS ? parsed : `${serialized.slice(0, MAX_ERROR_BODY_CHARS - 14)}\u2026 [truncated]`;
-    }
-    const status = response.status;
-    throw new OpenApiCallError(
-      status === 401 || status === 403 ? "openapi_auth_rejected" : "openapi_http_error",
-      status === 401 || status === 403 ? "The app rejected the credentials." : `The app answered HTTP ${status}.`,
-      { status, ...body === void 0 ? {} : { body } }
-    );
-  }
-  const decoded = decodeResponse(
-    bytes,
-    contentType,
-    secrets,
-    options.maxBinaryBytes ?? OPENAPI_MAX_BINARY_BYTES,
-    response.status
-  );
-  const headers = {};
-  response.headers.forEach((value, name) => {
-    if (RESPONSE_HEADER_ALLOWLIST.has(name.toLowerCase())) {
-      headers[name.toLowerCase()] = scrubSecrets(value, secrets);
-    }
-  });
-  return {
-    status: response.status,
-    contentType,
-    bytes: bytes.length,
-    headers,
-    ...decoded.body === void 0 ? {} : { body: scrubDeep(decoded.body, secrets) },
-    ...decoded.text === void 0 ? {} : { text: decoded.text },
-    ...decoded.base64 === void 0 ? {} : { base64: decoded.base64 },
-    bodyKind: decoded.bodyKind
-  };
-}
-
-// src/company-box.ts
-var COMPANY_BOX_COLLECTION = {
-  id: "company-box",
-  label: "Company Box",
-  description: "Your self-hosted apps, whole. Each one installs once for the workspace with its full API, reached over your tailnet."
-};
-var COMPANY_BOX_DEFAULT_DIRECT_MAX_OPERATIONS = 64;
-var COMPANY_BOX_PLUGIN_PREFIX = "company-box-";
-var COMPANY_BOX_MCP_SLUG_PREFIX = "cb-";
-var COMPANY_BOX_SEARCH_DEFAULT_LIMIT = 25;
-var COMPANY_BOX_SEARCH_MAX_LIMIT = 100;
-var MAX_SPEC_BYTES = 64 * 1024 * 1024;
-var DEFAULT_COMPANY_BOX_CATALOG_DIR = path4.resolve(
-  path4.dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "catalog",
-  "company-box"
-);
-function companyBoxCatalogDir(env = process.env) {
-  return env.MARKETPLACE_COMPANY_BOX_DIR?.trim() || DEFAULT_COMPANY_BOX_CATALOG_DIR;
-}
-function companyBoxDirectMaxOperations(env = process.env) {
-  const value = Number(env.MARKETPLACE_COMPANY_BOX_DIRECT_MAX_OPERATIONS);
-  return Number.isInteger(value) && value > 0 ? value : COMPANY_BOX_DEFAULT_DIRECT_MAX_OPERATIONS;
-}
-var ENTRY_ID_PATTERN = /^[a-z][a-z0-9-]{0,30}[a-z0-9]$/u;
-var HEADER_NAME_PATTERN2 = /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,64}$/u;
-var SHA256_PATTERN = /^[0-9a-f]{64}$/u;
-var RELATIVE_FILE_PATTERN = /^[A-Za-z0-9._-]{1,120}$/u;
-var AuthSchema = external_exports.discriminatedUnion("type", [
-  external_exports.object({ type: external_exports.literal("none") }).strict(),
-  external_exports.object({
-    type: external_exports.literal("header"),
-    name: external_exports.string().regex(HEADER_NAME_PATTERN2),
-    prefix: external_exports.string().max(40).optional(),
-    label: external_exports.string().trim().min(1).max(80).optional()
-  }).strict(),
-  external_exports.object({ type: external_exports.literal("basic") }).strict(),
-  external_exports.object({
-    type: external_exports.literal("query"),
-    name: external_exports.string().regex(/^[A-Za-z0-9_.-]{1,64}$/u),
-    label: external_exports.string().trim().min(1).max(80).optional()
-  }).strict()
-]);
-var ExclusionSchema = external_exports.object({
-  /** operationId, `METHOD /path`, or (mcp) a tool name. Exact match. */
-  operation: external_exports.string().trim().min(1).max(300),
-  /** Required; the coverage report fails on a missing or empty reason. */
-  reason: external_exports.string().max(500).optional()
-}).strict();
-var CompanyBoxEntrySchema = external_exports.object({
-  schema: external_exports.literal(1),
-  id: external_exports.string().regex(ENTRY_ID_PATTERN),
-  displayName: external_exports.string().trim().min(1).max(80),
-  description: external_exports.string().trim().min(1).max(500),
-  category: external_exports.string().trim().max(40).optional(),
-  app: external_exports.object({
-    /** Pinned upstream app version the spec was taken from. */
-    version: external_exports.string().trim().min(1).max(40),
-    homepage: external_exports.string().url().optional(),
-    license: external_exports.string().trim().max(60).optional(),
-    specSource: external_exports.string().url().optional()
-  }).strict(),
-  source: external_exports.enum(["openapi", "mcp"]),
-  openapi: external_exports.object({
-    spec: external_exports.string().regex(RELATIVE_FILE_PATTERN),
-    sha256: external_exports.string().regex(SHA256_PATTERN),
-    /** Overrides the spec's basePath / server path. "" disables it. */
-    basePath: external_exports.string().max(200).optional(),
-    /**
-     * JSON merge patch (RFC 7396) applied to the vendored spec before it is
-     * parsed, so supplements live outside the upstream file. Pinned too.
-     */
-    overlay: external_exports.object({ file: external_exports.string().regex(RELATIVE_FILE_PATTERN), sha256: external_exports.string().regex(SHA256_PATTERN) }).strict().optional()
-  }).strict().optional(),
-  mcp: external_exports.object({
-    /** `{baseUrl}` is replaced with the operator's base URL. */
-    urlTemplate: external_exports.string().min(1).max(500),
-    transport: external_exports.enum(["streamable-http", "sse"]).default("streamable-http"),
-    tools: external_exports.string().regex(RELATIVE_FILE_PATTERN),
-    sha256: external_exports.string().regex(SHA256_PATTERN)
-  }).strict().optional(),
-  auth: AuthSchema,
-  baseUrlExample: external_exports.string().max(300).optional(),
-  /** openapi: one safe GET operation (operationId or `GET /path`) used as the connection test. */
-  healthOperation: external_exports.string().trim().min(1).max(300).optional(),
-  /** Patterns (`*` wildcard) for operations that reach outside the workspace. */
-  outward: external_exports.array(external_exports.string().trim().min(1).max(300)).max(500).default([]),
-  /** Patterns for destructive operations beyond DELETE. */
-  destructive: external_exports.array(external_exports.string().trim().min(1).max(300)).max(500).default([]),
-  /** Patterns for POST/PUT/… operations that only read (search, GraphQL queries). */
-  reads: external_exports.array(external_exports.string().trim().min(1).max(300)).max(500).default([]),
-  exposure: external_exports.enum(["auto", "direct", "discovery"]).default("auto"),
-  excluded: external_exports.array(ExclusionSchema).max(5e3).default([])
-}).strict().superRefine((entry, context) => {
-  if (entry.source === "openapi" && !entry.openapi) {
-    context.addIssue({ code: "custom", path: ["openapi"], message: "openapi entries need an openapi block" });
-  }
-  if (entry.source === "openapi" && !entry.healthOperation) {
-    context.addIssue({ code: "custom", path: ["healthOperation"], message: "openapi entries need a healthOperation" });
-  }
-  if (entry.source === "mcp" && !entry.mcp) {
-    context.addIssue({ code: "custom", path: ["mcp"], message: "mcp entries need an mcp block" });
-  }
-  if (entry.source === "mcp" && entry.auth.type === "query") {
-    context.addIssue({ code: "custom", path: ["auth"], message: "mcp entries cannot send credentials in the URL" });
-  }
-  if (entry.mcp && !entry.mcp.urlTemplate.includes("{baseUrl}")) {
-    context.addIssue({ code: "custom", path: ["mcp", "urlTemplate"], message: "urlTemplate must contain {baseUrl}" });
-  }
-});
-function credentialFieldsFor(auth) {
-  switch (auth.type) {
-    case "header":
-      return [{ key: "token", label: auth.label ?? "API token", secret: true }];
-    case "basic":
-      return [
-        { key: "username", label: "Username", secret: false },
-        { key: "password", label: "Password", secret: true }
-      ];
-    case "query":
-      return [{ key: "apiKey", label: auth.label ?? "API key", secret: true }];
-    default:
-      return [];
-  }
-}
-function runtimeAuthFor(auth) {
-  switch (auth.type) {
-    case "header":
-      return { type: "header", name: auth.name, ...auth.prefix ? { prefix: auth.prefix } : {} };
-    case "basic":
-      return { type: "basic" };
-    case "query":
-      return { type: "query", name: auth.name };
-    default:
-      return { type: "none" };
-  }
-}
-function companyBoxPluginId(entryId) {
-  return `${COMPANY_BOX_PLUGIN_PREFIX}${entryId}`;
-}
-function companyBoxMcpPluginId(entryId, workspaceSlug, displayName) {
-  return customMcpPluginId({ workspaceSlug, slug: `${COMPANY_BOX_MCP_SLUG_PREFIX}${entryId}`, displayName });
-}
-function bounded(value, max) {
-  const text2 = typeof value === "string" ? value.trim() : "";
-  return text2.length > max ? `${text2.slice(0, max - 1)}\u2026` : text2;
-}
-function exclusionMatches(exclusion, operation) {
-  const trimmed = exclusion.trim();
-  if (operation.operationId !== null && trimmed === operation.operationId) return true;
-  const space = trimmed.indexOf(" ");
-  if (space < 0) return false;
-  return trimmed.slice(0, space).toLowerCase() === operation.method && trimmed.slice(space + 1).trim() === operation.path;
-}
-function exposureFor(entry, count, directMax) {
-  if (entry.exposure === "direct" || entry.exposure === "discovery") return entry.exposure;
-  return count > directMax ? "discovery" : "direct";
-}
-function checkExclusions(entry, matchedBy, errors) {
-  const seen = /* @__PURE__ */ new Set();
-  entry.excluded.forEach((exclusion, index) => {
-    if (!exclusion.reason?.trim()) {
-      errors.push(`Exclusion "${exclusion.operation}" has no reason.`);
-    }
-    if (seen.has(exclusion.operation)) {
-      errors.push(`Exclusion "${exclusion.operation}" is listed twice.`);
-    }
-    seen.add(exclusion.operation);
-    if (!matchedBy.has(index)) {
-      errors.push(`Exclusion "${exclusion.operation}" matches no operation in the pinned spec.`);
-    }
-  });
-}
-function readPinnedFile(dir, file2, sha2562) {
-  const resolved = path4.resolve(dir, file2);
-  if (path4.dirname(resolved) !== path4.resolve(dir)) throw new Error(`${file2} must sit next to entry.json.`);
-  const stat = fs3.statSync(resolved);
-  if (stat.size > MAX_SPEC_BYTES) throw new Error(`${file2} is larger than ${MAX_SPEC_BYTES} bytes.`);
-  const bytes = fs3.readFileSync(resolved);
-  const actual = sha256Hex(bytes);
-  if (actual !== sha2562) {
-    throw new Error(`${file2} does not match its pinned sha256 (expected ${sha2562}, found ${actual}).`);
-  }
-  return { bytes, sha256: actual };
-}
-function compileOpenApi(entry, dir, directMax) {
-  const pluginId = companyBoxPluginId(entry.id);
-  const pinned = readPinnedFile(dir, entry.openapi.spec, entry.openapi.sha256);
-  let raw = JSON.parse(pinned.bytes.toString("utf8"));
-  if (entry.openapi.overlay) {
-    const overlay = readPinnedFile(dir, entry.openapi.overlay.file, entry.openapi.overlay.sha256);
-    raw = applyMergePatch(raw, JSON.parse(overlay.bytes.toString("utf8")));
-  }
-  const document = parseOpenApiDocument(raw);
-  const errors = [];
-  const warnings = [];
-  const authHeader = entry.auth.type === "header" ? entry.auth.name.toLowerCase() : entry.auth.type === "basic" ? "authorization" : null;
-  const authQuery = entry.auth.type === "query" ? entry.auth.name.toLowerCase() : null;
-  let droppedAuthParams = 0;
-  for (const operation of document.operations) {
-    const before = operation.parameters.length;
-    operation.parameters = operation.parameters.filter(
-      (parameter) => !(parameter.in === "header" && parameter.name.toLowerCase() === authHeader || parameter.in === "query" && parameter.name.toLowerCase() === authQuery)
-    );
-    droppedAuthParams += before - operation.parameters.length;
-  }
-  if (droppedAuthParams) {
-    warnings.push(`${droppedAuthParams} declared credential parameter(s) dropped; Marketplace sets the credential itself.`);
-  }
-  const matchedBy = /* @__PURE__ */ new Map();
-  const excludedAt = /* @__PURE__ */ new Map();
-  const autoExcluded = /* @__PURE__ */ new Set();
-  document.operations.forEach((operation, index) => {
-    entry.excluded.forEach((exclusion, exclusionIndex) => {
-      if (exclusionMatches(exclusion.operation, operation)) {
-        if (excludedAt.has(index)) {
-          errors.push(`Operation ${operation.ref} is excluded more than once.`);
-        }
-        excludedAt.set(index, exclusion.reason);
-        matchedBy.set(exclusionIndex, index);
-      }
-    });
-  });
-  checkExclusions(entry, matchedBy, errors);
-  document.operations.forEach((operation, index) => {
-    if ((operation.method === "get" || operation.method === "head") && operation.requestBody && !excludedAt.has(index)) {
-      excludedAt.set(index, "auto: GET/HEAD operation with a request body; bodies are not sent on GET");
-      autoExcluded.add(index);
-    }
-  });
-  const exposedIndexes = document.operations.map((_operation, index) => index).filter((index) => !excludedAt.has(index));
-  const keys = deriveOperationActionKeys(
-    pluginId,
-    exposedIndexes.map((index) => document.operations[index])
-  );
-  const patterns = { outward: entry.outward, destructive: entry.destructive, reads: entry.reads };
-  const coverage = new Array(document.operations.length);
-  const operations = [];
-  for (const [index, reason] of excludedAt) {
-    const operation = document.operations[index];
-    coverage[index] = {
-      ref: operation.ref,
-      method: operation.method.toUpperCase(),
-      path: operation.path,
-      status: "excluded",
-      ...reason ? { reason } : {},
-      ...autoExcluded.has(index) ? { auto: true } : {}
-    };
-  }
-  exposedIndexes.forEach((index, position) => {
-    const operation = document.operations[index];
-    const key = keys[position];
-    const risk = operationRisk(operation, patterns);
-    try {
-      const reserved = operation.parameters.find(
-        (parameter) => (parameter.in === "header" || parameter.in === "query") && reservedParameterName(parameter.name, runtimeAuthFor(entry.auth))
-      );
-      if (reserved) {
-        throw new Error(`Parameter ${reserved.in} ${reserved.name} is a reserved name (method override or credential).`);
-      }
-      const overwrite = operation.parameters.find(
-        (parameter) => parameter.in === "header" && parameter.name.toLowerCase() === "overwrite"
-      );
-      if (overwrite && "default" in overwrite.schema && overwrite.schema.default !== "F") {
-        throw new Error("An Overwrite header default must be F; overwriting must be asked for explicitly.");
-      }
-      const destination = operation.parameters.find(
-        (parameter) => parameter.in === "header" && parameter.name.toLowerCase() === "destination"
-      );
-      if (destination && !destination.destinationTemplate) {
-        throw new Error("A Destination header needs x-destination-template; Marketplace never forwards a caller-supplied URL.");
-      }
-      const inputSchema = operationInputSchema(operation, document.defs);
-      const tool = boundedToolSchema(inputSchema);
-      const validateArguments = compileArgumentValidator(inputSchema);
-      const compiled = {
-        key,
-        ref: operation.ref,
-        operationId: operation.operationId,
-        method: operation.method,
-        path: operation.path,
-        title: bounded(operation.summary ?? operation.operationId ?? operationIdentity(operation.method, operation.path), OPENAPI_TITLE_MAX),
-        summary: bounded(operation.summary ?? operation.description ?? "", OPENAPI_SUMMARY_MAX),
-        description: operation.description ?? operation.summary ?? "",
-        tags: operation.tags,
-        group: operationGroup(operation),
-        deprecated: operation.deprecated,
-        argumentGroups: operationArgumentGroups(operation),
-        operation,
-        inputSchema,
-        validateArguments,
-        toolSchema: tool.schema,
-        schemaTruncated: tool.truncated,
-        ...risk
-      };
-      operations.push(compiled);
-      coverage[index] = {
-        ref: operation.ref,
-        method: operation.method.toUpperCase(),
-        path: operation.path,
-        status: "exposed",
-        key,
-        capability: risk.capability,
-        outward: risk.outward,
-        destructive: risk.destructive
-      };
-      if (operation.unsupportedParameters.length) {
-        warnings.push(
-          `${operation.ref}: ${operation.unsupportedParameters.map((parameter) => `${parameter.in} parameter ${parameter.name}`).join(", ")} cannot be sent.`
-        );
-      }
-    } catch (error62) {
-      coverage[index] = {
-        ref: operation.ref,
-        method: operation.method.toUpperCase(),
-        path: operation.path,
-        status: "failed",
-        reason: error62 instanceof Error ? error62.message : String(error62)
-      };
-      errors.push(`${operation.ref}: ${error62 instanceof Error ? error62.message : String(error62)}`);
-    }
-  });
-  for (const [kind, list] of [["outward", entry.outward], ["destructive", entry.destructive], ["reads", entry.reads]]) {
-    for (const pattern of list) {
-      if (!document.operations.some((operation) => operationPatternMatches(pattern, operation))) {
-        warnings.push(`${kind} pattern "${pattern}" matches no operation.`);
-      }
-    }
-  }
-  for (const pattern of entry.reads) {
-    for (const operation of document.operations) {
-      if (operationPatternMatches(pattern, operation) && !READ_METHODS.has(operation.method) && !READS_DOWNGRADABLE_METHODS.has(operation.method)) {
-        warnings.push(
-          `reads pattern "${pattern}" ignored for ${operationIdentity(operation.method, operation.path)}: only POST can be read-class.`
-        );
-      }
-    }
-  }
-  const byKey = new Map(operations.map((operation) => [operation.key, operation]));
-  const health = entry.healthOperation ? operations.find((operation) => exclusionMatches(entry.healthOperation, operation.operation)) ?? null : null;
-  if (!health) {
-    errors.push(`healthOperation "${entry.healthOperation}" is not an exposed operation.`);
-  } else if (!READ_METHODS.has(health.method)) {
-    errors.push(`healthOperation "${entry.healthOperation}" must be a read (GET, HEAD, PROPFIND, \u2026) operation.`);
-  } else if (health.operation.parameters.some(parameterNeedsArgument) || health.operation.requestBody?.required) {
-    errors.push(`healthOperation "${entry.healthOperation}" must not need arguments.`);
-  }
-  const apiBasePath = (entry.openapi.basePath ?? document.basePath).replace(/\/+$/u, "");
-  return {
-    kind: "openapi",
-    entry,
-    dir,
-    pluginId,
-    specSha256: pinned.sha256,
-    spec: {
-      format: document.format,
-      specVersion: document.specVersion,
-      title: document.title,
-      apiVersion: document.apiVersion
-    },
-    apiBasePath: apiBasePath && !apiBasePath.startsWith("/") ? `/${apiBasePath}` : apiBasePath,
-    operations,
-    byKey,
-    healthOperation: health,
-    coverage,
-    errors,
-    warnings,
-    exposure: exposureFor(entry, operations.length, directMax)
-  };
-}
-var ToolsSnapshotSchema = external_exports.object({
-  server: external_exports.object({ name: external_exports.string(), version: external_exports.string() }).partial().optional(),
-  capturedAt: external_exports.string().optional(),
-  tools: external_exports.array(
-    external_exports.object({
-      name: external_exports.string().min(1).max(200),
-      title: external_exports.string().optional(),
-      description: external_exports.string().optional(),
-      inputSchema: external_exports.unknown().optional(),
-      annotations: external_exports.record(external_exports.unknown()).optional()
-    }).passthrough()
-  )
-}).passthrough();
-function companyBoxMcpToolRisk(entry, tool, actionSegment2) {
-  const asOperation = { operationId: tool.name, method: "post", path: "" };
-  const destructivePattern = entry.destructive.some((pattern) => operationPatternMatches(pattern, asOperation));
-  const readPattern = (entry.reads ?? []).some((pattern) => operationPatternMatches(pattern, asOperation));
-  const capability = destructivePattern ? "connector.admin" : readPattern ? "connector.observe" : capabilityForTool(tool, actionSegment2);
-  return {
-    capability,
-    write: capability !== "connector.observe",
-    outward: entry.outward.some((pattern) => operationPatternMatches(pattern, asOperation)),
-    destructive: capability === "connector.admin"
-  };
-}
-function compileMcp(entry, dir, directMax) {
-  const pinned = readPinnedFile(dir, entry.mcp.tools, entry.mcp.sha256);
-  const snapshot = ToolsSnapshotSchema.parse(JSON.parse(pinned.bytes.toString("utf8")));
-  const errors = [];
-  const warnings = [];
-  const matchedBy = /* @__PURE__ */ new Map();
-  const excludedAt = /* @__PURE__ */ new Map();
-  const names = /* @__PURE__ */ new Set();
-  snapshot.tools.forEach((tool, index) => {
-    if (names.has(tool.name)) errors.push(`Tool ${tool.name} appears twice in the snapshot.`);
-    names.add(tool.name);
-    entry.excluded.forEach((exclusion, exclusionIndex) => {
-      if (exclusion.operation === tool.name) {
-        excludedAt.set(index, exclusion.reason);
-        matchedBy.set(exclusionIndex, index);
-      }
-    });
-  });
-  checkExclusions(entry, matchedBy, errors);
-  const sampleProvider = companyBoxMcpPluginId(entry.id, "workspace", entry.displayName);
-  const exposedIndexes = snapshot.tools.map((_tool, index) => index).filter((index) => !excludedAt.has(index));
-  const keys = deriveActionKeys(
-    sampleProvider,
-    exposedIndexes.map((index) => snapshot.tools[index].name)
-  );
-  const coverage = new Array(snapshot.tools.length);
-  for (const [index, reason] of excludedAt) {
-    coverage[index] = { ref: snapshot.tools[index].name, status: "excluded", ...reason ? { reason } : {} };
-  }
-  const tools = exposedIndexes.map((index, position) => {
-    const tool = snapshot.tools[index];
-    const key = keys[position];
-    const risk = companyBoxMcpToolRisk(entry, tool, key.slice(sampleProvider.length + 1));
-    coverage[index] = {
-      ref: tool.name,
-      status: "exposed",
-      key,
-      capability: risk.capability,
-      outward: risk.outward,
-      destructive: risk.destructive
-    };
-    const schema = tool.inputSchema && typeof tool.inputSchema === "object" && !Array.isArray(tool.inputSchema) ? tool.inputSchema : null;
-    return {
-      name: tool.name,
-      inputSchema: schema,
-      inputSchemaBytes: schema ? Buffer.byteLength(JSON.stringify(schema)) : 0,
-      sampleKey: key,
-      title: bounded(tool.title ?? tool.name, OPENAPI_TITLE_MAX),
-      description: bounded(tool.description ?? "", OPENAPI_DESCRIPTION_MAX),
-      ...risk
-    };
-  });
-  for (const [kind, list] of [["outward", entry.outward], ["destructive", entry.destructive], ["reads", entry.reads]]) {
-    for (const pattern of list) {
-      if (!snapshot.tools.some((tool) => operationPatternMatches(pattern, { operationId: tool.name, method: "post", path: "" }))) {
-        warnings.push(`${kind} pattern "${pattern}" matches no tool.`);
-      }
-    }
-  }
-  const server = snapshot.server?.name ? { name: snapshot.server.name, version: snapshot.server.version ?? "" } : null;
-  return {
-    kind: "mcp",
-    entry,
-    dir,
-    snapshotSha256: pinned.sha256,
-    server,
-    tools,
-    excludedToolNames: new Set(
-      entry.excluded.map((exclusion) => exclusion.operation).filter((name) => names.has(name))
-    ),
-    coverage,
-    errors,
-    warnings,
-    exposure: exposureFor(entry, tools.length, directMax)
-  };
-}
-function compileCompanyBoxEntry(dir, options = {}) {
-  const entry = CompanyBoxEntrySchema.parse(
-    JSON.parse(fs3.readFileSync(path4.join(dir, "entry.json"), "utf8"))
-  );
-  if (path4.basename(dir) !== entry.id) {
-    throw new Error(`entry.json id "${entry.id}" must match its directory name.`);
-  }
-  const directMax = options.directMaxOperations ?? COMPANY_BOX_DEFAULT_DIRECT_MAX_OPERATIONS;
-  return entry.source === "openapi" ? compileOpenApi(entry, dir, directMax) : compileMcp(entry, dir, directMax);
-}
-function loadErrorCode(error62) {
-  if (error62 instanceof OpenApiSpecError) return error62.code;
-  if (error62 instanceof external_exports.ZodError) return "company_box_entry_invalid";
-  if (error62 instanceof SyntaxError) return "company_box_json_invalid";
-  return "company_box_entry_unreadable";
-}
-function loadErrorMessage(error62) {
-  if (error62 instanceof external_exports.ZodError) {
-    return error62.issues.map((issue2) => `${issue2.path.join(".") || "entry"}: ${issue2.message}`).join("; ");
-  }
-  return error62 instanceof Error ? error62.message : String(error62);
-}
-var CompanyBoxCatalog = class _CompanyBoxCatalog {
-  constructor(dir, entries, loadErrors) {
-    this.dir = dir;
-    this.entries = [...entries].sort((left, right) => left.entry.displayName.localeCompare(right.entry.displayName));
-    this.loadErrors = loadErrors;
-    this.byId = new Map(entries.map((entry) => [entry.entry.id, entry]));
-    this.byPluginId = new Map(
-      entries.flatMap((entry) => entry.kind === "openapi" ? [[entry.pluginId, entry]] : [])
-    );
-  }
-  dir;
-  entries;
-  loadErrors;
-  byId;
-  byPluginId;
-  static empty() {
-    return new _CompanyBoxCatalog("", [], []);
-  }
-  get(entryId) {
-    return this.byId.get(entryId) ?? null;
-  }
-  /** Usable entries: compiled with no errors. */
-  usable() {
-    return this.entries.filter((entry) => entry.errors.length === 0);
-  }
-  openApiForPluginId(pluginId) {
-    const entry = this.byPluginId.get(pluginId);
-    return entry && entry.errors.length === 0 ? entry : null;
-  }
-};
-function loadCompanyBoxCatalog(dir, options = {}) {
-  if (!dir || !fs3.existsSync(dir)) return new CompanyBoxCatalog(dir, [], []);
-  const entries = [];
-  const loadErrors = [];
-  for (const name of fs3.readdirSync(dir).sort()) {
-    const entryDir = path4.join(dir, name);
-    if (!fs3.statSync(entryDir).isDirectory() || !fs3.existsSync(path4.join(entryDir, "entry.json"))) continue;
-    try {
-      entries.push(compileCompanyBoxEntry(entryDir, options));
-    } catch (error62) {
-      loadErrors.push({ entry: name, code: loadErrorCode(error62), message: loadErrorMessage(error62) });
-    }
-  }
-  return new CompanyBoxCatalog(dir, entries, loadErrors);
-}
-function companyBoxListing(compiled, createdAt) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const { entry, pluginId } = compiled;
-  const capabilities2 = ["connector.observe", "connector.dispatch", "connector.admin"].filter(
-    (capability) => compiled.operations.some((operation) => operation.capability === capability)
-  );
-  const manifest = {
-    entryId: entry.id,
-    collection: COMPANY_BOX_COLLECTION.id,
-    source: "openapi",
-    specSha256: compiled.specSha256,
-    appVersion: entry.app.version,
-    exposure: compiled.exposure,
-    operationCount: compiled.operations.length,
-    excludedCount: compiled.coverage.filter((item) => item.status === "excluded").length,
-    operations: compiled.operations.map((operation) => ({
-      key: operation.key,
-      ref: operation.ref,
-      method: operation.method.toUpperCase(),
-      path: operation.path,
-      title: operation.title,
-      summary: operation.summary,
-      tags: operation.tags,
-      group: operation.group,
-      capability: operation.capability,
-      outward: operation.outward,
-      destructive: operation.destructive,
-      args: operation.argumentGroups
-    }))
-  };
-  return {
-    pluginId,
-    displayName: entry.displayName,
-    kind: "toolset",
-    provider: pluginId,
-    description: entry.description,
-    capabilities: capabilities2,
-    actions: compiled.operations.map((operation) => operation.key),
-    source: "openapi",
-    authOwner: "program",
-    executionOwner: "openapi",
-    runtimeSources: [
-      {
-        runtimeSourceId: `${pluginId}-openapi`,
-        kind: "native-api",
-        label: "Company Box REST adapter",
-        primary: true
-      }
-    ],
-    enabledByDefault: false,
-    manifest: {
-      version: entry.app.version,
-      kind: "plugin",
-      collection: COMPANY_BOX_COLLECTION.id,
-      actionRequirements: Object.fromEntries(
-        compiled.operations.map((operation) => [operation.key, { kind: pluginId, capability: operation.capability }])
-      ),
-      companyBox: manifest
-    },
-    createdAt: createdAt ?? now,
-    updatedAt: now
-  };
-}
-function retiredCompanyBoxListing(listing) {
-  return {
-    ...listing,
-    capabilities: [],
-    actions: [],
-    manifest: { ...listing.manifest, actionRequirements: {}, companyBox: { ...companyBoxManifest(listing), operations: [], operationCount: 0, retired: true } },
-    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-  };
-}
-function recordValue7(value) {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
-}
-function listingIsCompanyBoxOpenApi(listing) {
-  return listing.source === "openapi" && listing.executionOwner === "openapi" && listing.pluginId.startsWith(COMPANY_BOX_PLUGIN_PREFIX) && recordValue7(listing.manifest.companyBox) !== null;
-}
-function companyBoxManifest(listing) {
-  const raw = recordValue7(listing.manifest.companyBox) ?? {};
-  return {
-    entryId: typeof raw.entryId === "string" ? raw.entryId : "",
-    collection: COMPANY_BOX_COLLECTION.id,
-    source: "openapi",
-    specSha256: typeof raw.specSha256 === "string" ? raw.specSha256 : "",
-    appVersion: typeof raw.appVersion === "string" ? raw.appVersion : "",
-    exposure: raw.exposure === "discovery" ? "discovery" : "direct",
-    operationCount: typeof raw.operationCount === "number" ? raw.operationCount : 0,
-    excludedCount: typeof raw.excludedCount === "number" ? raw.excludedCount : 0,
-    operations: (Array.isArray(raw.operations) ? raw.operations : []).flatMap((value) => {
-      const operation = recordValue7(value);
-      if (!operation || typeof operation.key !== "string") return [];
-      return [operation];
-    })
-  };
-}
-function companyBoxOperationSummary(listing, actionKey) {
-  return companyBoxManifest(listing).operations.find((operation) => operation.key === actionKey) ?? null;
-}
-function companyBoxMcpUrl(entry, baseUrl) {
-  return entry.mcp.urlTemplate.split("{baseUrl}").join(baseUrl.replace(/\/+$/u, ""));
-}
-function companyBoxMcpSecretHeader(entry, credentials) {
-  if (entry.auth.type === "header" && credentials.token) {
-    return { name: entry.auth.name.toLowerCase(), value: `${entry.auth.prefix ?? ""}${credentials.token}` };
-  }
-  if (entry.auth.type === "basic" && credentials.username !== void 0 && credentials.password !== void 0) {
-    return {
-      name: "authorization",
-      value: `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString("base64")}`
-    };
-  }
-  return null;
-}
-function searchAgentOperations(operations, input2) {
-  const terms = (input2.query ?? "").toLowerCase().split(/\s+/u).filter(Boolean);
-  const tag = input2.tag?.trim().toLowerCase();
-  const filtered = operations.filter((operation) => {
-    if (tag && operation.group !== tag && !operation.tags.some((value) => value.toLowerCase() === tag)) return false;
-    if (input2.capability && operation.capability !== input2.capability) return false;
-    if (!terms.length) return true;
-    const haystack = `${operation.key} ${operation.title} ${operation.summary} ${operation.group} ${operation.tags.join(" ")}`.toLowerCase();
-    return terms.every((term) => haystack.includes(term));
-  });
-  const offset = input2.cursor && /^\d{1,7}$/u.test(input2.cursor) ? Number(input2.cursor) : 0;
-  const limit = Math.min(Math.max(input2.limit ?? COMPANY_BOX_SEARCH_DEFAULT_LIMIT, 1), COMPANY_BOX_SEARCH_MAX_LIMIT);
-  const page = filtered.slice(offset, offset + limit);
-  return {
-    total: filtered.length,
-    offset,
-    limit,
-    nextCursor: offset + limit < filtered.length ? String(offset + limit) : null,
-    operations: page
-  };
 }
 
 // src/company-box-routes.ts
@@ -103630,7 +103876,7 @@ var tealbrick_app_default = {
     id: "marketplace",
     name: "Marketplace",
     major: 1,
-    version: "0.1.18",
+    version: "0.1.19",
     summary: "Connector catalog, provider accounts, consent-gated tool execution and an owner approvals queue for a Teal Brick workspace.",
     domain: "connectors, provider accounts, agent consents, consented tool calls, owner approvals"
   },
@@ -104440,17 +104686,17 @@ function selectionCapability(selection2) {
 function agentResourceKindForProvider(provider) {
   return `${provider}.connected-account`;
 }
-function recordValue8(value) {
+function recordValue9(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value : void 0;
 }
 function stringValue4(value) {
   return typeof value === "string" && value.trim() ? value.trim() : void 0;
 }
 function composioToolRecord(listing, actionKey) {
-  const composio = recordValue8(listing.manifest.composio);
+  const composio = recordValue9(listing.manifest.composio);
   const tools = Array.isArray(composio?.tools) ? composio.tools : [];
   for (const tool of tools) {
-    const record2 = recordValue8(tool);
+    const record2 = recordValue9(tool);
     if (record2?.action === actionKey) return record2;
   }
   return void 0;
@@ -105492,6 +105738,7 @@ var CardsSummaryQuerySchema = WorkspaceQuerySchema.extend({
   search: external_exports.string().trim().max(200).default(""),
   source: external_exports.enum(["all", "native", "activepieces", "composio", "nango", "mcp", "openapi"]).default("all"),
   installed: external_exports.enum(["true", "false"]).optional().transform((value) => value === "true"),
+  connectMode: external_exports.enum(["all", ...CONNECT_MODES]).default("all"),
   offset: external_exports.coerce.number().int().min(0).default(0),
   limit: external_exports.coerce.number().int().min(1).max(100).default(60)
 });
@@ -106151,7 +106398,7 @@ function runtimeSafeProviderResult(value) {
 function listingRequiresConnectedAccount(listing) {
   return listing.source === "composio" && listing.authOwner === "composio" && listing.pluginId !== "composio-bootstrap";
 }
-function recordValue9(value) {
+function recordValue10(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : null;
 }
 function listingIsWorkspaceCustomMcp(listing, workspaceSlug) {
@@ -106173,9 +106420,9 @@ function stringValue5(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 function listingSkills(listing) {
-  const manifest = recordValue9(listing.manifest);
+  const manifest = recordValue10(listing.manifest);
   return arrayValue(manifest?.skills).flatMap((entry) => {
-    const record2 = recordValue9(entry);
+    const record2 = recordValue10(entry);
     if (!record2) {
       return [];
     }
@@ -106198,10 +106445,10 @@ function listingSkills(listing) {
   });
 }
 function composioToolsForListing(listing) {
-  const manifest = recordValue9(listing.manifest);
-  const composio = recordValue9(manifest?.composio);
+  const manifest = recordValue10(listing.manifest);
+  const composio = recordValue10(manifest?.composio);
   return arrayValue(composio?.tools).flatMap((tool) => {
-    const record2 = recordValue9(tool);
+    const record2 = recordValue10(tool);
     const action = stringValue5(record2?.action);
     const toolName = stringValue5(record2?.toolName);
     const displayName = stringValue5(record2?.displayName) ?? action;
@@ -106273,7 +106520,7 @@ function pluginCardForListing(input2) {
       addonId: listing.pluginId,
       pluginId: listing.pluginId,
       displayName: listing.displayName,
-      version: String(recordValue9(listing.manifest)?.version ?? "0.1.0"),
+      version: String(recordValue10(listing.manifest)?.version ?? "0.1.0"),
       kind: listing.kind,
       enabled: installed,
       skills,
@@ -106287,7 +106534,7 @@ function pluginCardForListing(input2) {
       ] : [],
       capabilities: listing.capabilities,
       runtimeSources: listing.runtimeSources ?? [],
-      defaultPrompts: arrayValue(recordValue9(listing.manifest)?.defaultPrompts)
+      defaultPrompts: arrayValue(recordValue10(listing.manifest)?.defaultPrompts)
     },
     state: {
       status,
@@ -106367,6 +106614,7 @@ function pluginCardForListing(input2) {
     },
     skills,
     toolSelection,
+    connectMode: connectMode(listing, connection, { workspaceSlug }),
     listing,
     install,
     connection,
@@ -106406,6 +106654,7 @@ function pluginSummaryForListing(input2) {
     registered,
     installed,
     authRequired,
+    connectMode: connectMode(listing, connection, { workspaceSlug }),
     toolCount: listing.actions.length,
     install: install ? {
       enabled: install.enabled,
@@ -106422,7 +106671,7 @@ function pluginSummaryForListing(input2) {
   };
 }
 function browserListingForListing(listing) {
-  const manifest = recordValue9(listing.manifest);
+  const manifest = recordValue10(listing.manifest);
   return {
     pluginId: listing.pluginId,
     displayName: listing.displayName,
@@ -106485,6 +106734,8 @@ function browserPluginCardForListing(input2) {
     installStateByTarget: card.installStateByTarget,
     installPlan: card.installPlan,
     toolSelection: card.toolSelection,
+    connectMode: card.connectMode,
+    connectInfo: browserConnectInfo(input2.listing),
     listing: browserListingForListing(input2.listing),
     install: card.install ? {
       enabled: card.install.enabled,
@@ -106498,6 +106749,17 @@ function browserPluginCardForListing(input2) {
       detail: card.connection.detail,
       updatedAt: card.connection.updatedAt
     } : null
+  };
+}
+function browserConnectInfo(listing) {
+  if (listing.source !== "composio" || listing.executionOwner !== "composio") {
+    return null;
+  }
+  const profile = composioAuthProfile(listing);
+  return {
+    toolkit: composioToolkitForListing(listing),
+    authSchemes: profile.authSchemes,
+    managedAuthSchemes: profile.managedAuthSchemes
   };
 }
 function browserProviderHealth(providers) {
@@ -106528,24 +106790,38 @@ async function pluginCardsForWorkspace(input2) {
   );
 }
 function composioListingRole(listing) {
-  return stringValue5(recordValue9(listing.manifest)?.role);
+  return stringValue5(recordValue10(listing.manifest)?.role);
 }
 function composioListingHasCatalog(listing) {
-  const composio = recordValue9(recordValue9(listing.manifest)?.composio);
-  return Boolean(recordValue9(composio?.catalog));
+  const composio = recordValue10(recordValue10(listing.manifest)?.composio);
+  return Boolean(recordValue10(composio?.catalog));
 }
 function composioToolkitForListing(listing) {
-  const composio = recordValue9(recordValue9(listing.manifest)?.composio);
-  const catalog = recordValue9(composio?.catalog);
+  const composio = recordValue10(recordValue10(listing.manifest)?.composio);
+  const catalog = recordValue10(composio?.catalog);
   return stringValue5(composio?.toolkit) ?? stringValue5(catalog?.slug) ?? listing.provider;
 }
 function composioAuthMetadataForListing(listing) {
-  const composio = recordValue9(recordValue9(listing.manifest)?.composio);
-  const catalog = recordValue9(composio?.catalog);
+  const composio = recordValue10(recordValue10(listing.manifest)?.composio);
+  const catalog = recordValue10(composio?.catalog);
   return {
     authSchemes: arrayValue(catalog?.authSchemes).map((value) => stringValue5(value)).filter((value) => value !== null),
     managedAuthSchemes: arrayValue(catalog?.managedAuthSchemes).map((value) => stringValue5(value)).filter((value) => value !== null),
     noAuth: catalog?.noAuth === true
+  };
+}
+function withCustomAuthConfigs(listing, customAuthConfigs) {
+  const composio = recordValue10(listing.manifest.composio) ?? {};
+  const catalog = recordValue10(composio.catalog) ?? {};
+  return {
+    ...listing,
+    manifest: {
+      ...listing.manifest,
+      composio: {
+        ...composio,
+        catalog: { ...catalog, customAuthConfigs }
+      }
+    }
   };
 }
 async function synchronizeComposioCatalog(input2) {
@@ -106555,6 +106831,19 @@ async function synchronizeComposioCatalog(input2) {
     input2.env,
     fetchImpl
   ).catch(() => ({ baseUrl: catalog.baseUrl, items: [] }));
+  const authConfigs = await fetchComposioAuthConfigs(input2.env, fetchImpl).catch(
+    () => []
+  );
+  const customAuthConfigsByToolkit = /* @__PURE__ */ new Map();
+  for (const config3 of authConfigs) {
+    if (!config3.enabled || config3.composioManaged !== false || !config3.toolkit) {
+      continue;
+    }
+    const key = config3.toolkit.toLowerCase();
+    const list = customAuthConfigsByToolkit.get(key) ?? [];
+    list.push({ id: config3.id, authScheme: config3.authScheme });
+    customAuthConfigsByToolkit.set(key, list);
+  }
   const existingByToolkit = /* @__PURE__ */ new Map();
   for (const listing of input2.store.listListings()) {
     if (listing.source !== "composio" || listing.pluginId === "composio-bootstrap") {
@@ -106566,12 +106855,18 @@ async function synchronizeComposioCatalog(input2) {
   let added = 0;
   let refreshed = 0;
   for (const rawToolkit of catalog.items) {
-    const catalogListing = buildComposioCatalogListing({
+    const builtListing = buildComposioCatalogListing({
       toolkit: rawToolkit
     });
-    if (!catalogListing) {
+    if (!builtListing) {
       continue;
     }
+    const catalogListing = withCustomAuthConfigs(
+      builtListing,
+      customAuthConfigsByToolkit.get(
+        composioToolkitForListing(builtListing).toLowerCase()
+      ) ?? []
+    );
     const existing = existingByToolkit.get(catalogListing.provider);
     if (existing && composioListingRole(existing) !== "composio-catalog-connector" && !composioListingHasCatalog(existing)) {
       continue;
@@ -106634,7 +106929,7 @@ async function hydrateComposioCatalogConnector(input2) {
     env: input2.env,
     fetchImpl: input2.fetchImpl
   });
-  const existingComposio = recordValue9(input2.listing.manifest.composio) ?? {};
+  const existingComposio = recordValue10(input2.listing.manifest.composio) ?? {};
   const hydrated = buildComposioListingFromTools({
     toolkit: input2.listing.provider,
     upstreamToolkit: input2.toolkit,
@@ -106643,7 +106938,7 @@ async function hydrateComposioCatalogConnector(input2) {
     description: input2.listing.description,
     tools: fetched.items
   });
-  const hydratedComposio = recordValue9(hydrated.manifest.composio) ?? {};
+  const hydratedComposio = recordValue10(hydrated.manifest.composio) ?? {};
   const listing = {
     ...hydrated,
     manifest: {
@@ -108872,7 +109167,7 @@ async function buildMarketplaceApp(options) {
       return { error: { ok: false, error: "marketplace_operator_required" } };
     }
     for (const value of [request.query, request.body]) {
-      const supplied = recordValue9(value)?.workspaceSlug;
+      const supplied = recordValue10(value)?.workspaceSlug;
       if (supplied !== void 0 && supplied !== principal.organizationId) {
         reply.code(403);
         return { error: { ok: false, error: "workspace_mismatch" } };
@@ -109354,7 +109649,7 @@ async function buildMarketplaceApp(options) {
     const entry = listing ? companyBoxEntryForListing(companyBox, listing, approval.workspaceSlug) : null;
     const operation = entry?.kind === "openapi" ? entry.byKey.get(approval.actionKey) : null;
     const tool = listing && !operation ? customMcpToolForAction(listing, approval.actionKey) : null;
-    const composioTool = listing?.executionOwner === "composio" ? recordValue9(listing.manifest.composio)?.tools?.find(
+    const composioTool = listing?.executionOwner === "composio" ? recordValue10(listing.manifest.composio)?.tools?.find(
       (candidate) => candidate.action === approval.actionKey
     ) : void 0;
     return {
@@ -109527,7 +109822,7 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
       })
     );
     const search = query.search.toLocaleLowerCase();
-    const filtered = summaries.filter((summary) => {
+    const matching = summaries.filter((summary) => {
       if (query.source !== "all" && summary.source !== query.source) {
         return false;
       }
@@ -109544,6 +109839,10 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
         summary.pluginId
       ].join(" ").toLocaleLowerCase().includes(search);
     });
+    const connectModeCounts = countConnectModes(
+      matching.map((summary) => summary.connectMode)
+    );
+    const filtered = query.connectMode === "all" ? matching : matching.filter((summary) => summary.connectMode === query.connectMode);
     const connections = summaries.filter((summary) => summary.connection !== null).map((summary) => ({
       pluginId: summary.pluginId,
       displayName: summary.displayName,
@@ -109560,6 +109859,7 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
       limit: query.limit,
       hasMore: query.offset + query.limit < filtered.length,
       sources,
+      connectModeCounts,
       connections,
       items: filtered.slice(query.offset, query.offset + query.limit)
     };
@@ -109907,18 +110207,32 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
             detail: error62 instanceof Error ? error62.message : String(error62)
           };
         }
-        const auth = await createComposioAuthLink({
-          toolkit,
-          state,
-          callbackUrl,
-          env: providerEnvironment(),
-          fetchImpl: options.providerFetch,
-          authConfigId: input2.authConfigId,
-          userId: input2.userId,
-          alias: input2.alias ?? `${input2.workspaceSlug}-${toolkit}`,
-          connectionData: input2.connectionData,
-          ...composioAuthMetadataForListing(listing)
-        });
+        let auth;
+        try {
+          auth = await createComposioAuthLink({
+            toolkit,
+            state,
+            callbackUrl,
+            env: providerEnvironment(),
+            fetchImpl: options.providerFetch,
+            authConfigId: input2.authConfigId,
+            userId: input2.userId,
+            alias: input2.alias ?? `${input2.workspaceSlug}-${toolkit}`,
+            connectionData: input2.connectionData,
+            ...composioAuthMetadataForListing(listing)
+          });
+        } catch (error62) {
+          if (error62 instanceof ComposioAuthConfigError) {
+            reply.code(error62.statusCode);
+            return {
+              ok: false,
+              traceId,
+              error: error62.code,
+              detail: error62.message
+            };
+          }
+          throw error62;
+        }
         if (auth.redirectUrl || auth.connectedAccountId) {
           enableComposioConnector({
             store: options.store,
@@ -111902,16 +112216,16 @@ data: ${JSON.stringify({ ok: true, time: (/* @__PURE__ */ new Date()).toISOStrin
         requesterMiniappId: input2.requesterMiniappId,
         actionKeys: input2.actionKeys,
         metadata: input2.metadata,
-        ...recordValue9(input2.metadata.crossApp) ? {
-          crossApp: recordValue9(input2.metadata.crossApp),
+        ...recordValue10(input2.metadata.crossApp) ? {
+          crossApp: recordValue10(input2.metadata.crossApp),
           contractVersion: stringValue5(
-            recordValue9(input2.metadata.crossApp)?.contractVersion
+            recordValue10(input2.metadata.crossApp)?.contractVersion
           ),
           sourceMiniappId: stringValue5(
-            recordValue9(input2.metadata.crossApp)?.sourceMiniappId
+            recordValue10(input2.metadata.crossApp)?.sourceMiniappId
           ),
           idempotencyKey: stringValue5(
-            recordValue9(input2.metadata.crossApp)?.idempotencyKey
+            recordValue10(input2.metadata.crossApp)?.idempotencyKey
           )
         } : {},
         traceId
