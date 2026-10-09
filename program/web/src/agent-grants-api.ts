@@ -5,6 +5,7 @@ import type {
   AgentGrantRedeemResponse,
   AgentGrantSelection,
   AgentGrantsResponse,
+  ChannelGrantSelection,
 } from "./types";
 
 export const getAgentGrants = (workspaceSlug: string) => {
@@ -20,7 +21,8 @@ export const getAgentActionCatalog = (workspaceSlug: string) => {
 export const requestAgentGrant = (input: {
   deploymentId: string;
   agentId: string;
-  selection: AgentGrantSelection;
+  /** A connector action, or a channel class selection ("Grant to agent" from Channels). */
+  selection: AgentGrantSelection | ChannelGrantSelection;
   idempotencyKey: string;
 }) =>
   api<AgentGrantRequestResponse>("/api/marketplace/v1/agent/grants/request", {

@@ -1,4 +1,4 @@
-import type { CompanyBoxApproval, CompanyBoxApprovalsResponse, CompanyBoxResponse, CompanyBoxResult, CompanyBoxSetup, AuditResponse, CardDetailResponse, CardsResponse, CardsSummaryResponse, CustomConnector, CustomConnectorCreate, CustomConnectorPatch, CustomConnectorsResponse, FrontendBootstrap, OperatorSession, ProviderSettings, RuntimeHealth } from "./types";
+import type { ChannelPayloadView, CompanyBoxApproval, CompanyBoxApprovalsResponse, CompanyBoxResponse, CompanyBoxResult, CompanyBoxSetup, AuditResponse, CardDetailResponse, CardsResponse, CardsSummaryResponse, CustomConnector, CustomConnectorCreate, CustomConnectorPatch, CustomConnectorsResponse, FrontendBootstrap, OperatorSession, ProviderSettings, RuntimeHealth } from "./types";
 
 let operatorCsrfToken: string | null = null;
 
@@ -218,8 +218,8 @@ export const getCompanyBoxApprovals = (state?: CompanyBoxApproval["state"]) =>
   api<CompanyBoxApprovalsResponse>(`${companyBoxRoute()}/approvals${state ? `?state=${state}` : ""}`);
 
 export const decideCompanyBoxApproval = (approvalId: string, decision: "approve" | "deny") =>
-  api<{ ok: boolean; approval: CompanyBoxApproval }>(`${companyBoxRoute()}/approvals/${encodeURIComponent(approvalId)}/${decision}`, { method: "POST" });
+  api<{ ok: boolean; approval: CompanyBoxApproval; channel?: { scheduled?: boolean; receipt?: { status?: string } } & Record<string, unknown> }>(`${companyBoxRoute()}/approvals/${encodeURIComponent(approvalId)}/${decision}`, { method: "POST" });
 
-/** Owner-only: the full stored arguments of a held call. */
+/** Owner-only: the full stored arguments of a held call (a channel hold adds the exact payload view). */
 export const getCompanyBoxApproval = (approvalId: string) =>
-  api<{ ok: true; approval: CompanyBoxApproval; arguments: Record<string, unknown> }>(`${companyBoxRoute()}/approvals/${encodeURIComponent(approvalId)}`);
+  api<{ ok: true; approval: CompanyBoxApproval; arguments: Record<string, unknown>; payloadView?: ChannelPayloadView | null }>(`${companyBoxRoute()}/approvals/${encodeURIComponent(approvalId)}`);
