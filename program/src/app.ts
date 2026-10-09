@@ -4345,6 +4345,11 @@ export async function buildMarketplaceApp(
       body: async () => request.body,
     });
     if (!response) {
+      // The kit serves GET and POST only (a HEAD falls through here).
+      if (request.method !== "POST") {
+        reply.code(405).header("allow", "GET, POST");
+        return { ok: false, error: "method_not_allowed" };
+      }
       // POST without a configured Portal issuer and workspace: authenticate, then refuse to sign.
       if (!claimAuthorization(request, reply)) return reply;
       reply.code(503);

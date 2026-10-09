@@ -112,6 +112,7 @@ describe("manifest claim (tealbrick.miniapp/v1) on /.well-known/tealbrick/claim"
         expect(response.body).not.toContain("proof");
       }
     }
+    expect((await app.app.inject({ method: "HEAD", url: MANIFEST_CLAIM_PATH, headers: coreHeaders })).statusCode).toBe(405);
     // Browser sessions, cookies and origins are refused even with a valid credential.
     for (const extra of [{ origin: issuer }, { cookie: "dg_marketplace_operator_session=x" }]) {
       for (const method of ["GET", "POST"] as const) {
