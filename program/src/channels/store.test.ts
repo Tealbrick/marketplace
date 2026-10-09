@@ -812,3 +812,46 @@ describe("reserveHeldPost (review condition 8b(iv))", () => {
     expect(CHANNEL_POST_TRANSITIONS.held).not.toContain("sending");
   });
 });
+
+describe("reservation live check (review M2)", () => {
+  it("refuses a paused channel, an inactive consent row and an inactive grant inside the transaction", async () => {
+    const { store, channels, channel } = await fixture();
+    const base = {
+      workspaceSlug: WS,
+      channelId: channel.id,
+      agentId: "agent-1",
+      consentId: "consent-row-x",
+      mode: "immediate" as const,
+      text: "hello",
+      digest: "a".repeat(64),
+      ceiling: CEILING,
+      now: at(0),
+      reserver: "r",
+    };
+    expect(channels.reservePost({ ...base, idempotencyKey: "live-key-0001", live: { consentRowId: "missing-consent", grantId: null } })).toEqual({
+      ok: false,
+      error: "consent_inactive",
+    });
+    const grant = channels.createStandingGrant({
+      workspaceSlug: WS,
+      channelId: channel.id,
+      agentId: "agent-1",
+      consentId: "consent-row-x",
+      purpose: "p",
+      caps: { perDay: 6, minIntervalSeconds: 0, onePerPhase: true },
+      scope: { files: false, immediate: true, scheduled: true },
+      expires: at(60 * 24),
+      now: at(0),
+    });
+    expect(
+      channels.reservePost({ ...base, idempotencyKey: "live-key-0002", grant: { id: grant.id, caps: grant.caps }, live: { consentRowId: null, grantId: grant.id } }),
+    ).toEqual({ ok: false, error: "grant_inactive" });
+    channels.setChannelStatus(WS, channel.id, "paused", at(0));
+    expect(channels.reservePost({ ...base, idempotencyKey: "live-key-0003", live: { consentRowId: null, grantId: null } })).toEqual({
+      ok: false,
+      error: "channel_paused",
+    });
+    expect(channels.listPosts(WS)).toEqual([]);
+    void store;
+  });
+});

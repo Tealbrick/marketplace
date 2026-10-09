@@ -302,6 +302,7 @@ export function buildChannelPayload(input: {
     channelId: channel.id,
     provider: channel.provider,
     destination: channel.destination.externalId,
+    ...(channel.destination.parentId ? { destinationParentId: channel.destination.parentId } : {}),
     op: input.op,
     text: applied.text,
     attachments: applied.attachments.map((attachment) => ({
@@ -438,4 +439,64 @@ export function channelClassSelection(channel: Pick<ChannelRecord, "provider" | 
 /** Plain text, at most 80 characters (Portal sanitises the same way and never stores it). */
 export function sanitizeActionGroupLabel(value: string): string {
   return value.replace(/[\p{Cc}​-‏‪-‮⁦-⁩﻿]/gu, " ").replace(/\s+/gu, " ").trim().slice(0, 80);
+}
+
+// ---------------------------------------------------------------------------
+// Upload content checks (review L8)
+// ---------------------------------------------------------------------------
+
+const startsWith = (bytes: Uint8Array, signature: readonly number[], offset = 0) =>
+  bytes.byteLength >= offset + signature.length && signature.every((value, index) => bytes[offset + index] === value);
+const ascii = (text: string) => [...text].map((char) => char.charCodeAt(0));
+const hasFtyp = (bytes: Uint8Array) => startsWith(bytes, ascii("ftyp"), 4);
+
+/**
+ * Declared content type → magic-byte check and the file name extensions that
+ * may carry it. A type not listed here cannot be verified and is refused;
+ * `application/octet-stream` is handled by the caller (never inferred).
+ */
+export const UPLOAD_TYPE_RULES: Readonly<Record<string, { extensions: readonly string[]; matches: (bytes: Uint8Array) => boolean }>> = {
+  "image/png": { extensions: ["png"], matches: (b) => startsWith(b, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]) },
+  "image/jpeg": { extensions: ["jpg", "jpeg"], matches: (b) => startsWith(b, [0xff, 0xd8, 0xff]) },
+  "image/webp": { extensions: ["webp"], matches: (b) => startsWith(b, ascii("RIFF")) && startsWith(b, ascii("WEBP"), 8) },
+  "image/gif": { extensions: ["gif"], matches: (b) => startsWith(b, ascii("GIF87a")) || startsWith(b, ascii("GIF89a")) },
+  "application/pdf": { extensions: ["pdf"], matches: (b) => startsWith(b, ascii("%PDF-")) },
+  "audio/ogg": { extensions: ["ogg", "oga", "opus"], matches: (b) => startsWith(b, ascii("OggS")) },
+  "audio/mpeg": {
+    extensions: ["mp3"],
+    matches: (b) => startsWith(b, ascii("ID3")) || (b.byteLength >= 2 && b[0] === 0xff && (b[1]! & 0xe0) === 0xe0),
+  },
+  "audio/mp4": { extensions: ["m4a", "mp4"], matches: hasFtyp },
+  "video/mp4": { extensions: ["mp4", "m4v"], matches: hasFtyp },
+  "application/zip": { extensions: ["zip"], matches: (b) => startsWith(b, [0x50, 0x4b, 0x03, 0x04]) || startsWith(b, [0x50, 0x4b, 0x05, 0x06]) },
+  "text/plain": {
+    extensions: ["txt"],
+    matches: (b) => {
+      if (b.includes(0)) return false;
+      try {
+        new TextDecoder("utf-8", { fatal: true }).decode(b);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+  },
+};
+
+export type UploadTypeCheck = { ok: true } | { ok: false; status: number; error: string };
+
+/** The bytes must be what the declared type says, and the name's extension must belong to that type. */
+export function checkUploadType(input: { bytes: Uint8Array; contentType: string; name: string; octetStreamDeclared: boolean }): UploadTypeCheck {
+  if (input.contentType === "application/octet-stream") {
+    // Opaque bytes are never inferred to be anything else; allowed only where a provider declares them.
+    return input.octetStreamDeclared ? { ok: true } : { ok: false, status: 422, error: "channel_attachment_type_mismatch" };
+  }
+  const rule = UPLOAD_TYPE_RULES[input.contentType];
+  if (!rule) return { ok: false, status: 415, error: "channel_attachment_type_invalid" };
+  const dot = input.name.lastIndexOf(".");
+  const extension = dot > 0 ? input.name.slice(dot + 1).toLowerCase() : "";
+  if (!rule.extensions.includes(extension) || !rule.matches(input.bytes)) {
+    return { ok: false, status: 422, error: "channel_attachment_type_mismatch" };
+  }
+  return { ok: true };
 }

@@ -608,6 +608,19 @@ export type ReservationGrant = {
   caps: GrantCaps;
 };
 
+/**
+ * Authority re-checked inside the reservation transaction (review M2): the
+ * channel is `active`, the consent row is `active` (when given) and the
+ * standing grant row is `active` and unexpired (when given). A pause or a
+ * revoke during the send-time awaits therefore stops the send.
+ */
+export type ReservationLiveCheck = {
+  consentRowId: string | null;
+  grantId: string | null;
+};
+
+export type ReservationAuthorityError = "channel_paused" | "channel_not_active" | "consent_inactive" | "grant_inactive";
+
 export type ReservePostInput = ChannelPostFields & {
   /** The standing grant that authorises this post, if any. */
   grant?: ReservationGrant | null;
@@ -618,13 +631,14 @@ export type ReservePostInput = ChannelPostFields & {
   reserver: string;
   /** Send lease length; default `DEFAULT_SEND_LEASE_MS`. */
   leaseMs?: number;
+  live?: ReservationLiveCheck;
 };
 
 export type ReservePostResult =
   | { ok: true; post: ChannelPostRecord; replayed: boolean }
   | {
       ok: false;
-      error: ChannelCapError | "channel_not_found" | "channel_idempotency_conflict";
+      error: ChannelCapError | ReservationAuthorityError | "channel_not_found" | "channel_idempotency_conflict";
       retryAfterSeconds?: number;
     };
 
@@ -638,11 +652,12 @@ export type ReserveScheduledPostInput = {
   now: Date | string;
   /** Fresh send lease from `now`; default `DEFAULT_SEND_LEASE_MS`. */
   leaseMs?: number;
+  live?: ReservationLiveCheck;
 };
 
 export type ReserveScheduledPostResult =
   | { ok: true; post: ChannelPostRecord }
-  | { ok: false; error: ChannelCapError | "channel_post_not_claimed"; retryAfterSeconds?: number };
+  | { ok: false; error: ChannelCapError | ReservationAuthorityError | "channel_post_not_claimed"; retryAfterSeconds?: number };
 
 export type ReserveHeldPostInput = {
   workspaceSlug: string;
@@ -654,13 +669,14 @@ export type ReserveHeldPostInput = {
   /** Holder of the send lease (`claimed_by`). */
   reserver: string;
   leaseMs?: number;
+  live?: ReservationLiveCheck;
 };
 
 export type ReserveHeldPostResult =
   | { ok: true; post: ChannelPostRecord }
   | {
       ok: false;
-      error: ChannelCapError | "channel_post_not_held" | "channel_approval_invalid";
+      error: ChannelCapError | ReservationAuthorityError | "channel_post_not_held" | "channel_approval_invalid";
       retryAfterSeconds?: number;
     };
 
@@ -1251,6 +1267,8 @@ export class ChannelStore {
           ? { ok: false, error: "channel_idempotency_conflict" }
           : { ok: true, post: existing, replayed: true };
       }
+      const unauthorized = this.liveRefusal(input.workspaceSlug, input.channelId, input.live, now);
+      if (unauthorized) return unauthorized;
       const refusal = this.checkCaps({
         workspaceSlug: input.workspaceSlug,
         channelId: input.channelId,
@@ -1282,6 +1300,8 @@ export class ChannelStore {
       if (input.grant && post.authority !== `grant:${input.grant.id}`) {
         throw new ChannelStoreError("channel_authority_mismatch", "Authority does not name the reserving grant.");
       }
+      const unauthorized = this.liveRefusal(post.workspaceSlug, post.channelId, input.live, now);
+      if (unauthorized) return unauthorized;
       const refusal = this.checkCaps({
         workspaceSlug: post.workspaceSlug,
         channelId: post.channelId,
@@ -1339,6 +1359,8 @@ export class ChannelStore {
         approval.decided_at <= approval.expires_at &&
         (post.mode === "scheduled" || approval.expires_at > now);
       if (!valid) return { ok: false, error: "channel_approval_invalid" };
+      const unauthorized = this.liveRefusal(post.workspaceSlug, post.channelId, input.live, now);
+      if (unauthorized) return unauthorized;
       const refusal = this.checkCaps({
         workspaceSlug: post.workspaceSlug,
         channelId: post.channelId,
@@ -1389,6 +1411,59 @@ export class ChannelStore {
       )
       .get(workspaceSlug, channelId, iso(since), authority ?? null, authority ?? null) as { count: number };
     return Number(row.count);
+  }
+
+  /** Review M2: call inside the reservation transaction. */
+  private liveRefusal(workspaceSlug: string, channelId: string, live: ReservationLiveCheck | undefined, now: string): { ok: false; error: ReservationAuthorityError } | null {
+    if (!live) return null;
+    const channel = this.db.prepare("SELECT status FROM channel WHERE workspace_slug = ? AND id = ?").get(workspaceSlug, channelId) as
+      | { status: string }
+      | undefined;
+    if (!channel || channel.status !== "active") {
+      return { ok: false, error: channel?.status === "paused" ? "channel_paused" : "channel_not_active" };
+    }
+    if (live.consentRowId !== null) {
+      const consent = this.db.prepare("SELECT state FROM marketplace_agent_consent WHERE id = ?").get(live.consentRowId) as
+        | { state: string }
+        | undefined;
+      if (consent?.state !== "active") return { ok: false, error: "consent_inactive" };
+    }
+    if (live.grantId !== null) {
+      const grant = this.db
+        .prepare("SELECT status, expires, not_before, consent_id FROM channel_standing_grant WHERE workspace_slug = ? AND id = ? AND channel_id = ?")
+        .get(workspaceSlug, live.grantId, channelId) as { status: string; expires: string; not_before: string | null; consent_id: string } | undefined;
+      if (
+        !grant ||
+        grant.status !== "active" ||
+        grant.expires <= now ||
+        (grant.not_before !== null && grant.not_before > now) ||
+        (live.consentRowId !== null && grant.consent_id !== live.consentRowId)
+      ) {
+        return { ok: false, error: "grant_inactive" };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Owner denies an approved (`executing`) approval while its post is still
+   * `held` (review M1). One transaction: the post must still be held (no send
+   * started), then the approval moves `executing` → `denied`. Returns false
+   * when a send already took the post.
+   */
+  denyApprovedHold(input: { workspaceSlug: string; approvalId: string; postId: string; decidedBy: string; now: Date | string }): boolean {
+    const now = iso(input.now);
+    return this.immediate(() => {
+      const post = this.getPost(input.workspaceSlug, input.postId);
+      if (!post || post.status !== "held") return false;
+      const result = this.db
+        .prepare(
+          `UPDATE company_box_approval SET state = 'denied', decided_by = ?, decided_at = ?, updated_at = ?
+          WHERE id = ? AND workspace_slug = ? AND state = 'executing' AND fingerprint = ?`,
+        )
+        .run(input.decidedBy, now, now, input.approvalId, input.workspaceSlug, post.digest);
+      return Number(result.changes) === 1;
+    });
   }
 
   private checkCaps(input: {

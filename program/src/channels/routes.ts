@@ -12,6 +12,7 @@ import {
   CHANNEL_PROVIDER_IDS,
   channelClassSelection,
   channelPluginId,
+  checkUploadType,
   classSelectionOfConsent,
   effectiveCapabilities,
   isChannelProviderId,
@@ -112,6 +113,8 @@ export type ChannelRouteDeps = {
   store: SqliteMarketplaceStore;
   service: ChannelService;
   organizationId: string;
+  /** False in inert mode: every channel op except the owner browse answers 409 channels_not_configured. */
+  configured: boolean;
   now: () => Date;
   ready: Promise<void>;
   portal: { issuer: string; deploymentId: string | null };
@@ -275,13 +278,24 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
     };
   };
 
+  const notConfigured = new WeakSet<FastifyRequest>();
+  const NOT_CONFIGURED = { ok: false, schema: 1, error: "channels_not_configured" } as const;
   const agentPreamble = async (request: FastifyRequest, reply: FastifyReply, operationId: string) => {
     reply.header("cache-control", "no-store");
     const caller = deps.agentGrant(request, reply, operationId);
     if (!caller) return null;
+    if (!deps.configured) {
+      notConfigured.add(request);
+      reply.code(409);
+      return null;
+    }
     await deps.ready;
     return caller;
   };
+  const agentDenied = (request: FastifyRequest) =>
+    notConfigured.has(request) ? NOT_CONFIGURED : { ok: false, error: "agent_grant_required" };
+  const ownerDenied = (request: FastifyRequest) =>
+    notConfigured.has(request) ? NOT_CONFIGURED : { ok: false, error: "marketplace_operator_required" };
 
   const postBody = (data: z.infer<typeof PostBodySchema>, sendAt: string | null): ChannelPostBody => ({
     text: data.text,
@@ -298,7 +312,7 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
 
   app.get(AGENT_PREFIX, async (request, reply) => {
     const caller = await agentPreamble(request, reply, CHANNEL_AGENT_OPERATION.list);
-    if (!caller) return { ok: false, error: "agent_grant_required" };
+    if (!caller) return agentDenied(request);
     const seen = new Set<string>();
     const items = [];
     for (const channel of channels.listChannels(org)) {
@@ -313,7 +327,7 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
 
   app.get(`${AGENT_PREFIX}/receipts`, async (request, reply) => {
     const caller = await agentPreamble(request, reply, CHANNEL_AGENT_OPERATION.receipts);
-    if (!caller) return { ok: false, error: "agent_grant_required" };
+    if (!caller) return agentDenied(request);
     const query = z
       .object({ channelId: z.string().max(100).optional(), limit: z.coerce.number().int().min(1).max(500).default(100) })
       .parse(request.query);
@@ -326,13 +340,13 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
 
   app.get(`${AGENT_PREFIX}/grants`, async (request, reply) => {
     const caller = await agentPreamble(request, reply, CHANNEL_AGENT_OPERATION.grantsList);
-    if (!caller) return { ok: false, error: "agent_grant_required" };
+    if (!caller) return agentDenied(request);
     return { ok: true, schema: 1, grants: channels.listStandingGrants(org, { agentId: caller.agentId }).map(grantView) };
   });
 
   app.get(`${AGENT_PREFIX}/:channelId`, async (request, reply) => {
     const caller = await agentPreamble(request, reply, CHANNEL_AGENT_OPERATION.get);
-    if (!caller) return { ok: false, error: "agent_grant_required" };
+    if (!caller) return agentDenied(request);
     const { channelId } = request.params as { channelId: string };
     const found = consentedChannel(caller, channelId);
     if (!found) return fail(reply, 404, "channel_not_found");
@@ -344,7 +358,7 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
     scope.addContentTypeParser("*", { parseAs: "buffer", bodyLimit: CHANNEL_UPLOAD_MAX_BYTES }, (_request, body, done) => done(null, body));
     scope.post(`${AGENT_PREFIX}/attachments`, { bodyLimit: CHANNEL_UPLOAD_MAX_BYTES }, async (request, reply) => {
       const caller = await agentPreamble(request, reply, CHANNEL_AGENT_OPERATION.upload);
-      if (!caller) return { ok: false, error: "agent_grant_required" };
+      if (!caller) return agentDenied(request);
       const key = header(request, "idempotency-key");
       if (!key || !AGENT_IDEMPOTENCY.test(key)) return fail(reply, 400, "idempotency_key_required");
       const contentType = (header(request, "content-type") ?? "").split(";")[0]!.trim().toLowerCase();
@@ -367,6 +381,16 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
         })),
       );
       if (bytes.byteLength > limit) return fail(reply, 413, "channel_attachment_too_large", { maxBytes: limit });
+      const typeCheck = checkUploadType({
+        bytes,
+        contentType,
+        name,
+        octetStreamDeclared: outward.some((channel) => {
+          const caps = service.capabilitiesFor(channel.provider);
+          return Boolean(caps && caps.file && caps.file.types.includes("application/octet-stream"));
+        }),
+      });
+      if (!typeCheck.ok) return fail(reply, typeCheck.status, typeCheck.error);
       const sha256 = createHash("sha256").update(bytes).digest("hex");
       return idempotent(reply, { scope: `channel-upload:${caller.agentId}`, key, request: { sha256, contentType, name } }, () => {
         writeAttachmentBytes(service.attachmentsDir, bytes, sha256);
@@ -400,7 +424,7 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
     const traceId = deps.traceIdFrom(request);
     reply.header("content-security-policy", "default-src 'none'; sandbox");
     const caller = await agentPreamble(request, reply, operationId);
-    if (!caller) return { ok: false, error: "agent_grant_required" };
+    if (!caller) return agentDenied(request);
     const key = header(request, "idempotency-key");
     if (!key || !AGENT_IDEMPOTENCY.test(key)) return fail(reply, 400, "idempotency_key_required");
     const parsed = (mode === "schedule" ? ScheduleBodySchema : PostBodySchema).safeParse(request.body);
@@ -441,7 +465,7 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
 
   app.post(`${AGENT_PREFIX}/:channelId/scheduled/:postId/cancel`, async (request, reply) => {
     const caller = await agentPreamble(request, reply, CHANNEL_AGENT_OPERATION.cancel);
-    if (!caller) return { ok: false, error: "agent_grant_required" };
+    if (!caller) return agentDenied(request);
     const { channelId, postId } = request.params as { channelId: string; postId: string };
     const found = consentedChannel(caller, channelId);
     const post = found ? channels.getPost(org, postId) : null;
@@ -459,6 +483,9 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
     const approval = post.status === "held" ? service.approvalForPost(post) : null;
     if (approval?.state === "pending") {
       store.decideCompanyBoxApproval({ id: approval.id, workspaceSlug: org, decision: "deny", decidedBy: `agent:${caller.agentId}:cancelled` });
+    } else if (approval?.state === "executing") {
+      // L4: an approved but unsent hold is cancelled with its approval.
+      service.finishApproval(approval.id, null, "channel_post_cancelled");
     }
     const receipt = channels.getReceiptByPost(org, post.id);
     return { ok: true, schema: 1, ...(receipt ? { receipt: receiptView(receipt) } : {}) };
@@ -466,7 +493,7 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
 
   app.post(`${AGENT_PREFIX}/:channelId/grants`, async (request, reply) => {
     const caller = await agentPreamble(request, reply, CHANNEL_AGENT_OPERATION.grantsPropose);
-    if (!caller) return { ok: false, error: "agent_grant_required" };
+    if (!caller) return agentDenied(request);
     const key = header(request, "idempotency-key");
     if (!key || !AGENT_IDEMPOTENCY.test(key)) return fail(reply, 400, "idempotency_key_required");
     const parsed = GrantProposalSchema.safeParse(request.body);
@@ -490,7 +517,7 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
 
   app.post(`${AGENT_PREFIX}/grants/:grantId/narrow`, async (request, reply) => {
     const caller = await agentPreamble(request, reply, CHANNEL_AGENT_OPERATION.grantsNarrow);
-    if (!caller) return { ok: false, error: "agent_grant_required" };
+    if (!caller) return agentDenied(request);
     const key = header(request, "idempotency-key");
     if (!key || !AGENT_IDEMPOTENCY.test(key)) return fail(reply, 400, "idempotency_key_required");
     const parsed = GrantTermsSchema.safeParse(request.body);
@@ -509,7 +536,7 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
 
   app.post(`${AGENT_PREFIX}/grants/:grantId/withdraw`, async (request, reply) => {
     const caller = await agentPreamble(request, reply, CHANNEL_AGENT_OPERATION.grantsWithdraw);
-    if (!caller) return { ok: false, error: "agent_grant_required" };
+    if (!caller) return agentDenied(request);
     const { grantId } = request.params as { grantId: string };
     const grant = ownGrant(caller, grantId);
     if (!grant) return fail(reply, 404, "grant_not_found");
@@ -520,10 +547,15 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
 
   // ----- owner routes (§5.2, audience owner) --------------------------------------
 
-  const owner = async (request: FastifyRequest, reply: FastifyReply) => {
+  const owner = async (request: FastifyRequest, reply: FastifyReply, allowUnconfigured = false) => {
     reply.header("cache-control", "no-store");
     const principal = deps.requireOperator(request, reply);
     if (!principal) return null;
+    if (!deps.configured && !allowUnconfigured) {
+      notConfigured.add(request);
+      reply.code(409);
+      return null;
+    }
     const supplied = [request.query, request.body]
       .map((value) => (value && typeof value === "object" && !Buffer.isBuffer(value) ? (value as Record<string, unknown>).workspaceSlug : undefined))
       .find((value) => value !== undefined);
@@ -551,8 +583,10 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
   };
 
   app.get(OWNER_PREFIX, async (request, reply) => {
-    const principal = await owner(request, reply);
-    if (!principal) return { ok: false, error: "marketplace_operator_required" };
+    const principal = await owner(request, reply, true);
+    if (!principal) return ownerDenied(request);
+    const providers = Object.entries(service.readinessView()).map(([id, readiness]) => ({ id, readiness }));
+    if (!deps.configured) return { ok: true, schema: 1, configured: false, providers };
     const connections = Object.fromEntries(
       CHANNEL_PROVIDER_IDS.map((provider) => {
         const connection = store.getConnection(org, channelPluginId(provider));
@@ -573,6 +607,8 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
     return {
       ok: true,
       schema: 1,
+      configured: true,
+      providers,
       readiness: service.readinessView(),
       connections,
       channels: channels.listChannels(org).map(ownerChannelView),
@@ -590,7 +626,7 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
 
   app.get(`${OWNER_PREFIX}/discover`, async (request, reply) => {
     const principal = await owner(request, reply);
-    if (!principal) return { ok: false, error: "marketplace_operator_required" };
+    if (!principal) return ownerDenied(request);
     const provider = (request.query as { provider?: unknown }).provider;
     if (!isChannelProviderId(provider)) return fail(reply, 400, "channel_provider_unknown");
     const result = await service.discover(provider);
@@ -605,7 +641,7 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
 
   app.post(OWNER_PREFIX, async (request, reply) => {
     const principal = await owner(request, reply);
-    if (!principal) return { ok: false, error: "marketplace_operator_required" };
+    if (!principal) return ownerDenied(request);
     const parsed = CreateChannelSchema.safeParse(request.body);
     if (!parsed.success) return fail(reply, 400, "validation_failed");
     const input = parsed.data;
@@ -665,7 +701,7 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
 
   app.patch(`${OWNER_PREFIX}/:channelId`, async (request, reply) => {
     const principal = await owner(request, reply);
-    if (!principal) return { ok: false, error: "marketplace_operator_required" };
+    if (!principal) return ownerDenied(request);
     const channel = ownedChannel(request);
     if (!channel) return fail(reply, 404, "channel_not_found");
     const parsed = UpdateChannelSchema.safeParse(request.body);
@@ -706,8 +742,15 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
         },
         input.expectRevision !== undefined ? { expectRevision: input.expectRevision } : {},
       );
-      // §4.4 rule 5: a lowered ceiling suspends the grants it no longer contains.
-      const suspended = service.grants.recheckChannel(updated);
+      // §4.4 rule 5: a lowered ceiling suspends the grants it no longer contains. L6: a new destination
+      // suspends every active grant and ends the channel's holds (their digests no longer match).
+      const destinationChanged =
+        updated.destination.externalId !== channel.destination.externalId ||
+        (updated.destination.parentId ?? null) !== (channel.destination.parentId ?? null);
+      const suspended = [
+        ...(destinationChanged ? service.suspendForDestinationChange(updated) : []),
+        ...service.grants.recheckChannel(updated),
+      ];
       store.recordAudit({
         workspaceSlug: org,
         pluginId: channelPluginId(updated.provider),
@@ -725,7 +768,7 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
   for (const [verb, status] of [["pause", "paused"], ["resume", "active"], ["archive", "archived"]] as const) {
     app.post(`${OWNER_PREFIX}/:channelId/${verb}`, async (request, reply) => {
       const principal = await owner(request, reply);
-      if (!principal) return { ok: false, error: "marketplace_operator_required" };
+      if (!principal) return ownerDenied(request);
       const channel = ownedChannel(request);
       if (!channel) return fail(reply, 404, "channel_not_found");
       if (channel.status === "archived") return fail(reply, 409, "channel_archived");
@@ -746,7 +789,7 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
 
   app.post(`${OWNER_PREFIX}/:channelId/test`, async (request, reply) => {
     const principal = await owner(request, reply);
-    if (!principal) return { ok: false, error: "marketplace_operator_required" };
+    if (!principal) return ownerDenied(request);
     const channel = ownedChannel(request);
     if (!channel) return fail(reply, 404, "channel_not_found");
     const key = header(request, "idempotency-key");
@@ -758,7 +801,7 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
 
   app.post(`${OWNER_PREFIX}/grants/:grantId/approve`, async (request, reply) => {
     const principal = await owner(request, reply);
-    if (!principal) return { ok: false, error: "marketplace_operator_required" };
+    if (!principal) return ownerDenied(request);
     const parsed = OwnerApproveSchema.safeParse(request.body ?? {});
     if (!parsed.success) return fail(reply, 400, "validation_failed");
     const { grantId } = request.params as { grantId: string };
@@ -774,7 +817,7 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
   for (const verb of ["decline", "revoke"] as const) {
     app.post(`${OWNER_PREFIX}/grants/:grantId/${verb}`, async (request, reply) => {
       const principal = await owner(request, reply);
-      if (!principal) return { ok: false, error: "marketplace_operator_required" };
+      if (!principal) return ownerDenied(request);
       const { grantId } = request.params as { grantId: string };
       const grant = channels.getStandingGrant(org, grantId);
       if (!grant) return fail(reply, 404, "grant_not_found");
@@ -785,7 +828,7 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
 
   app.post(`${OWNER_PREFIX}/posts/:postId/resolve`, async (request, reply) => {
     const principal = await owner(request, reply);
-    if (!principal) return { ok: false, error: "marketplace_operator_required" };
+    if (!principal) return ownerDenied(request);
     const parsed = z.strictObject({ status: z.enum(["sent", "failed"]), workspaceSlug: z.string().optional() }).safeParse(request.body);
     if (!parsed.success) return fail(reply, 400, "validation_failed");
     const { postId } = request.params as { postId: string };
@@ -797,7 +840,7 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
 
   app.get(`${OWNER_PREFIX}/receipts/export`, async (request, reply) => {
     const principal = await owner(request, reply);
-    if (!principal) return { ok: false, error: "marketplace_operator_required" };
+    if (!principal) return ownerDenied(request);
     const query = z
       .object({
         channelId: z.string().max(100).optional(),
@@ -820,7 +863,7 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
 
   app.post(`${OWNER_PREFIX}/receipts/purge`, async (request, reply) => {
     const principal = await owner(request, reply);
-    if (!principal) return { ok: false, error: "marketplace_operator_required" };
+    if (!principal) return ownerDenied(request);
     const parsed = z
       .strictObject({ olderThanDays: z.number().int().min(0).max(3650).default(90), workspaceSlug: z.string().optional() })
       .safeParse(request.body ?? {});

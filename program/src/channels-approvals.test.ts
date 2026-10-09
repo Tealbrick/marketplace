@@ -37,8 +37,10 @@ function fakeVerifier() {
   return { verifier, calls };
 }
 
-async function heldSetup(verifier?: OwnerApprovalVerifier) {
-  const f = await channelFixture(verifier ? { verifier } : {});
+const PINS = { ownerUserId: "owner-1", ownerPubkey: "f".repeat(64) };
+
+async function heldSetup(verifier?: OwnerApprovalVerifier, pins: { ownerUserId?: string; ownerPubkey?: string } | null = PINS) {
+  const f = await channelFixture({ ...(verifier ? { verifier } : {}), options: pins ? { ownerApprovalBinding: pins } : {} });
   fixtures.push(f);
   const channel = await f.createChannel({ slug: "community" });
   f.consentFor("agent-1", channel);

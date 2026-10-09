@@ -26,6 +26,7 @@ async function setup(input: Parameters<typeof channelFixture>[0] = {}) {
   return f;
 }
 
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01, 0x02]);
 let keyCounter = 0;
 const key = (prefix = "post") => `${prefix}-key-${String(++keyCounter).padStart(6, "0")}`;
 const text = (value = "Meetup tonight at 7") => ({ text: value });
@@ -237,7 +238,7 @@ describe("channels: hold and owner approval (§10 item 3)", () => {
     expect(f.telegram.sends).toHaveLength(0);
   });
 
-  it("keeps an approved post held, without spending the approval, while the ceiling is full", async () => {
+  it("ends an owner-approved held post as skipped when the ceiling refuses it (review M1); the agent must ask again", async () => {
     const f = await setup();
     const channel = await f.createChannel({
       slug: "community",
@@ -248,26 +249,49 @@ describe("channels: hold and owner approval (§10 item 3)", () => {
     expect(f.telegram.sends).toHaveLength(1);
     const held = await f.post(channel.id, text("Second today"), "agent-full-0001");
     const approved = await f.owner("POST", `/api/marketplace/company-box/approvals/${held.json().approvalId}/approve`, {});
-    expect(approved.json()).toMatchObject({ ok: false, approval: { state: "executing" }, channel: { error: "channel_cap_per_day" } });
-    expect(f.store.channels.getPost(TENANT, held.json().postId)!.status).toBe("held");
-    expect(f.telegram.sends).toHaveLength(1);
-    // Next day the agent's retry with the same key sends exactly the approved digest.
-    f.advance(86_400_000 + 1_000);
+    expect(approved.json()).toMatchObject({ ok: false, approval: { state: "failed", error: "channel_cap_per_day" }, channel: { error: "channel_cap_per_day" } });
+    expect(f.store.channels.getPost(TENANT, held.json().postId)).toMatchObject({ status: "skipped", reason: "channel_cap_per_day" });
+    expect(f.store.channels.getReceiptByPost(TENANT, held.json().postId)).toMatchObject({ status: "skipped" });
+    // Days later the same key does not send the old approval: the post ended.
+    f.advance(3 * 86_400_000);
     const retry = await f.post(channel.id, text("Second today"), "agent-full-0001");
-    expect(retry.statusCode, retry.body).toBe(200);
-    expect(retry.json()).toMatchObject({ receipt: { status: "sent", digest: held.json().digest } });
-    expect(f.telegram.sends).toHaveLength(2);
+    expect(retry.statusCode).toBe(409);
+    expect(retry.json()).toMatchObject({ error: "channel_post_skipped" });
+    const again = await f.post(channel.id, text("Second today"), "agent-full-0002");
+    expect(again.statusCode).toBe(202);
+    expect(again.json().approvalId).not.toBe(held.json().approvalId);
+    expect(f.telegram.sends).toHaveLength(1);
   });
 
-  it("refuses an approved post whose digest no longer matches the current destination (8b(i))", async () => {
+  it("ends holds and suspends grants when the owner moves the channel to another destination (review L6)", async () => {
     const f = await setup();
     const channel = await f.createChannel({ slug: "community" });
     f.consentFor("agent-1", channel);
-    const held = await f.post(channel.id, text("Bound to the destination"), "agent-dest-0001");
-    // The owner moves the channel to another discovered chat after the post was held.
+    const grant = await f.proposeAndApprove(channel.id);
+    const heldChannel = await f.createChannel({ slug: "held-only", externalId: "-1005678" });
+    f.consentFor("agent-1", heldChannel);
+    const held = await f.post(heldChannel.id, text("Bound to the destination"), "agent-dest-0001");
+    expect(held.statusCode).toBe(202);
     await f.owner("GET", "/api/marketplace/channels/discover?provider=telegram");
-    const moved = await f.owner("PATCH", `/api/marketplace/channels/${channel.id}`, { destination: { externalId: "-1005678" } });
+    const moved = await f.owner("PATCH", `/api/marketplace/channels/${heldChannel.id}`, { destination: { externalId: "-1001234" } });
     expect(moved.statusCode, moved.body).toBe(200);
+    expect(f.store.channels.getPost(TENANT, held.json().postId)).toMatchObject({ status: "skipped", reason: "destination_changed" });
+    expect(f.store.getCompanyBoxApproval(held.json().approvalId)!.state).toBe("denied");
+    const approved = await f.owner("POST", `/api/marketplace/company-box/approvals/${held.json().approvalId}/approve`, {});
+    expect(approved.statusCode).toBe(409);
+    const movedGrantChannel = await f.owner("PATCH", `/api/marketplace/channels/${channel.id}`, { destination: { externalId: "-1005678" } });
+    expect(movedGrantChannel.json().suspendedGrants.map((entry: { id: string }) => entry.id)).toEqual([grant.id]);
+    expect(f.store.channels.getStandingGrant(TENANT, grant.id)).toMatchObject({ status: "suspended", decidedReason: "destination_changed" });
+    expect(f.telegram.sends).toHaveLength(0);
+  });
+
+  it("refuses an approved post whose digest no longer matches the current destination at send time (8b(i))", async () => {
+    const f = await setup();
+    const channel = await f.createChannel({ slug: "community" });
+    f.consentFor("agent-1", channel);
+    const held = await f.post(channel.id, text("Bound to the destination"), "agent-dest-0002");
+    // A change that bypasses the route (e.g. a restored row): only the send-time recompute catches it.
+    f.store.channels.updateChannel(TENANT, channel.id, { destination: { type: "channel", externalId: "-1005678", title: "other" } });
     const approved = await f.owner("POST", `/api/marketplace/company-box/approvals/${held.json().approvalId}/approve`, {});
     expect(approved.json()).toMatchObject({ approval: { state: "failed", error: "channel_digest_mismatch" }, channel: { error: "channel_digest_mismatch" } });
     expect(f.store.channels.getPost(TENANT, held.json().postId)).toMatchObject({ status: "skipped", reason: "channel_digest_mismatch" });
@@ -282,7 +306,7 @@ describe("channels: hold and owner approval (§10 item 3)", () => {
       method: "POST",
       url: "/api/marketplace/v1/agent/channels/attachments?name=flyer.png",
       headers: { authorization: `Bearer ${GRANT_A}`, "idempotency-key": "upload-key-0001", "content-type": "image/png" },
-      payload: Buffer.from("png-bytes"),
+      payload: PNG,
     });
     expect(uploaded.statusCode, uploaded.body).toBe(201);
     const held = await f.post(channel.id, { text: "With flyer", attachments: [{ attachmentId: uploaded.json().attachmentId, kind: "image" }] }, "agent-file-0001");
@@ -304,7 +328,7 @@ describe("channels: hold and owner approval (§10 item 3)", () => {
       method: "POST",
       url: "/api/marketplace/v1/agent/channels/attachments?name=flyer.png",
       headers: { authorization: `Bearer ${GRANT_B}`, "idempotency-key": "upload-key-0002", "content-type": "image/png" },
-      payload: Buffer.from("agent-2 bytes"),
+      payload: Buffer.concat([PNG, Buffer.from("agent-2")]),
     });
     expect(uploaded.statusCode).toBe(201);
     const foreign = await f.post(channel.id, { text: "Steal", attachments: [{ attachmentId: uploaded.json().attachmentId, kind: "image" }] }, key());

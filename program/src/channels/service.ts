@@ -7,7 +7,7 @@ import type { GovernanceActor, GovernedActionRisk } from "../governance.js";
 import type { SqliteMarketplaceStore } from "../store.js";
 import type { CompanyBoxApproval, ConnectorCapability, ConnectorUsageLedgerEntry, MarketplaceAgentConsent } from "../types.js";
 import { createGrantService, type GrantService } from "./grants.js";
-import { confirmEventLive, eventHostAllowed, grantCoversPost, type PostCampaign } from "./policy.js";
+import { eventHostAllowed, grantCoversPost, type PostCampaign } from "./policy.js";
 import type { ChannelCapabilities, ChannelProvider, ChannelProviderId, DiscoverResult, SendResult } from "./providers/types.js";
 import {
   CHANNEL_PROVIDER_IDS,
@@ -289,6 +289,14 @@ export function createChannelService(deps: ChannelServiceDeps) {
     }
   };
 
+  /**
+   * Inert mode (reviewer condition): true when at least one provider has a credential (env or
+   * connector_secret). Read once at start, like the credentials themselves; no DB writes.
+   */
+  const configured = CHANNEL_PROVIDER_IDS.some(
+    (provider) => Boolean(deps.providers[provider]) && resolveChannelCredential({ provider, environment: deps.environment, readSecret }) !== null,
+  );
+
   const readinessView = () =>
     Object.fromEntries(
       CHANNEL_PROVIDER_IDS.filter((provider) => deps.providers[provider]).map((provider) => [provider, readiness.get(provider) ?? "credential_missing"]),
@@ -320,11 +328,38 @@ export function createChannelService(deps: ChannelServiceDeps) {
     if (refusal) return refusal;
     if (live && channel.policy.content.requireConfirmedEvent) {
       const ref = payload.campaign.ref;
-      const ok = Boolean(ref) && eventHostAllowed(ref, channel.policy.content.listingHosts) && (await confirmEventLive(ref!, { fetchImpl: deps.eventFetch }));
-      if (!ok) return { status: 422, error: "channel_event_unconfirmed", errors: ["channel_event_unconfirmed"] };
+      if (!ref || !eventHostAllowed(ref, channel.policy.content.listingHosts)) {
+        return { status: 422, error: "channel_event_unconfirmed", errors: ["channel_event_unconfirmed"] };
+      }
+      const live = await eventListingStatus(ref);
+      // A listing that answers 4xx is not confirmed (definitive); a 5xx or a network error is transient (L3).
+      if (live === "unreachable") return { status: 503, error: "channel_event_check_unavailable" };
+      if (live === "missing") return { status: 422, error: "channel_event_unconfirmed", errors: ["channel_event_unconfirmed"] };
     }
     return null;
   };
+
+  /** Live half of `requireConfirmedEvent`, telling a missing listing (4xx) from an unreachable one (5xx, error). */
+  const eventListingStatus = async (url: string): Promise<"confirmed" | "missing" | "unreachable"> => {
+    const fetchImpl = deps.eventFetch ?? fetch;
+    try {
+      if (new URL(url).protocol !== "https:") return "missing";
+      const response = await fetchImpl(url, {
+        method: "GET",
+        redirect: "follow",
+        signal: AbortSignal.timeout(10_000),
+        headers: { accept: "text/html,application/json;q=0.9,*/*;q=0.5" },
+      });
+      await response.body?.cancel().catch(() => undefined);
+      if (response.status >= 200 && response.status < 300) return "confirmed";
+      return response.status >= 400 && response.status < 500 ? "missing" : "unreachable";
+    } catch {
+      return "unreachable";
+    }
+  };
+
+  /** Send-time refusals that may clear by themselves: an approved hold keeps its approval for a retry (L3). */
+  const TRANSIENT_REFUSALS = new Set(["channel_event_check_unavailable", "channel_credential_unavailable", "channel_connection_unavailable"]);
 
   const refusalReply = (refusal: ChannelRefusal, traceId: string): Reply => ({
     status: refusal.status,
@@ -494,9 +529,10 @@ export function createChannelService(deps: ChannelServiceDeps) {
     },
   };
 
+  const isCapError = (error: string) => error.startsWith("channel_cap_") || error === "channel_min_interval" || error === "channel_phase_duplicate";
   const capsRefusal = (error: string, retryAfterSeconds?: number) => ({
     ok: false as const,
-    statusCode: error.startsWith("channel_cap_") || error === "channel_min_interval" || error === "channel_phase_duplicate" ? 429 : error === "channel_not_found" ? 404 : 409,
+    statusCode: isCapError(error) ? 429 : error === "channel_not_found" ? 404 : 409,
     error,
     ...(retryAfterSeconds !== undefined ? { detail: { retryAfterSeconds } } : {}),
   });
@@ -746,6 +782,11 @@ export function createChannelService(deps: ChannelServiceDeps) {
       if (notSendable) return answer(refusalReply(notSendable, traceId));
       const refused = await contentRefusal(channel, payload, mode, mode === "immediate");
       if (refused) return answer(refusalReply(refused, traceId));
+      // M2: the owner may have paused the channel during the live check; decide on the current row.
+      const fresh = channels.getChannel(org, channel.id);
+      if (!fresh || fresh.status !== "active") {
+        return answer(refusalReply({ status: 409, error: fresh?.status === "paused" ? "channel_paused" : "channel_not_active" }, traceId));
+      }
       const facts = {
         mode,
         sendAt: payload.sendAt,
@@ -804,6 +845,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
             now: deps.now(),
             reserver: reserver(),
             leaseMs: CHANNEL_SEND_LEASE_MS,
+            live: { consentRowId: consent.id, grantId: grant.id },
           });
           if (!reserved.ok) return capsRefusal(reserved.error, reserved.retryAfterSeconds);
           if (reserved.replayed) return capsRefusal("channel_post_in_progress");
@@ -853,9 +895,9 @@ export function createChannelService(deps: ChannelServiceDeps) {
       return { ok: false, refusal: { status: 409, error: "channel_digest_mismatch" }, final: true };
     }
     const notSendable = sendable(channel);
-    if (notSendable) return { ok: false, refusal: notSendable, final: true };
+    if (notSendable) return { ok: false, refusal: notSendable, final: !TRANSIENT_REFUSALS.has(notSendable.error) };
     const refused = await contentRefusal(channel, built.payload, post.mode, true);
-    if (refused) return { ok: false, refusal: refused, final: true };
+    if (refused) return { ok: false, refusal: refused, final: !TRANSIENT_REFUSALS.has(refused.error) };
     return { ok: true, payload: built.payload };
   };
 
@@ -874,13 +916,28 @@ export function createChannelService(deps: ChannelServiceDeps) {
       return { ok: false, schema: 1, traceId: input.traceId, error: "channel_approval_invalid" };
     }
     if (post.status !== "held") return receiptReply(post, input.traceId, { replayed: true }).body;
-    const recheck = await sendTimeRecheck(channel, post);
-    if (!recheck.ok) {
-      endPost(post, channel, "skipped", recheck.refusal.error);
-      finishApproval(approvalId, null, recheck.refusal.error);
-      const reply = refusalReply(recheck.refusal, input.traceId);
+    const refuse = (refusal: ChannelRefusal) => {
+      const reply = refusalReply(refusal, input.traceId);
       input.reply.code(reply.status);
       return reply.body;
+    };
+    /** A definitive refusal ends the hold: the post is skipped (or expired) and the approval failed; the agent must ask again. */
+    const endHold = (status: "skipped" | "expired", refusal: ChannelRefusal) => {
+      endPost(post, channel, status, refusal.error);
+      finishApproval(approvalId, null, refusal.error);
+      return refuse(refusal);
+    };
+    if (approval.state !== "executing") return refuse({ status: 409, error: "channel_approval_invalid" });
+    // L4: an approval past its expiry is never used (an immediate hold; a scheduled one expires at sendAt by design).
+    if (post.mode === "immediate" && Date.parse(approval.expiresAt) <= deps.now().getTime()) {
+      return endHold("expired", { status: 410, error: "approval_expired" });
+    }
+    const recheck = await sendTimeRecheck(channel, post);
+    if (!recheck.ok) {
+      // L3: a transient failure leaves the post held and the approval unspent (immediate holds only;
+      // a scheduled post at its send time follows §6: skipped with the reason, never a silent retry).
+      if (!recheck.final && post.mode === "immediate") return refuse(recheck.refusal);
+      return endHold("skipped", recheck.refusal);
     }
     const response = await dispatchSend({
       ...base,
@@ -896,8 +953,19 @@ export function createChannelService(deps: ChannelServiceDeps) {
           now: deps.now(),
           reserver: reserver(),
           leaseMs: CHANNEL_SEND_LEASE_MS,
+          live: { consentRowId: post.consentId, grantId: null },
         });
-        if (!reserved.ok) return capsRefusal(reserved.error === "channel_post_not_held" ? "channel_post_in_progress" : reserved.error, reserved.retryAfterSeconds);
+        if (!reserved.ok) {
+          if (reserved.error === "channel_post_not_held") return capsRefusal("channel_post_in_progress");
+          // M1/M2: caps, a paused channel, a revoked consent or an invalid approval end the hold (skipped,
+          // approval failed), the same as the scheduler. The agent must ask again.
+          const current = channels.getPost(org, post.id);
+          if (current?.status === "held") {
+            endPost(current, channel, "skipped", reserved.error);
+            finishApproval(approvalId, null, reserved.error);
+          }
+          return capsRefusal(reserved.error, reserved.retryAfterSeconds);
+        }
         return { ok: true, post: reserved.post };
       },
     });
@@ -957,6 +1025,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
           ceiling: channel.policy.caps,
           now: deps.now(),
           leaseMs: CHANNEL_SCHEDULER_LEASE_MS,
+          live: { consentRowId: post.consentId, grantId: activeGrant.id },
         });
         if (!reserved.ok) {
           // At send time a cap refusal is final: skipped with the reason, never a silent retry.
@@ -1025,6 +1094,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
           now: deps.now(),
           reserver: reserver(),
           leaseMs: CHANNEL_SEND_LEASE_MS,
+          live: { consentRowId: null, grantId: null },
         });
         if (!reserved.ok) return capsRefusal(reserved.error, reserved.retryAfterSeconds);
         if (reserved.replayed) return capsRefusal("channel_post_in_progress");
@@ -1035,6 +1105,19 @@ export function createChannelService(deps: ChannelServiceDeps) {
   };
 
   // ----- owner decisions on held posts ----------------------------------------
+
+  /**
+   * M1: the owner denies an approval that is already approved (`executing`) while its post is still
+   * held (e.g. a transient failure kept it). Atomic with the post state; refused once a send started.
+   */
+  const denyApprovedHold = (approval: CompanyBoxApproval, decidedBy: string): CompanyBoxApproval | null => {
+    const postId = typeof approval.arguments.postId === "string" ? approval.arguments.postId : "";
+    const denied = channels.denyApprovedHold({ workspaceSlug: org, approvalId: approval.id, postId, decidedBy, now: deps.now() });
+    if (!denied) return null;
+    const after = store.getCompanyBoxApproval(approval.id)!;
+    onApprovalDenied(after);
+    return after;
+  };
 
   /** The owner denied a held channel post: it is skipped with a receipt. */
   const onApprovalDenied = (approval: CompanyBoxApproval) => {
@@ -1109,8 +1192,16 @@ export function createChannelService(deps: ChannelServiceDeps) {
       const approval = approvalForPost(post);
       if (approval?.state === "expired") endPost(post, channels.getChannel(org, post.channelId), "expired", "approval_expired");
       else if (approval?.state === "denied") endPost(post, channels.getChannel(org, post.channelId), "skipped", "approval_denied");
+      else if (approval?.state === "executing" && Date.parse(approval.expiresAt) <= deps.now().getTime()) {
+        // L4: approved but never sent before the approval expired.
+        if (endPost(post, channels.getChannel(org, post.channelId), "expired", "approval_expired")) {
+          finishApproval(approval.id, null, "approval_expired");
+          report.expired += 1;
+        }
+      }
     }
-    const late = (post: ChannelPostRecord) => post.sendAt !== null && input.now.getTime() - Date.parse(post.sendAt) > CHANNEL_SCHEDULE_LATE_MS;
+    // L5: lateness is measured per post at the moment it is handled, not at the tick start.
+    const late = (post: ChannelPostRecord) => post.sendAt !== null && deps.now().getTime() - Date.parse(post.sendAt) > CHANNEL_SCHEDULE_LATE_MS;
     // Held scheduled posts at their send time: send if approved, else expire (the approval expired at sendAt).
     for (const post of channels.listDueHeldPosts({ now: input.now })) {
       if (post.workspaceSlug !== org) continue;
@@ -1178,6 +1269,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
   };
 
   return {
+    configured,
     boot,
     readinessView,
     providerFor,
@@ -1186,6 +1278,22 @@ export function createChannelService(deps: ChannelServiceDeps) {
     execute,
     ownerTest,
     onApprovalDenied,
+    denyApprovedHold,
+    finishApproval,
+    suspendForDestinationChange: (channel: ChannelRecord) => {
+      // L6: a new destination changes every digest. Active grants need a new approval, and holds end now.
+      const suspended = grants.suspendAll(channel, "destination_changed");
+      for (const post of channels.listPosts(org, { channelId: channel.id, status: "held", limit: 1000 })) {
+        const approval = approvalForPost(post);
+        if (!endPost(post, channel, "skipped", "destination_changed")) continue;
+        if (approval?.state === "pending") {
+          store.decideCompanyBoxApproval({ id: approval.id, workspaceSlug: org, decision: "deny", decidedBy: "marketplace:destination_changed" });
+        } else if (approval?.state === "executing") {
+          finishApproval(approval.id, null, "destination_changed");
+        }
+      }
+      return suspended;
+    },
     resolveUncertain,
     tick,
     discover,

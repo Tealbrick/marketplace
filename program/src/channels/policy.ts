@@ -811,6 +811,8 @@ export type ChannelPayloadDigestInput = {
   provider: string;
   /** Destination `externalId`. */
   destination: string;
+  /** Destination `parentId` (Discord guild, Telegram forum topic), when the destination has one. */
+  destinationParentId?: string;
   /** Operation, e.g. `post`, `schedule`, `test`. */
   op: string;
   text: string;
@@ -845,6 +847,7 @@ export function channelPayloadCanonical(input: ChannelPayloadDigestInput): strin
     channelId: input.channelId,
     provider: input.provider,
     destination: input.destination,
+    destinationParentId: input.destinationParentId || undefined,
     op: input.op,
     text: input.text,
     attachments: input.attachments.map((file) => ({

@@ -253,6 +253,13 @@ export function createGrantService(deps: {
     return suspended;
   };
 
+  /** Suspends every active grant of a channel (e.g. its destination changed). */
+  const suspendAll = (channel: ChannelRecord, reason: string): StandingGrantRecord[] =>
+    store
+      .listStandingGrants(channel.workspaceSlug, { channelId: channel.id, status: "active" })
+      .map((grant) => suspend(grant, reason))
+      .filter((grant): grant is StandingGrantRecord => grant !== null);
+
   /** §4.4 rule 5 when a consent is revoked or no longer active. */
   const suspendForConsent = (workspaceSlug: string, consentRowId: string): StandingGrantRecord[] =>
     store
@@ -303,7 +310,7 @@ export function createGrantService(deps: {
     return usable;
   };
 
-  return { propose, narrow, withdraw, approve, decline, revoke, recheckChannel, suspendForConsent, usableGrants };
+  return { propose, narrow, withdraw, approve, decline, revoke, recheckChannel, suspendAll, suspendForConsent, usableGrants };
 }
 
 /** What an agent or the owner sees of a grant. */

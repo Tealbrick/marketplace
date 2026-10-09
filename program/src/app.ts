@@ -639,11 +639,21 @@ export type BuildMarketplaceAppOptions = {
    * Default: refuses every proof (501) until kit rc.14 / contract alpha.6 ship.
    */
   ownerApprovalVerifier?: OwnerApprovalVerifier;
+  /**
+   * Owner pins for approval proofs (Nostr pubkey, Portal user id). Until the Portal claim carries them
+   * (K2/PO3) they come only from here; without the pin for a proof type, resolve refuses
+   * `approval_owner_unbound` before any verifier runs.
+   */
+  ownerApprovalBinding?: { ownerPubkey?: string | null; ownerUserId?: string | null };
 };
 
 /** Test and ops handle on a built app's channel runtime (scheduler tick, boot completion). */
 export type MarketplaceChannelRuntime = {
   ready: Promise<void>;
+  /** False in inert mode (no channel credential configured). */
+  configured: boolean;
+  /** Whether the 30 s scheduler timer was started. */
+  schedulerStarted: boolean;
   tick: (now?: Date, claimer?: string) => Promise<{ recovered: number; expired: number; sent: number; skipped: number; claimed: number }>;
 };
 const channelRuntimes = new WeakMap<FastifyInstance, MarketplaceChannelRuntime>();
@@ -4359,7 +4369,7 @@ export async function buildMarketplaceApp(
     }
 
     const publicOrigin = environment.MARKETPLACE_PUBLIC_ORIGIN?.trim();
-    await channelsReady;
+    if (channelService.configured) await channelsReady;
     if (
       !portalIssuerUrl ||
       !portalConfiguration.deploymentId ||
@@ -4393,8 +4403,8 @@ export async function buildMarketplaceApp(
         configured: true,
         instanceProofHeader: "x-tealbrick-instance-proof" as const,
       },
-      // Channels §3.1/§8: live provider readiness, never the credential.
-      channels: { providers: channelService.readinessView() },
+      // Channels §3.1/§8: live provider readiness, never the credential. Absent in inert mode.
+      ...(channelService.configured ? { channels: { providers: channelService.readinessView() } } : {}),
     };
 
     if (!rulesConfiguration) {
@@ -5482,12 +5492,17 @@ export async function buildMarketplaceApp(
     const owned = ownedApproval(request, reply);
     if ("response" in owned) return owned.response;
     const { principal, approval } = owned;
-    const denied = options.store.decideCompanyBoxApproval({
-      id: approval.id,
-      workspaceSlug: principal.organizationId,
-      decision: "deny",
-      decidedBy: principal.id,
-    });
+    const denied =
+      options.store.decideCompanyBoxApproval({
+        id: approval.id,
+        workspaceSlug: principal.organizationId,
+        decision: "deny",
+        decidedBy: principal.id,
+      }) ??
+      // Channels review M1: an approved channel post that has not started sending can still be denied.
+      (approval.sourceKind === "channel-consent" && approval.state === "executing"
+        ? channelService.denyApprovedHold(approval, principal.id)
+        : null);
     if (!denied) return notPending(reply, approval.id);
     if (denied.sourceKind === "channel-consent") channelService.onApprovalDenied(denied);
     options.store.recordAudit({
@@ -6346,6 +6361,10 @@ export async function buildMarketplaceApp(
       }
       if ("grantClass" in input.selection) {
         // "Grant to agent" from the Channels view: a class selection narrowed to one channel.
+        if (!channelService.configured) {
+          reply.code(409);
+          return { ok: false, schema: 1, error: "channels_not_configured" };
+        }
         const selection = input.selection;
         const provider = providerFromPluginId(selection.pluginId);
         const channel =
@@ -8086,10 +8105,14 @@ export async function buildMarketplaceApp(
     }
   };
   const channelTick = async (now?: Date, claimer?: string) => {
+    // Inert mode: without any channel credential the scheduler does nothing at all.
+    if (!channelService.configured) return { recovered: 0, expired: 0, sent: 0, skipped: 0, claimed: 0 };
     await channelsReady;
     return channelService.tick({ now: now ?? channelClock(), claimer: claimer ?? channelInstanceId, run: runScheduledChannelPost });
   };
-  if (options.channelScheduler !== false) {
+  let channelSchedulerStarted = false;
+  if (options.channelScheduler !== false && channelService.configured) {
+    channelSchedulerStarted = true;
     let ticking = false;
     const timer = setInterval(() => {
       if (ticking) return;
@@ -8107,12 +8130,18 @@ export async function buildMarketplaceApp(
       clearInterval(timer);
     });
   }
-  channelRuntimes.set(app, { ready: channelsReady, tick: channelTick });
+  channelRuntimes.set(app, {
+    ready: channelsReady,
+    tick: channelTick,
+    configured: channelService.configured,
+    schedulerStarted: channelSchedulerStarted,
+  });
   registerChannelRoutes({
     app,
     store: options.store,
     service: channelService,
     organizationId,
+    configured: channelService.configured,
     now: channelClock,
     ready: channelsReady,
     portal: { issuer: portalIssuerUrl ?? "", deploymentId: portalConfiguration.deploymentId },
@@ -8366,6 +8395,13 @@ export async function buildMarketplaceApp(
       reply.code(409);
       return { ok: false, schema: 1, traceId, error: "approval_already_resolved" };
     }
+    // Review L7: a proof is only checked against a pinned owner. No pin, no verification (fail closed).
+    const ownerPubkey = options.ownerApprovalBinding?.ownerPubkey?.trim() || null;
+    const ownerUserId = options.ownerApprovalBinding?.ownerUserId?.trim() || null;
+    if ((proof.data.proof === "nostr" && !ownerPubkey) || (proof.data.proof === "portal" && !ownerUserId)) {
+      reply.code(503);
+      return { ok: false, schema: 1, traceId, error: "approval_owner_unbound" };
+    }
     const claim = options.store.claimCompanyBoxApprovalForResolve({
       id: approval.id,
       workspaceSlug: organizationId,
@@ -8395,8 +8431,8 @@ export async function buildMarketplaceApp(
           workspaceId: portalConfiguration.workspaceId,
           instanceId: instanceClaim?.instanceId ?? null,
           // TODO(K2/PO3): pin the owner's Nostr pubkey and user id from the Portal claim once it carries them.
-          ownerPubkey: null,
-          ownerUserId: null,
+          ownerPubkey,
+          ownerUserId,
         },
         now: new Date(),
       });
@@ -8492,7 +8528,7 @@ export async function buildMarketplaceApp(
         }
         const revoked = options.store.revokeMarketplaceAgentConsent(grantId);
         // Channels §4.4 rule 5: standing grants bound to this consent are suspended at once.
-        channelService.grants.suspendForConsent(durableConsent.productTenantId, durableConsent.id);
+        if (channelService.configured) channelService.grants.suspendForConsent(durableConsent.productTenantId, durableConsent.id);
         const traceId = traceIdFrom(request);
         options.store.recordEvent({
           type: "marketplace.agent.consent.revoked",
