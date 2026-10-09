@@ -102,8 +102,8 @@ describe("U3: owner list and cancel of scheduled and held posts", () => {
     const listed = await f.owner("GET", "/api/marketplace/channels/posts");
     expect(listed.statusCode).toBe(200);
     const posts = listed.json().posts as Array<Record<string, unknown>>;
-    expect(posts.map((post) => post.id).sort()).toEqual([heldScheduled.json().postId, heldNow.json().postId].sort());
-    expect(posts.find((post) => post.id === heldScheduled.json().postId)).toMatchObject({
+    expect(posts.map((post) => post.id).sort()).toEqual([heldScheduled.headers["tealbrick-post-id"] as string, heldNow.headers["tealbrick-post-id"] as string].sort());
+    expect(posts.find((post) => post.id === heldScheduled.headers["tealbrick-post-id"] as string)).toMatchObject({
       status: "held",
       mode: "scheduled",
       sendAt: new Date(sendAt).toISOString(),
@@ -119,13 +119,13 @@ describe("U3: owner list and cancel of scheduled and held posts", () => {
 
     await f.owner("POST", `/api/marketplace/company-box/approvals/${heldScheduled.json().approvalId}/approve`, {});
     expect(f.store.getCompanyBoxApproval(heldScheduled.json().approvalId)!.state).toBe("executing");
-    const cancelled = await f.owner("POST", `/api/marketplace/channels/posts/${heldScheduled.json().postId}/cancel`, {});
+    const cancelled = await f.owner("POST", `/api/marketplace/channels/posts/${heldScheduled.headers["tealbrick-post-id"] as string}/cancel`, {});
     expect(cancelled.statusCode, cancelled.body).toBe(200);
     expect(cancelled.json()).toMatchObject({ receipt: { status: "cancelled" } });
     expect(f.store.getCompanyBoxApproval(heldScheduled.json().approvalId)).toMatchObject({ state: "failed", error: "channel_post_cancelled" });
-    expect((await f.owner("POST", `/api/marketplace/channels/posts/${heldScheduled.json().postId}/cancel`, {})).json()).toMatchObject({ replayed: true });
+    expect((await f.owner("POST", `/api/marketplace/channels/posts/${heldScheduled.headers["tealbrick-post-id"] as string}/cancel`, {})).json()).toMatchObject({ replayed: true });
     // An immediate post is not a scheduled post.
-    expect((await f.owner("POST", `/api/marketplace/channels/posts/${heldNow.json().postId}/cancel`, {})).statusCode).toBe(404);
+    expect((await f.owner("POST", `/api/marketplace/channels/posts/${heldNow.headers["tealbrick-post-id"] as string}/cancel`, {})).statusCode).toBe(404);
     f.setClock(sendAt + 1_000);
     await f.runtime.tick(new Date(sendAt + 1_000));
     expect(f.telegram.sends).toHaveLength(0);

@@ -183,14 +183,14 @@ describe("channels: hold and owner approval (§10 item 3)", () => {
     expect(held.statusCode, held.body).toBe(202);
     const pending = held.json();
     expect(pending).toMatchObject({
-      ok: false,
       error: "approval_pending",
       approvalId: expect.any(String),
       digest: expect.stringMatching(/^[0-9a-f]{64}$/u),
       expiresAt: expect.any(String),
       payloadView: { files: [] },
     });
-    expect(pending.digestPrefix).toBe(pending.digest.slice(0, 12));
+    // K1: the body is the strict contract shape; the post id travels as a header.
+    expect(held.headers["tealbrick-post-id"]).toEqual(expect.any(String));
     expect(JSON.parse(pending.payloadView.canonical)).toMatchObject({ text: "Needs approval", channelId: channel.id, op: "post" });
     // No provider call while held (conformance (b)).
     expect(f.telegram.sends).toHaveLength(0);
@@ -250,8 +250,8 @@ describe("channels: hold and owner approval (§10 item 3)", () => {
     const held = await f.post(channel.id, text("Second today"), "agent-full-0001");
     const approved = await f.owner("POST", `/api/marketplace/company-box/approvals/${held.json().approvalId}/approve`, {});
     expect(approved.json()).toMatchObject({ ok: false, approval: { state: "failed", error: "channel_cap_per_day" }, channel: { error: "channel_cap_per_day" } });
-    expect(f.store.channels.getPost(TENANT, held.json().postId)).toMatchObject({ status: "skipped", reason: "channel_cap_per_day" });
-    expect(f.store.channels.getReceiptByPost(TENANT, held.json().postId)).toMatchObject({ status: "skipped" });
+    expect(f.store.channels.getPost(TENANT, held.headers["tealbrick-post-id"] as string)).toMatchObject({ status: "skipped", reason: "channel_cap_per_day" });
+    expect(f.store.channels.getReceiptByPost(TENANT, held.headers["tealbrick-post-id"] as string)).toMatchObject({ status: "skipped" });
     // Days later the same key does not send the old approval: the post ended.
     f.advance(3 * 86_400_000);
     const retry = await f.post(channel.id, text("Second today"), "agent-full-0001");
@@ -275,7 +275,7 @@ describe("channels: hold and owner approval (§10 item 3)", () => {
     await f.owner("GET", "/api/marketplace/channels/discover?provider=telegram");
     const moved = await f.owner("PATCH", `/api/marketplace/channels/${heldChannel.id}`, { destination: { externalId: "-1001234" } });
     expect(moved.statusCode, moved.body).toBe(200);
-    expect(f.store.channels.getPost(TENANT, held.json().postId)).toMatchObject({ status: "skipped", reason: "destination_changed" });
+    expect(f.store.channels.getPost(TENANT, held.headers["tealbrick-post-id"] as string)).toMatchObject({ status: "skipped", reason: "destination_changed" });
     expect(f.store.getCompanyBoxApproval(held.json().approvalId)!.state).toBe("denied");
     const approved = await f.owner("POST", `/api/marketplace/company-box/approvals/${held.json().approvalId}/approve`, {});
     expect(approved.statusCode).toBe(409);
@@ -294,7 +294,7 @@ describe("channels: hold and owner approval (§10 item 3)", () => {
     f.store.channels.updateChannel(TENANT, channel.id, { destination: { type: "channel", externalId: "-1005678", title: "other" } });
     const approved = await f.owner("POST", `/api/marketplace/company-box/approvals/${held.json().approvalId}/approve`, {});
     expect(approved.json()).toMatchObject({ approval: { state: "failed", error: "channel_digest_mismatch" }, channel: { error: "channel_digest_mismatch" } });
-    expect(f.store.channels.getPost(TENANT, held.json().postId)).toMatchObject({ status: "skipped", reason: "channel_digest_mismatch" });
+    expect(f.store.channels.getPost(TENANT, held.headers["tealbrick-post-id"] as string)).toMatchObject({ status: "skipped", reason: "channel_digest_mismatch" });
     expect(f.telegram.sends).toHaveLength(0);
   });
 

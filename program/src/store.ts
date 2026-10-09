@@ -1304,6 +1304,8 @@ export class SqliteMarketplaceStore {
         timestamp,
         timestamp,
       );
+    // Channels §6.3: the owner Buzz key pinned at creation; only that key may approve this hold by Buzz.
+    this.channels.pinApprovalOwnerKey({ approvalId: id, workspaceSlug: input.workspaceSlug, now: new Date(created) });
     return this.getCompanyBoxApproval(id)!;
   }
 

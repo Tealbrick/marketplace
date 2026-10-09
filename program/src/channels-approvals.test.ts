@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { OwnerApprovalVerifier } from "./channels/approvals.js";
+import { seededPin } from "./channels/approval-test-support.js";
 import { GRANT_B, PORTAL, SERVICE, TELEGRAM_TOKEN, TENANT, channelFixture, type ChannelFixture } from "./channels/app-fixture.js";
 import { createTelegramProvider } from "./channels/providers/telegram.js";
 import { createFakeFetch, jsonResponse } from "./channels/providers/test-support.js";
@@ -13,23 +14,28 @@ afterEach(async () => {
 let counter = 0;
 const key = () => `appr-key-${String(++counter).padStart(6, "0")}`;
 
-/** A fake proof verifier: `valid-<id>[-deny]` portal tokens verify, anything else is refused. */
+/** A compact-JWS-shaped stand-in token: `<h>.<marker>.<s>` (the contract schema needs the JWS shape). */
+const token = (marker: string) => `eyJhbGciOiJFZERTQSJ9.${marker}.c2ln`;
+
+/** A fake proof verifier: `valid-…[-deny]` portal markers verify, anything else is refused. */
 function fakeVerifier() {
-  const calls: Array<{ approvalId: string; digest: string }> = [];
+  const calls: Array<{ approvalId: string; digest: string; operation: string; agent: string }> = [];
   const verifier: OwnerApprovalVerifier = {
-    async verify({ proof, approvalId, digest }) {
-      calls.push({ approvalId, digest });
+    async verify({ proof, approvalId, digest, operation, agent }) {
+      calls.push({ approvalId, digest, operation, agent });
       await new Promise((resolve) => setTimeout(resolve, 20));
-      if (proof.proof !== "portal" || !proof.token.startsWith("valid-")) {
+      const marker = proof.proof === "portal" ? proof.token.split(".")[1]! : "";
+      if (!marker.startsWith("valid-")) {
         return { ok: false, status: 403, error: "approval_proof_invalid" };
       }
       return {
         ok: true,
-        decision: proof.token.endsWith("-deny") ? "deny" : "approve",
-        proofId: proof.token,
+        decision: marker.endsWith("-deny") ? "deny" : "approve",
+        proofId: marker,
         kind: "portal",
         expiresAt: new Date(Date.now() + 300_000).toISOString(),
         decidedBy: "owner:owner-1",
+        amr: ["passkey"],
         device: "Martin's Mac",
       };
     },
@@ -37,37 +43,54 @@ function fakeVerifier() {
   return { verifier, calls };
 }
 
-const PINS = { ownerUserId: "owner-1", ownerPubkey: "f".repeat(64) };
+/** The alpha.7 claim binding with the owner pin and the grant JWKS (the real verifier is not used here). */
+const PIN = () => seededPin({ portalIssuer: PORTAL, jwksUri: `${PORTAL}/api/grant-jwks`, grantKids: ["grant-key-1"] });
 
-async function heldSetup(verifier?: OwnerApprovalVerifier, pins: { ownerUserId?: string; ownerPubkey?: string } | null = PINS) {
-  const f = await channelFixture({ ...(verifier ? { verifier } : {}), options: pins ? { ownerApprovalBinding: pins } : {} });
+async function heldSetup(verifier?: OwnerApprovalVerifier) {
+  const f = await channelFixture({ ...(verifier ? { verifier } : {}), options: { ownerPinSource: PIN() } });
   fixtures.push(f);
   const channel = await f.createChannel({ slug: "community" });
   f.consentFor("agent-1", channel);
   const held = await f.post(channel.id, { text: "Held for a signed approval" }, key());
   expect(held.statusCode).toBe(202);
   const approvalId = held.json().approvalId as string;
-  const resolve = (token: string, decision: "approve" | "deny" = "approve", idempotencyKey = `resolve.${approvalId}.${decision}`, grant?: string) =>
+  const postId = held.headers["tealbrick-post-id"] as string;
+  const resolve = (marker: string, decision: "approve" | "deny" = "approve", idempotencyKey = `resolve.${approvalId}.${decision}`, grant?: string) =>
     f.agent("POST", `/api/marketplace/v1/agent/approvals/${approvalId}/resolve`, {
       key: idempotencyKey,
-      payload: { proof: "portal", token },
+      payload: { approvalId, proof: { proof: "portal", token: token(marker) } },
       ...(grant ? { token: grant } : {}),
     });
-  return { f, channel, held: held.json(), approvalId, resolve };
+  return { f, channel, held: held.json(), postId, approvalId, resolve };
 }
 
 describe("marketplace.approvals.resolve (K1 review)", () => {
-  it("refuses every proof with 501 until kit rc.14 / contract alpha.6 ship, leaving the hold pending", async () => {
-    const { f, approvalId, resolve } = await heldSetup();
-    const refused = await resolve("valid-proof-token-0001");
-    expect(refused.statusCode).toBe(501);
-    expect(refused.json()).toMatchObject({ error: "approval_proof_unsupported" });
+  it("parses the contract request shape: a bare proof, a mismatched approvalId or a non-JWS token is 400, the hold stays pending", async () => {
+    const { verifier, calls } = fakeVerifier();
+    const { f, approvalId } = await heldSetup(verifier);
+    for (const payload of [
+      { proof: "portal", token: token("valid-bare-0001") },
+      { approvalId: "approval_other", proof: { proof: "portal", token: token("valid-other-0001") } },
+      { approvalId, proof: { proof: "portal", token: "valid-proof-token-0001" } },
+      { approvalId, proof: { proof: "portal", token: token("valid-extra-0001") }, extra: true },
+    ]) {
+      const refused = await f.agent("POST", `/api/marketplace/v1/agent/approvals/${approvalId}/resolve`, { key: `resolve.${approvalId}.approve`, payload });
+      expect(refused.statusCode, JSON.stringify(payload)).toBe(400);
+      expect(refused.json()).toMatchObject({ error: "validation_failed" });
+    }
+    expect(calls).toHaveLength(0);
     expect(f.store.getCompanyBoxApproval(approvalId)!.state).toBe("pending");
-    expect(f.telegram.sends).toHaveLength(0);
     // The owner UI still decides on the same queue.
     const approved = await f.owner("POST", `/api/marketplace/company-box/approvals/${approvalId}/approve`, {});
     expect(approved.json()).toMatchObject({ approval: { state: "succeeded" } });
     expect(f.telegram.sends).toHaveLength(1);
+  });
+
+  it("binds the proof to the held operation and agent principal", async () => {
+    const { verifier, calls } = fakeVerifier();
+    const { resolve, approvalId, held } = await heldSetup(verifier);
+    expect((await resolve("valid-bind-0001")).statusCode).toBe(200);
+    expect(calls).toEqual([{ approvalId, digest: held.digest, operation: "marketplace.channels.post", agent: "tealbrick-agent:agent-1" }]);
   });
 
   it("two concurrent resolves: one provider call, one 409", async () => {
@@ -98,6 +121,9 @@ describe("marketplace.approvals.resolve (K1 review)", () => {
     const audit = JSON.stringify(f.store.listAudit({ workspaceSlug: TENANT, limit: 500 }));
     expect(audit).toContain("approvals.resolve");
     expect(audit).not.toContain("valid-proof-first-0001");
+    // amr/device are kept on the approval record (metadata only).
+    const view = await f.owner("GET", `/api/marketplace/company-box/approvals/${approvalId}`);
+    expect(view.json().approval).toMatchObject({ proof: { kind: "portal", amr: ["passkey"], device: "Martin's Mac" } });
   });
 
   it("an invalid proof leaves the hold pending; a valid one then succeeds once", async () => {
@@ -120,22 +146,23 @@ describe("marketplace.approvals.resolve (K1 review)", () => {
     const { f, channel, resolve } = await heldSetup(verifier);
     expect((await resolve("valid-proof-once-0001")).statusCode).toBe(200);
     const next = await f.post(channel.id, { text: "Second held post" }, key());
-    const reuse = await f.agent("POST", `/api/marketplace/v1/agent/approvals/${next.json().approvalId}/resolve`, {
-      key: `resolve.${next.json().approvalId}.approve`,
-      payload: { proof: "portal", token: "valid-proof-once-0001" },
+    const nextId = next.json().approvalId as string;
+    const reuse = await f.agent("POST", `/api/marketplace/v1/agent/approvals/${nextId}/resolve`, {
+      key: `resolve.${nextId}.approve`,
+      payload: { approvalId: nextId, proof: { proof: "portal", token: token("valid-proof-once-0001") } },
     });
     expect(reuse.statusCode).toBe(409);
     expect(reuse.json()).toMatchObject({ error: "approval_proof_reused" });
-    expect(f.store.getCompanyBoxApproval(next.json().approvalId)!.state).toBe("pending");
-    const foreign = await f.agent("POST", `/api/marketplace/v1/agent/approvals/${next.json().approvalId}/resolve`, {
-      key: `resolve.${next.json().approvalId}.approve`,
-      payload: { proof: "portal", token: "valid-proof-foreign-0001" },
+    expect(f.store.getCompanyBoxApproval(nextId)!.state).toBe("pending");
+    const foreign = await f.agent("POST", `/api/marketplace/v1/agent/approvals/${nextId}/resolve`, {
+      key: `resolve.${nextId}.approve`,
+      payload: { approvalId: nextId, proof: { proof: "portal", token: token("valid-proof-foreign-0001") } },
       token: GRANT_B,
     });
     expect(foreign.statusCode).toBe(404);
-    const badKey = await f.agent("POST", `/api/marketplace/v1/agent/approvals/${next.json().approvalId}/resolve`, {
+    const badKey = await f.agent("POST", `/api/marketplace/v1/agent/approvals/${nextId}/resolve`, {
       key: "resolve.other.approve",
-      payload: { proof: "portal", token: "valid-proof-key-0001" },
+      payload: { approvalId: nextId, proof: { proof: "portal", token: token("valid-proof-key-0001") } },
     });
     expect(badKey.statusCode).toBe(400);
     expect(f.telegram.sends).toHaveLength(1);
@@ -143,11 +170,11 @@ describe("marketplace.approvals.resolve (K1 review)", () => {
 
   it("a signed deny skips the post without a provider call", async () => {
     const { verifier } = fakeVerifier();
-    const { f, held, resolve } = await heldSetup(verifier);
+    const { f, postId, resolve } = await heldSetup(verifier);
     const denied = await resolve("valid-proof-no-0001-deny", "deny");
     expect(denied.statusCode).toBe(200);
     expect(denied.json()).toMatchObject({ decision: "deny", status: "denied" });
-    expect(f.store.channels.getPost(TENANT, held.postId)).toMatchObject({ status: "skipped", reason: "approval_denied" });
+    expect(f.store.channels.getPost(TENANT, postId)).toMatchObject({ status: "skipped", reason: "approval_denied" });
     expect(f.telegram.sends).toHaveLength(0);
   });
 });

@@ -160,7 +160,9 @@
       "idempotency": "required",
       "effects": "external-effects",
       "review": "allowed",
-      "summary": "Post to a consented channel: 200 receipt under a covering standing grant or an owner-approved digest, otherwise 202 approval_pending"
+      "summary": "Post to a consented channel: 200 receipt under a covering standing grant or an owner-approved digest, otherwise 202 approval_pending",
+      "approvalAuthority": "app",
+      "appHold": true
     },
     {
       "id": "marketplace.channels.schedule",
@@ -174,7 +176,9 @@
       "idempotency": "required",
       "effects": "external-effects",
       "review": "allowed",
-      "summary": "Schedule a post (sendAt now+60 s to now+30 days); authority is checked and the digest bound now, then rechecked at send time"
+      "summary": "Schedule a post (sendAt now+60 s to now+30 days); authority is checked and the digest bound now, then rechecked at send time",
+      "approvalAuthority": "app",
+      "appHold": true
     },
     {
       "id": "marketplace.channel-scheduled.cancel",
@@ -263,11 +267,11 @@
       ],
       "method": "POST",
       "path": "/api/marketplace/v1/agent/approvals/{approvalId}/resolve",
-      "input": "#/schemas/ApprovalProof",
+      "input": "#/schemas/ApprovalResolveRequest",
       "idempotency": "required",
       "effects": "writes-app-state",
       "review": "none",
-      "summary": "Forward the owner-signed decision (Buzz nostr event or Portal assertion) for the caller's own held call; single-shot per approval"
+      "summary": "Forward the owner-signed decision {approvalId, proof} (Buzz nostr event or Portal owner assertion) for the caller's own held call; single-shot per approval"
     },
     {
       "id": "marketplace.consents.request",
@@ -475,6 +479,45 @@
       "effects": "writes-app-state",
       "review": "none",
       "summary": "Deny a held connector call",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.approval-owner-key.get",
+      "crud": [
+        "read"
+      ],
+      "method": "GET",
+      "path": "/api/marketplace/approvals/owner-key",
+      "idempotency": "none",
+      "effects": "read-only",
+      "review": "none",
+      "summary": "The owner's Buzz approval key: fingerprint, trust source and status only (never the key)",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.approval-owner-key.update",
+      "crud": [
+        "update"
+      ],
+      "method": "PUT",
+      "path": "/api/marketplace/approvals/owner-key",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Set or change the owner's Buzz approval key (owner launch session only); invalidates holds made under the old key",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.approval-owner-key.clear",
+      "crud": [
+        "delete"
+      ],
+      "method": "DELETE",
+      "path": "/api/marketplace/approvals/owner-key",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Clear the owner's Buzz approval key (owner launch session only); invalidates holds made under it",
       "audience": "owner"
     },
     {
@@ -688,6 +731,9 @@
       "audience": "owner"
     }
   ],
+  "approvals": {
+    "resolveOperation": "marketplace.approvals.resolve"
+  },
   "guidance": {
     "version": "1",
     "path": "/.well-known/tealbrick/guidance/1"
@@ -2212,45 +2258,98 @@
         }
       }
     },
-    "ApprovalProof": {
-      "oneOf": [
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "proof",
-            "event",
-            "channel"
-          ],
-          "properties": {
-            "proof": {
-              "const": "nostr"
-            },
-            "event": {
-              "type": "object"
-            },
-            "channel": {
-              "type": "string"
-            }
-          }
+    "ApprovalResolveRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "approvalId",
+        "proof"
+      ],
+      "properties": {
+        "approvalId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$"
         },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "proof",
-            "token"
-          ],
-          "properties": {
-            "proof": {
-              "const": "portal"
+        "proof": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "proof",
+                "event",
+                "channel"
+              ],
+              "properties": {
+                "proof": {
+                  "const": "nostr"
+                },
+                "event": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "pubkey",
+                    "created_at",
+                    "kind",
+                    "tags",
+                    "content",
+                    "sig"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "pubkey": {
+                      "type": "string"
+                    },
+                    "created_at": {
+                      "type": "integer"
+                    },
+                    "kind": {
+                      "type": "integer"
+                    },
+                    "tags": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "content": {
+                      "type": "string"
+                    },
+                    "sig": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "channel": {
+                  "type": "string"
+                }
+              }
             },
-            "token": {
-              "type": "string"
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "proof",
+                "token"
+              ],
+              "properties": {
+                "proof": {
+                  "const": "portal"
+                },
+                "token": {
+                  "type": "string"
+                }
+              }
             }
-          }
+          ]
         }
-      ]
+      }
     }
   }
 }

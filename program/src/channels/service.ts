@@ -143,7 +143,11 @@ export type ReceiptView = {
   fallback?: string;
 };
 
-type Reply = { status: number; body: Record<string, unknown> };
+type Reply = { status: number; body: Record<string, unknown>; headers?: Record<string, string> };
+
+/** Response headers of a `202 approval_pending` (the body is the strict contract shape, so these travel beside it). */
+export const POST_ID_HEADER = "tealbrick-post-id";
+export const TRACE_ID_HEADER = "x-trace-id";
 
 /** A stand-in reply for calls that have no HTTP request (approval queue, scheduler). */
 export function detachedReply(): FastifyReply & { statusCode: number } {
@@ -154,6 +158,9 @@ export function detachedReply(): FastifyReply & { statusCode: number } {
       return reply;
     },
     header() {
+      return reply;
+    },
+    headers() {
       return reply;
     },
   };
@@ -601,20 +608,21 @@ export function createChannelService(deps: ChannelServiceDeps) {
     files: payload.files.map((file) => ({ name: file.name, sha256: file.sha256, contentType: file.contentType })),
   });
 
+  /**
+   * K1 (contract alpha.6): the `202` body is exactly `approvalPendingSchema` (strict; no other key):
+   * `{error, approvalId, digest, expiresAt, payloadView}`, with `digest = sha256(payloadView.canonical)`.
+   * The post id and trace id travel as response headers.
+   */
   const pendingReply = (post: ChannelPostRecord, approval: CompanyBoxApproval, payload: ChannelPayload, traceId: string): Reply => ({
     status: 202,
     body: {
-      ok: false,
-      schema: 1,
-      traceId,
       error: "approval_pending",
       approvalId: approval.id,
-      postId: post.id,
       digest: post.digest,
-      digestPrefix: post.digest.slice(0, 12),
       expiresAt: approval.expiresAt,
       payloadView: payloadView(payload),
     },
+    headers: { [POST_ID_HEADER]: post.id, [TRACE_ID_HEADER]: traceId },
   });
 
   const ensureApproval = (post: ChannelPostRecord, channel: ChannelRecord, consentRowId: string): CompanyBoxApproval => {
@@ -714,6 +722,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
     const { reply, traceId, consent } = input;
     const answer = (result: Reply) => {
       reply.code(result.status);
+      if (result.headers) reply.headers(result.headers);
       return result.body;
     };
     const channel = channels.getChannel(org, input.channelId);
