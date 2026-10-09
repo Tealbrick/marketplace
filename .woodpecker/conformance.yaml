@@ -3,6 +3,9 @@
 # Everything runs inside one unprivileged step on loopback ports. The keys and
 # tokens are generated per run and thrown away; there are no secrets and no
 # external services. Fails when the runner reports `ok: false`.
+labels:
+  platform: linux/amd64
+
 when:
   - event: pull_request
   - event: push

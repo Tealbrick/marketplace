@@ -5,6 +5,9 @@
 # release-time job: run it on the CI host with a registry secret, or let
 # Railway build the image from source. The release manifest checksums have
 # their own manual pipeline (release-manifests.yaml).
+labels:
+  platform: linux/amd64
+
 when:
   - event: pull_request
   - event: push

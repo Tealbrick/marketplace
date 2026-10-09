@@ -9,6 +9,9 @@
 # The registry host comes from the Woodpecker secret registry_host, not from this file:
 # this repo's public-release test forbids tailnet names in committed files.
 
+labels:
+  platform: linux/amd64
+
 when:
   - event: push
     branch: main
