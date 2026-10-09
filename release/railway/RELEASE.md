@@ -1,11 +1,11 @@
-# Marketplace standalone 0.1.17 image
+# Marketplace standalone 0.1.18 image
 
-This bundle is the public Marketplace 0.1.17 release line and supersedes
-0.1.16 with the Teal Brick instance claim for Portal runtime registration.
+This bundle is the public Marketplace 0.1.18 release line and supersedes
+0.1.17 with contract conformance, consent operations for agents and the canonical claim path.
 
-Source snapshot: `ebf34a6b5537ef77be54ef2e3ad81b8f6f417ae0`
-Source archive SHA256: `dac7f5ca7da49a026c2e6c951ad3eca40448ffd99e9c7e21507e3a257f051254`
-Image: `ghcr.io/tealbrick/marketplace:0.1.17`
+Source snapshot: `c52695dd71902c726537001932375809ff95c3c9`
+Source archive SHA256: `0619f49ed18ea4eae5c6a4f1fec529a7c2daece3f4a0fc3e6a294d023401a23e`
+Image: `ghcr.io/tealbrick/marketplace:0.1.18`
 
 ## Runtime contract
 
@@ -23,13 +23,24 @@ Image: `ghcr.io/tealbrick/marketplace:0.1.17`
   into the image or returned to browser code.
 
 The source-backed Railway path uses the fixed public release branch
-`release-marketplace-v0.1.17` (slash-free so the Railway template editor
+`release-marketplace-v0.1.18` (slash-free so the Railway template editor
 accepts it); its exact tag target, branch ruleset, and image
 digest are recorded in the successor receipt. Set the service root directory
 to `release/railway`, keep the Dockerfile entrypoint, and use the relay
 contract in `deploy/railway/recipe.json` and `deploy/railway/railway-blueprint.json`.
 GHCR is optional for the source-build path; no template ID or publication is
 implied by these files.
+
+## v0.1.18 contract conformance disposition
+
+This successor merges Tealbrick/marketplace#20, #21 and #22:
+- the instance claim is also served at the canonical `/.well-known/tealbrick/claim`; `/api/tealbrick/claim` stays an alias;
+- `tealbrick.app.json` (contract alpha.3, kind suite): two agent operations, `marketplace.consents.list` and `marketplace.tools.call` (idempotency key required), and 16 owner operations; agent calls run through the same consent execution as the Portal runtime lease;
+- contract control endpoints, Portal-origin framing, an emergency-code login, and a settings block (the Composio key comes from the account connection as `COMPOSIO_API_KEY`);
+- `/healthz` now reports only `{ok, app, version, major}`; tailnet state moved to the authenticated health route;
+- Woodpecker CI replaces GitHub Actions for checks.
+
+There is no schema change. Upgrades keep the volume, variables, encrypted connector secrets and the instance claim identity. Rollback to 0.1.17 needs no data change.
 
 ## v0.1.17 instance claim disposition
 

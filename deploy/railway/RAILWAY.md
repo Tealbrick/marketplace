@@ -9,19 +9,19 @@ creation, customer-project writes, deployment identity, and acceptance.
 
 Use the public repository
 `https://github.com/Tealbrick/marketplace` at branch
-`release-marketplace-v0.1.17`, resolved and recorded in the successor receipt.
+`release-marketplace-v0.1.18`, resolved and recorded in the successor receipt.
 The source snapshot used for the release is commit
-`ebf34a6b5537ef77be54ef2e3ad81b8f6f417ae0`. Do not connect `main`, the
+`c52695dd71902c726537001932375809ff95c3c9`. Do not connect `main`, the
 rejected tag source, or another mutable branch. Set the service root directory
 to `release/railway`; Railway then builds the tracked `Dockerfile` in that
 directory.
 
 Portal's actual `templateDeployV2` probe showed that `source.branch=v0.1.3`
 fails with Branch not found and `source.commitSha` is ignored. Use
-`source.branch=release-marketplace-v0.1.17`; the branch is fixed to the reviewed
+`source.branch=release-marketplace-v0.1.18`; the branch is fixed to the reviewed
 runtime by the successor repository ruleset recorded in the receipt:
 
-- target: `refs/heads/release-marketplace-v0.1.17`
+- target: `refs/heads/release-marketplace-v0.1.18`
 - enforcement: `active`
 - rules: `update`, `non_fast_forward`, `deletion`
 - bypass actors: none; GitHub reports `current_user_can_bypass=never`
@@ -38,12 +38,12 @@ resolve the tag to the exact commit and verify the release manifests:
 ```sh
 shasum -a 256 -c release/railway/build-input-manifest.sha256
 shasum -a 256 -c release/railway/bundle-manifest.sha256
-git archive --format=tar ebf34a6b5537ef77be54ef2e3ad81b8f6f417ae0 \
+git archive --format=tar c52695dd71902c726537001932375809ff95c3c9 \
   | shasum -a 256
 ```
 
 The archived source snapshot must hash to
-`dac7f5ca7da49a026c2e6c951ad3eca40448ffd99e9c7e21507e3a257f051254`. Record
+`0619f49ed18ea4eae5c6a4f1fec529a7c2daece3f4a0fc3e6a294d023401a23e`. Record
 the Railway-resolved commit and deployment ID separately from these local
 checks; a health response is not source identity proof.
 
