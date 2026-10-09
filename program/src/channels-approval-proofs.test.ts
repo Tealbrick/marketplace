@@ -1,10 +1,14 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 import { Ajv } from "ajv";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
   appHoldOf,
+  NOSTR_MIN_DIGEST_PREFIX,
   approvalPendingSchema,
   generateEmergencyCode,
   harnessDefersToApp,
@@ -15,11 +19,12 @@ import {
 
 import { nostrKey, ownerAssertion, portalSigner, seededPin, signedApproval, signJws, type NostrKey, type OwnerAssertionClaims, type PortalSigner } from "./channels/approval-test-support.js";
 import { GRANT_ALL, PORTAL, SERVICE, TENANT, channelFixture, type ChannelFixture } from "./channels/app-fixture.js";
-import { NOSTR_AMBIGUITY_WINDOW_MS, NOSTR_MIN_PREFIX_HEX } from "./channels/approvals.js";
+import { createContractOwnerApprovalVerifier, NOSTR_AMBIGUITY_WINDOW_MS, NOSTR_MIN_PREFIX_HEX } from "./channels/approvals.js";
 import { canonicalJson } from "./channels/canonical-json.js";
 import { ownerKeyFingerprint, parseOwnerNostrPubkey } from "./channels/owner-key.js";
 import { NO_OWNER_PIN, readAttestedOwnerNostrPubkey, type OwnerClaimBinding, type OwnerPinSource } from "./channels/owner-pin.js";
 import { MARKETPLACE_MANIFEST } from "./contract.js";
+import { createFileClaimStore, MANIFEST_CLAIM_PATH } from "./manifest-claim.js";
 import { MarketplaceOperatorSessionManager } from "./operator-auth.js";
 
 /**
@@ -29,8 +34,10 @@ import { MarketplaceOperatorSessionManager } from "./operator-auth.js";
  */
 
 const fixtures: ChannelFixture[] = [];
+const claimDirs: string[] = [];
 afterEach(async () => {
   await Promise.all(fixtures.splice(0).map((fixture) => fixture.close()));
+  await Promise.all(claimDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
 const ORIGIN = "https://marketplace.fixture.invalid";
@@ -529,7 +536,7 @@ describe("proof: portal (verifyOwnerApprovalAssertion)", () => {
     expect(t.f.telegram.sends).toHaveLength(1);
   });
 
-  it("answers approval_owner_unbound when nothing is pinned (today's legacy claim path)", async () => {
+  it("answers approval_owner_unbound when nothing is pinned (no claim binding)", async () => {
     const t = await setup({ pin: null });
     const held = await t.hold();
     const refused = await t.portal(held);
@@ -542,6 +549,123 @@ describe("proof: portal (verifyOwnerApprovalAssertion)", () => {
     const clearedHold = await cleared.hold();
     expect((await cleared.portal(clearedHold)).json()).toMatchObject({ error: "approval_owner_unbound" });
     expect(t.jwksFetches() + cleared.jwksFetches()).toBe(0);
+  });
+});
+
+describe("contract alpha.7: the owner pin comes from the manifest claim binding", () => {
+  const OWNER_SUBJECT = "tealbrick-user:owner-1";
+  /** Marketplace with a real claim identity and NO injected pin source: the pin is `claim.store`. */
+  async function claimed() {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "marketplace-owner-pin-"));
+    claimDirs.push(dir);
+    const signer = portalSigner();
+    const t = await setup({ signer, pin: null, options: { instanceClaimDir: dir } });
+    const core = { "x-knowledge-instance-token": SERVICE };
+    const identity = (await t.f.app.inject({ method: "GET", url: MANIFEST_CLAIM_PATH, headers: core })).json() as { instanceId: string };
+    const claim = (body: Record<string, unknown>) =>
+      t.f.app.inject({
+        method: "POST",
+        url: MANIFEST_CLAIM_PATH,
+        headers: core,
+        payload: { portalIssuer: PORTAL, nonce: randomUUID().replaceAll("-", ""), companyId: TENANT, jwksUri: `${PORTAL}${JWKS_PATH}`, grantKids: [signer.kid], ...body },
+      });
+    const aud = `tealbrick-app:${identity.instanceId}`;
+    return { t, dir, identity, claim, aud };
+  }
+
+  it("before any owner claim nothing is pinned; Core's alpha.7 claim pins ownerSubject and PO3 verifies against it", async () => {
+    const { t, dir, identity, claim, aud } = await claimed();
+    const held = await t.hold();
+    // Anchored claim without ownerSubject (an older Core): no owner, fail closed.
+    expect((await claim({})).statusCode).toBe(200);
+    expect((await t.portal(held, { aud })).json()).toMatchObject({ error: "approval_owner_unbound" });
+    expect((await t.f.owner("GET", "/api/marketplace/approvals/owner-key")).json().ownerKey).toMatchObject({ ownerPin: "unbound" });
+
+    const issuedAt = Date.now() - 1_000;
+    expect((await claim({ ownerSubject: OWNER_SUBJECT, claimIssuedAt: issuedAt })).statusCode).toBe(200);
+    expect(createFileClaimStore(dir).read()).toMatchObject({ instanceId: identity.instanceId, ownerSubject: OWNER_SUBJECT, ownerPinnedAt: issuedAt });
+    expect((await t.f.owner("GET", "/api/marketplace/approvals/owner-key")).json().ownerKey).toMatchObject({ ownerPin: "pinned" });
+
+    // sub must equal the pinned ownerSubject, passed to verifyOwnerApprovalAssertion as is.
+    const wrong = await t.portal(held, { aud, sub: "tealbrick-user:someone-else" });
+    expect([wrong.statusCode, wrong.json().reason]).toEqual([403, "wrong_subject"]);
+    expect(t.state(held.approvalId)).toBe("pending");
+    const ok = await t.portal(held, { aud });
+    expect(ok.statusCode, ok.body).toBe(200);
+    expect(t.f.telegram.sends).toHaveLength(1);
+    expect(t.f.store.getCompanyBoxApproval(held.approvalId)!.decidedBy).toBe("owner:owner-1");
+  });
+
+  it("M1 on the real binding: only the pinned owner's launch session sets the key; a newer claim re-pins or clears", async () => {
+    const { t, claim, aud } = await claimed();
+    const launchAs = (userId: string) =>
+      t.f.portalReplies.set("/api/deployment-browser/redeem", () =>
+        new Response(
+          JSON.stringify({ schema: 1, authorized: true, product: "marketplace", deploymentId: "deployment-1", workspaceId: TENANT, orgId: "portal-org-1", productTenantId: TENANT, userId, endpoint: ORIGIN, session: "s".repeat(43), expiresAt: Date.now() + 3_600_000 }),
+          { status: 200 },
+        ),
+      );
+    const put = async (userId: string) => {
+      launchAs(userId);
+      const session = await t.ownerLogin();
+      return t.putKey(OWNER.pubkey, { cookie: session.cookie, "x-csrf-token": session.csrf });
+    };
+    // No pin yet: nobody can write.
+    expect((await put("owner-1")).json()).toMatchObject({ error: "approval_owner_unbound" });
+
+    const t0 = Date.now() - 60_000;
+    expect((await claim({ ownerSubject: OWNER_SUBJECT, claimIssuedAt: t0 })).statusCode).toBe(200);
+    expect((await put("mallory-member")).statusCode).toBe(403);
+    expect((await put("owner-1")).statusCode).toBe(200);
+
+    // A stale claim for another owner writes nothing; the pin stays owner-1.
+    expect((await claim({ ownerSubject: "tealbrick-user:mallory-member", claimIssuedAt: t0 - 1 })).json()).toMatchObject({ error: "stale_claim" });
+    expect((await put("mallory-member")).statusCode).toBe(403);
+
+    // Ownership transfer by a newer claim.
+    expect((await claim({ ownerSubject: "tealbrick-user:owner-2", claimIssuedAt: t0 + 1_000 })).statusCode).toBe(200);
+    expect((await put("owner-1")).statusCode).toBe(403);
+    expect((await put("owner-2")).statusCode).toBe(200);
+    const held = await t.hold();
+    expect((await t.portal(held, { aud })).json()).toMatchObject({ reason: "wrong_subject" });
+
+    // A newer claim without ownerSubject clears the pin: writes and PO3 fail closed again.
+    expect((await claim({ claimIssuedAt: t0 + 2_000 })).statusCode).toBe(200);
+    expect((await put("owner-2")).json()).toMatchObject({ error: "approval_owner_unbound" });
+    expect((await t.portal(held, { aud, sub: "tealbrick-user:owner-2" })).json()).toMatchObject({ error: "approval_owner_unbound" });
+    expect(t.state(held.approvalId)).toBe("pending");
+    expect(t.f.telegram.sends).toHaveLength(0);
+  });
+
+  it("the verifier hands ownerSubject to the contract unchanged (no ownerUserId adapter)", async () => {
+    const verifier = createContractOwnerApprovalVerifier({ isUsed: () => false, prefixAmbiguous: () => false, jwksFetch: async () => new Response("{}", { status: 500 }) });
+    const binding = {
+      portalIssuer: PORTAL,
+      deploymentId: "deployment-1",
+      instanceId: "instance-1",
+      jwksUri: `${PORTAL}${JWKS_PATH}`,
+      grantKids: ["grant-key-1"],
+      ownerPubkey: null,
+      ownerKeyFingerprint: null,
+      ownerKeySetAtMs: null,
+    };
+    const input = (ownerSubject: string | null) => ({
+      proof: { proof: "portal" as const, token: "eyJhbGciOiJFZERTQSJ9.e30.c2ln" },
+      approvalId: "approval_1",
+      digest: "a".repeat(64),
+      operation: "marketplace.channels.post",
+      agent: "tealbrick-agent:agent-1",
+      binding: { ...binding, ownerSubject },
+      now: new Date(),
+    });
+    // The contract validates the subject itself (OWNER_SUBJECT_PATTERN): a value an ownerUserId adapter
+    // would have turned into a plausible id is a misconfiguration.
+    for (const subject of ["tealbrick-user:owner.1", "owner-1", "tealbrick-agent:agent-1"]) {
+      expect(await verifier.verify(input(subject)), subject).toMatchObject({ ok: false, status: 503, error: "approval_owner_unbound", reason: "misconfigured" });
+    }
+    expect(await verifier.verify(input(null))).toMatchObject({ ok: false, status: 503, error: "approval_owner_unbound" });
+    // A valid subject gets past the owner check to the token itself.
+    expect(await verifier.verify(input(OWNER_SUBJECT))).toMatchObject({ ok: false, status: 403, error: "approval_proof_invalid" });
   });
 });
 
@@ -604,7 +728,9 @@ describe("review findings (PR #39)", () => {
   /** Same first NOSTR_MIN_PREFIX_HEX hex as `digest`, different after. */
   const twinOf = (digest: string) => `${digest.slice(0, NOSTR_MIN_PREFIX_HEX)}${digest[NOSTR_MIN_PREFIX_HEX] === "0" ? "1" : "0"}${"9".repeat(63 - NOSTR_MIN_PREFIX_HEX)}`;
 
-  it("B1: a Buzz reply shorter than the local minimum is refused before the contract verifier and burns nothing", async () => {
+  it("B1: a Buzz reply shorter than 32 hex is refused by the contract verifier (alpha.7) and burns nothing", async () => {
+    expect(NOSTR_MIN_PREFIX_HEX).toBe(NOSTR_MIN_DIGEST_PREFIX);
+    expect(NOSTR_MIN_DIGEST_PREFIX).toBeGreaterThanOrEqual(32);
     const t = await setup();
     await t.setKey(OWNER.pubkey);
     const held = await t.hold();
@@ -612,7 +738,7 @@ describe("review findings (PR #39)", () => {
     const refused = await t.nostr(held.approvalId, event);
     expect(refused.statusCode).toBe(409);
     expect(refused.json()).toMatchObject({ error: "approval_proof_prefix_too_short" });
-    // The contract's own (alpha.6) minimum would have accepted 12.
+    // alpha.6 accepted 12; alpha.7 refuses it itself (no local pre-check any more).
     const twelve = await t.nostr(held.approvalId, approve(held, OWNER, { prefixLength: 12 }));
     expect(twelve.json()).toMatchObject({ error: "approval_proof_prefix_too_short" });
     expect(t.state(held.approvalId)).toBe("pending");

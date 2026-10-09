@@ -26,7 +26,7 @@ steps:
     image: *node_image
     environment: *env
     commands:
-      - npx --yes @tealbrick/contract@0.1.0-alpha.6 validate tealbrick.app.json
+      - npx --yes @tealbrick/contract@0.1.0-alpha.7 validate tealbrick.app.json
 
   - name: install
     image: *node_image

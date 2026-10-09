@@ -644,9 +644,9 @@ export type BuildMarketplaceAppOptions = {
    */
   ownerApprovalVerifier?: OwnerApprovalVerifier;
   /**
-   * The contract claim binding that pins the owner (`ownerSubject`, alpha.7) and the grant JWKS. Default
-   * `NO_OWNER_PIN`: Marketplace still answers the legacy claim path, so nothing is pinned and `portal`
-   * proofs answer `approval_owner_unbound`. TODO(manifest-claim PR, Lead · Miniapps): pass `claim.store`.
+   * The contract claim binding that pins the owner (`ownerSubject`, `ownerPinnedAt`, alpha.7) and the grant
+   * JWKS. Default: the manifest-claim handler's `claim.store` (the binding file beside the claim identity);
+   * without a claim identity directory `NO_OWNER_PIN`, so `portal` proofs answer `approval_owner_unbound`.
    */
   ownerPinSource?: OwnerPinSource;
   /** Fetch for the pinned grant JWKS of PO3 owner assertions (default: `portalFetch`, then `fetch`). */
@@ -8438,7 +8438,8 @@ export async function buildMarketplaceApp(
    * resolve while resolving or after the decision is 409 approval_already_resolved and never calls a
    * provider. The kit's key `resolve.<approvalId>.<decision>` replays the stored answer after success.
    */
-  const ownerPinSource = options.ownerPinSource ?? NO_OWNER_PIN;
+  // The owner pin comes only from the contract claim binding (alpha.7: `await claim.store.read()`).
+  const ownerPinSource: OwnerPinSource = options.ownerPinSource ?? manifestClaim?.store ?? NO_OWNER_PIN;
   const ownerApprovalVerifier =
     options.ownerApprovalVerifier ??
     createContractOwnerApprovalVerifier({

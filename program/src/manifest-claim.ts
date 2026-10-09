@@ -4,6 +4,7 @@ import path from "node:path";
 
 import {
   createContractHandler,
+  isOwnerSubject,
   type AuthRequest,
   type ClaimBinding,
   type ClaimStore,
@@ -20,16 +21,31 @@ import { INSTANCE_CLAIM_TTL_SECONDS, type MarketplaceInstanceClaim } from "./ins
  * Manifest claim (`tealbrick.miniapp/v1`, `runtime.claim`) for Marketplace.
  *
  * `/.well-known/tealbrick/claim` speaks the contract kit's handshake: `GET` → `{instanceId, publicJwk}`,
- * `POST {portalIssuer, nonce, companyId, jwksUri?, grantKids?}` → `{proof}`. The proof is signed with the
- * SAME Ed25519 key and instance id as the legacy `/api/tealbrick/claim` route (the identity file beside the
- * SQLite database); this module never generates a key. The Portal grant trust anchors (`jwksUri`,
- * `grantKids`) and the pinned issuer/tenant are kept in {@link INSTANCE_CLAIM_BINDING_FILE}, so app
- * grants can later be verified against them (`l2GrantOptionsFromClaim`).
+ * `POST {portalIssuer, nonce, companyId, jwksUri?, grantKids?, ownerSubject?, claimIssuedAt?}` → `{proof}`.
+ * The proof is signed with the SAME Ed25519 key and instance id as the legacy `/api/tealbrick/claim` route
+ * (the identity file beside the SQLite database); this module never generates a key. The Portal grant trust
+ * anchors (`jwksUri`, `grantKids`), the pinned issuer/tenant and the owner pin (`ownerSubject`,
+ * `ownerPinnedAt`, contract alpha.7) are kept in {@link INSTANCE_CLAIM_BINDING_FILE}, so app grants can
+ * later be verified against them (`l2GrantOptionsFromClaim`) and owner approvals against the pinned owner.
+ *
+ * Contract alpha.7: `GET` answers with `x-tealbrick-contract: <kit version>` (the kit sets it; Portal Core
+ * sends `ownerSubject` only when the header says ≥ alpha.7). The kit orders owner pins by `claimIssuedAt`
+ * (a stale claim is `409 stale_claim` and writes nothing) and serializes the store read→write.
  */
 export const MANIFEST_CLAIM_PATH = "/.well-known/tealbrick/claim";
 export const INSTANCE_CLAIM_BINDING_FILE = "instance-claim-binding.json";
 
-const BINDING_KEYS = new Set(["portalIssuer", "tenantId", "instanceId", "claimedAt", "lastClaimAt", "jwksUri", "grantKids"]);
+const BINDING_KEYS = new Set([
+  "portalIssuer",
+  "tenantId",
+  "instanceId",
+  "claimedAt",
+  "lastClaimAt",
+  "jwksUri",
+  "grantKids",
+  "ownerSubject",
+  "ownerPinnedAt",
+]);
 
 function parseBinding(raw: unknown): ClaimBinding {
   const value = raw as Record<string, unknown> | null;
@@ -46,7 +62,11 @@ function parseBinding(raw: unknown): ClaimBinding {
     !timestamp(value.lastClaimAt) ||
     (value.jwksUri !== undefined && typeof value.jwksUri !== "string") ||
     (value.grantKids !== undefined &&
-      (!Array.isArray(value.grantKids) || !value.grantKids.every((kid) => typeof kid === "string")))
+      (!Array.isArray(value.grantKids) || !value.grantKids.every((kid) => typeof kid === "string"))) ||
+    // alpha.7 owner pin: a malformed value fails closed (the claim answers 500, the owner pin reads nothing).
+    (value.ownerSubject !== undefined && !isOwnerSubject(value.ownerSubject)) ||
+    (value.ownerPinnedAt !== undefined &&
+      !(typeof value.ownerPinnedAt === "number" && Number.isSafeInteger(value.ownerPinnedAt) && value.ownerPinnedAt > 0))
   ) {
     throw new Error("Invalid Marketplace claim binding storage");
   }
@@ -58,13 +78,16 @@ function parseBinding(raw: unknown): ClaimBinding {
     lastClaimAt: value.lastClaimAt as number,
     ...(value.jwksUri !== undefined ? { jwksUri: value.jwksUri } : {}),
     ...(value.grantKids !== undefined ? { grantKids: Object.freeze([...(value.grantKids as string[])]) } : {}),
+    ...(value.ownerSubject !== undefined ? { ownerSubject: value.ownerSubject as string } : {}),
+    ...(value.ownerPinnedAt !== undefined ? { ownerPinnedAt: value.ownerPinnedAt as number } : {}),
   });
 }
 
 /**
  * Durable {@link ClaimStore}: one JSON file beside the claim identity, mode 0600, replaced atomically.
- * It holds no secret (issuer, tenant, instance id, timestamps, grant JWKS URL and kids). An unsafe or
- * malformed file fails the claim closed (the kit answers 500) instead of being silently replaced.
+ * It holds no secret (issuer, tenant, instance id, timestamps, grant JWKS URL and kids, owner subject and
+ * pin mark). An unsafe or malformed file fails the claim closed (the kit answers 500) instead of being
+ * silently replaced.
  */
 /** A synchronous {@link ClaimStore} (file-backed). */
 export type FileClaimStore = { read(): ClaimBinding | null; write(binding: ClaimBinding): void };

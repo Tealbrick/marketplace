@@ -3,6 +3,8 @@ import {
   MAX_CLOCK_SKEW_SECONDS,
   NOSTR_APPROVAL_MAX_AGE_MS,
   NOSTR_FUTURE_SKEW_MS,
+  NOSTR_MIN_DIGEST_PREFIX,
+  USER_PRINCIPAL_PREFIX,
   ownerApprovalOptionsFromClaim,
   verifyNostrApprovalProof,
   verifyOwnerApprovalAssertion,
@@ -11,11 +13,9 @@ import {
   type OwnerApprovalDenialReason,
 } from "@tealbrick/contract";
 
-import { ownerUserIdFromSubject } from "./owner-pin.js";
-
 /**
  * Owner approval proofs for `marketplace.approvals.resolve` (Channels spec §6.3 "One approval experience",
- * contract K1, alpha.6).
+ * contract K1, alpha.7).
  *
  * The harness forwards an owner decision it never minted and the model never saw, as the contract's
  * `approvalResolveRequestSchema` body `{approvalId, proof}`: a Buzz reply (`proof: "nostr"`, an
@@ -90,11 +90,13 @@ export type OwnerApprovalVerifier = {
 };
 
 /**
- * Shortest digest prefix a Buzz reply may approve with (`approve <prefix>`), in hex characters. Contract alpha.7
- * enforces ≥ 32; keep this check until the installed verifier enforces it (alpha.6 accepts 12). The same length
- * is used for the proof-ambiguity check and the hold-collision check (review B1).
+ * Shortest digest prefix a Buzz reply may approve with (`approve <prefix>`), in hex characters: the contract's
+ * own minimum. Contract alpha.7 `verifyNostrApprovalProof` refuses a shorter prefix itself
+ * (`NOSTR_MIN_DIGEST_PREFIX` = 32, tealbrick-packages#83), so Marketplace no longer runs a separate local
+ * check before it. The same length is used for the proof-ambiguity check and the hold-collision check (review B1).
  */
-export const NOSTR_MIN_PREFIX_HEX = 32;
+export const NOSTR_MIN_PREFIX_HEX: number = NOSTR_MIN_DIGEST_PREFIX;
+if (!(NOSTR_MIN_PREFIX_HEX >= 32)) throw new Error("contract NOSTR_MIN_DIGEST_PREFIX must be at least 32 (review B1)");
 
 /** Review B1: other held calls of the workspace that share a proof's prefix count for this long (15 min max age + 5 min skew). */
 export const NOSTR_AMBIGUITY_WINDOW_MS = 20 * 60_000;
@@ -135,6 +137,8 @@ const NOSTR_REASONS: Array<[RegExp, string]> = [
 
 function nostrRefusal(text: string): { ok: false; status: number; error: string; reason: string } {
   const reason = NOSTR_REASONS.find(([pattern]) => pattern.test(text))?.[1] ?? "malformed";
+  // Review B1: a code shorter than the contract minimum keeps its own answer (the owner retries with a longer code).
+  if (reason === "prefix_too_short") return { ok: false, status: 409, error: "approval_proof_prefix_too_short", reason };
   if (reason === "replayed") return { ok: false, status: 409, error: "approval_proof_reused", reason };
   if (reason === "misconfigured") return { ok: false, status: 503, error: "approval_owner_unbound", reason };
   return { ok: false, status: 403, error: "approval_proof_invalid", reason };
@@ -160,7 +164,7 @@ function boundedDevice(value: unknown): string | undefined {
 }
 
 /**
- * The real verifier (contract alpha.6). `isUsed(proofId)` must only check (`nostr:<eventId>` /
+ * The real verifier (contract alpha.7). `isUsed(proofId)` must only check (`nostr:<eventId>` /
  * `portal:<jti>`); the route records the id. `jwksFetch` reaches the issuer's grant JWKS (tests inject a fake).
  */
 export function createContractOwnerApprovalVerifier(deps: {
@@ -198,11 +202,7 @@ export function createContractOwnerApprovalVerifier(deps: {
         if (!binding.ownerPubkey || !binding.ownerKeyFingerprint || binding.ownerKeySetAtMs === null) {
           return { ok: false, status: 503, error: "approval_owner_unbound" };
         }
-        // Review B1: the local 32-hex minimum runs before the contract verifier (alpha.6 accepts 12).
-        const event = proof.event as { content?: unknown };
-        if (approvedPrefixes(event.content).some((candidate) => candidate.length < NOSTR_MIN_PREFIX_HEX)) {
-          return { ok: false, status: 409, error: "approval_proof_prefix_too_short", reason: "prefix_too_short" };
-        }
+        // Review B1: the contract verifier (alpha.7) refuses a code shorter than 32 hex itself.
         const result = await verifyNostrApprovalProof({
           event: proof.event,
           channel: proof.channel,
@@ -236,8 +236,8 @@ export function createContractOwnerApprovalVerifier(deps: {
           decidedBy: `owner-nostr:${binding.ownerKeyFingerprint}`,
         };
       }
-      const ownerUserId = binding.ownerSubject ? ownerUserIdFromSubject(binding.ownerSubject) : null;
-      if (!binding.portalIssuer || !binding.jwksUri || !binding.instanceId || !binding.deploymentId || !ownerUserId) {
+      const ownerSubject = binding.ownerSubject;
+      if (!binding.portalIssuer || !binding.jwksUri || !binding.instanceId || !binding.deploymentId || !ownerSubject) {
         return { ok: false, status: 503, error: "approval_owner_unbound" };
       }
       let jwks: JwksResolver;
@@ -252,8 +252,8 @@ export function createContractOwnerApprovalVerifier(deps: {
         now: () => nowMs,
         instanceId: binding.instanceId,
         deploymentId: binding.deploymentId,
-        // alpha.6 adapter (owner-pin.ts): sub = tealbrick-user:<ownerUserId> = the pinned ownerSubject.
-        ownerUserId,
+        // alpha.7: the pinned owner from the claim binding, as is (`sub` must equal it; a cleared pin never gets here).
+        ownerSubject,
         approvalId: input.approvalId,
         digest: input.digest,
         operation: input.operation,
@@ -271,7 +271,7 @@ export function createContractOwnerApprovalVerifier(deps: {
         kind: "portal",
         // Review L3: keep the used jti until exp + the verifier's clock skew (it is accepted until then).
         expiresAt: new Date(Math.max(result.expiresAt, nowMs) + MAX_CLOCK_SKEW_SECONDS * 1000).toISOString(),
-        decidedBy: `owner:${ownerUserId}`,
+        decidedBy: `owner:${ownerSubject.slice(USER_PRINCIPAL_PREFIX.length)}`,
         ...(amr ? { amr } : {}),
         ...(device ? { device } : {}),
       };
