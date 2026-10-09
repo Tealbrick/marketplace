@@ -546,14 +546,10 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
       return { ok: true, schema: 1, replayed: true, ...(receipt ? { receipt: receiptView(receipt) } : {}) };
     }
     if (post.status !== "scheduled" && post.status !== "held") return fail(reply, 409, "channel_post_not_cancellable", { status: post.status });
-    const ended = service.endPost(post, channel, "cancelled", actor.startsWith("agent:") ? "cancelled_by_agent" : "cancelled_by_owner");
+    const reason = actor.startsWith("agent:") ? "cancelled_by_agent" : "cancelled_by_owner";
+    // A held post and its approval end in one transaction (refused once a send took the post).
+    const ended = post.status === "held" ? service.cancelHeld(post, channel, actor, reason) : service.endPost(post, channel, "cancelled", reason);
     if (!ended) return fail(reply, 409, "channel_post_not_cancellable");
-    const approval = post.status === "held" ? service.approvalForPost(post) : null;
-    if (approval?.state === "pending") {
-      store.decideCompanyBoxApproval({ id: approval.id, workspaceSlug: org, decision: "deny", decidedBy: `${actor}:cancelled` });
-    } else if (approval?.state === "executing") {
-      service.finishApproval(approval.id, null, "channel_post_cancelled");
-    }
     const receipt = channels.getReceiptByPost(org, post.id);
     return { ok: true, schema: 1, ...(receipt ? { receipt: receiptView(receipt) } : {}) };
   };
@@ -941,7 +937,10 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
     const { postId } = request.params as { postId: string };
     const post = channels.getPost(org, postId);
     const channel = post ? channels.getChannel(org, post.channelId) : null;
-    if (!post || !channel || post.mode !== "scheduled") return fail(reply, 404, "channel_post_not_found");
+    // Scheduled posts, and held posts (immediate or scheduled) waiting for an approval.
+    if (!post || !channel || (post.mode !== "scheduled" && post.status !== "held" && post.status !== "cancelled")) {
+      return fail(reply, 404, "channel_post_not_found");
+    }
     const result = cancelScheduled(reply, post, channel, principal.id);
     if (result.ok && !("replayed" in result)) {
       store.recordAudit({
