@@ -12,6 +12,7 @@ import { SqliteMarketplaceStore } from "./store.js";
 import { FAKE_MCP_TOOLS, startFakeMcpServer, type FakeMcpTool } from "./testing/fake-mcp-server.js";
 import { startFakeRestServer, type FakeRestRequest } from "./testing/fake-rest-server.js";
 import type { RulesClient } from "./types.js";
+import { runtimeAuditRows, seamSnapshot } from "./testing/seam-snapshot.js";
 
 const ORIGIN = "http://127.0.0.1:5314";
 const SERVICE_TOKEN = "marketplace-service-token-1234";
@@ -1063,5 +1064,31 @@ describe("Company Box file uploads", () => {
     expect(tooBig.statusCode).toBe(413);
     expect(tooBig.json()).toMatchObject({ error: "approval_args_too_large" });
     expect(f.store.listCompanyBoxApprovals({ workspaceSlug: "ws-a" })).toHaveLength(1);
+  });
+});
+
+describe("executeConsentedCall execution targets", () => {
+  it("keeps the response, usage-ledger row and audit rows of the OpenAPI and custom MCP targets", async () => {
+    const f = await fixture();
+    expect((await f.setup("notes", { baseUrl: f.rest.origin, credentials: { token: SECRET } })).statusCode).toBe(200);
+    const notes = "company-box-notes";
+    const getNote = await f.consent(notes, `${notes}.get-note`, "connector.observe");
+    const openApi = await getNote({ path: { id: "n7" } }, "seam-openapi-1");
+    expect(openApi.statusCode, openApi.body).toBe(200);
+
+    const tracker = await f.setup("tracker", { baseUrl: f.mcp.origin, credentials: { token: SECRET } });
+    expect(tracker.statusCode, tracker.body).toBe(200);
+    const mcpPlugin = tracker.json().entry.pluginId as string;
+    const echo = await f.consent(mcpPlugin, `${mcpPlugin}.echo`, "connector.observe");
+    const mcp = await echo({ message: "hi" }, "seam-mcp-1");
+    expect(mcp.statusCode, mcp.body).toBe(200);
+
+    for (const [pluginId, response] of [[notes, openApi], [mcpPlugin, mcp]] as const) {
+      expect(seamSnapshot({
+        response: response.json(),
+        ledger: f.store.listUsage({ workspaceSlug: "ws-a" }).filter((row) => row.pluginId === pluginId),
+        audit: runtimeAuditRows(f.store.listAudit({ workspaceSlug: "ws-a", limit: 500 }) as unknown[], pluginId),
+      })).toMatchSnapshot(pluginId.startsWith("mcp-") ? "custom-mcp" : "openapi");
+    }
   });
 });

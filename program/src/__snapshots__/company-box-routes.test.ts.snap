@@ -1,0 +1,178 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`executeConsentedCall execution targets > keeps the response, usage-ledger row and audit rows of the OpenAPI and custom MCP targets > custom-mcp 1`] = `
+{
+  "audit": [
+    {
+      "actor_id": "agent:agent-1",
+      "event_type": "marketplace.runtime.execution.completed",
+      "metadata": "{"consentId":"consent-1","leaseId":"lease-1","usageId":"connector_usage_<uuid>","traceId":"<trace>","sourceProgram":"marketplace"}",
+      "plugin_id": "mcp-cb-tracker-<id>",
+      "rules_decision_id": "owner-governed:portal-consent:execute:mcp-cb-tracker-<id>",
+      "workspace_slug": "ws-a",
+    },
+  ],
+  "ledger": [
+    {
+      "createdAt": "<time>",
+      "error": null,
+      "id": "connector_usage_<uuid>",
+      "inputShape": {
+        "message": "string",
+        "type": "string",
+      },
+      "metadata": {
+        "consentId": "consent-1",
+        "contractVersion": "tealbrick.marketplace.operator-handoff.v1.1",
+        "leaseId": "lease-1",
+      },
+      "outputShape": {
+        "actionType": "string",
+        "capability": "string",
+        "details": "object",
+        "performedAt": "string",
+        "pluginId": "string",
+        "provider": "string",
+        "simulated": "boolean",
+        "summary": "string",
+        "workspaceSlug": "string",
+      },
+      "pluginId": "mcp-cb-tracker-<id>",
+      "productCapabilityKey": "connector.mcp.mcp-cb-tracker-<id>.mcp-cb-tracker-<id>.echo",
+      "provider": "mcp-cb-tracker-<id>",
+      "runId": null,
+      "scopesUsed": [
+        "connector.observe",
+      ],
+      "sessionId": null,
+      "sourceActionKey": "mcp-cb-tracker-<id>.echo",
+      "sourceExecutor": "mcp",
+      "status": "succeeded",
+      "workspaceSlug": "ws-a",
+    },
+  ],
+  "response": {
+    "ok": true,
+    "result": {
+      "actionType": "mcp-cb-tracker-<id>.echo",
+      "capability": "connector.observe",
+      "details": {
+        "result": {
+          "content": [
+            {
+              "text": "{"message":"hi"}",
+              "type": "text",
+            },
+          ],
+          "structuredContent": {
+            "arguments": {
+              "message": "hi",
+            },
+            "tool": "echo",
+          },
+        },
+        "toolName": "echo",
+      },
+      "performedAt": "<time>",
+      "pluginId": "mcp-cb-tracker-<id>",
+      "provider": "mcp-cb-tracker-<id>",
+      "simulated": false,
+      "summary": "Ran echo on Tracker.",
+      "workspaceSlug": "ws-a",
+    },
+    "schema": 1,
+    "traceId": "<trace>",
+    "usageId": "connector_usage_<uuid>",
+  },
+}
+`;
+
+exports[`executeConsentedCall execution targets > keeps the response, usage-ledger row and audit rows of the OpenAPI and custom MCP targets > openapi 1`] = `
+{
+  "audit": [
+    {
+      "actor_id": "agent:agent-1",
+      "event_type": "marketplace.runtime.execution.completed",
+      "metadata": "{"consentId":"consent-0","leaseId":"lease-1","usageId":"connector_usage_<uuid>","traceId":"<trace>","sourceProgram":"marketplace"}",
+      "plugin_id": "company-box-notes",
+      "rules_decision_id": "owner-governed:portal-consent:execute:company-box-notes",
+      "workspace_slug": "ws-a",
+    },
+  ],
+  "ledger": [
+    {
+      "createdAt": "<time>",
+      "error": null,
+      "id": "connector_usage_<uuid>",
+      "inputShape": {
+        "path": "object",
+        "type": "string",
+      },
+      "metadata": {
+        "consentId": "consent-0",
+        "contractVersion": "tealbrick.marketplace.operator-handoff.v1.1",
+        "leaseId": "lease-1",
+      },
+      "outputShape": {
+        "actionType": "string",
+        "capability": "string",
+        "details": "object",
+        "performedAt": "string",
+        "pluginId": "string",
+        "provider": "string",
+        "simulated": "boolean",
+        "summary": "string",
+        "workspaceSlug": "string",
+      },
+      "pluginId": "company-box-notes",
+      "productCapabilityKey": "connector.openapi.company-box-notes.company-box-notes.get-note",
+      "provider": "company-box-notes",
+      "runId": null,
+      "scopesUsed": [
+        "connector.observe",
+      ],
+      "sessionId": null,
+      "sourceActionKey": "company-box-notes.get-note",
+      "sourceExecutor": "openapi",
+      "status": "succeeded",
+      "workspaceSlug": "ws-a",
+    },
+  ],
+  "response": {
+    "ok": true,
+    "result": {
+      "actionType": "company-box-notes.get-note",
+      "capability": "connector.observe",
+      "details": {
+        "result": {
+          "body": {
+            "body": null,
+            "contentType": null,
+            "method": "GET",
+            "path": "/api/v1/notes/n7",
+            "query": {},
+          },
+          "bodyKind": "json",
+          "bytes": 84,
+          "contentType": "application/json",
+          "headers": {
+            "content-type": "application/json",
+            "x-total-count": "1",
+          },
+          "status": 200,
+        },
+        "toolName": "getNote",
+      },
+      "performedAt": "<time>",
+      "pluginId": "company-box-notes",
+      "provider": "company-box-notes",
+      "simulated": false,
+      "summary": "Ran getNote on Notes.",
+      "workspaceSlug": "ws-a",
+    },
+    "schema": 1,
+    "traceId": "<trace>",
+    "usageId": "connector_usage_<uuid>",
+  },
+}
+`;

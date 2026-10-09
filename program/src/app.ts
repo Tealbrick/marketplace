@@ -58,6 +58,7 @@ import {
   toolRecordsFromRemote,
   type CustomMcpManifest,
 } from "./custom-mcp.js";
+import { selectExecutionTarget, type ExecutionTarget } from "./execution-targets.js";
 import {
   callMcpTool,
   listMcpTools,
@@ -6989,6 +6990,124 @@ export async function buildMarketplaceApp(
    * and everything after that proof - consent state, scope match, connection, binding, governance, idempotent
    * dispatch, usage and audit - is this one implementation. Callers verify who is calling first.
    */
+  type ConsentedExecutionContext = {
+    listing: MarketplaceListing;
+    organizationId: string;
+    actionKey: string;
+    action: Record<string, unknown>;
+    publishedToolName: string;
+    connection: ConnectorConnection;
+  };
+  // Execution targets of executeConsentedCall, first match wins (see
+  // execution-targets.ts). OpenAPI and custom MCP listings are disjoint;
+  // Composio is the default.
+  const consentedExecutionTargets: readonly ExecutionTarget<ConsentedExecutionContext>[] = [
+    {
+      id: "openapi",
+      matches: ({ listing }) => listingIsCompanyBoxOpenApi(listing),
+      prepare: ({ listing, organizationId, actionKey, action, publishedToolName }) => {
+        let target: ReturnType<typeof companyBoxOpenApiTarget>;
+        try {
+          target = companyBoxOpenApiTarget(listing, organizationId);
+        } catch (error) {
+          if (!(error instanceof ConnectorSecretStoreUnavailableError)) throw error;
+          return { ok: false, statusCode: 503, error: "connector_secret_store_unavailable" };
+        }
+        if (!target.ok) {
+          return { ok: false, statusCode: 409, error: "runtime_connection_unavailable" };
+        }
+        const operation = target.entry.byKey.get(actionKey);
+        const { type: _type, ...args } = action;
+        try {
+          if (!operation) throw new OpenApiCallError("openapi_argument_invalid", "Unknown operation.");
+          validateOpenApiArguments(operation.operation, args, runtimeAuthFor(target.entry.entry.auth), operation.validateArguments, maxUploadBytes);
+        } catch (error) {
+          if (!(error instanceof OpenApiCallError)) throw error;
+          return { ok: false, statusCode: 400, error: "provider_argument_invalid" };
+        }
+        const openApiTarget = target;
+        return {
+          ok: true,
+          prepared: {
+            toolName: publishedToolName,
+            summary: `Ran ${publishedToolName} on ${listing.displayName}.`,
+            run: async () => {
+              try {
+                return await callCompanyBoxOperation(openApiTarget, actionKey, args);
+              } catch (error) {
+                logCompanyBoxFailure({
+                  event: "marketplace.company_box.runtime_failed",
+                  pluginId: listing.pluginId,
+                  workspaceSlug: organizationId,
+                  error,
+                });
+                throw new Error(error instanceof OpenApiCallError ? error.code : "openapi_unreachable");
+              }
+            },
+          },
+        };
+      },
+    },
+    {
+      id: "custom-mcp",
+      matches: ({ listing, organizationId }) => listingIsWorkspaceCustomMcp(listing, organizationId),
+      prepare: ({ listing, organizationId, action, publishedToolName }) => {
+        let mcpConnection: ReturnType<typeof customMcpConnection>;
+        try {
+          mcpConnection = customMcpConnection(listing, organizationId);
+        } catch (error) {
+          if (!(error instanceof ConnectorSecretStoreUnavailableError)) throw error;
+          return { ok: false, statusCode: 503, error: "connector_secret_store_unavailable" };
+        }
+        const { type: _type, ...args } = action;
+        return {
+          ok: true,
+          prepared: {
+            toolName: publishedToolName,
+            summary: `Ran ${publishedToolName} on ${listing.displayName}.`,
+            run: async () => {
+              const output = await callMcpTool(mcpConnection, publishedToolName, args);
+              if (output.isError) {
+                throw new Error("mcp_tool_failed");
+              }
+              return {
+                content: output.content,
+                ...(output.structuredContent === undefined
+                  ? {}
+                  : { structuredContent: output.structuredContent }),
+              };
+            },
+          },
+        };
+      },
+    },
+    {
+      id: "composio",
+      matches: () => true,
+      prepare: ({ listing, actionKey, action, connection }) => {
+        const toolName = composioToolNameForAction(listing, actionKey);
+        return {
+          ok: true,
+          prepared: {
+            toolName,
+            summary: `Executed ${toolName} through Composio.`,
+            run: () =>
+              executeComposioTool({
+                toolName,
+                arguments: { ...action, type: undefined },
+                connectedAccountId: connectedAccountIdFromConnection(connection),
+                userId:
+                  typeof connection.metadata.userId === "string"
+                    ? connection.metadata.userId
+                    : undefined,
+                env: providerEnvironment(),
+                fetchImpl: options.providerFetch,
+              }),
+          },
+        };
+      },
+    },
+  ];
   const executeConsentedCall = async (call: {
     reply: FastifyReply;
     traceId: string;
@@ -7209,49 +7328,23 @@ export async function buildMarketplaceApp(
         error: rules.error,
       });
     }
-    // Custom MCP connectors run through the same runtime contract; build
-    // their outbound connection before reserving the idempotency key so a
+    const executionContext: ConsentedExecutionContext = {
+      listing,
+      organizationId,
+      actionKey: input.selection.actionKey,
+      action: scopedAction.action,
+      publishedToolName: published.toolName,
+      connection,
+    };
+    // Build the outbound call before reserving the idempotency key so a
     // missing secret store never leaves an operation needing reconciliation.
-    let mcpConnection: ReturnType<typeof customMcpConnection> | null = null;
-    let openApiTarget: Extract<ReturnType<typeof companyBoxOpenApiTarget>, { ok: true }> | null = null;
-    if (listingIsCompanyBoxOpenApi(listing)) {
-      let target: ReturnType<typeof companyBoxOpenApiTarget>;
-      try {
-        target = companyBoxOpenApiTarget(listing, organizationId);
-      } catch (error) {
-        if (!(error instanceof ConnectorSecretStoreUnavailableError)) throw error;
-        reply.code(503);
-        return runtimeResponse({ ok: false, traceId, error: "connector_secret_store_unavailable" });
-      }
-      if (!target.ok) {
-        reply.code(409);
-        return runtimeResponse({ ok: false, traceId, error: "runtime_connection_unavailable" });
-      }
-      const operation = target.entry.byKey.get(input.selection.actionKey);
-      const { type: _type, ...args } = scopedAction.action;
-      try {
-        if (!operation) throw new OpenApiCallError("openapi_argument_invalid", "Unknown operation.");
-        validateOpenApiArguments(operation.operation, args, runtimeAuthFor(target.entry.entry.auth), operation.validateArguments, maxUploadBytes);
-      } catch (error) {
-        if (!(error instanceof OpenApiCallError)) throw error;
-        reply.code(400);
-        return runtimeResponse({ ok: false, traceId, error: "provider_argument_invalid" });
-      }
-      openApiTarget = target;
+    const preparation = selectExecutionTarget(consentedExecutionTargets, executionContext)
+      .prepare(executionContext);
+    if (!preparation.ok) {
+      reply.code(preparation.statusCode);
+      return runtimeResponse({ ok: false, traceId, error: preparation.error });
     }
-    if (listingIsWorkspaceCustomMcp(listing, organizationId)) {
-      try {
-        mcpConnection = customMcpConnection(listing, organizationId);
-      } catch (error) {
-        if (!(error instanceof ConnectorSecretStoreUnavailableError)) throw error;
-        reply.code(503);
-        return runtimeResponse({
-          ok: false,
-          traceId,
-          error: "connector_secret_store_unavailable",
-        });
-      }
-    }
+    const { prepared } = preparation;
     const fingerprint = createHash("sha256")
       .update(
         stableJson({
@@ -7293,49 +7386,9 @@ export async function buildMarketplaceApp(
             : "runtime_operation_reconciliation_required",
       });
     }
-    const toolName = mcpConnection || openApiTarget
-      ? published.toolName
-      : composioToolNameForAction(listing, input.selection.actionKey);
+    const toolName = prepared.toolName;
     try {
-      let providerOutput: unknown;
-      if (openApiTarget) {
-        const { type: _type, ...args } = scopedAction.action;
-        try {
-          providerOutput = await callCompanyBoxOperation(openApiTarget, input.selection.actionKey, args);
-        } catch (error) {
-          logCompanyBoxFailure({
-            event: "marketplace.company_box.runtime_failed",
-            pluginId: listing.pluginId,
-            workspaceSlug: organizationId,
-            error,
-          });
-          throw new Error(error instanceof OpenApiCallError ? error.code : "openapi_unreachable");
-        }
-      } else if (mcpConnection) {
-        const { type: _type, ...args } = scopedAction.action;
-        const output = await callMcpTool(mcpConnection, toolName, args);
-        if (output.isError) {
-          throw new Error("mcp_tool_failed");
-        }
-        providerOutput = {
-          content: output.content,
-          ...(output.structuredContent === undefined
-            ? {}
-            : { structuredContent: output.structuredContent }),
-        };
-      } else {
-        providerOutput = await executeComposioTool({
-          toolName,
-          arguments: { ...scopedAction.action, type: undefined },
-          connectedAccountId: connectedAccountIdFromConnection(connection),
-          userId:
-            typeof connection?.metadata.userId === "string"
-              ? connection.metadata.userId
-              : undefined,
-          env: providerEnvironment(),
-          fetchImpl: options.providerFetch,
-        });
-      }
+      const providerOutput = await prepared.run();
       const result = {
         pluginId: input.selection.pluginId,
         workspaceSlug: organizationId,
@@ -7344,9 +7397,7 @@ export async function buildMarketplaceApp(
         actionType: input.selection.actionKey,
         performedAt: new Date().toISOString(),
         simulated: false,
-        summary: mcpConnection || openApiTarget
-          ? `Ran ${toolName} on ${listing.displayName}.`
-          : `Executed ${toolName} through Composio.`,
+        summary: prepared.summary,
         details: { toolName, result: runtimeSafeProviderResult(providerOutput) },
       };
       if (JSON.stringify(result).length > 65536) {
