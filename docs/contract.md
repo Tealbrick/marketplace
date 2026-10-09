@@ -402,7 +402,7 @@ provider-env or account field.
 | `marketplace.channels.test` | `POST /api/marketplace/channels/{channelId}/test` (fixed text, authority `owner-test`) |
 | `marketplace.channel-grants.approve` / `.decline` / `.revoke` | `POST /api/marketplace/channels/grants/{grantId}/approve|decline|revoke` (approve takes an optional narrower `final`) |
 | `marketplace.channel-posts.list` | `GET /api/marketplace/channels/posts?status=held,scheduled,uncertain&channelId=` (send time, channel, agent, digest prefix, approval state; no text) |
-| `marketplace.channel-posts.cancel` | `POST /api/marketplace/channels/posts/{postId}/cancel` (scheduled posts; closes a waiting approval, fails an approved one) |
+| `marketplace.channel-posts.cancel` | `POST /api/marketplace/channels/posts/{postId}/cancel` (scheduled posts, and held posts, immediate or scheduled; in one transaction with the post: denies a waiting approval, fails an approved one; refused once sending started) |
 | `marketplace.channel-posts.resolve` | `POST /api/marketplace/channels/posts/{postId}/resolve` `{status: sent|failed}` |
 | `marketplace.channel-receipts.export` / `.purge` | `GET /api/marketplace/channels/receipts/export`, `POST /api/marketplace/channels/receipts/purge` `{olderThanDays}` (default 90; finished posts only; answers `{purged, skipped}`) |
 
@@ -467,6 +467,11 @@ attachments of finished posts once their receipts are purged or after the
 90-day receipt retention. An attachment used by a post that is not finished
 (`held`, `scheduled`, `sending`, `uncertain`) is never deleted; a file goes
 with the last row of its SHA-256.
+
+A held post whose approval ended without an approval (`failed`, for example
+decided in an older Marketplace during a rollback) is ended by the next tick as
+`skipped` with reason `approval_failed` and a receipt; it is never sent. The
+agent's retry with the same key answers `409 approval_failed`.
 
 Receipt purge (owner op and the 90-day retention in the tick) deletes only
 receipts of finished posts and answers `{purged, skipped}`.

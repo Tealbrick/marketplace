@@ -124,8 +124,10 @@ describe("U3: owner list and cancel of scheduled and held posts", () => {
     expect(cancelled.json()).toMatchObject({ receipt: { status: "cancelled" } });
     expect(f.store.getCompanyBoxApproval(heldScheduled.json().approvalId)).toMatchObject({ state: "failed", error: "channel_post_cancelled" });
     expect((await f.owner("POST", `/api/marketplace/channels/posts/${heldScheduled.headers["tealbrick-post-id"] as string}/cancel`, {})).json()).toMatchObject({ replayed: true });
-    // An immediate post is not a scheduled post.
-    expect((await f.owner("POST", `/api/marketplace/channels/posts/${heldNow.headers["tealbrick-post-id"] as string}/cancel`, {})).statusCode).toBe(404);
+    // A held immediate post can be cancelled by the owner too; its pending approval is denied.
+    const cancelledNow = await f.owner("POST", `/api/marketplace/channels/posts/${heldNow.headers["tealbrick-post-id"] as string}/cancel`, {});
+    expect(cancelledNow.statusCode).toBe(200);
+    expect(f.store.getCompanyBoxApproval(heldNow.json().approvalId)!.state).toBe("denied");
     f.setClock(sendAt + 1_000);
     await f.runtime.tick(new Date(sendAt + 1_000));
     expect(f.telegram.sends).toHaveLength(0);

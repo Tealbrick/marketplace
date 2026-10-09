@@ -1529,6 +1529,39 @@ export class ChannelStore {
   }
 
   /**
+   * Cancels a held post with its approval in one transaction: the post must
+   * still be `held` (refused once a send started), then a `pending` approval
+   * becomes `denied` and an approved (`executing`) one `failed`
+   * (`channel_post_cancelled`). Returns the cancelled post, or null.
+   */
+  cancelHeldPost(input: { workspaceSlug: string; postId: string; reason: string; decidedBy: string; now: Date | string }): ChannelPostRecord | null {
+    const now = iso(input.now);
+    return this.immediate(() => {
+      const result = this.db
+        .prepare(
+          `UPDATE channel_post SET status = 'cancelled', reason = ?, claimed_by = NULL, claim_expires_at = NULL, updated_at = ?
+          WHERE workspace_slug = ? AND id = ? AND status = 'held'`,
+        )
+        .run(input.reason, now, input.workspaceSlug, input.postId);
+      if (Number(result.changes) !== 1) return null;
+      const key = channelPostApprovalKey(input.postId);
+      this.db
+        .prepare(
+          `UPDATE company_box_approval SET state = 'denied', decided_by = ?, decided_at = ?, updated_at = ?
+          WHERE workspace_slug = ? AND idempotency_key = ? AND state IN ('pending', 'resolving')`,
+        )
+        .run(input.decidedBy, now, now, input.workspaceSlug, key);
+      this.db
+        .prepare(
+          `UPDATE company_box_approval SET state = 'failed', error = 'channel_post_cancelled', updated_at = ?
+          WHERE workspace_slug = ? AND idempotency_key = ? AND state = 'executing'`,
+        )
+        .run(now, input.workspaceSlug, key);
+      return this.getPost(input.workspaceSlug, input.postId);
+    });
+  }
+
+  /**
    * Owner denies an approved (`executing`) approval while its post is still
    * `held` (review M1). One transaction: the post must still be held (no send
    * started), then the approval moves `executing` → `denied`. Returns false

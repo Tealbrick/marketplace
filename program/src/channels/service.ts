@@ -453,6 +453,18 @@ export function createChannelService(deps: ChannelServiceDeps) {
     return ended;
   };
 
+  /** Cancels a held post and closes its approval atomically (agent or owner), with its receipt. */
+  const cancelHeld = (post: ChannelPostRecord, channel: ChannelRecord, actor: string, reason: string) => {
+    const ended = channels.cancelHeldPost({ workspaceSlug: org, postId: post.id, reason, decidedBy: `${actor}:cancelled`, now: deps.now() });
+    if (!ended) return null;
+    writeReceipt({ post: ended, channel, status: "cancelled", reason });
+    audit("marketplace.channels.post.cancelled", ended, channel.provider, { reason });
+    return ended;
+  };
+
+  /** An approval that ended without approving (0.1.19 marks an approval it could not run `failed`). */
+  const approvalEndedUnapproved = (state: CompanyBoxApproval["state"]) => state === "failed" || state === "succeeded";
+
   // ----- send (channel-native target run) ------------------------------------
 
   const settleSend = async (channel: ChannelRecord, post: ChannelPostRecord, payload: ChannelPayload): Promise<ReceiptView> => {
@@ -782,6 +794,10 @@ export function createChannelService(deps: ChannelServiceDeps) {
           }
           if (approval.state === "executing" && existing.mode === "immediate") {
             return channelResponse(await approvedHold(input, channel, existing, approval.id, base));
+          }
+          if (approvalEndedUnapproved(approval.state)) {
+            endPost(existing, channel, "skipped", "approval_failed");
+            return answer(refusalReply({ status: 409, error: "approval_failed" }, traceId));
           }
           return answer(refusalReply({ status: 409, error: "channel_post_held" }, traceId));
         }
@@ -1209,10 +1225,15 @@ export function createChannelService(deps: ChannelServiceDeps) {
       if (channel && post.workspaceSlug === org) writeReceipt({ post, channel, status: "uncertain", reason: "send_lease_expired" });
       audit("marketplace.channels.post.uncertain", post, channel?.provider ?? "unknown", { reason: "send_lease_expired" });
     }
-    // Immediate holds whose approval expired or was denied end with a receipt (the agent learns it on retry too).
+    // Holds whose approval ended without an approval (`failed`, e.g. decided by 0.1.19 during a rollback)
+    // end as skipped with a receipt, immediate or scheduled; they are never sent.
     for (const post of channels.listPosts(org, { status: "held", limit: 200 })) {
-      if (post.mode !== "immediate") continue;
       const approval = approvalForPost(post);
+      if (approval && approvalEndedUnapproved(approval.state)) {
+        if (endPost(post, channels.getChannel(org, post.channelId), "skipped", "approval_failed")) report.skipped += 1;
+        continue;
+      }
+      if (post.mode !== "immediate") continue;
       if (approval?.state === "expired") endPost(post, channels.getChannel(org, post.channelId), "expired", "approval_expired");
       else if (approval?.state === "denied") endPost(post, channels.getChannel(org, post.channelId), "skipped", "approval_denied");
       else if (approval?.state === "executing" && Date.parse(approval.expiresAt) <= deps.now().getTime()) {
@@ -1303,6 +1324,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
     ownerTest,
     onApprovalDenied,
     denyApprovedHold,
+    cancelHeld,
     finishApproval,
     suspendForDestinationChange: (channel: ChannelRecord) => {
       // L6: a new destination changes every digest. Active grants need a new approval, and holds end now.
