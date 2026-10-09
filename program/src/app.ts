@@ -19,9 +19,17 @@ import {
   type ComposioListingTool,
 } from "./connectors.js";
 import {
+  CONNECT_MODES,
+  composioAuthProfile,
+  connectMode,
+  countConnectModes,
+} from "./connect-mode.js";
+import {
+  ComposioAuthConfigError,
   createComposioAuthLink,
   executeComposioTool,
   fetchActivepiecesCatalog,
+  fetchComposioAuthConfigs,
   fetchComposioCatalog,
   fetchComposioConnectedAccounts,
   fetchComposioToolkitTools,
@@ -193,6 +201,7 @@ const CardsSummaryQuerySchema = WorkspaceQuerySchema.extend({
     .enum(["true", "false"])
     .optional()
     .transform((value) => value === "true"),
+  connectMode: z.enum(["all", ...CONNECT_MODES]).default("all"),
   offset: z.coerce.number().int().min(0).default(0),
   limit: z.coerce.number().int().min(1).max(100).default(60),
 });
@@ -1495,6 +1504,7 @@ function pluginCardForListing(input: {
     },
     skills,
     toolSelection,
+    connectMode: connectMode(listing, connection, { workspaceSlug }),
     listing,
     install,
     connection,
@@ -1553,6 +1563,7 @@ function pluginSummaryForListing(input: {
     registered,
     installed,
     authRequired,
+    connectMode: connectMode(listing, connection, { workspaceSlug }),
     toolCount: listing.actions.length,
     install: install
       ? {
@@ -1651,6 +1662,8 @@ function browserPluginCardForListing(input: {
     installStateByTarget: card.installStateByTarget,
     installPlan: card.installPlan,
     toolSelection: card.toolSelection,
+    connectMode: card.connectMode,
+    connectInfo: browserConnectInfo(input.listing),
     listing: browserListingForListing(input.listing),
     install: card.install
       ? {
@@ -1668,6 +1681,19 @@ function browserPluginCardForListing(input: {
           updatedAt: card.connection.updatedAt,
         }
       : null,
+  };
+}
+
+/** Non-secret Composio facts the Connect dialog needs; null for other sources. */
+function browserConnectInfo(listing: MarketplaceListing) {
+  if (listing.source !== "composio" || listing.executionOwner !== "composio") {
+    return null;
+  }
+  const profile = composioAuthProfile(listing);
+  return {
+    toolkit: composioToolkitForListing(listing),
+    authSchemes: profile.authSchemes,
+    managedAuthSchemes: profile.managedAuthSchemes,
   };
 }
 
@@ -1740,6 +1766,25 @@ function composioAuthMetadataForListing(listing: MarketplaceListing) {
   };
 }
 
+/** Record known custom auth configs (id + scheme) on a catalog listing. */
+function withCustomAuthConfigs(
+  listing: MarketplaceListing,
+  customAuthConfigs: Array<{ id: string; authScheme: string | null }>,
+): MarketplaceListing {
+  const composio = recordValue(listing.manifest.composio) ?? {};
+  const catalog = recordValue(composio.catalog) ?? {};
+  return {
+    ...listing,
+    manifest: {
+      ...listing.manifest,
+      composio: {
+        ...composio,
+        catalog: { ...catalog, customAuthConfigs },
+      },
+    },
+  };
+}
+
 async function synchronizeComposioCatalog(input: {
   store: SqliteMarketplaceStore;
   workspaceSlug: string;
@@ -1752,6 +1797,24 @@ async function synchronizeComposioCatalog(input: {
     input.env,
     fetchImpl,
   ).catch(() => ({ baseUrl: catalog.baseUrl, items: [] }));
+  // Owner-created custom auth configs per toolkit (ids and schemes only,
+  // never credentials). A failed lookup just means none are known.
+  const authConfigs = await fetchComposioAuthConfigs(input.env, fetchImpl).catch(
+    () => [],
+  );
+  const customAuthConfigsByToolkit = new Map<
+    string,
+    Array<{ id: string; authScheme: string | null }>
+  >();
+  for (const config of authConfigs) {
+    if (!config.enabled || config.composioManaged !== false || !config.toolkit) {
+      continue;
+    }
+    const key = config.toolkit.toLowerCase();
+    const list = customAuthConfigsByToolkit.get(key) ?? [];
+    list.push({ id: config.id, authScheme: config.authScheme });
+    customAuthConfigsByToolkit.set(key, list);
+  }
   const existingByToolkit = new Map<string, MarketplaceListing>();
   for (const listing of input.store.listListings()) {
     if (
@@ -1767,12 +1830,18 @@ async function synchronizeComposioCatalog(input: {
   let refreshed = 0;
 
   for (const rawToolkit of catalog.items) {
-    const catalogListing = buildComposioCatalogListing({
+    const builtListing = buildComposioCatalogListing({
       toolkit: rawToolkit,
     });
-    if (!catalogListing) {
+    if (!builtListing) {
       continue;
     }
+    const catalogListing = withCustomAuthConfigs(
+      builtListing,
+      customAuthConfigsByToolkit.get(
+        composioToolkitForListing(builtListing).toLowerCase(),
+      ) ?? [],
+    );
     const existing = existingByToolkit.get(catalogListing.provider);
     if (
       existing &&
@@ -5318,7 +5387,7 @@ export async function buildMarketplaceApp(
       }),
     );
     const search = query.search.toLocaleLowerCase();
-    const filtered = summaries.filter((summary) => {
+    const matching = summaries.filter((summary) => {
       if (query.source !== "all" && summary.source !== query.source) {
         return false;
       }
@@ -5338,6 +5407,15 @@ export async function buildMarketplaceApp(
         .toLocaleLowerCase()
         .includes(search);
     });
+    // Counts follow the search/source/installed filters but not the
+    // connect-mode filter, so every status chip keeps its number.
+    const connectModeCounts = countConnectModes(
+      matching.map((summary) => summary.connectMode),
+    );
+    const filtered =
+      query.connectMode === "all"
+        ? matching
+        : matching.filter((summary) => summary.connectMode === query.connectMode);
     const connections = summaries
       .filter((summary) => summary.connection !== null)
       .map((summary) => ({
@@ -5357,6 +5435,7 @@ export async function buildMarketplaceApp(
       limit: query.limit,
       hasMore: query.offset + query.limit < filtered.length,
       sources,
+      connectModeCounts,
       connections,
       items: filtered.slice(query.offset, query.offset + query.limit),
     };
@@ -5730,18 +5809,32 @@ export async function buildMarketplaceApp(
             detail: error instanceof Error ? error.message : String(error),
           };
         }
-        const auth = await createComposioAuthLink({
-          toolkit,
-          state,
-          callbackUrl,
-          env: providerEnvironment(),
-          fetchImpl: options.providerFetch,
-          authConfigId: input.authConfigId,
-          userId: input.userId,
-          alias: input.alias ?? `${input.workspaceSlug}-${toolkit}`,
-          connectionData: input.connectionData,
-          ...composioAuthMetadataForListing(listing),
-        });
+        let auth: Awaited<ReturnType<typeof createComposioAuthLink>>;
+        try {
+          auth = await createComposioAuthLink({
+            toolkit,
+            state,
+            callbackUrl,
+            env: providerEnvironment(),
+            fetchImpl: options.providerFetch,
+            authConfigId: input.authConfigId,
+            userId: input.userId,
+            alias: input.alias ?? `${input.workspaceSlug}-${toolkit}`,
+            connectionData: input.connectionData,
+            ...composioAuthMetadataForListing(listing),
+          });
+        } catch (error) {
+          if (error instanceof ComposioAuthConfigError) {
+            reply.code(error.statusCode);
+            return {
+              ok: false,
+              traceId,
+              error: error.code,
+              detail: error.message,
+            };
+          }
+          throw error;
+        }
         if (auth.redirectUrl || auth.connectedAccountId) {
           enableComposioConnector({
             store: options.store,

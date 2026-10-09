@@ -41,6 +41,10 @@ private repository history.
   configured. Nango, Activepieces, and MCP integration surfaces are explicit
   adapter boundaries and fail closed when their runtime is not configured or
   accepted for execution.
+- Every catalog card carries a server-derived connect mode (status badge,
+  status filter and per-status counts in the catalog). Connect reuses an
+  existing Composio auth config, including one the owner created in the
+  Composio dashboard. See `docs/composio-connect-modes.md`.
 - Teal Brick miniapp contract: `tealbrick.app.json` (validated, served at
   `/.well-known/tealbrick/manifest`), the `/.well-known/tealbrick/*` control
   endpoints, two agent operations over a Portal app grant (list your consents,

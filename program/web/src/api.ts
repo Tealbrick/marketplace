@@ -98,7 +98,7 @@ export async function getBootstrap(): Promise<FrontendBootstrap> {
   }
 }
 export const getCards = (workspaceSlug: string) => api<CardsResponse>(`/api/marketplace/cards?${workspaceQuery(workspaceSlug)}`);
-export const getCardSummaries = (input: { workspaceSlug: string; search: string; source: string; installed: boolean; offset: number; limit: number }) => {
+export const getCardSummaries = (input: { workspaceSlug: string; search: string; source: string; installed: boolean; offset: number; limit: number; connectMode?: string }) => {
   const query = new URLSearchParams({
     workspaceSlug: input.workspaceSlug,
     search: input.search,
@@ -107,6 +107,7 @@ export const getCardSummaries = (input: { workspaceSlug: string; search: string;
     offset: String(input.offset),
     limit: String(input.limit),
   });
+  if (input.connectMode && input.connectMode !== "all") query.set("connectMode", input.connectMode);
   return api<CardsSummaryResponse>(`/api/marketplace/cards/summary?${query.toString()}`);
 };
 export const getCardDetail = (pluginId: string, workspaceSlug: string) =>
@@ -131,10 +132,13 @@ export const unregisterPlugin = (pluginId: string, workspaceSlug: string) => lif
 
 // Only Composio-backed connectors can be connected from the browser in this
 // launch profile; the Connect action is disabled for every other source.
-export const connectPlugin = (pluginId: string, workspaceSlug: string, provider: string) =>
+// `authConfigId` is optional: a Composio auth config the owner created in the
+// Composio dashboard (for example an OAuth app). The Program checks that it
+// belongs to the connector's toolkit.
+export const connectPlugin = (pluginId: string, workspaceSlug: string, provider: string, authConfigId?: string) =>
   api<{ auth?: { redirectUrl?: string | null }; connection?: Record<string, unknown> }>(`/api/marketplace/plugins/${encodeURIComponent(pluginId)}/connection`, {
     method: "POST",
-    body: JSON.stringify({ workspaceSlug, actorId: "operator", provider, backend: "composio" }),
+    body: JSON.stringify({ workspaceSlug, actorId: "operator", provider, backend: "composio", ...(authConfigId?.trim() ? { authConfigId: authConfigId.trim() } : {}) }),
   });
 
 export const bindAction = (pluginId: string, workspaceSlug: string, actionKey: string, enabled: boolean) =>

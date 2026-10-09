@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, getBootstrap, getCardDetail, getCardSummaries, getOperatorSession, logoutOperator, saveProviderSettings, unlockOperator, unlockWithEmergencyCode } from "./api";
+import { ApiError, connectPlugin, getBootstrap, getCardDetail, getCardSummaries, getOperatorSession, logoutOperator, saveProviderSettings, unlockOperator, unlockWithEmergencyCode } from "./api";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -11,6 +11,24 @@ describe("frontend API client", () => {
     await getCardDetail("composio/foo bar", "team one");
     expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/marketplace/cards/summary?workspaceSlug=team+one&search=mail+%26+files&source=composio&installed=true&offset=60&limit=60");
     expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/marketplace/cards/composio%2Ffoo%20bar?workspaceSlug=team%20one");
+  });
+
+  it("sends the connect-mode filter only when one is chosen", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({}), { status: 200 }));
+    await getCardSummaries({ workspaceSlug: "w", search: "", source: "all", installed: false, offset: 0, limit: 60, connectMode: "needs_auth_config" });
+    await getCardSummaries({ workspaceSlug: "w", search: "", source: "all", installed: false, offset: 0, limit: 60, connectMode: "all" });
+    expect(new URL(String(fetchMock.mock.calls[0]?.[0]), "http://x").searchParams.get("connectMode")).toBe("needs_auth_config");
+    expect(new URL(String(fetchMock.mock.calls[1]?.[0]), "http://x").searchParams.has("connectMode")).toBe(false);
+  });
+
+  it("sends an auth config ID with Connect only when one is entered", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    await connectPlugin("composio-github", "w", "github", "  ac_github  ");
+    await connectPlugin("composio-github", "w", "github", "   ");
+    await connectPlugin("composio-github", "w", "github");
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ workspaceSlug: "w", actorId: "operator", provider: "github", backend: "composio", authConfigId: "ac_github" });
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).not.toHaveProperty("authConfigId");
+    expect(JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body))).not.toHaveProperty("authConfigId");
   });
 
   it("falls back to a truthful bootstrap only when an older Program returns 404", async () => {

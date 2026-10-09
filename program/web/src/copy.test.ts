@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ApiError } from "./api";
-import { APPROVAL_STATUS_COPY, approvalStatus, errorCopy, knownVersion, refreshErrorCopy, SESSION_ENDED_COPY, shortScope, statusLabel, words } from "./copy";
+import { APPROVAL_STATUS_COPY, approvalStatus, CONNECT_MODE_LABELS, CONNECT_MODE_ORDER, connectModeHint, connectModeLabel, connectModeTone, errorCopy, knownVersion, refreshErrorCopy, SESSION_ENDED_COPY, shortScope, statusLabel, words } from "./copy";
 
 const apiError = (status: number, body: unknown, message = "raw server detail with MARKETPLACE_INTERNAL_AUTH_TOKEN") => new ApiError(message, status, body);
 
@@ -19,6 +19,28 @@ describe("customer-safe copy", () => {
     expect(statusLabel("CatalogOnly")).toBe("Listed — not yet installable");
     expect(statusLabel("authRequired")).toBe("Sign-in required");
     expect(statusLabel("someNewState")).toBe("Some New State");
+  });
+
+  it("labels every connect mode in plain language", () => {
+    expect(CONNECT_MODE_ORDER).toEqual(["connected", "ready_managed", "ready_user_key", "ready_auth_config", "no_auth", "needs_auth_config", "needs_credentials", "not_supported"]);
+    for (const mode of CONNECT_MODE_ORDER) {
+      expect(CONNECT_MODE_LABELS[mode]).toMatch(/^[A-Z]/u);
+      expect(connectModeHint(mode, "github")).toBeTruthy();
+    }
+    expect(connectModeLabel("needs_auth_config")).toBe("Needs an auth config");
+    expect(connectModeLabel(undefined)).toBeNull();
+    expect(connectModeTone("connected")).toBe("success");
+    expect(connectModeTone("needs_auth_config")).toBe("warning");
+    expect(connectModeHint("needs_auth_config", "github")).toContain('create an auth config for the "github" toolkit');
+    expect(connectModeHint("needs_auth_config")).toContain("for this toolkit");
+  });
+
+  it("explains auth-config failures without raw server detail", () => {
+    const mismatch = errorCopy(apiError(400, { error: "composio_auth_config_toolkit_mismatch", detail: "belongs to slack" }));
+    expect(mismatch.title).toBe("That auth config is for a different service");
+    expect(mismatch.detail).not.toContain("slack");
+    expect(errorCopy(apiError(409, { error: "composio_auth_config_required" })).title).toBe("This service needs an auth config");
+    expect(errorCopy(apiError(400, { error: "composio_auth_config_not_found" })).reference).toBe("composio_auth_config_not_found");
   });
 
   it("distinguishes Rules outcomes from each other", () => {

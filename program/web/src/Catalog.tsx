@@ -31,7 +31,7 @@ import {
   unregisterPlugin,
 } from "./api";
 import type { PluginCard, PluginSummary } from "./types";
-import { CATALOG_ONLY_HINT, CUSTOM_CONNECTOR_TOOLS_HINT, knownVersion } from "./copy";
+import { CATALOG_ONLY_HINT, connectModeHint, connectModeLabel, connectModeTone, CUSTOM_CONNECTOR_TOOLS_HINT, knownVersion } from "./copy";
 import { formatWhen, InlineError, statusLabel, statusTone, words } from "./ui";
 
 export type ConfirmState = {
@@ -49,7 +49,7 @@ export function CatalogRow({ card, selected, onSelect }: { card: PluginSummary; 
       <span className="catalog-row__body">
         <span className="catalog-row__title"><strong>{card.displayName}</strong>{card.install && <span className="installed-mark"><Check size={11} /></span>}</span>
         <span>{card.description || card.sourceLabel}</span>
-        <span className="catalog-row__meta"><Tag>{card.source}</Tag><Tag tone={statusTone(card.status)}>{statusLabel(card.status)}</Tag></span>
+        <span className="catalog-row__meta"><Tag>{card.source}</Tag><Tag tone={statusTone(card.status)}>{statusLabel(card.status)}</Tag>{card.connectMode && <Tag tone={connectModeTone(card.connectMode)}>{connectModeLabel(card.connectMode)}</Tag>}</span>
       </span>
       <ChevronRight size={15} />
     </button>
@@ -77,6 +77,10 @@ export function ConfirmDialog({ state, onClose, onSuccess }: { state: ConfirmSta
 function ConnectDialog({ card, workspaceSlug, open, onOpenChange, onConnected }: { card: PluginCard; workspaceSlug: string; open: boolean; onOpenChange: (open: boolean) => void; onConnected: () => void }) {
   const authorizationWindow = useRef<Window | null>(null);
   const [popupBlocked, setPopupBlocked] = useState(false);
+  const [authConfigId, setAuthConfigId] = useState("");
+  const needsAuthConfig = card.connectMode === "needs_auth_config";
+  const toolkit = card.connectInfo?.toolkit ?? card.listing.provider;
+  useEffect(() => { if (open) setAuthConfigId(""); }, [open, card.listing.pluginId]);
   const closeAuthorizationWindow = () => {
     if (authorizationWindow.current && !authorizationWindow.current.closed) {
       authorizationWindow.current.close();
@@ -84,7 +88,7 @@ function ConnectDialog({ card, workspaceSlug, open, onOpenChange, onConnected }:
     authorizationWindow.current = null;
   };
   const mutation = useMutation({
-    mutationFn: () => connectPlugin(card.listing.pluginId, workspaceSlug, card.listing.provider),
+    mutationFn: () => connectPlugin(card.listing.pluginId, workspaceSlug, card.listing.provider, authConfigId),
     onSuccess: (result) => {
       if (result.auth?.redirectUrl) {
         if (authorizationWindow.current && !authorizationWindow.current.closed) {
@@ -109,11 +113,17 @@ function ConnectDialog({ card, workspaceSlug, open, onOpenChange, onConnected }:
       <Dialog.Portal><Dialog.Overlay className="dialog-overlay" /><Dialog.Content className="form-dialog">
         <header className="modal-header"><div><p className="eyebrow">Provider connection</p><Dialog.Title>Connect {card.addon.displayName}</Dialog.Title><Dialog.Description>A Composio window opens so you can sign in to the provider. Your sign-in details stay with Composio; Marketplace only keeps a reference to the connection.</Dialog.Description></div><Dialog.Close asChild><IconButton aria-label="Close connection dialog"><X size={17} /></IconButton></Dialog.Close></header>
         <div className="modal-body">
-          <dl className="contract-list"><dt>Connects through</dt><dd>Composio</dd><dt>Provider</dt><dd>{card.listing.provider}</dd><dt>Current state</dt><dd>{statusLabel(card.connection?.state ?? "disconnected")}</dd><dt>What happens</dt><dd>Opens the provider's sign-in page. Nothing is connected until you approve there.</dd></dl>
+          <dl className="contract-list"><dt>Connects through</dt><dd>Composio</dd><dt>Provider</dt><dd>{card.listing.provider}</dd><dt>Current state</dt><dd>{statusLabel(card.connection?.state ?? "disconnected")}</dd>{card.connectMode && <><dt>Sign-in</dt><dd>{connectModeLabel(card.connectMode)}</dd></>}<dt>What happens</dt><dd>{card.connectMode === "ready_user_key" ? "Opens a Composio page where you enter your API key. Nothing is connected until you submit it there." : "Opens the provider's sign-in page. Nothing is connected until you approve there."}</dd></dl>
+          {needsAuthConfig && <div className="contract-gap"><AlertTriangle size={17} /><div><strong>Create an auth config first</strong><p>{connectModeHint("needs_auth_config", toolkit)}</p></div></div>}
+          <details className="advanced-field" open={needsAuthConfig}>
+            <summary>{needsAuthConfig ? "Auth config" : "Advanced"}</summary>
+            <label>Auth config ID<input className="mono" value={authConfigId} onChange={(event) => setAuthConfigId(event.target.value)} placeholder="ac_…" autoComplete="off" spellCheck={false} aria-describedby="auth-config-help" /></label>
+            <p id="auth-config-help">Optional. Paste the ID of an auth config for the <code>{toolkit}</code> toolkit from your Composio dashboard to use your own app. Leave empty to let Marketplace pick one.</p>
+          </details>
           {mutation.error && <InlineError error={mutation.error} />}
           {popupBlocked && <p className="inline-error"><AlertTriangle size={14} />The authorization window was blocked. Allow popups for Marketplace, then retry the connection.</p>}
         </div>
-        <footer className="modal-footer"><span>Approval is checked before the connection is saved.</span><div className="dialog-actions"><Dialog.Close asChild><Button>Cancel</Button></Dialog.Close><Button tone="primary" disabled={mutation.isPending} onClick={startConnection}>{mutation.isPending ? <LoaderCircle className="spin" size={15} /> : <ExternalLink size={15} />}Start connection</Button></div></footer>
+        <footer className="modal-footer"><span>Approval is checked before the connection is saved.</span><div className="dialog-actions"><Dialog.Close asChild><Button>Cancel</Button></Dialog.Close><Button tone="primary" disabled={mutation.isPending || (needsAuthConfig && !authConfigId.trim())} onClick={startConnection}>{mutation.isPending ? <LoaderCircle className="spin" size={15} /> : <ExternalLink size={15} />}Start connection</Button></div></footer>
       </Dialog.Content></Dialog.Portal>
     </Dialog.Root>
   );
@@ -171,7 +181,7 @@ export function PluginWorkspace({ card, loading, workspaceSlug, onConfirm, onRef
     <article className="plugin-workspace">
       <header className="plugin-header">
         <div className="plugin-identity"><span className="plugin-monogram">{card.addon.displayName.slice(0, 2).toUpperCase()}</span><div><p className="eyebrow">{card.marketplaceName} · {card.runtimeSource}</p><h1>{card.addon.displayName}</h1><code>{pluginId}</code></div></div>
-        <div className="plugin-status"><Tag tone={statusTone(card.state.status)}>{statusLabel(card.state.status)}</Tag><span>Refreshed {formatWhen(card.state.refreshedAt)}</span></div>
+        <div className="plugin-status"><Tag tone={statusTone(card.state.status)}>{statusLabel(card.state.status)}</Tag>{card.connectMode && <Tag tone={connectModeTone(card.connectMode)}>{connectModeLabel(card.connectMode)}</Tag>}<span>Refreshed {formatWhen(card.state.refreshedAt)}</span></div>
       </header>
       <p className="plugin-lede">{card.description || "No catalog description was provided."}</p>
       <div className="action-bar">
@@ -181,7 +191,8 @@ export function PluginWorkspace({ card, loading, workspaceSlug, onConfirm, onRef
         <Button disabled={!card.state.ready || !launchSupported} onClick={() => setExecuteOpen(true)}><TerminalSquare size={15} />Execute</Button>
       </div>
       {!launchSupported && <div className="contract-gap" id="catalog-only-note"><AlertTriangle size={17} /><div><strong>Listed — not yet installable</strong><p>{customConnector ? CUSTOM_CONNECTOR_TOOLS_HINT : `${CATALOG_ONLY_HINT} ${words(card.listing.executionOwner)} support is on the way.`}</p></div></div>}
-      {!card.state.ready && launchSupported && <div className="readiness-note"><AlertTriangle size={17} /><div><strong>Not ready for agents yet</strong><p>{card.connection?.detail || card.installPlan.steps.find((step) => step.status !== "complete")?.detail || "Complete the lifecycle and connection steps below."}</p></div></div>}
+      {card.connectMode === "needs_auth_config" && <div className="contract-gap"><AlertTriangle size={17} /><div><strong>Needs an auth config</strong><p>{connectModeHint("needs_auth_config", card.connectInfo?.toolkit ?? card.listing.provider)}</p></div></div>}
+      {!card.state.ready && launchSupported && card.connectMode !== "needs_auth_config" && <div className="readiness-note"><AlertTriangle size={17} /><div><strong>Not ready for agents yet</strong><p>{card.connection?.detail || card.installPlan.steps.find((step) => step.status !== "complete")?.detail || "Complete the lifecycle and connection steps below."}</p></div></div>}
       <div className="detail-grid">
         <section><div className="section-heading"><div><p className="eyebrow">Setup</p><h2>Getting ready</h2></div><span>{card.installPlan.steps.filter((step) => step.status === "complete").length}/{card.installPlan.steps.length}</span></div><ol className="install-plan">{card.installPlan.steps.map((step) => <li key={step.kind} className={step.status === "complete" ? "is-complete" : ""}><span>{step.status === "complete" ? <Check size={13} /> : <CircleDot size={13} />}</span><div><strong>{step.label}</strong><p>{step.detail}</p></div></li>)}</ol></section>
         <section><div className="section-heading"><div><p className="eyebrow">Details</p><h2>Source & connection</h2></div><SlidersHorizontal size={18} /></div><dl className="fact-list"><dt>Source</dt><dd>{card.sourceLabel}</dd><dt>Runs on</dt><dd>{card.listing.executionOwner}</dd><dt>Sign-in handled by</dt><dd>{card.listing.authOwner}</dd><dt>Connection</dt><dd><Tag tone={statusTone(card.connection?.state ?? "disconnected")}>{statusLabel(card.connection?.state ?? "disconnected")}</Tag></dd>{knownVersion(card.addon.version) && <><dt>Version</dt><dd className="mono">{card.addon.version}</dd></>}</dl></section>
