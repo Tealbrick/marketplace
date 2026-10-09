@@ -8,7 +8,10 @@ import {
   telegramMethod,
   type FakeReply,
 } from "./test-support.js";
-import type { ChannelDestination } from "./types.js";
+import { capabilityForKind } from "./capabilities.js";
+import { CHANNEL_CAPABILITIES_VERSION, type ChannelDestination } from "./types.js";
+
+const MiB = 1024 * 1024;
 
 const TOKEN = `1234567:${"AAHfaketokenfaketokenfaketoken12345".slice(0, 35)}`;
 
@@ -34,13 +37,19 @@ describe("telegram capabilities", () => {
     const { provider } = make();
     expect(provider.id).toBe("telegram");
     expect(provider.capabilities).toEqual({
-      send: {
-        text: true,
-        maxChars: 4096,
-        files: { types: ["image/png", "image/jpeg", "image/webp", "application/pdf"], maxBytes: 10 * 1024 * 1024, maxCount: 4 },
-        markup: "plain",
-        mentions: "suppressed",
-      },
+      channelCapabilities: 1,
+      text: { maxChars: 4096, captionMaxChars: 1024 },
+      markup: "plain",
+      mentions: "suppressed",
+      image: { types: ["image/png", "image/jpeg", "image/webp"], maxBytes: 10 * MiB, albumMax: 4 },
+      file: { types: ["application/pdf", "text/plain", "application/zip", "application/octet-stream"], maxBytes: 50 * MiB },
+      audio: { types: ["audio/mpeg", "audio/mp4"], maxBytes: 50 * MiB },
+      voice: { native: true, types: ["audio/ogg"], maxBytes: MiB },
+      video: { types: ["video/mp4"], maxBytes: 50 * MiB },
+      thread: { topics: true, replies: false },
+      reactions: false,
+      buttons: { url: false, callback: false },
+      poll: false,
       edit: false,
       delete: false,
       schedule: { native: false },
@@ -50,6 +59,9 @@ describe("telegram capabilities", () => {
       audience: { count: false },
       limits: { perChatPerSecond: 1, perChatPerMinute: 20, retryAfter: "honoured" },
     });
+    expect(CHANNEL_CAPABILITIES_VERSION).toBe(1);
+    expect(capabilityForKind(provider.capabilities, "voice")).toEqual({ native: true, types: ["audio/ogg"], maxBytes: MiB });
+    expect(capabilityForKind(provider.capabilities, "image")).toMatchObject({ albumMax: 4 });
   });
 });
 
@@ -291,7 +303,7 @@ describe("telegram send: refusals without any request", () => {
     expect(await code({ text: "x", attachments: five })).toBe("channel_too_many_files");
     expect(await code({ text: "x", attachments: [attachment("a.exe", "application/x-msdownload")] })).toBe("channel_file_type_not_allowed");
     expect(await code({ text: "x", attachments: [{ ...png, sha256: "0".repeat(64) }] })).toBe("channel_file_digest_mismatch");
-    const big = attachment("big.pdf", "application/pdf", "z".repeat(10 * 1024 * 1024 + 1));
+    const big = attachment("big.pdf", "application/pdf", new Uint8Array(50 * MiB + 1));
     expect(await code({ text: "x", attachments: [big] })).toBe("channel_file_too_large");
     expect(await code({ text: "   " })).toBe("channel_message_empty");
     expect(await code({ text: "x" }, { ...group, externalId: "../../etc" })).toBe("channel_destination_invalid");
@@ -487,5 +499,122 @@ describe("telegram never leaks the token", () => {
     const result = await provider.send(TOKEN, group, { text: "a" });
     expect(result.status).toBe("uncertain");
     noToken(result);
+  });
+});
+
+describe("telegram native media kinds", () => {
+  const ogg = (size = 10) => attachment("note.ogg", "audio/ogg", new Uint8Array(size).fill(7), { kind: "voice" });
+
+  it("sends a voice note with sendVoice and the multipart field `voice`", async () => {
+    const { provider, fake } = make([okMessage(60)]);
+    const result = await provider.send(TOKEN, group, { text: "listen", attachments: [ogg()] });
+    expect(result).toEqual({ status: "sent", resultIds: ["60"], resultUrls: ["https://t.me/c/1234567890/60"] });
+    expect(result).not.toHaveProperty("fallback");
+    const request = fake.requests[0]!;
+    expect(telegramMethod(request, TOKEN)).toBe("sendVoice");
+    const form = request.body as FormData;
+    expect(form.get("caption")).toBe("listen");
+    const voice = form.get("voice") as File;
+    expect(voice.type).toBe("audio/ogg");
+    expect(voice.size).toBe(10);
+  });
+
+  it("accepts an Opus content type with parameters and exactly 1 MiB", async () => {
+    const { provider, fake } = make([okMessage(61)]);
+    const exact = { ...attachment("n.ogg", "audio/ogg; codecs=opus", new Uint8Array(MiB), { kind: "voice" }) };
+    expect((await provider.send(TOKEN, group, { text: "", attachments: [exact] })).status).toBe("sent");
+    expect(telegramMethod(fake.requests[0]!, TOKEN)).toBe("sendVoice");
+  });
+
+  it("does not post the transcript of a native voice", async () => {
+    const { provider, fake } = make([okMessage(62)]);
+    await provider.send(TOKEN, group, {
+      text: "hi",
+      attachments: [attachment("n.ogg", "audio/ogg", "ogg", { kind: "voice", transcript: "secret words" })],
+    });
+    const form = fake.requests[0]!.body as FormData;
+    expect(JSON.stringify([...form.entries()].map(([k, v]) => (typeof v === "string" ? v : k)))).not.toContain("secret words");
+  });
+
+  it("refuses a voice over 1 MiB and does not turn it into an audio file", async () => {
+    const { provider, fake } = make();
+    const result = await provider.send(TOKEN, group, { text: "x", attachments: [ogg(MiB + 1)] });
+    expect(result).toMatchObject({ status: "failed", errorCode: "channel_file_too_large", resultIds: [] });
+    expect(fake.requests).toHaveLength(0);
+  });
+
+  it("sends audio with sendAudio and video with sendVideo, one request each, caption on the first", async () => {
+    const { provider, fake } = make([okMessage(70), okMessage(71)]);
+    const result = await provider.send(TOKEN, group, {
+      text: "media",
+      attachments: [attachment("v.mp4", "video/mp4"), attachment("a.mp3", "audio/mpeg")],
+    });
+    expect(result.status).toBe("sent");
+    expect(fake.requests.map((r) => telegramMethod(r, TOKEN))).toEqual(["sendAudio", "sendVideo"]);
+    const audio = fake.requests[0]!.body as FormData;
+    expect(audio.get("caption")).toBe("media");
+    expect((audio.get("audio") as File).name).toBe("a.mp3");
+    const video = fake.requests[1]!.body as FormData;
+    expect(video.has("caption")).toBe(false);
+    expect((video.get("video") as File).type).toBe("video/mp4");
+  });
+
+  it("sends m4a as audio and a zip as a document", async () => {
+    const { provider, fake } = make([okMessage(72), okMessage(73)]);
+    await provider.send(TOKEN, group, { text: "", attachments: [attachment("a.m4a", "audio/mp4"), attachment("a.zip", "application/zip")] });
+    expect(fake.requests.map((r) => telegramMethod(r, TOKEN))).toEqual(["sendDocument", "sendAudio"]);
+  });
+});
+
+describe("telegram kind and type validation", () => {
+  it("refuses an undeclared kind or a missing kind without any request", async () => {
+    const { provider, fake } = make();
+    const png = attachment("p.png", "image/png");
+    const bogus = { ...png, kind: "poll" } as unknown as typeof png;
+    const { kind: _kind, ...kindless } = png;
+    for (const bad of [bogus, kindless as unknown as typeof png]) {
+      const result = await provider.send(TOKEN, group, { text: "x", attachments: [bad] });
+      expect(result).toMatchObject({ status: "failed", errorCode: "channel_capability_unavailable", resultIds: [] });
+    }
+    expect(fake.requests).toHaveLength(0);
+  });
+
+  it("refuses a content type that does not match the kind", async () => {
+    const { provider, fake } = make();
+    const code = async (name: string, contentType: string, kind: "image" | "file" | "audio" | "voice" | "video") =>
+      (await provider.send(TOKEN, group, { text: "x", attachments: [attachment(name, contentType, name, { kind })] })).errorCode;
+    expect(await code("p.png", "image/png", "video")).toBe("channel_file_type_not_allowed");
+    expect(await code("a.gif", "image/gif", "image")).toBe("channel_file_type_not_allowed");
+    expect(await code("a.mp3", "audio/mpeg", "voice")).toBe("channel_file_type_not_allowed");
+    expect(await code("a.ogg", "audio/ogg", "audio")).toBe("channel_file_type_not_allowed");
+    expect(await code("a.mkv", "video/x-matroska", "video")).toBe("channel_file_type_not_allowed");
+    expect(await code("a.html", "text/html", "file")).toBe("channel_file_type_not_allowed");
+    expect(fake.requests).toHaveLength(0);
+  });
+
+  it("refuses more than four attachments of any mix and bad transcripts", async () => {
+    const { provider, fake } = make();
+    const mixed = [
+      attachment("a.png", "image/png"),
+      attachment("b.pdf", "application/pdf"),
+      attachment("c.mp3", "audio/mpeg"),
+      attachment("d.mp4", "video/mp4"),
+      attachment("e.ogg", "audio/ogg", "e", { kind: "voice" }),
+    ];
+    expect((await provider.send(TOKEN, group, { text: "x", attachments: mixed })).errorCode).toBe("channel_too_many_files");
+    const long = attachment("n.ogg", "audio/ogg", "n", { kind: "voice", transcript: "t".repeat(1001) });
+    expect((await provider.send(TOKEN, group, { text: "x", attachments: [long] })).errorCode).toBe("channel_transcript_too_long");
+    const onImage = attachment("p.png", "image/png", "p", { transcript: "nope" });
+    expect((await provider.send(TOKEN, group, { text: "x", attachments: [onImage] })).errorCode).toBe("channel_transcript_unsupported");
+    expect(fake.requests).toHaveLength(0);
+  });
+
+  it("never leaks the token in a refusal or a failure of a media send", async () => {
+    const { provider } = make([jsonResponse(400, { ok: false, description: `Bad Request: ${TOKEN}` })]);
+    const refused = await provider.send(TOKEN, group, { text: "x", attachments: [attachment("p.png", "image/png", "p", { kind: "video" })] });
+    noToken(refused);
+    const failed = await provider.send(TOKEN, group, { text: "x", attachments: [attachment("n.ogg", "audio/ogg", "n", { kind: "voice" })] });
+    expect(failed.status).toBe("failed");
+    noToken(failed);
   });
 });

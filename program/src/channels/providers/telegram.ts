@@ -1,9 +1,9 @@
+import { applyFallbacks } from "./capabilities.js";
 import {
   asRecord,
   classifyFailure,
   httpRequest,
   isSuccess,
-  normalizeContentType,
   guard,
   refuse,
   resolveRuntime,
@@ -21,16 +21,18 @@ import {
   createRateLimiter,
   requestWithRetry,
 } from "./rate.js";
-import type {
-  ChannelCapabilities,
-  ChannelDestination,
-  ChannelProvider,
-  ChannelProviderOptions,
-  DiscoverResult,
-  OutboundAttachment,
-  OutboundMessage,
-  SendResult,
-  VerifyResult,
+import {
+  CHANNEL_CAPABILITIES_VERSION,
+  type AttachmentKind,
+  type ChannelCapabilities,
+  type ChannelDestination,
+  type ChannelProvider,
+  type ChannelProviderOptions,
+  type DiscoverResult,
+  type OutboundAttachment,
+  type OutboundMessage,
+  type SendResult,
+  type VerifyResult,
 } from "./types.js";
 
 // Telegram Bot API adapter: https://api.telegram.org/bot<token>/<method>
@@ -40,20 +42,29 @@ const MiB = 1024 * 1024;
 
 export const TELEGRAM_MAX_TEXT_CHARS = 4096;
 export const TELEGRAM_MAX_CAPTION_CHARS = 1024;
-const PHOTO_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 
+// The explicit document allow-list. Anything else is refused (never sniffed, never converted).
+const FILE_TYPES = ["application/pdf", "text/plain", "application/zip", "application/octet-stream"];
+
+/**
+ * Voice goes out with sendVoice (OGG/Opus voice note). Telegram plays only small files as a voice message,
+ * so the cap is 1 MiB. A bigger OGG is NOT automatically sent as an audio file: it is refused with
+ * channel_file_too_large. Sending it as audio would change what the owner approved.
+ */
 const CAPABILITIES: ChannelCapabilities = {
-  send: {
-    text: true,
-    maxChars: TELEGRAM_MAX_TEXT_CHARS,
-    files: {
-      types: ["image/png", "image/jpeg", "image/webp", "application/pdf"],
-      maxBytes: 10 * MiB,
-      maxCount: 4,
-    },
-    markup: "plain",
-    mentions: "suppressed",
-  },
+  channelCapabilities: CHANNEL_CAPABILITIES_VERSION,
+  text: { maxChars: TELEGRAM_MAX_TEXT_CHARS, captionMaxChars: TELEGRAM_MAX_CAPTION_CHARS },
+  markup: "plain",
+  mentions: "suppressed",
+  image: { types: ["image/png", "image/jpeg", "image/webp"], maxBytes: 10 * MiB, albumMax: 4 },
+  file: { types: FILE_TYPES, maxBytes: 50 * MiB },
+  audio: { types: ["audio/mpeg", "audio/mp4"], maxBytes: 50 * MiB },
+  voice: { native: true, types: ["audio/ogg"], maxBytes: 1 * MiB },
+  video: { types: ["video/mp4"], maxBytes: 50 * MiB },
+  thread: { topics: true, replies: false },
+  reactions: false,
+  buttons: { url: false, callback: false },
+  poll: false,
   edit: false,
   delete: false,
   schedule: { native: false },
@@ -141,10 +152,22 @@ function formBody(
   return { body: form };
 }
 
-function isPhoto(attachment: OutboundAttachment): boolean {
-  return PHOTO_TYPES.has(normalizeContentType(attachment.contentType));
-}
+const SINGLE_METHOD: Record<AttachmentKind, { method: string; field: string }> = {
+  image: { method: "sendPhoto", field: "photo" },
+  file: { method: "sendDocument", field: "document" },
+  audio: { method: "sendAudio", field: "audio" },
+  video: { method: "sendVideo", field: "video" },
+  voice: { method: "sendVoice", field: "voice" },
+};
 
+// Only images and documents can be albums here. Telegram refuses an album that mixes photos and documents,
+// so each kind is its own batch. Audio, video and voice go one request each.
+const ALBUM_TYPE: Partial<Record<AttachmentKind, "photo" | "document">> = { image: "photo", file: "document" };
+
+/**
+ * Plan: batches in the order image, file, audio, video, voice (attachment order inside a kind).
+ * The caption (text of at most 1024 characters) rides on the first media step; longer text is sent after the media.
+ */
 function planSteps(destination: ChannelDestination, text: string, attachments: readonly OutboundAttachment[]): Step[] {
   const chatId = destination.externalId;
   const thread = destination.parentId;
@@ -165,38 +188,47 @@ function planSteps(destination: ChannelDestination, text: string, attachments: r
   const caption = text.trim().length > 0 && text.length <= TELEGRAM_MAX_CAPTION_CHARS ? text : undefined;
   const trailingText = text.trim().length > 0 && caption === undefined ? text : undefined;
 
-  // Telegram refuses an album that mixes photos and documents, so a mixed set goes as two batches.
-  const photos = attachments.filter(isPhoto);
-  const documents = attachments.filter((attachment) => !isPhoto(attachment));
-  const batches = [photos, documents].filter((batch) => batch.length > 0);
+  const batches: Array<{ kind: AttachmentKind; items: OutboundAttachment[] }> = [];
+  for (const kind of ["image", "file", "audio", "video", "voice"] as const) {
+    const items = attachments.filter((attachment) => attachment.kind === kind);
+    if (ALBUM_TYPE[kind]) {
+      if (items.length > 0) {
+        batches.push({ kind, items });
+      }
+    } else {
+      for (const item of items) {
+        batches.push({ kind, items: [item] });
+      }
+    }
+  }
 
-  const steps: Step[] = batches.map((batch, index) => {
+  const steps: Step[] = batches.map(({ kind, items }, index) => {
     const batchCaption = index === 0 ? caption : undefined;
-    const kind = batch === photos ? "photo" : "document";
-    if (batch.length === 1) {
-      const attachment = batch[0] as OutboundAttachment;
+    const single = SINGLE_METHOD[kind];
+    if (items.length === 1) {
+      const attachment = items[0] as OutboundAttachment;
       return {
-        method: kind === "photo" ? "sendPhoto" : "sendDocument",
+        method: single.method,
         cost: 1,
-        build: () => formBody({ ...base(), caption: batchCaption }, [{ field: kind, attachment }]),
+        build: () => formBody({ ...base(), caption: batchCaption }, [{ field: single.field, attachment }]),
       };
     }
     return {
       method: "sendMediaGroup",
-      cost: batch.length,
+      cost: items.length,
       build: () =>
         formBody(
           {
             ...base(),
             media: JSON.stringify(
-              batch.map((_, i) => ({
-                type: kind,
+              items.map((_, i) => ({
+                type: ALBUM_TYPE[kind],
                 media: `attach://file${i}`,
                 ...(i === 0 && batchCaption ? { caption: batchCaption } : {}),
               })),
             ),
           },
-          batch.map((attachment, i) => ({ field: `file${i}`, attachment })),
+          items.map((attachment, i) => ({ field: `file${i}`, attachment })),
         ),
     };
   });
@@ -316,19 +348,19 @@ export function createTelegramProvider(options: ChannelProviderOptions = {}): Ch
     if (!CHAT_ID_SHAPE.test(destination.externalId) || (destination.parentId !== undefined && !THREAD_ID_SHAPE.test(destination.parentId))) {
       return refuse("channel_destination_invalid", "the Telegram chat or topic id is invalid");
     }
-    const attachments = message.attachments ?? [];
-    const refusal = validateOutbound({
-      text: message.text,
-      attachments,
-      maxChars: CAPABILITIES.send.maxChars,
-      files: CAPABILITIES.send.files,
-    });
+    // Telegram declares native voice, so no fallback changes the post; the call also checks kinds and transcripts.
+    const post = applyFallbacks(CAPABILITIES, { text: message.text, attachments: message.attachments ?? [] });
+    if ("error" in post) {
+      return refuse(post.error.errorCode, post.error.detail);
+    }
+    const { attachments } = post;
+    const refusal = validateOutbound({ text: post.text, attachments, caps: CAPABILITIES });
     if (refusal) {
       return refusal;
     }
 
     const secrets = secretsFor(token);
-    const steps = planSteps(destination, message.text, attachments);
+    const steps = planSteps(destination, post.text, attachments);
     const rules = destination.type === "chat" ? [TELEGRAM_CHAT_RULE] : [TELEGRAM_CHAT_RULE, TELEGRAM_GROUP_RULE];
     const resultIds: string[] = [];
     const resultUrls: string[] = [];

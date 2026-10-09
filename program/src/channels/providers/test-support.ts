@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { OutboundAttachment } from "./types.js";
+import type { AttachmentKind, OutboundAttachment } from "./types.js";
 
 // Test-only helpers: a recording fake fetch and a fake clock. Never imported by runtime code.
 
@@ -64,9 +64,27 @@ export function createFakeClock(start = 1_000_000) {
   };
 }
 
-export function attachment(name: string, contentType: string, content = name): OutboundAttachment {
-  const bytes = new TextEncoder().encode(content);
-  return { bytes, contentType, name, sha256: createHash("sha256").update(bytes).digest("hex") };
+/** The kind defaults from the content type: image/*, audio/*, video/*, everything else is a file. */
+export function kindOf(contentType: string): AttachmentKind {
+  const major = contentType.split("/")[0];
+  return major === "image" || major === "audio" || major === "video" ? major : "file";
+}
+
+export function attachment(
+  name: string,
+  contentType: string,
+  content: string | Uint8Array = name,
+  extra: { kind?: AttachmentKind; transcript?: string } = {},
+): OutboundAttachment {
+  const bytes = typeof content === "string" ? new TextEncoder().encode(content) : content;
+  return {
+    kind: extra.kind ?? kindOf(contentType),
+    ...(extra.transcript !== undefined ? { transcript: extra.transcript } : {}),
+    bytes,
+    contentType,
+    name,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+  };
 }
 
 /** Telegram method name of a recorded request without printing the URL (the URL holds the token). */

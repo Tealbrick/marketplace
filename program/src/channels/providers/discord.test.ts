@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { createDiscordProvider } from "./discord.js";
+import { createTelegramProvider } from "./telegram.js";
 import { attachment, createFakeClock, createFakeFetch, jsonResponse, type FakeReply } from "./test-support.js";
+import { applyFallbacks, capabilityForKind } from "./capabilities.js";
 import type { ChannelDestination } from "./types.js";
+
+const MiB = 1024 * 1024;
 
 // A fake token in the Discord shape, assembled at runtime so secret scanners do not flag the source.
 const TOKEN = ["MTIzNDU2Nzg5MDEyMzQ1Njc4", "GabcDE", "fakefakefakefakefakefakefakefake12"].join(".");
@@ -26,13 +30,31 @@ describe("discord capabilities", () => {
   it("declares the spec 3.1 vocabulary", () => {
     const { provider } = make();
     expect(provider.id).toBe("discord");
-    expect(provider.capabilities).toMatchObject({
-      send: { text: true, maxChars: 2000, markup: "markdown", mentions: "suppressed", files: { maxCount: 4, maxBytes: 10 * 1024 * 1024 } },
+    expect(provider.capabilities).toEqual({
+      channelCapabilities: 1,
+      text: { maxChars: 2000 },
+      markup: "discord-markdown",
+      mentions: "suppressed",
+      image: { types: ["image/png", "image/jpeg", "image/webp", "image/gif"], maxBytes: 10 * MiB, albumMax: 4 },
+      file: { types: ["application/pdf", "text/plain", "application/zip", "application/octet-stream"], maxBytes: 10 * MiB },
+      audio: { types: ["audio/mpeg", "audio/mp4", "audio/ogg"], maxBytes: 10 * MiB },
+      voice: { fallback: "audio+transcript", types: ["audio/ogg"], maxBytes: 10 * MiB },
+      video: { types: ["video/mp4"], maxBytes: 10 * MiB },
+      thread: false,
+      reactions: false,
+      buttons: { url: false, callback: false },
+      poll: false,
+      edit: false,
+      delete: false,
+      schedule: { native: false },
+      events: { create: false },
       discover: "list",
       inbound: "none",
-      events: { create: false },
-      limits: { retryAfter: "honoured" },
+      audience: { count: false },
+      limits: { perChatPerSecond: 1, perChatPerMinute: 60, retryAfter: "honoured" },
     });
+    expect(capabilityForKind(provider.capabilities, "voice")).toBe("fallback");
+    expect(capabilityForKind(provider.capabilities, "video")).toMatchObject({ types: ["video/mp4"] });
   });
 });
 
@@ -175,7 +197,7 @@ describe("discord send: refusals without any request", () => {
     const code = async (message: Parameters<typeof provider.send>[2], destination = channel, credential: string | null = TOKEN) =>
       (await provider.send(credential, destination, message)).errorCode;
     expect(await code({ text: "x", attachments: Array.from({ length: 5 }, () => png) })).toBe("channel_too_many_files");
-    expect(await code({ text: "x", attachments: [attachment("a.zip", "application/zip")] })).toBe("channel_file_type_not_allowed");
+    expect(await code({ text: "x", attachments: [attachment("a.exe", "application/x-msdownload")] })).toBe("channel_file_type_not_allowed");
     expect(await code({ text: "x", attachments: [{ ...png, sha256: "f".repeat(64) }] })).toBe("channel_file_digest_mismatch");
     expect(await code({ text: "" })).toBe("channel_message_empty");
     expect(await code({ text: "x" }, { ...channel, externalId: "2002/../x" })).toBe("channel_destination_invalid");
@@ -294,5 +316,145 @@ describe("discord send is one request", () => {
     expect(result).toMatchObject({ status: "sent", resultIds: ["3010"] });
     expect(result).not.toHaveProperty("partial");
     expect(fake.requests).toHaveLength(1);
+  });
+});
+
+describe("discord voice fallback", () => {
+  const voice = (transcript?: string, size = 20) =>
+    attachment("note.ogg", "audio/ogg", new Uint8Array(size).fill(3), { kind: "voice", ...(transcript !== undefined ? { transcript } : {}) });
+
+  it("sends the OGG as an attachment plus a Transcript line, in one request, and names the fallback", async () => {
+    const { provider, fake } = make([okMessage("4001")]);
+    const result = await provider.send(TOKEN, channel, { text: "listen", attachments: [voice("hello there")] });
+    expect(result).toEqual({
+      status: "sent",
+      resultIds: ["4001"],
+      resultUrls: ["https://discord.com/channels/1001/2002/4001"],
+      fallback: "voice→audio+transcript",
+    });
+    expect(fake.requests).toHaveLength(1);
+    const form = fake.requests[0]!.body as FormData;
+    expect(JSON.parse(form.get("payload_json") as string)).toEqual({
+      content: "listen\nTranscript: hello there",
+      allowed_mentions: { parse: [] },
+      attachments: [{ id: 0, filename: "note.ogg" }],
+    });
+    const file = form.get("files[0]") as File;
+    expect(file.type).toBe("audio/ogg");
+    expect(file.size).toBe(20);
+  });
+
+  it("uses only the transcript line as content when the text is empty, and still suppresses mentions", async () => {
+    const { provider, fake } = make([okMessage("4002")]);
+    await provider.send(TOKEN, channel, { text: "  ", attachments: [voice("@everyone hi")] });
+    const payload = JSON.parse((fake.requests[0]!.body as FormData).get("payload_json") as string);
+    expect(payload.content).toBe("Transcript: @everyone hi");
+    expect(payload.allowed_mentions).toEqual({ parse: [] });
+  });
+
+  it("requires a transcript for a fallback voice, before any request", async () => {
+    const { provider, fake } = make();
+    const result = await provider.send(TOKEN, channel, { text: "x", attachments: [voice()] });
+    expect(result).toMatchObject({ status: "failed", errorCode: "channel_voice_transcript_required", resultIds: [] });
+    expect(fake.requests).toHaveLength(0);
+  });
+
+  it("refuses a combined text over 2000 before any request and accepts exactly 2000", async () => {
+    const { provider, fake } = make([okMessage("4003")]);
+    const line = "Transcript: ".length;
+    const refused = await provider.send(TOKEN, channel, { text: "a".repeat(2000 - line), attachments: [voice("tt")] });
+    expect(refused).toMatchObject({ status: "failed", errorCode: "channel_text_too_long" });
+    expect(fake.requests).toHaveLength(0);
+    // 1 newline + 12 prefix + 2 transcript = 15 characters added.
+    const ok = await provider.send(TOKEN, channel, { text: "a".repeat(2000 - 15), attachments: [voice("tt")] });
+    expect(ok.status).toBe("sent");
+  });
+
+  it("refuses a transcript over 1000 characters and an OGG over the size cap", async () => {
+    const { provider, fake } = make();
+    expect((await provider.send(TOKEN, channel, { text: "x", attachments: [voice("t".repeat(1001))] })).errorCode).toBe("channel_transcript_too_long");
+    expect((await provider.send(TOKEN, channel, { text: "x", attachments: [voice("ok", 10 * MiB + 1)] })).errorCode).toBe("channel_file_too_large");
+    expect(fake.requests).toHaveLength(0);
+  });
+
+  it("sends audio, video and files as attachments of the one message without a fallback marker", async () => {
+    const { provider, fake } = make([okMessage("4004")]);
+    const result = await provider.send(TOKEN, channel, {
+      text: "mix",
+      attachments: [attachment("a.mp3", "audio/mpeg"), attachment("v.mp4", "video/mp4"), attachment("t.txt", "text/plain"), attachment("g.gif", "image/gif")],
+    });
+    expect(result.status).toBe("sent");
+    expect(result).not.toHaveProperty("fallback");
+    expect(fake.requests).toHaveLength(1);
+  });
+
+  it("refuses an undeclared kind or a wrong type without any request", async () => {
+    const { provider, fake } = make();
+    const poll = { ...attachment("p.png", "image/png"), kind: "poll" } as unknown as ReturnType<typeof attachment>;
+    expect((await provider.send(TOKEN, channel, { text: "x", attachments: [poll] })).errorCode).toBe("channel_capability_unavailable");
+    expect((await provider.send(TOKEN, channel, { text: "x", attachments: [attachment("a.mp3", "audio/mpeg", "a", { kind: "video" })] })).errorCode).toBe("channel_file_type_not_allowed");
+    expect(fake.requests).toHaveLength(0);
+  });
+
+  it("never leaks the token on a voice send failure", async () => {
+    const { provider } = make([jsonResponse(400, { message: `bad ${TOKEN}`, code: 50035 })]);
+    const result = await provider.send(TOKEN, channel, { text: "x", attachments: [voice("hi")] });
+    expect(result.status).toBe("failed");
+    expect(result).not.toHaveProperty("fallback");
+    noToken(result);
+  });
+});
+
+describe("applyFallbacks", () => {
+  const caps = createDiscordProvider().capabilities;
+  const input = () => ({
+    text: "post",
+    attachments: [
+      attachment("a.png", "image/png"),
+      attachment("n.ogg", "audio/ogg", new Uint8Array(5), { kind: "voice", transcript: "line one" }),
+    ],
+  });
+
+  it("is deterministic and does not mutate its input", () => {
+    const original = input();
+    const snapshot = JSON.stringify(original, (_k, v) => (v instanceof Uint8Array ? Array.from(v) : v));
+    const first = applyFallbacks(caps, original);
+    const second = applyFallbacks(caps, original);
+    expect(JSON.stringify(first, (_k, v) => (v instanceof Uint8Array ? Array.from(v) : v))).toBe(
+      JSON.stringify(second, (_k, v) => (v instanceof Uint8Array ? Array.from(v) : v)),
+    );
+    expect(JSON.stringify(original, (_k, v) => (v instanceof Uint8Array ? Array.from(v) : v))).toBe(snapshot);
+    expect(first).toMatchObject({ text: "post\nTranscript: line one", fallbacks: ["voice→audio+transcript"] });
+    if (!("error" in first)) {
+      expect(first.attachments.map((a) => a.kind)).toEqual(["image", "audio"]);
+      expect(first.attachments[1]).not.toHaveProperty("transcript");
+    }
+  });
+
+  it("gives exactly the text the adapter posts", async () => {
+    const outcome = applyFallbacks(caps, input());
+    expect("error" in outcome).toBe(false);
+    const { provider, fake } = make([okMessage("5001")]);
+    const result = await provider.send(TOKEN, channel, input());
+    const payload = JSON.parse((fake.requests[0]!.body as FormData).get("payload_json") as string);
+    expect(payload.content).toBe((outcome as { text: string }).text);
+    expect(result.fallback).toBe((outcome as { fallbacks: string[] }).fallbacks.join(","));
+  });
+
+  it("leaves a post without voice untouched and reports errors as values", () => {
+    expect(applyFallbacks(caps, { text: "plain", attachments: [] })).toEqual({ text: "plain", attachments: [], fallbacks: [] });
+    expect(applyFallbacks(caps, { text: "x", attachments: [attachment("n.ogg", "audio/ogg", "n", { kind: "voice" })] })).toEqual({
+      error: expect.objectContaining({ errorCode: "channel_voice_transcript_required" }),
+    });
+    expect(applyFallbacks(caps, { text: "x".repeat(2000), attachments: [attachment("n.ogg", "audio/ogg", "n", { kind: "voice", transcript: "a" })] })).toEqual({
+      error: expect.objectContaining({ errorCode: "channel_text_too_long" }),
+    });
+  });
+
+  it("leaves native voice (Telegram) as voice", () => {
+    const telegramCaps = createTelegramProvider().capabilities;
+    const outcome = applyFallbacks(telegramCaps, { text: "x", attachments: [attachment("n.ogg", "audio/ogg", "n", { kind: "voice" })] });
+    expect(outcome).toMatchObject({ text: "x", fallbacks: [] });
+    expect((outcome as { attachments: Array<{ kind: string }> }).attachments[0]!.kind).toBe("voice");
   });
 });

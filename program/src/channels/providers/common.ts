@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
+import { MAX_ATTACHMENTS_PER_MESSAGE, kindLimits } from "./capabilities.js";
 import { retryAfterSeconds } from "./rate.js";
 import type {
-  ChannelFileCapability,
+  ChannelCapabilities,
   ChannelProviderOptions,
   OutboundAttachment,
   SendResult,
@@ -244,38 +245,44 @@ export function classifyFailure(
 
 // ---------------------------------------------------------------- Validation
 
-/** Limits checked before any request. Returns a refusal or undefined. */
+/**
+ * Limits checked before any request, on the post AFTER fallbacks (see `applyFallbacks`). Returns a refusal or undefined.
+ * Order: text length, empty message, attachment count, then each attachment in order
+ * (kind declared, content type, size, digest).
+ */
 export function validateOutbound(input: {
   text: string;
   attachments: readonly OutboundAttachment[];
-  maxChars: number;
-  files: ChannelFileCapability | false;
+  caps: ChannelCapabilities;
 }): SendResult | undefined {
-  const { text, attachments, maxChars, files } = input;
-  if (text.length > maxChars) {
-    return refuse("channel_text_too_long", `text is ${text.length} characters; this provider allows ${maxChars}`);
+  const { text, attachments, caps } = input;
+  if (text.length > caps.text.maxChars) {
+    return refuse("channel_text_too_long", `text is ${text.length} characters; this provider allows ${caps.text.maxChars}`);
   }
   if (text.trim().length === 0 && attachments.length === 0) {
     return refuse("channel_message_empty", "a message needs text or at least one attachment");
   }
-  if (attachments.length > 0) {
-    if (files === false) {
-      return refuse("channel_files_unsupported", "this provider does not accept files");
+  if (attachments.length > MAX_ATTACHMENTS_PER_MESSAGE) {
+    return refuse("channel_too_many_files", `${attachments.length} attachments; this provider allows ${MAX_ATTACHMENTS_PER_MESSAGE}`);
+  }
+  for (const attachment of attachments) {
+    const limits = kindLimits(caps, attachment.kind);
+    if (!limits) {
+      return refuse("channel_capability_unavailable", `this provider does not declare "${String(attachment.kind)}"`);
     }
-    if (attachments.length > files.maxCount) {
-      return refuse("channel_too_many_files", `${attachments.length} files; this provider allows ${files.maxCount}`);
+    if (!limits.types.includes(normalizeContentType(attachment.contentType))) {
+      return refuse("channel_file_type_not_allowed", `a ${attachment.kind} attachment has a content type this provider does not allow for it`);
     }
-    for (const attachment of attachments) {
-      if (!files.types.includes(normalizeContentType(attachment.contentType))) {
-        return refuse("channel_file_type_not_allowed", "a file type is not allowed on this provider");
-      }
-      if (attachment.bytes.byteLength > files.maxBytes) {
-        return refuse("channel_file_too_large", `a file is larger than ${files.maxBytes} bytes`);
-      }
-      if (sha256Hex(attachment.bytes) !== attachment.sha256.toLowerCase()) {
-        return refuse("channel_file_digest_mismatch", "a file does not match its approved SHA-256");
-      }
+    if (attachment.bytes.byteLength > limits.maxBytes) {
+      return refuse("channel_file_too_large", `a ${attachment.kind} attachment is larger than ${limits.maxBytes} bytes`);
     }
+    if (sha256Hex(attachment.bytes) !== attachment.sha256.toLowerCase()) {
+      return refuse("channel_file_digest_mismatch", "a file does not match its approved SHA-256");
+    }
+  }
+  const images = attachments.filter((attachment) => attachment.kind === "image").length;
+  if (caps.image && images > caps.image.albumMax) {
+    return refuse("channel_too_many_files", `${images} images; this provider allows ${caps.image.albumMax} in one post`);
   }
   return undefined;
 }
