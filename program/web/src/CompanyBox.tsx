@@ -7,7 +7,7 @@ import { Button, IconButton, Tag } from "@tealbrick/ui";
 import { ApiError, decideCompanyBoxApproval, getCompanyBox, getCompanyBoxApproval, getCompanyBoxApprovals, removeCompanyBoxEntry, setupCompanyBoxEntry, testCompanyBoxEntry } from "./api";
 import { getChannels } from "./channels-api";
 import { digestPrefix, formatBytes, providerLabel, transcriptsFromCanonical, typeName } from "./channels-model";
-import { errorCopy } from "./copy";
+import { BUZZ_CODE_CHARS, BUZZ_CODE_HINT, errorCopy } from "./copy";
 import type { ChannelApprovalSummary, ChannelPayloadView, CompanyBoxApproval, CompanyBoxCredentialKey, CompanyBoxEntry, CompanyBoxResult } from "./types";
 import { formatWhen, InlineError, StatePanel, statusLabel, statusTone } from "./ui";
 
@@ -188,6 +188,7 @@ export function ChannelHoldView({ summary, payload }: { summary: ChannelApproval
       <dt>Destination</dt><dd><strong>{summary.label ?? "Unknown channel"}</strong>{summary.provider ? ` · ${providerLabel(summary.provider)}` : ""}{channel ? <> · <span className="destination-title">{channel.destination.title}</span> ({channel.destination.type})</> : null}</dd>
       <dt>When</dt><dd>{summary.mode === "scheduled" ? `Scheduled for ${formatWhen(summary.sendAt)}` : "Sends when you approve"}</dd>
       <dt>Digest</dt><dd><code className="digest-prefix" title={summary.digest}>{summary.digestPrefix || digestPrefix(summary.digest)}</code></dd>
+      <dt>Buzz code</dt><dd><code className="digest-prefix" title={BUZZ_CODE_HINT}>{digestPrefix(summary.digest, BUZZ_CODE_CHARS)}</code><p className="muted-detail">{BUZZ_CODE_HINT}</p></dd>
     </dl>
     {payload === undefined ? <span className="muted-detail">Loading the post…</span>
       : payload === null ? <p className="inline-error" role="status"><AlertTriangle size={14} /><span>The post or its channel is no longer available.</span></p>

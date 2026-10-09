@@ -5,9 +5,9 @@ import * as Tabs from "@radix-ui/react-tabs";
 import { AlertTriangle, Check, Code2, Copy, LoaderCircle, LogOut, Plug, PlugZap, ShieldCheck, TerminalSquare, Trash2, X } from "lucide-react";
 import { Button, IconButton, Tag } from "@tealbrick/ui";
 
-import { getAgentCapabilities, getOpenApi, getProviderSettings, logoutOperator, removeProviderKey, saveProviderSettings, testProviderKey } from "./api";
+import { clearOwnerKey, getAgentCapabilities, getOpenApi, getOwnerKey, getProviderSettings, logoutOperator, removeProviderKey, saveProviderSettings, setOwnerKey, testProviderKey } from "./api";
 import type { FrontendBootstrap, OperatorSession, ProviderSettings } from "./types";
-import { APPROVAL_STATUS_COPY, type ApprovalStatus, OWNER_APPROVAL_DETAIL } from "./copy";
+import { APPROVAL_STATUS_COPY, type ApprovalStatus, OWNER_APPROVAL_DETAIL, OWNER_KEY_CHANGE_HINT, OWNER_KEY_HINT, OWNER_KEY_UNBOUND_COPY, ownerKeyDisplay } from "./copy";
 import { InlineError, StatePanel, words } from "./ui";
 
 function keySourceCopy(source: string | null) {
@@ -81,6 +81,41 @@ function AuthorizationPanel({ bootstrap, health }: { bootstrap: FrontendBootstra
   </div>;
 }
 
+/**
+ * Owner Buzz approval key (Channels spec §6.3). Only the owner's own session from a Portal launch can change
+ * it; the server refuses everything else. The UI never shows the key: only its fingerprint and trust source.
+ */
+function OwnerKeyPanel() {
+  const ownerKey = useQuery({ queryKey: ["owner-key"], queryFn: getOwnerKey, retry: false });
+  const [draft, setDraft] = useState("");
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const done = async (message: string) => { setDraft(""); setConfirmClear(false); setNotice(message); await ownerKey.refetch(); };
+  const save = useMutation({ mutationFn: () => setOwnerKey(draft.trim()), onSuccess: (result) => done(result.invalidatedHolds ? `Key saved. ${result.invalidatedHolds} waiting ${result.invalidatedHolds === 1 ? "post needs" : "posts need"} approval here or a new request.` : "Key saved.") });
+  const clear = useMutation({ mutationFn: clearOwnerKey, onSuccess: () => done("Key removed. Buzz replies cannot approve posts until you set a key.") });
+  if (ownerKey.isLoading) return <p className="muted">Loading approval key…</p>;
+  if (ownerKey.error) return <StatePanel error={ownerKey.error} onRetry={() => void ownerKey.refetch()} />;
+  const view = ownerKey.data!.ownerKey;
+  const display = ownerKeyDisplay(view);
+  const unbound = view.ownerPin === "unbound";
+  const busy = save.isPending || clear.isPending || unbound;
+  const failure = save.error ?? clear.error;
+  return <form className="settings-stack" data-testid="owner-key" onSubmit={(event) => { event.preventDefault(); setNotice(null); save.mutate(); }}>
+    <div className="settings-intro"><div><h3>Buzz approval key</h3><p>{OWNER_KEY_HINT}</p></div><Tag tone={display.tone}>{display.label}</Tag></div>
+    {view.fingerprint && <div className="credential-proof" data-testid="owner-key-status"><ShieldCheck size={18} /><div><strong>Fingerprint <code>{view.fingerprint}</code></strong>{display.source && <p>{display.source}</p>}</div></div>}
+    {display.warning && <div className="contract-gap" role="alert"><AlertTriangle size={17} /><div><strong>{display.label}</strong><p>{display.warning}{view.attestedFingerprint ? ` Portal attests the key with fingerprint ${view.attestedFingerprint}.` : ""}</p></div></div>}
+    {unbound && <p className="muted-detail" role="status">{OWNER_KEY_UNBOUND_COPY}</p>}
+    <label>{view.fingerprint ? "Replace key" : "Public key (npub)"}<input autoComplete="off" spellCheck={false} disabled={unbound} value={draft} onChange={(event) => { setNotice(null); setDraft(event.target.value); }} placeholder="npub1…" /></label>
+    {view.fingerprint && <p className="muted-detail">{OWNER_KEY_CHANGE_HINT}</p>}
+    {failure && <InlineError error={failure} />}
+    {notice && !failure && <p className="inline-success" role="status"><Check size={14} />{notice}</p>}
+    <div className="dialog-actions settings-actions">
+      <Button tone="primary" type="submit" disabled={busy || !draft.trim()}>{save.isPending ? <LoaderCircle className="spin" size={15} /> : <Check size={15} />}Save key</Button>
+      {view.fingerprint && (confirmClear ? <><Button type="button" tone="danger" disabled={busy} onClick={() => { setNotice(null); clear.mutate(); }}>{clear.isPending ? <LoaderCircle className="spin" size={15} /> : <Trash2 size={15} />}Confirm removal</Button><Button type="button" disabled={busy} onClick={() => setConfirmClear(false)}>Keep key</Button></> : <Button type="button" disabled={busy} onClick={() => setConfirmClear(true)}><Trash2 size={15} />Remove key</Button>)}
+    </div>
+  </form>;
+}
+
 function SecurityPanel({ session, onLogout }: { session: OperatorSession; onLogout: () => void }) {
   const logout = useMutation({ mutationFn: () => logoutOperator(session.mode), onSuccess: onLogout });
   return <div className="settings-stack"><div className="settings-intro"><div><h3>Your session</h3><p>You're signed in to Marketplace in this browser. Agents and other apps use their own separate credentials.</p></div><ShieldCheck /></div><dl className="contract-list"><dt>Signed in as</dt><dd>{session.principal?.id ?? "—"}</dd><dt>Organization</dt><dd>{session.principal?.organizationId ?? "—"}</dd><dt>Session ends</dt><dd>{session.expiresAt ? new Date(session.expiresAt).toLocaleString() : session.mode === "test_bypass" ? "Test mode" : "—"}</dd><dt>Sign-in</dt><dd>Secure browser cookie; your access token isn't stored</dd><dt>Change protection</dt><dd>Each change is verified as coming from this session</dd></dl>{logout.error && <InlineError error={logout.error} />}<div><Button tone="danger" disabled={logout.isPending} onClick={() => logout.mutate()}><LogOut size={15} />Sign out</Button></div></div>;
@@ -88,5 +123,5 @@ function SecurityPanel({ session, onLogout }: { session: OperatorSession; onLogo
 
 export function SettingsDialog({ open, onOpenChange, bootstrap, workspaceSlug, session, onLogout, health }: { health: HealthSnapshot; open: boolean; onOpenChange: (open: boolean) => void; bootstrap: FrontendBootstrap; workspaceSlug: string; session: OperatorSession; onLogout: () => void }) {
   const capabilities = useQuery({ queryKey: ["agent-capabilities", workspaceSlug], queryFn: () => getAgentCapabilities(workspaceSlug), enabled: open, retry: false });
-  return <Dialog.Root open={open} onOpenChange={onOpenChange}><Dialog.Portal><Dialog.Overlay className="dialog-overlay" /><Dialog.Content className="settings-dialog"><header className="modal-header"><div><p className="eyebrow">Marketplace</p><Dialog.Title>Settings</Dialog.Title><Dialog.Description>Provider keys, your session, permissions, and agent tools.</Dialog.Description></div><Dialog.Close asChild><IconButton aria-label="Close settings"><X size={17} /></IconButton></Dialog.Close></header><Tabs.Root className="settings-tabs" defaultValue="providers"><Tabs.List aria-label="Marketplace settings"><Tabs.Trigger value="providers"><Plug size={15} />Providers</Tabs.Trigger><Tabs.Trigger value="security"><ShieldCheck size={15} />Security</Tabs.Trigger><Tabs.Trigger value="authorization"><ShieldCheck size={15} />Authorization</Tabs.Trigger><Tabs.Trigger value="agent"><TerminalSquare size={15} />Agent tools</Tabs.Trigger><Tabs.Trigger value="developer"><Code2 size={15} />Developer</Tabs.Trigger></Tabs.List><div className="settings-content"><Tabs.Content value="providers"><ProviderSettingsPanel /></Tabs.Content><Tabs.Content value="security"><SecurityPanel session={session} onLogout={onLogout} /></Tabs.Content><Tabs.Content value="authorization"><AuthorizationPanel bootstrap={bootstrap} health={health} /></Tabs.Content><Tabs.Content value="agent"><div className="settings-stack"><div className="settings-intro"><div><h3>Agent tools</h3><p>Agents can only use tools that are installed, connected, and switched on.</p></div><Tag tone="accent">{capabilities.data?.capabilities.length ?? 0} tools</Tag></div>{capabilities.error ? <StatePanel error={capabilities.error} onRetry={() => void capabilities.refetch()} /> : <pre className="code-view">{capabilities.isLoading ? "Loading agent tools…" : JSON.stringify(capabilities.data, null, 2)}</pre>}</div></Tabs.Content><Tabs.Content value="developer"><DeveloperPanel /></Tabs.Content></div></Tabs.Root></Dialog.Content></Dialog.Portal></Dialog.Root>;
+  return <Dialog.Root open={open} onOpenChange={onOpenChange}><Dialog.Portal><Dialog.Overlay className="dialog-overlay" /><Dialog.Content className="settings-dialog"><header className="modal-header"><div><p className="eyebrow">Marketplace</p><Dialog.Title>Settings</Dialog.Title><Dialog.Description>Provider keys, your session, permissions, and agent tools.</Dialog.Description></div><Dialog.Close asChild><IconButton aria-label="Close settings"><X size={17} /></IconButton></Dialog.Close></header><Tabs.Root className="settings-tabs" defaultValue="providers"><Tabs.List aria-label="Marketplace settings"><Tabs.Trigger value="providers"><Plug size={15} />Providers</Tabs.Trigger><Tabs.Trigger value="security"><ShieldCheck size={15} />Security</Tabs.Trigger><Tabs.Trigger value="authorization"><ShieldCheck size={15} />Authorization</Tabs.Trigger><Tabs.Trigger value="agent"><TerminalSquare size={15} />Agent tools</Tabs.Trigger><Tabs.Trigger value="developer"><Code2 size={15} />Developer</Tabs.Trigger></Tabs.List><div className="settings-content"><Tabs.Content value="providers"><ProviderSettingsPanel /></Tabs.Content><Tabs.Content value="security"><SecurityPanel session={session} onLogout={onLogout} /><OwnerKeyPanel /></Tabs.Content><Tabs.Content value="authorization"><AuthorizationPanel bootstrap={bootstrap} health={health} /></Tabs.Content><Tabs.Content value="agent"><div className="settings-stack"><div className="settings-intro"><div><h3>Agent tools</h3><p>Agents can only use tools that are installed, connected, and switched on.</p></div><Tag tone="accent">{capabilities.data?.capabilities.length ?? 0} tools</Tag></div>{capabilities.error ? <StatePanel error={capabilities.error} onRetry={() => void capabilities.refetch()} /> : <pre className="code-view">{capabilities.isLoading ? "Loading agent tools…" : JSON.stringify(capabilities.data, null, 2)}</pre>}</div></Tabs.Content><Tabs.Content value="developer"><DeveloperPanel /></Tabs.Content></div></Tabs.Root></Dialog.Content></Dialog.Portal></Dialog.Root>;
 }

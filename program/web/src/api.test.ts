@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, connectPlugin, getBootstrap, getCardDetail, getCardSummaries, getOperatorSession, logoutOperator, saveProviderSettings, unlockOperator, unlockWithEmergencyCode } from "./api";
+import { ApiError, clearOwnerKey, connectPlugin, getBootstrap, getOwnerKey, setOwnerKey, getCardDetail, getCardSummaries, getOperatorSession, logoutOperator, saveProviderSettings, unlockOperator, unlockWithEmergencyCode } from "./api";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -84,5 +84,23 @@ describe("frontend API client", () => {
     window.addEventListener("marketplace-auth-expired", expired, { once: true });
     await expect(getCardSummaries({ workspaceSlug: "verified-org", search: "", source: "all", installed: false, offset: 0, limit: 60 })).rejects.toBeInstanceOf(ApiError);
     expect(expired).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads, sets and clears the owner Buzz key on the owner-only route with the session CSRF token", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (url) =>
+      String(url) === "/api/marketplace/auth/session"
+        ? new Response(JSON.stringify({ session: { csrfToken: "csrf-owner" } }), { status: 200 })
+        : new Response(JSON.stringify({ ok: true, ownerKey: { fingerprint: "0123456789abcdef" } }), { status: 200 }),
+    );
+    await getOperatorSession();
+    await getOwnerKey();
+    await setOwnerKey("npub1example");
+    await clearOwnerKey();
+    const calls = fetchMock.mock.calls.slice(1).map(([url, init]) => ({ url: String(url), method: init?.method ?? "GET", csrf: (init?.headers as Record<string, string> | undefined)?.["x-csrf-token"] ?? null, body: init?.body ?? null }));
+    expect(calls).toEqual([
+      { url: "/api/marketplace/approvals/owner-key", method: "GET", csrf: null, body: null },
+      { url: "/api/marketplace/approvals/owner-key", method: "PUT", csrf: "csrf-owner", body: JSON.stringify({ pubkey: "npub1example" }) },
+      { url: "/api/marketplace/approvals/owner-key", method: "DELETE", csrf: "csrf-owner", body: null },
+    ]);
   });
 });

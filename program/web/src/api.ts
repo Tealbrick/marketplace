@@ -1,4 +1,4 @@
-import type { ChannelPayloadView, CompanyBoxApproval, CompanyBoxApprovalsResponse, CompanyBoxResponse, CompanyBoxResult, CompanyBoxSetup, AuditResponse, CardDetailResponse, CardsResponse, CardsSummaryResponse, CustomConnector, CustomConnectorCreate, CustomConnectorPatch, CustomConnectorsResponse, FrontendBootstrap, OperatorSession, ProviderSettings, RuntimeHealth } from "./types";
+import type { ChannelPayloadView, CompanyBoxApproval, CompanyBoxApprovalsResponse, OwnerKeyResponse, CompanyBoxResponse, CompanyBoxResult, CompanyBoxSetup, AuditResponse, CardDetailResponse, CardsResponse, CardsSummaryResponse, CustomConnector, CustomConnectorCreate, CustomConnectorPatch, CustomConnectorsResponse, FrontendBootstrap, OperatorSession, ProviderSettings, RuntimeHealth } from "./types";
 
 let operatorCsrfToken: string | null = null;
 
@@ -223,3 +223,13 @@ export const decideCompanyBoxApproval = (approvalId: string, decision: "approve"
 /** Owner-only: the full stored arguments of a held call (a channel hold adds the exact payload view). */
 export const getCompanyBoxApproval = (approvalId: string) =>
   api<{ ok: true; approval: CompanyBoxApproval; arguments: Record<string, unknown>; payloadView?: ChannelPayloadView | null }>(`${companyBoxRoute()}/approvals/${encodeURIComponent(approvalId)}`);
+
+const OWNER_KEY_ROUTE = "/api/marketplace/approvals/owner-key";
+
+/** The owner's Buzz approval key: fingerprint, trust source and status only. */
+export const getOwnerKey = () => api<OwnerKeyResponse>(OWNER_KEY_ROUTE);
+
+/** Owner session only (Portal launch + CSRF). `pubkey` is 64 hex or `npub1…`; the server answers the fingerprint only. */
+export const setOwnerKey = (pubkey: string) => api<OwnerKeyResponse>(OWNER_KEY_ROUTE, { method: "PUT", body: JSON.stringify({ pubkey }) });
+
+export const clearOwnerKey = () => api<OwnerKeyResponse>(OWNER_KEY_ROUTE, { method: "DELETE" });

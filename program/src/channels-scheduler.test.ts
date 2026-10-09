@@ -167,7 +167,7 @@ describe("channels scheduler (1g)", () => {
     expect(f.telegram.sends).toHaveLength(0);
     await tickAt(sendAt + 1_000);
     expect(f.telegram.sends).toHaveLength(1);
-    expect(f.store.channels.getPost(TENANT, held.json().postId)).toMatchObject({ status: "sent", authority: `approval:${approvalId}` });
+    expect(f.store.channels.getPost(TENANT, held.headers["tealbrick-post-id"] as string)).toMatchObject({ status: "sent", authority: `approval:${approvalId}` });
     expect(f.store.getCompanyBoxApproval(approvalId)!.state).toBe("succeeded");
     await tickAt(sendAt + 31_000);
     expect(f.telegram.sends).toHaveLength(1);
@@ -178,7 +178,7 @@ describe("channels scheduler (1g)", () => {
     const sendAt = f.now + 120_000;
     const held = await schedule("Never approved", sendAt);
     await tickAt(sendAt + 1_000);
-    expect(f.store.channels.getPost(TENANT, held.json().postId)).toMatchObject({ status: "expired" });
+    expect(f.store.channels.getPost(TENANT, held.headers["tealbrick-post-id"] as string)).toMatchObject({ status: "expired" });
     expect(f.telegram.sends).toHaveLength(0);
   });
 

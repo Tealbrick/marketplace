@@ -40,7 +40,7 @@ describe("L3: transient send-time failures keep the approval", () => {
     const approved = await f.owner("POST", `/api/marketplace/company-box/approvals/${approvalId}/approve`, {});
     expect(approved.json()).toMatchObject({ ok: false, channel: { error: "channel_event_check_unavailable" } });
     expect(f.store.getCompanyBoxApproval(approvalId)!.state).toBe("executing");
-    expect(f.store.channels.getPost(TENANT, held.json().postId)!.status).toBe("held");
+    expect(f.store.channels.getPost(TENANT, held.headers["tealbrick-post-id"] as string)!.status).toBe("held");
     eventStatus = 200;
     const retry = await f.post(channel.id, body, k);
     expect(retry.statusCode, retry.body).toBe(200);
@@ -93,7 +93,7 @@ describe("M1: caps refusal and owner deny of an approved hold", () => {
     const denied = await f.owner("POST", `/api/marketplace/company-box/approvals/${approvalId}/deny`, {});
     expect(denied.statusCode, denied.body).toBe(200);
     expect(denied.json()).toMatchObject({ approval: { state: "denied" } });
-    expect(f.store.channels.getPost(TENANT, held.json().postId)).toMatchObject({ status: "skipped", reason: "approval_denied" });
+    expect(f.store.channels.getPost(TENANT, held.headers["tealbrick-post-id"] as string)).toMatchObject({ status: "skipped", reason: "approval_denied" });
     eventStatus = 200;
     expect((await f.post(channel.id, body, k)).statusCode).toBe(409);
     expect(f.telegram.sends).toHaveLength(0);
@@ -189,7 +189,7 @@ describe("M2: authority re-checked inside the reservation", () => {
     };
     const approved = await f.owner("POST", `/api/marketplace/company-box/approvals/${held.json().approvalId}/approve`, {});
     expect(approved.json()).toMatchObject({ channel: { error: "consent_inactive" }, approval: { state: "failed" } });
-    expect(f.store.channels.getPost(TENANT, held.json().postId)).toMatchObject({ status: "skipped", reason: "consent_inactive" });
+    expect(f.store.channels.getPost(TENANT, held.headers["tealbrick-post-id"] as string)).toMatchObject({ status: "skipped", reason: "consent_inactive" });
     expect(f.telegram.sends).toHaveLength(0);
 
     const other = await f.createChannel({ slug: "events-2", externalId: "-1005678", policy: EVENT_POLICY });
@@ -218,7 +218,7 @@ describe("L4/L5: expiry and cancellation of approved holds", () => {
     f.setClock(later);
     const report = await f.runtime.tick(new Date(later));
     expect(report.expired).toBe(1);
-    expect(f.store.channels.getPost(TENANT, held.json().postId)).toMatchObject({ status: "expired", reason: "approval_expired" });
+    expect(f.store.channels.getPost(TENANT, held.headers["tealbrick-post-id"] as string)).toMatchObject({ status: "expired", reason: "approval_expired" });
     expect(f.store.getCompanyBoxApproval(held.json().approvalId)).toMatchObject({ state: "failed", error: "approval_expired" });
     expect(f.telegram.sends).toHaveLength(0);
   });
@@ -235,7 +235,7 @@ describe("L4/L5: expiry and cancellation of approved holds", () => {
     expect(held.statusCode).toBe(202);
     await f.owner("POST", `/api/marketplace/company-box/approvals/${held.json().approvalId}/approve`, {});
     expect(f.store.getCompanyBoxApproval(held.json().approvalId)!.state).toBe("executing");
-    const cancelled = await f.agent("POST", `/api/marketplace/v1/agent/channels/${channel.id}/scheduled/${held.json().postId}/cancel`, {});
+    const cancelled = await f.agent("POST", `/api/marketplace/v1/agent/channels/${channel.id}/scheduled/${held.headers["tealbrick-post-id"] as string}/cancel`, {});
     expect(cancelled.statusCode).toBe(200);
     expect(f.store.getCompanyBoxApproval(held.json().approvalId)).toMatchObject({ state: "failed", error: "channel_post_cancelled" });
     f.setClock(sendAt + 1_000);
@@ -285,7 +285,9 @@ describe("L7: approval proofs need a pinned owner", () => {
     f.consentFor("agent-1", channel);
     const held = await f.post(channel.id, { text: "Held" }, key());
     const approvalId = held.json().approvalId;
-    for (const payload of [{ proof: "portal", token: "valid-proof-token-0001" }, { proof: "nostr", event: { id: "x" }, channel: "dm-1" }]) {
+    const event = { id: "a".repeat(64), pubkey: "b".repeat(64), created_at: Math.floor(Date.now() / 1000), kind: 9, tags: [["h", "00000000-0000-4000-8000-000000000001"]], content: "approve 0123456789ab", sig: "c".repeat(128) };
+    for (const proof of [{ proof: "portal", token: "eyJhbGciOiJFZERTQSJ9.eyJ4IjoxfQ.c2lnbmF0dXJl" }, { proof: "nostr", event, channel: "00000000-0000-4000-8000-000000000001" }]) {
+      const payload = { approvalId, proof };
       const refused = await f.agent("POST", `/api/marketplace/v1/agent/approvals/${approvalId}/resolve`, { key: `resolve.${approvalId}.approve`, payload });
       expect(refused.statusCode).toBe(503);
       expect(refused.json()).toMatchObject({ error: "approval_owner_unbound" });

@@ -1304,6 +1304,8 @@ export class SqliteMarketplaceStore {
         timestamp,
         timestamp,
       );
+    // Channels §6.3: the owner Buzz key pinned at creation; only that key may approve this hold by Buzz.
+    this.channels.pinApprovalOwnerKey({ approvalId: id, workspaceSlug: input.workspaceSlug, now: new Date(created) });
     return this.getCompanyBoxApproval(id)!;
   }
 
@@ -1431,6 +1433,40 @@ export class SqliteMarketplaceStore {
       .run(stamp, input.id, input.workspaceSlug, input.agentId, stamp, stale);
     if (Number(result.changes) !== 1) return null;
     return { approval: this.getCompanyBoxApproval(input.id)!, stamp };
+  }
+
+  /**
+   * Channels §6.3 review B1: does another held call share this Buzz proof's digest prefix? Any approval of the
+   * workspace (any state) with a different digest created since `since`, or any other live (pending,
+   * resolving, executing) held call of the instance. A Buzz reply binds only the prefix, not the approvalId.
+   */
+  approvalPrefixAmbiguous(input: { prefix: string; approvalId: string; workspaceSlug: string; digest: string; since: Date }): boolean {
+    if (!/^[0-9a-f]{1,64}$/u.test(input.prefix)) return true;
+    this.expireCompanyBoxApprovals();
+    return Boolean(
+      this.db
+        .prepare(
+          `SELECT 1 FROM company_box_approval
+           WHERE id <> ? AND substr(fingerprint, 1, ?) = ?
+             AND (state IN ('pending', 'resolving', 'executing')
+               OR (workspace_slug = ? AND fingerprint <> ? AND created_at >= ?))
+           LIMIT 1`,
+        )
+        .get(input.approvalId, input.prefix.length, input.prefix, input.workspaceSlug, input.digest, input.since.toISOString()),
+    );
+  }
+
+  /** Review B1 (hold creation): a live (pending, resolving, executing) held call of the workspace whose digest starts with `prefix`. */
+  hasLiveApprovalWithPrefix(input: { workspaceSlug: string; prefix: string }): boolean {
+    this.expireCompanyBoxApprovals();
+    return Boolean(
+      this.db
+        .prepare(
+          `SELECT 1 FROM company_box_approval
+           WHERE workspace_slug = ? AND state IN ('pending', 'resolving', 'executing') AND substr(fingerprint, 1, ?) = ? LIMIT 1`,
+        )
+        .get(input.workspaceSlug, input.prefix.length, input.prefix),
+    );
   }
 
   /** A refused proof: `resolving` → `pending`, only for the claim that is still current. */

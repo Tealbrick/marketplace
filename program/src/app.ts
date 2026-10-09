@@ -66,13 +66,16 @@ import {
   type ExecutionTarget,
 } from "./execution-targets.js";
 import {
-  OwnerApprovalProofSchema,
+  createContractOwnerApprovalVerifier,
+  NOSTR_AMBIGUITY_WINDOW_MS,
   RESOLVE_CLAIM_STALE_MS,
   RESOLVE_IDEMPOTENCY_KEY,
-  unsupportedOwnerApprovalVerifier,
+  type OwnerApprovalBinding,
   type OwnerApprovalVerifier,
 } from "./channels/approvals.js";
-import { registerChannelRoutes } from "./channels/routes.js";
+import { currentOwnerKeyView, registerOwnerKeyRoutes } from "./channels/owner-key-routes.js";
+import { NO_OWNER_PIN, readAttestedOwnerNostrPubkey, readOwnerPin, type OwnerKeyAttestation, type OwnerPinSource } from "./channels/owner-pin.js";
+import { CHANNEL_AGENT_OPERATION, registerChannelRoutes } from "./channels/routes.js";
 import {
   CHANNEL_TOKEN_ENV,
   MARKETPLACE_PORTAL_CLASS_CONTRACT_VERSION,
@@ -161,7 +164,7 @@ import {
   settingsRejections,
   type MarketplaceContract,
 } from "./contract.js";
-import { EMERGENCY_SUBJECT, LAUNCH_BEARER_FRAGMENT, type GrantContext, type SettingsSnapshot } from "@tealbrick/contract";
+import { EMERGENCY_SUBJECT, LAUNCH_BEARER_FRAGMENT, parseApprovalResolveRequest, type GrantContext, type SettingsSnapshot } from "@tealbrick/contract";
 import {
   MarketplaceAuthenticationError,
   MarketplaceOperatorSessionManager,
@@ -636,16 +639,18 @@ export type BuildMarketplaceAppOptions = {
   /** Fetch for the confirmed-event live check at send time (tests inject a fake). */
   channelEventFetch?: typeof fetch;
   /**
-   * Verifies owner-signed approval proofs for `marketplace.approvals.resolve`.
-   * Default: refuses every proof (501) until kit rc.14 / contract alpha.6 ship.
+   * Verifies owner-signed approval proofs for `marketplace.approvals.resolve`. Default: the contract
+   * verifiers (`verifyNostrApprovalProof`, `verifyOwnerApprovalAssertion`); tests may inject another.
    */
   ownerApprovalVerifier?: OwnerApprovalVerifier;
   /**
-   * Owner pins for approval proofs (Nostr pubkey, Portal user id). Until the Portal claim carries them
-   * (K2/PO3) they come only from here; without the pin for a proof type, resolve refuses
-   * `approval_owner_unbound` before any verifier runs.
+   * The contract claim binding that pins the owner (`ownerSubject`, alpha.7) and the grant JWKS. Default
+   * `NO_OWNER_PIN`: Marketplace still answers the legacy claim path, so nothing is pinned and `portal`
+   * proofs answer `approval_owner_unbound`. TODO(manifest-claim PR, Lead · Miniapps): pass `claim.store`.
    */
-  ownerApprovalBinding?: { ownerPubkey?: string | null; ownerUserId?: string | null };
+  ownerPinSource?: OwnerPinSource;
+  /** Fetch for the pinned grant JWKS of PO3 owner assertions (default: `portalFetch`, then `fetch`). */
+  ownerApprovalJwksFetch?: typeof fetch;
 };
 
 /** Test and ops handle on a built app's channel runtime (scheduler tick, boot completion). */
@@ -878,9 +883,12 @@ function agentGuidance() {
     "3. `POST /api/marketplace/v1/agent/channels/{channelId}/posts` with `{text, attachments?: [{attachmentId, kind,",
     "   transcript?}], campaign?: {ref, phase}}` and an `Idempotency-Key`. `200` returns a `receipt`. `202",
     "   approval_pending` means the owner must approve this exact payload: do not retry with a new key or changed",
-    "   text; retry with the same key later. Undeclared kinds answer `channel_capability_unavailable`; long text is",
-    "   refused, never cut.",
-    "4. `POST .../{channelId}/scheduled` adds `sendAt` (60 s to 30 days ahead); `receipts` show the final state.",
+    "   text; retry with the same key later. The 202 body is `{error, approvalId, digest, expiresAt, payloadView}`;",
+    "   the post id is in the `Tealbrick-Post-Id` response header. `409 channel_digest_prefix_collision` means another",
+    "   held post looks too similar: change the text and retry. Undeclared kinds answer",
+    "   `channel_capability_unavailable`; long text is refused, never cut.",
+    "4. `POST .../{channelId}/scheduled` adds `sendAt` (60 s to 30 days ahead); a held schedule also answers 202 with",
+    "   the `Tealbrick-Post-Id` header; `receipts` show the final state.",
     "5. `POST .../{channelId}/grants` proposes a standing grant; only the owner can approve it.",
     "",
     "Installing, connecting, consenting and approving are owner actions. They are not available to agents.",
@@ -5404,6 +5412,16 @@ export async function buildMarketplaceApp(
       error: approval.error,
       ...(approval.state === "succeeded" ? { result: approval.result } : {}),
       ...(approval.sourceKind === "channel-consent" ? { channel: channelApprovalSummary(approval) } : {}),
+      ...ownerProofView(approval),
+    };
+  };
+  /** §6.3: the Buzz key fingerprint the hold was created under, and the deciding proof's metadata (no proof). */
+  const ownerProofView = (approval: CompanyBoxApproval) => {
+    const pin = options.store.channels.getApprovalOwnerPin(approval.id);
+    if (!pin) return {};
+    return {
+      ownerKey: { fingerprint: pin.keyFingerprint, status: pin.keyStatus },
+      ...(pin.proofKind ? { proof: { kind: pin.proofKind, amr: pin.proofAmr ?? [], device: pin.proofDevice } } : {}),
     };
   };
   /** A held channel post in the Approvals queue: channel, digest and post state (never the text in lists). */
@@ -5475,6 +5493,8 @@ export async function buildMarketplaceApp(
       ok: true,
       workspaceSlug,
       pendingCount: options.store.listCompanyBoxApprovals({ workspaceSlug, state: "pending", limit: 500 }).length,
+      // The owner's Buzz key: fingerprint, trust source and status only (§6.3).
+      ownerKey: await currentOwnerKeyView(options.store, workspaceSlug, ownerPinSource),
       approvals: options.store
         .listCompanyBoxApprovals({ workspaceSlug, state: query.state, limit: query.limit })
         .map(ownerApprovalView),
@@ -8418,7 +8438,50 @@ export async function buildMarketplaceApp(
    * resolve while resolving or after the decision is 409 approval_already_resolved and never calls a
    * provider. The kit's key `resolve.<approvalId>.<decision>` replays the stored answer after success.
    */
-  const ownerApprovalVerifier = options.ownerApprovalVerifier ?? unsupportedOwnerApprovalVerifier;
+  const ownerPinSource = options.ownerPinSource ?? NO_OWNER_PIN;
+  const ownerApprovalVerifier =
+    options.ownerApprovalVerifier ??
+    createContractOwnerApprovalVerifier({
+      isUsed: (proofId) => options.store.channels.isApprovalProofUsed(proofId),
+      prefixAmbiguous: ({ prefix, approvalId, digest, now }) =>
+        options.store.approvalPrefixAmbiguous({ prefix, approvalId, digest, workspaceSlug: organizationId, since: new Date(now.getTime() - NOSTR_AMBIGUITY_WINDOW_MS) }),
+      jwksFetch: options.ownerApprovalJwksFetch ?? options.portalFetch,
+    });
+  /** The manifest operation a held call came from (`op` of a Portal owner assertion). */
+  const heldOperation = (approval: CompanyBoxApproval) =>
+    approval.sourceKind === "channel-consent"
+      ? approval.actionKey === "channel.schedule"
+        ? CHANNEL_AGENT_OPERATION.schedule
+        : CHANNEL_AGENT_OPERATION.post
+      : AGENT_OPERATION.toolsCall;
+  type ResolveRefusal = { ok: false; status: number; error: string };
+  /**
+   * The Buzz key a `nostr` proof is checked against: the key pinned on the hold at creation, still the
+   * current owner setting (same fingerprint and epoch, not `key_changed`), and equal to the Portal-attested
+   * key when Portal attests one (rule 4; Portal v2). Synchronous apart from the attestation read.
+   */
+  const nostrKeyFor = (approval: CompanyBoxApproval, attestation: OwnerKeyAttestation | null): ResolveRefusal | { ok: true; pubkey: string; fingerprint: string; setAtMs: number } => {
+    // Review B2: an unreadable or malformed attestation counts as a mismatch (fail closed), never as absent.
+    if (!attestation || attestation.status === "error") return { ok: false, status: 503, error: "approval_owner_key_mismatch" };
+    const key = options.store.channels.getOwnerKey(organizationId);
+    if (!key?.pubkey || !key.fingerprint) return { ok: false, status: 503, error: "approval_owner_unbound" };
+    if (attestation.status === "attested" && attestation.pubkey !== key.pubkey) return { ok: false, status: 503, error: "approval_owner_key_mismatch" };
+    const pin = options.store.channels.getApprovalOwnerPin(approval.id);
+    if (!pin || pin.keyStatus !== "pinned" || pin.keyFingerprint !== key.fingerprint || pin.keyEpoch !== key.epoch) {
+      return { ok: false, status: 409, error: "approval_owner_key_changed" };
+    }
+    return { ok: true, pubkey: key.pubkey, fingerprint: key.fingerprint, setAtMs: Date.parse(key.setAt) };
+  };
+
+  /**
+   * `marketplace.approvals.resolve` (Channels §6.3, contract K1): the harness forwards the owner's signed
+   * decision `{approvalId, proof}` (contract `approvalResolveRequestSchema`) for the caller's own held call.
+   * Atomic and single-shot per approval: a guarded UPDATE moves the hold pending → resolving with no await
+   * in between; an invalid proof moves it back (no provider call happened); a valid proof is marked used
+   * instance-wide, then the call runs exactly once. Any other resolve while resolving or after the decision
+   * is 409 approval_already_resolved and never calls a provider. The kit's key
+   * `resolve.<approvalId>.<decision>` replays the stored answer after success.
+   */
   app.post("/api/marketplace/v1/agent/approvals/:approvalId/resolve", { bodyLimit: 32_768 }, async (request, reply) => {
     const traceId = traceIdFrom(request);
     const caller = agentGrant(request, reply, AGENT_OPERATION.approvalsResolve);
@@ -8432,11 +8495,12 @@ export async function buildMarketplaceApp(
       return { ok: false, schema: 1, traceId, error: "idempotency_key_required" };
     }
     const keyDecision = keyMatch[2] as "approve" | "deny";
-    const proof = OwnerApprovalProofSchema.safeParse(request.body);
-    if (!proof.success) {
+    const resolveRequest = parseApprovalResolveRequest(request.body);
+    if (!resolveRequest || resolveRequest.approvalId !== approvalId) {
       reply.code(400);
       return { ok: false, schema: 1, traceId, error: "validation_failed" };
     }
+    const proof = resolveRequest.proof;
     const approval = options.store.getCompanyBoxApproval(approvalId);
     // Binds only to the caller's own held call; anything else looks unknown.
     if (!approval || approval.workspaceSlug !== organizationId || approval.agentId !== caller.agentId) {
@@ -8455,11 +8519,23 @@ export async function buildMarketplaceApp(
       return { ok: false, schema: 1, traceId, error: "approval_already_resolved" };
     }
     // Review L7: a proof is only checked against a pinned owner. No pin, no verification (fail closed).
-    const ownerPubkey = options.ownerApprovalBinding?.ownerPubkey?.trim() || null;
-    const ownerUserId = options.ownerApprovalBinding?.ownerUserId?.trim() || null;
-    if ((proof.data.proof === "nostr" && !ownerPubkey) || (proof.data.proof === "portal" && !ownerUserId)) {
+    // The pins are read before the claim; the claim itself is one guarded UPDATE (no await inside).
+    const ownerPin = proof.proof === "portal" ? await readOwnerPin(ownerPinSource) : null;
+    const attestedKey = proof.proof === "nostr" ? await readAttestedOwnerNostrPubkey(ownerPinSource) : null;
+    if (proof.proof === "portal" && (!ownerPin || !ownerPin.jwksUri || !portalConfiguration.deploymentId)) {
       reply.code(503);
       return { ok: false, schema: 1, traceId, error: "approval_owner_unbound" };
+    }
+    if (proof.proof === "portal" && ownerPin && instanceClaim && ownerPin.instanceId !== instanceClaim.instanceId) {
+      reply.code(503);
+      return { ok: false, schema: 1, traceId, error: "approval_owner_unbound" };
+    }
+    if (proof.proof === "nostr") {
+      const nostrKey = nostrKeyFor(approval, attestedKey);
+      if (!nostrKey.ok) {
+        reply.code(nostrKey.status);
+        return { ok: false, schema: 1, traceId, error: nostrKey.error };
+      }
     }
     const claim = options.store.claimCompanyBoxApprovalForResolve({
       id: approval.id,
@@ -8472,34 +8548,46 @@ export async function buildMarketplaceApp(
       reply.code(current?.state === "expired" ? 410 : 409);
       return { ok: false, schema: 1, traceId, error: current?.state === "expired" ? "approval_expired" : "approval_already_resolved" };
     }
-    const refuse = (status: number, error: string) => {
+    const refuse = (status: number, error: string, reason?: string) => {
       options.store.releaseCompanyBoxApprovalResolve({ id: approval.id, stamp: claim.stamp });
       reply.code(status);
-      return { ok: false, schema: 1, traceId, error };
+      return { ok: false, schema: 1, traceId, error, ...(reason ? { reason } : {}) };
+    };
+    // Re-read the key under the claim: a key change between the pre-check and now refuses.
+    const nostrKey = proof.proof === "nostr" ? nostrKeyFor(approval, attestedKey) : null;
+    if (nostrKey && !nostrKey.ok) return refuse(nostrKey.status, nostrKey.error);
+    const binding: OwnerApprovalBinding = {
+      portalIssuer: ownerPin?.portalIssuer ?? null,
+      deploymentId: portalConfiguration.deploymentId,
+      instanceId: ownerPin?.instanceId ?? null,
+      ownerSubject: ownerPin?.ownerSubject ?? null,
+      jwksUri: ownerPin?.jwksUri ?? null,
+      grantKids: ownerPin?.grantKids ?? [],
+      ownerPubkey: nostrKey?.ok ? nostrKey.pubkey : null,
+      ownerKeyFingerprint: nostrKey?.ok ? nostrKey.fingerprint : null,
+      ownerKeySetAtMs: nostrKey?.ok ? nostrKey.setAtMs : null,
     };
     let verification;
     try {
       verification = await ownerApprovalVerifier.verify({
-        proof: proof.data,
+        proof,
         approvalId: approval.id,
         digest: approval.fingerprint,
-        binding: {
-          portalIssuer: portalIssuerUrl,
-          deploymentId: portalConfiguration.deploymentId,
-          portalOrgId: portalConfiguration.portalOrgId,
-          workspaceId: portalConfiguration.workspaceId,
-          instanceId: instanceClaim?.instanceId ?? null,
-          // TODO(K2/PO3): pin the owner's Nostr pubkey and user id from the Portal claim once it carries them.
-          ownerPubkey,
-          ownerUserId,
-        },
+        operation: heldOperation(approval),
+        agent: `tealbrick-agent:${approval.agentId}`,
+        binding,
         now: new Date(),
       });
     } catch {
       return refuse(503, "approval_proof_unavailable");
     }
-    if (!verification.ok) return refuse(verification.status, verification.error);
+    if (!verification.ok) return refuse(verification.status, verification.error, verification.reason);
     if (verification.decision !== keyDecision) return refuse(400, "approval_decision_mismatch");
+    // A key change during verification invalidates a Buzz proof checked against the old key.
+    if (proof.proof === "nostr") {
+      const still = nostrKeyFor(approval, attestedKey);
+      if (!still.ok || still.fingerprint !== binding.ownerKeyFingerprint) return refuse(409, "approval_owner_key_changed");
+    }
     const used = options.store.channels.markUsedApprovalProof({
       proofId: `${verification.kind}:${verification.proofId}`,
       kind: verification.kind,
@@ -8538,8 +8626,16 @@ export async function buildMarketplaceApp(
         digest: decided.fingerprint,
         proof: verification.kind,
         via: "approvals.resolve",
+        ...(verification.amr ? { amr: verification.amr } : {}),
         ...(verification.device ? { device: verification.device } : {}),
       },
+    });
+    options.store.channels.recordApprovalProof({
+      approvalId: decided.id,
+      workspaceSlug: decided.workspaceSlug,
+      kind: verification.kind,
+      amr: verification.amr ?? null,
+      device: verification.device ?? null,
     });
     let result: { status: number; body: Record<string, unknown> };
     try {
@@ -8568,6 +8664,16 @@ export async function buildMarketplaceApp(
     options.store.finishMarketplaceRuntimeOperation({ id: operation.operation.id, status: "succeeded", response: result });
     reply.code(result.status);
     return result.body;
+  });
+
+  // Owner Buzz key v1 (§6.3): app-owned, owner-only; never a manifest setting, so Portal's settings relay cannot write it.
+  registerOwnerKeyRoutes({
+    app,
+    store: options.store,
+    organizationId,
+    pinSource: ownerPinSource,
+    requireOperator,
+    ownerLaunchSession: (request) => operatorSessions.ownerLaunchSession(request.headers.cookie, request.headers["x-csrf-token"]),
   });
 
   app.post(

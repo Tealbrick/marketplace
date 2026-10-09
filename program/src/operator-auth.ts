@@ -10,11 +10,15 @@ export interface MarketplacePrincipal {
   readonly organizationName?: string;
 }
 
+/** How an operator session was opened: a Portal launch ticket, or the deployment's operator access token. */
+export type MarketplaceOperatorSessionSource = "portal-launch" | "access-token";
+
 interface MarketplaceOperatorSession {
   readonly tokenDigest: Buffer;
   readonly csrfToken: string;
   readonly principal: MarketplacePrincipal;
   readonly expiresAtMs: number;
+  readonly source: MarketplaceOperatorSessionSource;
 }
 
 export interface MarketplaceOperatorSessionStatus {
@@ -168,7 +172,7 @@ export class MarketplaceOperatorSessionManager {
       throw new MarketplaceAuthenticationError("operator_unauthorized", 401, "The operator access token is invalid.");
     }
     this.failedLogins.delete(clientKey);
-    return this.createSession(this.principal);
+    return this.createSession(this.principal, "access-token");
   }
 
   issuePortalSession(input: { readonly id: string; readonly organizationId: string; readonly organizationName?: string | null }) {
@@ -178,7 +182,20 @@ export class MarketplaceOperatorSessionManager {
       throw new Error("Portal launch identity must include an operator and organization.");
     }
     const organizationName = input.organizationName?.trim();
-    return this.createSession({ kind: "operator", id, organizationId, ...(organizationName ? { organizationName } : {}) });
+    return this.createSession({ kind: "operator", id, organizationId, ...(organizationName ? { organizationName } : {}) }, "portal-launch");
+  }
+
+  /**
+   * The owner's own session from a Portal launch ticket, with its CSRF token checked here (never bypassed,
+   * also not in test mode). Null for anything else: no cookie, an access-token session, the test bypass,
+   * a missing or wrong CSRF token. Used by owner-only app state such as the owner Buzz key (§6.3).
+   */
+  ownerLaunchSession(cookieHeader: string | string[] | undefined, csrfToken: string | string[] | undefined): MarketplacePrincipal | null {
+    const session = this.sessionForCookie(cookieHeader);
+    if (!session || session.source !== "portal-launch") return null;
+    const actual = Array.isArray(csrfToken) ? (csrfToken.length === 1 ? csrfToken[0] : undefined) : csrfToken;
+    if (!actual || !matchesDigest(actual, digest(session.csrfToken))) return null;
+    return session.principal;
   }
 
   authenticate(cookieHeader?: string | string[]) {
@@ -218,7 +235,7 @@ export class MarketplaceOperatorSessionManager {
     };
   }
 
-  private createSession(principal: MarketplacePrincipal) {
+  private createSession(principal: MarketplacePrincipal, source: MarketplaceOperatorSessionSource) {
     this.pruneExpired();
     const now = this.now();
     const token = randomBytes(32).toString("base64url");
@@ -227,6 +244,7 @@ export class MarketplaceOperatorSessionManager {
       csrfToken: randomBytes(24).toString("base64url"),
       principal,
       expiresAtMs: now + this.ttlMs,
+      source,
     };
     this.sessions.set(token.slice(0, 16), session);
     return { token, status: this.statusForSession(session) };

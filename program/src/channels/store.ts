@@ -33,6 +33,8 @@ export const CHANNEL_TABLES = [
   "channel_attachment",
   "channel_receipt",
   "marketplace_used_approval_proof",
+  "channel_owner_key",
+  "channel_approval_owner",
 ] as const;
 
 const HOUR_MS = 3_600_000;
@@ -158,6 +160,35 @@ export function migrateChannelTables(db: DatabaseSync): void {
       kind TEXT NOT NULL,
       expires_at TEXT NOT NULL
     );
+
+    -- Owner Buzz key v1 (§6.3): app-owned, owner-only. One row per workspace; a cleared key keeps the
+    -- row (pubkey NULL) so the epoch never goes back.
+    CREATE TABLE IF NOT EXISTS channel_owner_key (
+      workspace_slug TEXT PRIMARY KEY,
+      pubkey TEXT,
+      fingerprint TEXT,
+      epoch INTEGER NOT NULL,
+      set_by TEXT NOT NULL,
+      set_at TEXT NOT NULL
+    );
+
+    -- Per held call: the owner key pinned at creation (only that key may approve it by Buzz) and the
+    -- metadata of the proof that decided it (kind, Portal amr/device; never the proof itself).
+    CREATE TABLE IF NOT EXISTS channel_approval_owner (
+      approval_id TEXT PRIMARY KEY,
+      workspace_slug TEXT NOT NULL,
+      key_fingerprint TEXT,
+      key_epoch INTEGER NOT NULL,
+      key_status TEXT NOT NULL,
+      proof_kind TEXT,
+      proof_amr_json TEXT,
+      proof_device TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_channel_approval_owner_scope
+    ON channel_approval_owner(workspace_slug, key_status);
   `);
 }
 
@@ -365,6 +396,32 @@ export type ChannelCapError =
   | "channel_cap_per_hour"
   | "channel_min_interval"
   | "channel_phase_duplicate";
+
+/** The owner's Buzz key setting (§6.3). `pubkey` is null after a clear. */
+export type OwnerKeyRecord = {
+  workspaceSlug: string;
+  pubkey: string | null;
+  fingerprint: string | null;
+  epoch: number;
+  setBy: string;
+  setAt: string;
+};
+
+/**
+ * The key a held call was created under. `pinned`: only `fingerprint`/`epoch` may approve it by Buzz.
+ * `unpinned`: no key was set at creation, so no Buzz reply can approve it. `key_changed`: the key changed
+ * while it was pending; it needs a new request or the owner UI (Portal proofs and the owner queue still work).
+ */
+export type ApprovalOwnerPin = {
+  approvalId: string;
+  workspaceSlug: string;
+  keyFingerprint: string | null;
+  keyEpoch: number;
+  keyStatus: "pinned" | "unpinned" | "key_changed";
+  proofKind: "nostr" | "portal" | null;
+  proofAmr: string[] | null;
+  proofDevice: string | null;
+};
 
 export class ChannelStoreError extends Error {
   constructor(
@@ -1840,6 +1897,117 @@ export class ChannelStore {
         ? ({ ok: true } as const)
         : ({ ok: false, error: "approval_proof_reused" } as const);
     });
+  }
+
+  // ----- owner Buzz key and per-hold pins (§6.3) ---------------------------
+
+  getOwnerKey(workspaceSlug: string): OwnerKeyRecord | null {
+    const row = this.db.prepare("SELECT * FROM channel_owner_key WHERE workspace_slug = ?").get(workspaceSlug) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return {
+      workspaceSlug: String(row.workspace_slug),
+      pubkey: row.pubkey === null ? null : String(row.pubkey),
+      fingerprint: row.fingerprint === null ? null : String(row.fingerprint),
+      epoch: Number(row.epoch),
+      setBy: String(row.set_by),
+      setAt: String(row.set_at),
+    };
+  }
+
+  /**
+   * Set, change or clear the owner key in one transaction. Any change bumps the epoch and marks every
+   * pending (or resolving) hold pinned to the previous key `key_changed`. Returns the previous and new
+   * fingerprints and how many holds were invalidated; `changed: false` when the key is the same.
+   */
+  setOwnerKey(input: { workspaceSlug: string; pubkey: string | null; fingerprint: string | null; actor: string; now?: Date }): {
+    changed: boolean;
+    previousFingerprint: string | null;
+    fingerprint: string | null;
+    invalidated: number;
+    record: OwnerKeyRecord | null;
+  } {
+    const timestamp = iso(input.now ?? new Date());
+    return this.immediate(() => {
+      const previous = this.getOwnerKey(input.workspaceSlug);
+      const previousFingerprint = previous?.pubkey ? previous.fingerprint : null;
+      if ((previous?.pubkey ?? null) === input.pubkey) {
+        return { changed: false, previousFingerprint, fingerprint: previousFingerprint, invalidated: 0, record: previous };
+      }
+      const epoch = (previous?.epoch ?? 0) + 1;
+      this.db
+        .prepare(
+          `INSERT INTO channel_owner_key (workspace_slug, pubkey, fingerprint, epoch, set_by, set_at) VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(workspace_slug) DO UPDATE SET pubkey = excluded.pubkey, fingerprint = excluded.fingerprint,
+             epoch = excluded.epoch, set_by = excluded.set_by, set_at = excluded.set_at`,
+        )
+        .run(input.workspaceSlug, input.pubkey, input.pubkey ? input.fingerprint : null, epoch, input.actor, timestamp);
+      const invalidated = this.db
+        .prepare(
+          `UPDATE channel_approval_owner SET key_status = 'key_changed', updated_at = ?
+           WHERE workspace_slug = ? AND key_status = 'pinned'
+             AND approval_id IN (SELECT id FROM company_box_approval WHERE workspace_slug = ? AND state IN ('pending', 'resolving'))`,
+        )
+        .run(timestamp, input.workspaceSlug, input.workspaceSlug);
+      return {
+        changed: true,
+        previousFingerprint,
+        fingerprint: input.pubkey ? input.fingerprint : null,
+        invalidated: Number(invalidated.changes),
+        record: this.getOwnerKey(input.workspaceSlug),
+      };
+    });
+  }
+
+  /** Record the key a new held call is created under (called with the approval insert; no transaction of its own). */
+  pinApprovalOwnerKey(input: { approvalId: string; workspaceSlug: string; now?: Date }): ApprovalOwnerPin {
+    const key = this.getOwnerKey(input.workspaceSlug);
+    const timestamp = iso(input.now ?? new Date());
+    const pinned = Boolean(key?.pubkey && key.fingerprint);
+    this.db
+      .prepare(
+        `INSERT INTO channel_approval_owner (approval_id, workspace_slug, key_fingerprint, key_epoch, key_status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(approval_id) DO NOTHING`,
+      )
+      .run(input.approvalId, input.workspaceSlug, pinned ? key!.fingerprint : null, key?.epoch ?? 0, pinned ? "pinned" : "unpinned", timestamp, timestamp);
+    return this.getApprovalOwnerPin(input.approvalId)!;
+  }
+
+  getApprovalOwnerPin(approvalId: string): ApprovalOwnerPin | null {
+    const row = this.db.prepare("SELECT * FROM channel_approval_owner WHERE approval_id = ?").get(approvalId) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    let amr: string[] | null = null;
+    if (typeof row.proof_amr_json === "string") {
+      try {
+        const parsed = JSON.parse(row.proof_amr_json) as unknown;
+        amr = Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === "string") : null;
+      } catch {
+        amr = null;
+      }
+    }
+    return {
+      approvalId: String(row.approval_id),
+      workspaceSlug: String(row.workspace_slug),
+      keyFingerprint: row.key_fingerprint === null ? null : String(row.key_fingerprint),
+      keyEpoch: Number(row.key_epoch),
+      keyStatus: String(row.key_status) as ApprovalOwnerPin["keyStatus"],
+      proofKind: row.proof_kind === null ? null : (String(row.proof_kind) as "nostr" | "portal"),
+      proofAmr: amr,
+      proofDevice: row.proof_device === null ? null : String(row.proof_device),
+    };
+  }
+
+  /** Metadata of the proof that decided a held call (kind, Portal `amr` and `device`). Never the proof. */
+  recordApprovalProof(input: { approvalId: string; workspaceSlug: string; kind: "nostr" | "portal"; amr?: readonly string[] | null; device?: string | null; now?: Date }): void {
+    const timestamp = iso(input.now ?? new Date());
+    const amr = input.amr && input.amr.length ? JSON.stringify(input.amr) : null;
+    this.db
+      .prepare(
+        `INSERT INTO channel_approval_owner (approval_id, workspace_slug, key_fingerprint, key_epoch, key_status, proof_kind, proof_amr_json, proof_device, created_at, updated_at)
+         VALUES (?, ?, NULL, 0, 'unpinned', ?, ?, ?, ?, ?)
+         ON CONFLICT(approval_id) DO UPDATE SET proof_kind = excluded.proof_kind, proof_amr_json = excluded.proof_amr_json,
+           proof_device = excluded.proof_device, updated_at = excluded.updated_at`,
+      )
+      .run(input.approvalId, input.workspaceSlug, input.kind, amr, input.device ?? null, timestamp, timestamp);
   }
 
   isApprovalProofUsed(proofId: string): boolean {

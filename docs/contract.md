@@ -36,6 +36,7 @@ with that `upstream`.
 | owner | `marketplace.settings.get` / `.update` / `.clear` | `/api/settings/providers/composio` |
 | owner | `marketplace.approvals.list` / `.get` / `.approve` / `.deny` | `/api/marketplace/company-box/approvals...` |
 | agent | `marketplace.approvals.resolve` | `POST /api/marketplace/v1/agent/approvals/{approvalId}/resolve` |
+| owner | `marketplace.approval-owner-key.get` / `.update` / `.clear` | `GET` / `PUT` / `DELETE /api/marketplace/approvals/owner-key` (see [Owner Buzz key](#owner-buzz-key-v1)) |
 | agent | Channels: `marketplace.channels.*`, `marketplace.channel-*` | see [Channels](#channels) |
 | owner | Channels: `marketplace.channels.*`, `marketplace.channel-*` | see [Channels](#channels) |
 
@@ -184,8 +185,8 @@ spec's sub-resource ids use a hyphenated resource
 | `marketplace.channels.list` | `GET /api/marketplace/v1/agent/channels` | read-only | none |
 | `marketplace.channels.get` | `GET /api/marketplace/v1/agent/channels/{channelId}` | read-only | none |
 | `marketplace.channel-attachments.upload` | `POST /api/marketplace/v1/agent/channels/attachments?name=<file>` | writes-app-state | required |
-| `marketplace.channels.post` | `POST /api/marketplace/v1/agent/channels/{channelId}/posts` | external-effects | required |
-| `marketplace.channels.schedule` | `POST /api/marketplace/v1/agent/channels/{channelId}/scheduled` | external-effects | required |
+| `marketplace.channels.post` | `POST /api/marketplace/v1/agent/channels/{channelId}/posts` | external-effects (`approvalAuthority: "app"`, `appHold`) | required |
+| `marketplace.channels.schedule` | `POST /api/marketplace/v1/agent/channels/{channelId}/scheduled` | external-effects (`approvalAuthority: "app"`, `appHold`) | required |
 | `marketplace.channel-scheduled.cancel` | `POST /api/marketplace/v1/agent/channels/{channelId}/scheduled/{postId}/cancel` | writes-app-state | supported |
 | `marketplace.channel-receipts.list` | `GET /api/marketplace/v1/agent/channels/receipts` | read-only | none |
 | `marketplace.channel-grants.list` | `GET /api/marketplace/v1/agent/channels/grants` | read-only | none |
@@ -220,10 +221,17 @@ Answers:
   fallback?}`; `status` is `sent|failed|uncertain|pending|skipped|cancelled|
   expired`; `authority` is `grant:<id>`, `approval:<id>` or `owner-test`. A
   scheduled post answers `pending`.
-* `202 {ok: false, error: "approval_pending", approvalId, postId, digest,
-  digestPrefix, expiresAt, payloadView: {canonical, files: [{name, sha256,
-  contentType}]}}`: no grant covers the post, so it waits for the owner in the
-  existing approvals queue. Retry with the same key; after the owner approves,
+* `202 {error: "approval_pending", approvalId, digest, expiresAt,
+  payloadView: {canonical, files: [{name, sha256, contentType}]}}`, exactly
+  the contract `approvalPendingSchema` (strict: no other key; `digest =
+  sha256(payloadView.canonical)`). The post id is in the `Tealbrick-Post-Id`
+  response header (held and scheduled posts) and the trace id in `X-Trace-Id`.
+  The manifest output schema `ChannelPostResult` declares the same strict
+  body. No grant covers the post, so it waits for the owner in the existing
+  approvals queue. A new hold whose first 32 hex of digest equal those of
+  another live (pending, resolving, executing) hold of the workspace is `409
+  channel_digest_prefix_collision` (nothing is held or consumed; change the
+  text and retry), because a Buzz reply approves by that prefix. Retry with the same key; after the owner approves,
   the post is sent exactly once and the retry returns its receipt. A changed
   payload needs a new approval. A scheduled hold's approval expires at
   `sendAt`.
@@ -237,7 +245,9 @@ channel_attachment_not_found | channel_post_not_found | grant_not_found`, `409
 channel_idempotency_conflict | channel_not_active |
 channel_connection_unavailable | channel_digest_mismatch |
 channel_post_uncertain | channel_post_in_progress | channel_post_<status> |
-standing_grants_disabled | approval_already_resolved | approval_proof_reused`,
+standing_grants_disabled | approval_already_resolved | approval_proof_reused |
+approval_owner_key_changed | approval_proof_prefix_too_short |
+approval_proof_ambiguous | channel_digest_prefix_collision`,
 `410 approval_expired`, `413 channel_attachment_too_large |
 channel_payload_view_too_large`, `415 channel_attachment_type_invalid`, `422
 channel_capability_unavailable | channel_text_too_long |
@@ -247,8 +257,11 @@ channel_too_many_files | channel_voice_transcript_required |
 channel_send_at_invalid | grant_exceeds_ceiling | grant_widening_refused`,
 `429 channel_cap_per_day | channel_cap_per_hour | channel_min_interval |
 channel_phase_duplicate` (with `retryAfterSeconds`) `| approval_queue_full`,
-`501 approval_proof_unsupported`, `503 channel_credential_unavailable |
-channel_event_check_unavailable | approval_owner_unbound`; also `409
+`503 channel_credential_unavailable | channel_event_check_unavailable |
+approval_owner_unbound | approval_owner_key_mismatch |
+approval_proof_unavailable`; resolve also answers `400
+approval_decision_mismatch` and `403 approval_proof_invalid` (with `reason`);
+also `409
 channels_not_configured | channel_paused | consent_inactive |
 grant_inactive` and `422 channel_attachment_type_mismatch |
 channel_kind_unsupported`.
@@ -261,17 +274,121 @@ and the post is `skipped`.
 
 ### `marketplace.approvals.resolve`
 
-Body `{proof: "nostr", event, channel}` or `{proof: "portal", token}`, key
-`resolve.<approvalId>.<approve|deny>`. Only the caller's own held call
-(otherwise `404 approval_not_found`). Single-shot: a guarded update moves the
-hold `pending → resolving` before any await; a refused proof moves it back; a
-valid proof is recorded as used (instance-wide), then the decision runs once.
+Contract K1 (alpha.6). The manifest names it as `approvals.resolveOperation`.
+Body: the contract `approvalResolveRequestSchema`, `{approvalId, proof}` with
+`proof` either `{proof: "nostr", event: <full owner-signed NIP-01 event>,
+channel: <conversation UUID>}` or `{proof: "portal", token: <compact JWS>}`;
+`approvalId` must equal the path (otherwise, or for any other key, `400
+validation_failed`). Key `resolve.<approvalId>.<approve|deny>`. Only the
+caller's own held call (otherwise `404 approval_not_found`).
+
+Single-shot: a guarded update moves the hold `pending → resolving` (one SQL
+statement, no await inside); a refused proof moves it back; a valid proof is
+recorded as used (instance-wide, `markUsedApprovalProof`, after every other
+check so a refused proof never burns its id), then the decision runs once.
 Any other resolve while resolving or after the decision is `409
 approval_already_resolved` and never calls a provider; the same key after
-success replays the stored answer. Until kit rc.14 (`verifyOwnerApproval`) and
-contract alpha.6 (`verifyOwnerApprovalAssertion`) are published, every proof is
-refused with `501 approval_proof_unsupported`. The owner Approvals view uses the
-same states.
+success replays the stored answer. A deny skips the post with no provider call.
+The owner Approvals view uses the same states.
+
+* `nostr`: first the local minimum: the reply must be `approve <32-character
+  code>` (the first 32+ hex of the digest; contract alpha.7 enforces ≥ 32,
+  alpha.6 only 12), else `409 approval_proof_prefix_too_short` before any
+  verifier runs. Then `verifyNostrApprovalProof` with the forwarded event and
+  `channel` (the event's `h` tag must equal it), the held digest, age ≤ 15
+  minutes, kind 9, recomputed NIP-01 id, BIP-340
+  signature, and the owner key **pinned on the hold at creation**. That key
+  must still be the current owner key (same fingerprint and epoch); otherwise
+  `409 approval_owner_key_changed` (also for a hold created before any key
+  was set). A reply binds only its prefix, not the approval id, so it is `409
+  approval_proof_ambiguous` when the prefix also matches another approval of
+  the workspace (any state, different digest) created in the last 20 minutes
+  (15 min max age + 5 min skew), or any other live held call of the instance. An event signed before the current key was set is `403
+  approval_proof_invalid` (`reason: key_changed`). No key: `503
+  approval_owner_unbound`. When Portal attests the owner's key (v2) and it
+  differs from the owner setting, or when the attestation cannot be read or
+  is malformed (fail closed): `503 approval_owner_key_mismatch`.
+* `portal`: `verifyOwnerApprovalAssertion` with the issuer-pinned grant JWKS
+  of the claim binding (`ownerApprovalOptionsFromClaim`: pinned issuer,
+  `jwksUri`, grant kids), `aud = tealbrick-app:<claimed instanceId>`, `dep` =
+  own deployment id, `sub` = the pinned `ownerSubject`, `approvalId`,
+  `digest`, `op` (the held operation: `marketplace.channels.post` /
+  `.schedule`, or `marketplace.tools.call`), `agent =
+  tealbrick-agent:<agentId>`, `decision`, `exp − iat ≤ 300 s`, single-use
+  `jti` (kept until `exp` + the contract clock skew, 60 s). Type separation: an L2 grant JWT is `403
+  approval_proof_invalid` (`reason: wrong_header_type`). The assertion's
+  `amr` and `device` claims are stored on the approval record (metadata;
+  shown in the owner view as `proof`). An unreachable JWKS is `503
+  approval_proof_unavailable`.
+
+Refusal reasons (`reason`): `wrong_channel`, `wrong_owner`, `bad_signature`,
+`stale`, `not_yet_valid`, `wrong_digest`, `prefix_too_short`, `ambiguous`,
+`ambiguous_prefix`, `wrong_kind`, `bad_id`, `key_changed`, `malformed`
+(nostr); the
+contract `OwnerApprovalDenialReason` values (portal). A replayed proof of
+either type is `409 approval_proof_reused`.
+
+Owner pin. The owner comes only from the contract claim binding (alpha.7:
+`ownerSubject`, `ownerPinnedAt`; re-pinned only by a newer claim, cleared by
+a claim without it), read through `channels/owner-pin.ts`. The Portal launch
+credential's `ownerSubject` is never used to authorize a caller or to re-pin.
+Marketplace still answers the legacy claim path, so today nothing is pinned
+and `portal` proofs answer `503 approval_owner_unbound`; the pin starts
+working when the manifest-claim handler passes its `claim.store` as
+`ownerPinSource`. Installed contract alpha.6 takes `ownerUserId`; the adapter
+strips `tealbrick-user:` from `ownerSubject` (alpha.7: pass `ownerSubject`).
+
+App authority. `channels.post` and `channels.schedule` declare
+`approvalAuthority: "app"` with `appHold: true`. Marketplace holds every call
+it has no owner authority for whatever Portal's `approvalTrusted` says; the
+flag only lets the harness skip its own prompt (`harnessDefersToApp`: external
+effects, app authority, hold, resolve operation, and `approvalTrusted: true`
+in the signed config and the live grant). `channels.test` stays harness
+authority: the contract refuses `"app"` on owner-audience operations (no
+harness calls them; the owner's click is the authority).
+
+### Owner Buzz key (v1)
+
+`approvals.ownerNostrPubkey` is app-owned, owner-only Marketplace state. It
+is not a manifest setting (Portal's settings relay cannot write it) and not a
+provider-env or account field.
+
+| Operation | Route |
+| --- | --- |
+| `marketplace.approval-owner-key.get` | `GET /api/marketplace/approvals/owner-key` → `{ownerKey: {setting, fingerprint, ownerKeySource: owner-session|portal-attested|null, ownerKeyStatus: unset|ok|mismatch|error, attestedFingerprint, setAt, ownerPin: pinned|unbound}}` |
+| `marketplace.approval-owner-key.update` | `PUT /api/marketplace/approvals/owner-key` `{pubkey}` → `{changed, invalidatedHolds, ownerKey}` |
+| `marketplace.approval-owner-key.clear` | `DELETE /api/marketplace/approvals/owner-key` → `{changed, invalidatedHolds, ownerKey}` |
+
+* Writes need the owner's own operator session from a Portal launch ticket,
+  with its CSRF token (checked by the route itself). Refused (`403
+  owner_session_required`, or earlier `401`/`403`): agents (`tbag_`, as
+  owner operations), runtime leases, the service bearer, the settings relay
+  bearer, the emergency session, the operator access-token session and the
+  test bypass. The claim binding must pin the owner (`ownerSubject`) and the
+  launch user must be that owner; without a pin every write is `409
+  approval_owner_unbound` (`ownerPin: "unbound"`; the Settings control says
+  "Available after Portal confirms the deployment owner").
+* Format: the owner pastes the npub (public key; the UI never asks for a
+  private key). Accepted: a NIP-19 `npub1…` (bech32, checksum verified) or 64
+  hex characters (either case; stored lowercase). `nsec`, other prefixes, whitespace and
+  free text are `400 owner_key_invalid`.
+* Only the fingerprint (first 16 hex of sha256 over the 32 key bytes) is
+  shown, returned or audited. The Approvals list (`marketplace.approvals.list`)
+  carries the same `ownerKey` view; each approval carries `ownerKey:
+  {fingerprint, status: pinned|unpinned|key_changed}`.
+* Every change (set, change, clear) bumps the key epoch, marks every pending
+  hold pinned to the previous key `key_changed` (it stays held; approve it in
+  the owner UI or let the agent ask again) and writes the audit event
+  `marketplace.approvals.owner_key.changed` `{change, oldFingerprint,
+  newFingerprint, invalidatedHolds, at}` with the actor.
+* Trust source: `owner-session` today. When Portal attests the key (v2 claim
+  field `ownerNostrPubkey`, also read through `channels/owner-pin.ts`, null
+  today), an equal key is `portal-attested` and a different one is
+  `ownerKeyStatus: "mismatch"`. An unreadable store or a malformed value is
+  `ownerKeyStatus: "error"`, never "not attested". Both refuse Buzz proofs
+  (fail closed).
+* The Approvals view shows each held channel post's 32-character Buzz code
+  (the first 32 hex of its digest): the owner replies `approve <code>`.
 
 ### Owner operations (`audience: owner`)
 
@@ -354,9 +471,10 @@ with the last row of its SHA-256.
 Receipt purge (owner op and the 90-day retention in the tick) deletes only
 receipts of finished posts and answers `{purged, skipped}`.
 
-Resolve: a proof is verified only against a pinned owner (Nostr pubkey for
-`nostr`, Portal user id for `portal`); without the pin the answer is `503
-approval_owner_unbound` before any verifier runs.
+Resolve: a proof is verified only against a pinned owner (the hold's owner
+Buzz key for `nostr`, the claim binding's `ownerSubject` and grant JWKS for
+`portal`); without the pin the answer is `503 approval_owner_unbound` before
+any verifier runs.
 
 ### Scheduler
 
