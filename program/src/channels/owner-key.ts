@@ -92,7 +92,11 @@ export function ownerKeyFingerprint(pubkey: string): string {
 }
 
 export type OwnerKeySource = "owner-session" | "portal-attested";
-export type OwnerKeyStatus = "unset" | "ok" | "mismatch";
+/** `error`: the Portal attestation could not be read or is malformed (treated like a mismatch: Buzz proofs refused). */
+export type OwnerKeyStatus = "unset" | "ok" | "mismatch" | "error";
+
+/** Structurally `OwnerKeyAttestation` (owner-pin.ts). */
+export type AttestationInput = { status: "absent" } | { status: "attested"; pubkey: string } | { status: "error" };
 
 /** What the owner UI and the Approvals view show: fingerprints only, never the key. */
 export type OwnerKeyView = {
@@ -106,23 +110,24 @@ export type OwnerKeyView = {
 };
 
 /**
- * The trust state of the configured key against the Portal-attested one (rule 4): no configured key is
- * `unset`; a configured key with no attestation is `ok` from the owner session; an equal attestation makes
- * it `portal-attested`; a different one is `mismatch` (Nostr proofs are refused until the owner fixes it).
+ * The trust state of the configured key against the Portal-attested one (rule 4): an unreadable or malformed
+ * attestation is `error` (review B2, fail closed); otherwise no configured key is `unset`; a configured key
+ * with no attestation is `ok` from the owner session; an equal attestation makes it `portal-attested`; a
+ * different one is `mismatch` (Nostr proofs are refused until the owner fixes it).
  */
-export function ownerKeyView(configured: { pubkey: string; setAt: string } | null, attested: string | null): OwnerKeyView {
+export function ownerKeyView(configured: { pubkey: string; setAt: string } | null, attestation: AttestationInput): OwnerKeyView {
+  const attested = attestation.status === "attested" ? attestation.pubkey : null;
   const attestedFingerprint = attested ? ownerKeyFingerprint(attested) : null;
-  if (!configured) {
-    return { setting: OWNER_NOSTR_KEY_SETTING, fingerprint: null, ownerKeySource: null, ownerKeyStatus: "unset", attestedFingerprint, setAt: null };
-  }
-  const fingerprint = ownerKeyFingerprint(configured.pubkey);
-  const matches = attested !== null && attested === configured.pubkey;
+  const fingerprint = configured ? ownerKeyFingerprint(configured.pubkey) : null;
+  const matches = configured !== null && attested !== null && attested === configured.pubkey;
+  const ownerKeyStatus: OwnerKeyStatus =
+    attestation.status === "error" ? "error" : !configured ? "unset" : attested !== null && !matches ? "mismatch" : "ok";
   return {
     setting: OWNER_NOSTR_KEY_SETTING,
     fingerprint,
-    ownerKeySource: matches ? "portal-attested" : "owner-session",
-    ownerKeyStatus: attested !== null && !matches ? "mismatch" : "ok",
+    ownerKeySource: configured ? (matches ? "portal-attested" : "owner-session") : null,
+    ownerKeyStatus,
     attestedFingerprint,
-    setAt: configured.setAt,
+    setAt: configured?.setAt ?? null,
   };
 }

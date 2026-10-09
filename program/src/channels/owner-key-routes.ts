@@ -17,7 +17,8 @@ import { readAttestedOwnerNostrPubkey, readOwnerPin, type OwnerPinSource } from 
  * Writes need the owner's own operator session from a Portal launch ticket with its CSRF token. Refused:
  * agents (`tbag_`, refused earlier by the grant guard as an owner operation), runtime leases, the service
  * bearer, the Portal settings relay bearer, the emergency session, the operator access-token session and
- * the test bypass. When the claim binding pins the owner (`ownerSubject`), the session user must be it.
+ * the test bypass. The claim binding must pin the owner (`ownerSubject`) and the session user must be it;
+ * without a pin every write is `409 approval_owner_unbound` (review M1, fail closed).
  * Every change (set, change, clear) is audited with the old and new fingerprints, the actor and the time;
  * the raw key is never audited, returned or logged.
  */
@@ -39,10 +40,12 @@ export type OwnerKeyRouteDeps = {
 };
 
 /** The owner key state for the owner UI and the Approvals view (fingerprints only). */
-export async function currentOwnerKeyView(store: SqliteMarketplaceStore, organizationId: string, pinSource: OwnerPinSource): Promise<OwnerKeyView> {
+export async function currentOwnerKeyView(store: SqliteMarketplaceStore, organizationId: string, pinSource: OwnerPinSource): Promise<OwnerKeyView & { ownerPin: "pinned" | "unbound" }> {
   const record = store.channels.getOwnerKey(organizationId);
   const attested = await readAttestedOwnerNostrPubkey(pinSource);
-  return ownerKeyView(record?.pubkey ? { pubkey: record.pubkey, setAt: record.setAt } : null, attested);
+  // `unbound`: Portal has not confirmed the deployment owner yet (no ownerSubject pin), so the key cannot be set.
+  const ownerPin = (await readOwnerPin(pinSource)) ? "pinned" : "unbound";
+  return { ...ownerKeyView(record?.pubkey ? { pubkey: record.pubkey, setAt: record.setAt } : null, attested), ownerPin };
 }
 
 export function registerOwnerKeyRoutes(deps: OwnerKeyRouteDeps): void {
@@ -90,7 +93,7 @@ export function registerOwnerKeyRoutes(deps: OwnerKeyRouteDeps): void {
   };
 
   /** The owner session gate for writes; answers the refusal itself and returns false. */
-  const ownerWriter = async (request: FastifyRequest, reply: FastifyReply) => {
+  const ownerWriter = async (request: FastifyRequest, reply: FastifyReply): Promise<boolean | "approval_owner_unbound"> => {
     reply.header("cache-control", "no-store");
     const principal = deps.requireOperator(request, reply);
     if (!principal) return false;
@@ -100,17 +103,24 @@ export function registerOwnerKeyRoutes(deps: OwnerKeyRouteDeps): void {
       reply.code(403);
       return false;
     }
-    // When the claim binding pins the owner, only that user may change the key.
+    // Review M1: only the PINNED deployment owner may change the key. Without a pin (today's legacy claim
+    // path) nobody can: any Portal-launched member would otherwise qualify. Same fail-closed rule as portal proofs.
     const pin = await readOwnerPin(deps.pinSource);
-    if (pin && pin.ownerSubject !== `tealbrick-user:${owner.id}`) {
+    if (!pin) {
+      reply.code(409);
+      return "approval_owner_unbound";
+    }
+    if (pin.ownerSubject !== `tealbrick-user:${owner.id}`) {
       reply.code(403);
       return false;
     }
     return true;
   };
+  const writerRefusal = (gate: boolean | string) => ({ ok: false, error: typeof gate === "string" ? gate : "owner_session_required" });
 
   app.put(OWNER_KEY_ROUTE, { bodyLimit: 1_024 }, async (request, reply) => {
-    if (!(await ownerWriter(request, reply))) return { ok: false, error: "owner_session_required" };
+    const gate = await ownerWriter(request, reply);
+    if (gate !== true) return writerRefusal(gate);
     const body = OwnerKeyBody.safeParse(request.body);
     if (!body.success) return refuse(reply, 400, "owner_key_invalid");
     const parsed = parseOwnerNostrPubkey(body.data.pubkey);
@@ -119,7 +129,8 @@ export function registerOwnerKeyRoutes(deps: OwnerKeyRouteDeps): void {
   });
 
   app.delete(OWNER_KEY_ROUTE, async (request, reply) => {
-    if (!(await ownerWriter(request, reply))) return { ok: false, error: "owner_session_required" };
+    const gate = await ownerWriter(request, reply);
+    if (gate !== true) return writerRefusal(gate);
     return write(request, reply, null);
   });
 }

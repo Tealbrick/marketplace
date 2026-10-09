@@ -1,5 +1,7 @@
 import { isIssuerJwksUri, isPortalIssuer, USER_PRINCIPAL_PREFIX } from "@tealbrick/contract";
 
+import { parseOwnerNostrPubkey } from "./owner-key.js";
+
 /**
  * Owner pins for `marketplace.approvals.resolve` (Channels spec §6.3), read from the contract claim binding.
  *
@@ -16,7 +18,8 @@ import { isIssuerJwksUri, isPortalIssuer, USER_PRINCIPAL_PREFIX } from "@tealbri
  *
  * TODO(Portal v2, Lead · Portal): Portal attests the owner's Buzz key through a Buzz-signed challenge and
  * emits `ownerNostrPubkey` in the claim. `readAttestedOwnerNostrPubkey` returns it once the binding carries
- * it (null today); the owner-set key must then equal it (rule 4), else Nostr proofs are refused.
+ * it (`absent` today); the owner-set key must then equal it (rule 4), else Nostr proofs are refused. An
+ * unreadable store or a malformed value is `error`, which also refuses.
  */
 
 /** The claim binding fields Marketplace reads (alpha.7 `ClaimBinding` plus the Portal v2 key). */
@@ -91,11 +94,25 @@ export function ownerUserIdFromSubject(subject: string): string | null {
   return SUBJECT.test(subject) ? subject.slice(USER_PRINCIPAL_PREFIX.length) : null;
 }
 
-/** Portal v2: the owner's Buzz key attested by Portal, normalised lowercase, or null (today, always null). */
-export async function readAttestedOwnerNostrPubkey(source: OwnerPinSource): Promise<string | null> {
-  const binding = await readBinding(source);
-  const value = binding?.ownerNostrPubkey;
-  if (typeof value !== "string") return null;
-  const normalized = value.toLowerCase();
-  return HEX_KEY.test(normalized) ? normalized : null;
+/**
+ * Portal v2 attestation of the owner's Buzz key. `absent`: the binding carries no `ownerNostrPubkey` (today,
+ * always). `attested`: a valid key (64 hex or npub, normalised lowercase hex). `error` (review B2): the store
+ * could not be read or the field is malformed; callers treat it as a mismatch and refuse (fail closed), never
+ * as "no attestation".
+ */
+export type OwnerKeyAttestation = { status: "absent" } | { status: "attested"; pubkey: string } | { status: "error" };
+
+export async function readAttestedOwnerNostrPubkey(source: OwnerPinSource): Promise<OwnerKeyAttestation> {
+  let binding: OwnerClaimBinding | null | undefined;
+  try {
+    binding = await source.read();
+  } catch {
+    return { status: "error" };
+  }
+  if (binding === null || binding === undefined) return { status: "absent" };
+  if (typeof binding !== "object") return { status: "error" };
+  const value = binding.ownerNostrPubkey;
+  if (value === undefined || value === null) return { status: "absent" };
+  const parsed = parseOwnerNostrPubkey(value);
+  return parsed.ok && HEX_KEY.test(parsed.pubkey) ? { status: "attested", pubkey: parsed.pubkey } : { status: "error" };
 }
