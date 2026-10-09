@@ -25,16 +25,22 @@ export const OWNER_KEY_SOURCE_COPY = {
   "portal-attested": "Attested by Portal",
 } as const;
 export const OWNER_KEY_MISMATCH_COPY = "This key is not the key that Portal attests for you. Buzz approvals are refused until the two keys are the same.";
-export const OWNER_KEY_HINT = "Enter your Buzz public key (64 hex characters or npub1…). Only this key can approve agent posts by a Buzz reply. Never enter your nsec.";
+export const OWNER_KEY_HINT = "Paste your npub (public key). Never paste a private key. Only this key can approve agent posts by a Buzz reply.";
+export const OWNER_KEY_UNBOUND_COPY = "Available after Portal confirms the deployment owner.";
+export const OWNER_KEY_ERROR_COPY = "Marketplace cannot read the key that Portal attests for you. Buzz approvals are refused until this is fixed.";
+/** Length of the code a Buzz reply approves with (`approve <code>`): the first characters of the digest. */
+export const BUZZ_CODE_CHARS = 32;
+export const BUZZ_CODE_HINT = `To approve in Buzz, reply "approve" and this ${BUZZ_CODE_CHARS}-character code.`;
 export const OWNER_KEY_CHANGE_HINT = "A new key cancels Buzz approval for posts that wait now. Approve those posts here, or let the agent ask again.";
 
 /** What the Settings control shows for the owner key state: never the key, only its fingerprint and trust source. */
-export function ownerKeyDisplay(view: { fingerprint: string | null; ownerKeySource: keyof typeof OWNER_KEY_SOURCE_COPY | null; ownerKeyStatus: "unset" | "ok" | "mismatch" }): {
+export function ownerKeyDisplay(view: { fingerprint: string | null; ownerKeySource: keyof typeof OWNER_KEY_SOURCE_COPY | null; ownerKeyStatus: "unset" | "ok" | "mismatch" | "error" }): {
   tone: "success" | "warning" | "danger" | "default";
   label: string;
   source: string | null;
   warning: string | null;
 } {
+  if (view.ownerKeyStatus === "error") return { tone: "danger", label: "Attestation error", source: view.ownerKeySource ? OWNER_KEY_SOURCE_COPY[view.ownerKeySource] : null, warning: OWNER_KEY_ERROR_COPY };
   if (view.ownerKeyStatus === "unset" || !view.fingerprint) return { tone: "default", label: "Not set", source: null, warning: null };
   const source = view.ownerKeySource ? OWNER_KEY_SOURCE_COPY[view.ownerKeySource] : null;
   if (view.ownerKeyStatus === "mismatch") return { tone: "danger", label: "Key mismatch", source, warning: OWNER_KEY_MISMATCH_COPY };

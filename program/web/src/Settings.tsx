@@ -7,7 +7,7 @@ import { Button, IconButton, Tag } from "@tealbrick/ui";
 
 import { clearOwnerKey, getAgentCapabilities, getOpenApi, getOwnerKey, getProviderSettings, logoutOperator, removeProviderKey, saveProviderSettings, setOwnerKey, testProviderKey } from "./api";
 import type { FrontendBootstrap, OperatorSession, ProviderSettings } from "./types";
-import { APPROVAL_STATUS_COPY, type ApprovalStatus, OWNER_APPROVAL_DETAIL, OWNER_KEY_CHANGE_HINT, OWNER_KEY_HINT, ownerKeyDisplay } from "./copy";
+import { APPROVAL_STATUS_COPY, type ApprovalStatus, OWNER_APPROVAL_DETAIL, OWNER_KEY_CHANGE_HINT, OWNER_KEY_HINT, OWNER_KEY_UNBOUND_COPY, ownerKeyDisplay } from "./copy";
 import { InlineError, StatePanel, words } from "./ui";
 
 function keySourceCopy(source: string | null) {
@@ -97,13 +97,15 @@ function OwnerKeyPanel() {
   if (ownerKey.error) return <StatePanel error={ownerKey.error} onRetry={() => void ownerKey.refetch()} />;
   const view = ownerKey.data!.ownerKey;
   const display = ownerKeyDisplay(view);
-  const busy = save.isPending || clear.isPending;
+  const unbound = view.ownerPin === "unbound";
+  const busy = save.isPending || clear.isPending || unbound;
   const failure = save.error ?? clear.error;
   return <form className="settings-stack" data-testid="owner-key" onSubmit={(event) => { event.preventDefault(); setNotice(null); save.mutate(); }}>
     <div className="settings-intro"><div><h3>Buzz approval key</h3><p>{OWNER_KEY_HINT}</p></div><Tag tone={display.tone}>{display.label}</Tag></div>
     {view.fingerprint && <div className="credential-proof" data-testid="owner-key-status"><ShieldCheck size={18} /><div><strong>Fingerprint <code>{view.fingerprint}</code></strong>{display.source && <p>{display.source}</p>}</div></div>}
     {display.warning && <div className="contract-gap" role="alert"><AlertTriangle size={17} /><div><strong>{display.label}</strong><p>{display.warning}{view.attestedFingerprint ? ` Portal attests the key with fingerprint ${view.attestedFingerprint}.` : ""}</p></div></div>}
-    <label>{view.fingerprint ? "Replace key" : "Public key"}<input autoComplete="off" spellCheck={false} value={draft} onChange={(event) => { setNotice(null); setDraft(event.target.value); }} placeholder="npub1… or 64 hex characters" /></label>
+    {unbound && <p className="muted-detail" role="status">{OWNER_KEY_UNBOUND_COPY}</p>}
+    <label>{view.fingerprint ? "Replace key" : "Public key (npub)"}<input autoComplete="off" spellCheck={false} disabled={unbound} value={draft} onChange={(event) => { setNotice(null); setDraft(event.target.value); }} placeholder="npub1…" /></label>
     {view.fingerprint && <p className="muted-detail">{OWNER_KEY_CHANGE_HINT}</p>}
     {failure && <InlineError error={failure} />}
     {notice && !failure && <p className="inline-success" role="status"><Check size={14} />{notice}</p>}

@@ -504,9 +504,11 @@ export interface OwnerKeyView {
   setting: "approvals.ownerNostrPubkey";
   fingerprint: string | null;
   ownerKeySource: "owner-session" | "portal-attested" | null;
-  ownerKeyStatus: "unset" | "ok" | "mismatch";
+  ownerKeyStatus: "unset" | "ok" | "mismatch" | "error";
   attestedFingerprint: string | null;
   setAt: string | null;
+  /** `unbound` until Portal confirms the deployment owner (claim `ownerSubject`); the key cannot be set before. */
+  ownerPin?: "pinned" | "unbound";
 }
 
 export interface OwnerKeyResponse {
