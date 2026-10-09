@@ -1,0 +1,64 @@
+# Dev image publish to the Zot registry (private). Runs on push to main and on manual runs only.
+# It never runs on pull_request.
+# Same unprivileged kaniko builder (same digest) and same Dockerfile/context as image.yaml:
+# no privileged step, no mounts, no added capabilities, no host socket.
+# Needs Woodpecker secrets registry_host, registry_username and registry_password (scope: event manual only).
+# On push events the secrets are empty, so the step prints a SKIP message and exits 0 (green).
+# Real pushes happen on manual runs.
+# Result: <registry_host>/tealbrick/marketplace@sha256:... (the digest is printed in the log).
+# The registry host comes from the Woodpecker secret registry_host, not from this file:
+# this repo's public-release test forbids tailnet names in committed files.
+
+when:
+  - event: push
+    branch: main
+  - event: manual
+    branch: main
+
+steps:
+  - name: publish-dev-image
+    image: gcr.io/kaniko-project/executor:v1.24.0-debug@sha256:2562c4fe551399514277ffff7dcca9a3b1628c4ea38cb017d7286dc6ea52f4cd
+    environment:
+      REGISTRY_HOST:
+        from_secret: registry_host
+      REGISTRY_USER:
+        from_secret: registry_username
+      REGISTRY_TOKEN:
+        from_secret: registry_password
+    commands:
+      - |
+        set -eu
+        if [ -z "$REGISTRY_HOST" ] || [ -z "$REGISTRY_USER" ] || [ -z "$REGISTRY_TOKEN" ]; then
+          echo "SKIP: Woodpecker secrets registry_host, registry_username and registry_password are empty or missing. No image was built or pushed. Real pushes need a manual run with both secrets (manual event)."
+          exit 0
+        fi
+        mkdir -p /kaniko/.docker
+        auth="$(printf '%s:%s' "$REGISTRY_USER" "$REGISTRY_TOKEN" | base64 | tr -d '\n')"
+        printf '{"auths":{"%s":{"auth":"%s"}}}\n' "$REGISTRY_HOST" "$auth" > /kaniko/.docker/config.json
+        unset auth
+      - >-
+        /kaniko/executor
+        --context "$CI_WORKSPACE/release/railway"
+        --dockerfile "$CI_WORKSPACE/release/railway/Dockerfile"
+        --destination "$REGISTRY_HOST/tealbrick/marketplace:${CI_COMMIT_SHA}"
+        --digest-file /woodpecker/marketplace.digest
+        --tar-path /tmp/image.tar
+        --verbosity info
+      - |
+        set -eu
+        echo "pushed digest:"
+        cat /woodpecker/marketplace.digest
+        echo
+        echo "ref: $REGISTRY_HOST/tealbrick/marketplace@$(cat /woodpecker/marketplace.digest)"
+      - |
+        set -eu
+        mkdir /tmp/img
+        tar -xf /tmp/image.tar -C /tmp/img
+        found=0
+        for f in $(find /tmp/img -type f); do
+          if tar -tf "$f" 2>/dev/null | grep -q 'tealbrick\.app\.json$'; then
+            found=1
+            echo "tealbrick.app.json found in ${f##*/}"
+          fi
+        done
+        [ "$found" = 1 ] || { echo "tealbrick.app.json is not in the image"; exit 1; }
