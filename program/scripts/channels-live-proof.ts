@@ -828,7 +828,7 @@ async function proveProvider(ctx: Ctx, prepared: Prepared) {
     const sendsNow = sendsBefore();
     const held = await post("approval", { text: tag }, key);
     const pending = jsonOf(held);
-    s.ev({ held: { http: held.statusCode, error: pending.error, digestPrefix: pending.digestPrefix } });
+    s.ev({ held: { http: held.statusCode, error: pending.error, digestPrefix: typeof pending.digest === "string" ? pending.digest.slice(0, 12) : undefined } });
     s.expect(held.statusCode === 202 && pending.error === "approval_pending" && typeof pending.approvalId === "string", "the post returns 202 approval_pending");
     s.expect(sendsBefore() === sendsNow, "no provider call while the post is held");
     const approved = await ctx.owner("POST", `/api/marketplace/company-box/approvals/${pending.approvalId}/approve`, {});
