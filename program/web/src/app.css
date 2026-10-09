@@ -584,3 +584,7 @@ code, .mono { font-family: var(--dg-font-mono); overflow-wrap: anywhere; }
 }
 .labeled-field { display: grid; min-width: 0; align-content: start; gap: 5px; }
 .labeled-field > label { color: var(--dg-text-muted); font-family: var(--dg-font-mono); font-size: 10px; font-weight: 500; letter-spacing: .075em; text-transform: uppercase; }
+.waiting-post { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 12px; border: 1px solid var(--dg-line); border-radius: var(--dg-radius-md); padding: 12px 14px; background: var(--dg-panel); }
+.waiting-post p { margin: 4px 0 0; color: var(--dg-text-muted); font-size: 12px; }
+.channel-inert { margin-top: 24px; }
+@media (max-width: 600px) { .waiting-post { grid-template-columns: minmax(0, 1fr); } }

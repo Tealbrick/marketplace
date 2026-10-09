@@ -9,10 +9,10 @@ import { getChannels, newChannelKey, sendChannelTest, setChannelStatus, type Cha
 import { capabilityRows, CHANNEL_PROVIDERS, formatSeconds, PROVIDER_LABEL, providerLabel, safeHttpsUrl, typeName, WEEKDAYS } from "./channels-model";
 import { CreateChannelPanel, DestinationTitle, EditChannelPanel } from "./ChannelForms";
 import { GrantInbox } from "./ChannelGrants";
-import { ReceiptsSection, ReceiptSummary, UncertainPosts } from "./ChannelPosts";
+import { ReceiptsSection, ReceiptSummary, UncertainPosts, WaitingPosts } from "./ChannelPosts";
 import { ApprovalsPanel } from "./CompanyBox";
 import { CHANNEL_TOKEN_HINT } from "./copy";
-import type { AgentGrantRequestResponse, ChannelProviderId, ChannelReadiness, ChannelsBrowseResponse, ChannelStatus, ChannelView } from "./types";
+import type { AgentGrantRequestResponse, ChannelProviderEntry, ChannelProviderId, ChannelReadiness, ChannelsBrowseAnswer, ChannelStatus, ChannelView } from "./types";
 import { formatWhen, InlineError, StatePanel } from "./ui";
 
 export const CHANNELS_QUERY_KEY = ["channels"] as const;
@@ -28,13 +28,15 @@ const READINESS_COPY: Record<ChannelReadiness, { label: string; tone: "success" 
 const STATUS_TONE: Record<ChannelStatus, "success" | "warning" | "default" | "accent"> = { active: "success", paused: "warning", draft: "accent", archived: "default" };
 const STATUS_LABEL: Record<ChannelStatus, string> = { active: "Active", paused: "Paused", draft: "Draft", archived: "Archived" };
 
-function ProviderReadiness({ browse }: { browse: ChannelsBrowseResponse }) {
+/** Readiness per provider; in inert mode (no credentials configured) only these cards are shown. */
+function ProviderReadiness({ browse }: { browse: ChannelsBrowseAnswer }) {
+  const entries = new Map(browse.providers.map((entry) => [entry.id, entry]));
   return <div className="provider-grid channel-providers" aria-label="Channel providers">
     {CHANNEL_PROVIDERS.map((provider) => {
-      const readiness = browse.readiness[provider] ?? "unavailable";
+      const readiness = entries.get(provider)?.readiness ?? (browse.configured ? browse.readiness[provider] : undefined) ?? "unavailable";
       const copy = READINESS_COPY[readiness] ?? READINESS_COPY.unavailable;
-      const connection = browse.connections[provider] ?? null;
-      const channels = browse.channels.filter((channel) => channel.provider === provider && channel.status !== "archived").length;
+      const connection = browse.configured ? browse.connections[provider] ?? null : null;
+      const channels = browse.configured ? browse.channels.filter((channel) => channel.provider === provider && channel.status !== "archived").length : 0;
       return <article key={provider} aria-label={`${PROVIDER_LABEL[provider]} readiness`}>
         <div><span className={`provider-dot provider-dot--${copy.dot}`} aria-hidden="true" /><h2>{PROVIDER_LABEL[provider]}</h2><Tag tone={copy.tone}>{copy.label}</Tag></div>
         <p>{copy.detail}</p>
@@ -119,7 +121,7 @@ function GrantToAgent({ channel, workspaceSlug, onClose }: { channel: ChannelVie
   </section>;
 }
 
-function ChannelDetail({ channel, workspaceSlug, onConfirm, onNotice, onChanged }: { channel: ChannelView; workspaceSlug: string; onConfirm: (state: NonNullable<ConfirmState> & { after?: (result: unknown) => void }) => void; onNotice: (notice: string) => void; onChanged: () => void }) {
+function ChannelDetail({ channel, providers, workspaceSlug, onConfirm, onNotice, onChanged }: { channel: ChannelView; providers: ChannelProviderEntry[]; workspaceSlug: string; onConfirm: (state: NonNullable<ConfirmState> & { after?: (result: unknown) => void }) => void; onNotice: (notice: string) => void; onChanged: () => void }) {
   const [mode, setMode] = useState<"view" | "edit" | "grant">("view");
   const [testAnswer, setTestAnswer] = useState<ChannelSendAnswer | null>(null);
   useEffect(() => { setMode("view"); setTestAnswer(null); }, [channel.id]);
@@ -171,7 +173,7 @@ function ChannelDetail({ channel, workspaceSlug, onConfirm, onNotice, onChanged 
       <strong>{testAnswer.receipt?.status === "sent" ? <><CheckCircle2 size={14} aria-hidden="true" /> Test message sent</> : "Test message not confirmed"}</strong>
       {testAnswer.receipt && <ReceiptSummary receipt={testAnswer.receipt} channel={channel} />}
     </div>}
-    {mode === "edit" && <EditChannelPanel channel={channel} onCancel={() => setMode("view")} onSaved={(_saved, suspended) => { setMode("view"); onNotice(`Saved the rules for ${channel.label}.${suspended.length ? ` ${suspended.length} standing ${suspended.length === 1 ? "grant was" : "grants were"} suspended because ${suspended.length === 1 ? "it is" : "they are"} above the new ceiling.` : ""}`); onChanged(); }} />}
+    {mode === "edit" && <EditChannelPanel channel={channel} providers={providers} onCancel={() => setMode("view")} onSaved={(_saved, suspended) => { setMode("view"); onNotice(`Saved the rules for ${channel.label}.${suspended.length ? ` ${suspended.length} standing ${suspended.length === 1 ? "grant was" : "grants were"} suspended because ${suspended.length === 1 ? "it is" : "they are"} above the new ceiling.` : ""}`); onChanged(); }} />}
     {mode === "grant" && <GrantToAgent channel={channel} workspaceSlug={workspaceSlug} onClose={() => setMode("view")} />}
     <div className="channel-detail__grid">
       <section aria-label="About this channel">
@@ -203,16 +205,25 @@ export function ChannelsPage({ workspaceSlug }: { workspaceSlug: string }) {
   const changed = () => {
     void queryClient.invalidateQueries({ queryKey: CHANNELS_QUERY_KEY });
     void queryClient.invalidateQueries({ queryKey: ["channel-receipts"] });
+    void queryClient.invalidateQueries({ queryKey: ["channel-posts"] });
     void queryClient.invalidateQueries({ queryKey: ["company-box-approvals"] });
   };
   const announce = (message: string) => { setNotice(message); changed(); };
-  const channels = browse.data?.channels ?? [];
+  const channels = browse.data?.configured ? browse.data.channels : [];
   const visible = channels.filter((channel) => channel.status !== "archived");
   const archivedChannels = channels.filter((channel) => channel.status === "archived");
   const selected = channels.find((channel) => channel.id === selectedId) ?? visible[0] ?? null;
 
   if (browse.isLoading) return <section className="collection-page"><div className="collection-empty"><LoaderCircle className="spin" size={28} /><h2>Loading channels</h2><p>Checking providers and destinations.</p></div></section>;
   if (browse.error || !browse.data) return <section className="collection-page">{browse.error ? <StatePanel error={browse.error} onRetry={() => void browse.refetch()} /> : null}</section>;
+  if (!browse.data.configured) {
+    // Inert mode: no channel credentials yet. Only readiness and where to add a bot token.
+    return <section className="collection-page channels-page">
+      <header><div><p className="eyebrow">Outward destinations</p><h1>Channels</h1><p>Chats and channels your agents may post to, with the limits you set.</p></div></header>
+      <div className="credential-proof channel-inert" role="status"><ShieldCheck size={18} /><div><strong>Channels aren't set up yet</strong><p>{CHANNEL_TOKEN_HINT} After the token is saved and Marketplace restarts, you can discover destinations and add channels here.</p></div></div>
+      <ProviderReadiness browse={browse.data} />
+    </section>;
+  }
   const data = browse.data;
   const anyReady = CHANNEL_PROVIDERS.some((provider: ChannelProviderId) => data.readiness[provider] === "available");
 
@@ -225,6 +236,7 @@ export function ChannelsPage({ workspaceSlug }: { workspaceSlug: string }) {
     <ProviderReadiness browse={data} />
     <div className="channel-approvals"><ApprovalsPanel onNotice={announce} only="channel" /></div>
     <UncertainPosts posts={data.uncertainPosts} channels={channels} onNotice={announce} />
+    <WaitingPosts channels={channels} onConfirm={setConfirm} onNotice={announce} />
     <GrantInbox channels={channels} onNotice={announce} />
     <section className="channel-section" aria-labelledby="channel-list-heading">
       <div className="section-heading"><div><p className="eyebrow">Destinations</p><h2 id="channel-list-heading">Your channels</h2></div>{!creating && <Button size="small" tone="primary" disabled={!anyReady} title={anyReady ? undefined : "Add a bot token in Teal Brick Portal first"} onClick={() => setCreating(true)}><Plus size={14} />Add channel</Button>}</div>
@@ -236,7 +248,7 @@ export function ChannelsPage({ workspaceSlug }: { workspaceSlug: string }) {
             <span className="channel-index__meta"><Tag tone={STATUS_TONE[channel.status]}>{STATUS_LABEL[channel.status]}</Tag><small>{providerLabel(channel.provider)}</small></span>
           </button>)}
         </nav>
-        {selected && <ChannelDetail channel={selected} workspaceSlug={workspaceSlug} onConfirm={setConfirm} onNotice={announce} onChanged={changed} />}
+        {selected && <ChannelDetail channel={selected} providers={data.providers} workspaceSlug={workspaceSlug} onConfirm={setConfirm} onNotice={announce} onChanged={changed} />}
       </div> : !creating && <div className="collection-empty compact"><Megaphone /><h3>No channels yet</h3><p>{anyReady ? "Add a Telegram chat or a Discord channel your agents may post to." : CHANNEL_TOKEN_HINT}</p></div>}
     </section>
     <ReceiptsSection channels={channels} onConfirm={(state) => setConfirm(state)} onNotice={announce} />

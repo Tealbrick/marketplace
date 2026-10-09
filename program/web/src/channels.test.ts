@@ -5,9 +5,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ChannelsPage } from "./Channels";
 import { formToPolicy, policyToForm, slugFromLabel, slugProblem, wideningFields } from "./channels-model";
-import { PROVIDER_DECLARATIONS } from "./channel-declarations";
 import { ApprovalsPanel } from "./CompanyBox";
-import type { ChannelsBrowseResponse, ChannelView, CompanyBoxApproval, StandingGrantView } from "./types";
+import type { ChannelProviderCapabilities, ChannelsBrowseResponse, ChannelView, CompanyBoxApproval, StandingGrantView } from "./types";
 
 afterEach(() => {
   cleanup();
@@ -17,6 +16,18 @@ afterEach(() => {
 const MALICIOUS = `<img src=x onerror="alert(1)"><script>window.__pwned=1</script>Ops & "chat"`;
 const TOKEN_REF = "provider-env:MARKETPLACE_CHANNELS_TELEGRAM_BOT_TOKEN";
 const DIGEST = "a1b2c3d4e5f6".padEnd(64, "0");
+const MIB = 1024 * 1024;
+const DOCUMENTS = ["application/pdf", "text/plain", "application/zip", "application/octet-stream"];
+// The provider declaration as the owner browse answer reports it (U2).
+const TELEGRAM_CAPS: ChannelProviderCapabilities = {
+  text: { maxChars: 4096, captionMaxChars: 1024 },
+  markup: "plain",
+  image: { types: ["image/png", "image/jpeg", "image/webp"], maxBytes: 10 * MIB, albumMax: 4 },
+  file: { types: DOCUMENTS, maxBytes: 50 * MIB },
+  audio: { types: ["audio/mpeg", "audio/mp4"], maxBytes: 50 * MIB },
+  voice: { native: true, types: ["audio/ogg"], maxBytes: 1 * MIB },
+  video: { types: ["video/mp4"], maxBytes: 50 * MIB },
+};
 
 function policy(overrides: Partial<ChannelView["policy"]> = {}): ChannelView["policy"] {
   return {
@@ -89,10 +100,17 @@ function channel(overrides: Partial<ChannelView> = {}): ChannelView {
 }
 
 function browse(overrides: Partial<ChannelsBrowseResponse> = {}): ChannelsBrowseResponse {
+  const readiness = overrides.readiness ?? { telegram: "available", discord: "credential_missing" };
   return {
     ok: true,
     schema: 1,
-    readiness: { telegram: "available", discord: "credential_missing" },
+    configured: true,
+    providers: (["telegram", "discord"] as const).map((id) => ({
+      id,
+      readiness: readiness[id] ?? "unavailable",
+      ...(readiness[id] !== "credential_missing" ? { capabilities: id === "telegram" ? TELEGRAM_CAPS : null, kinds: ["chat"] } : {}),
+    })),
+    readiness,
     connections: {
       telegram: { connectionId: "conn-tg", state: "connected", botUsername: "tealbrick_bot", verifiedAt: "2026-10-09T00:00:00.000Z", credentialRef: TOKEN_REF } as never,
       discord: null,
@@ -115,6 +133,7 @@ function mockApi(routes: Record<string, Route>) {
     if (!handler) {
       if (path === "/api/marketplace/company-box/approvals") return json({ ok: true, workspaceSlug: "ws", pendingCount: 0, approvals: [] });
       if (path === "/api/marketplace/channels/receipts/export") return json({ ok: true, receipts: [] });
+      if (path === "/api/marketplace/channels/posts") return json({ ok: true, schema: 1, posts: [] });
       return new Response(JSON.stringify({ ok: false, error: "not_mocked" }), { status: 404 });
     }
     const result = handler(init, url);
@@ -144,7 +163,7 @@ describe("channels model", () => {
   });
 
   it("limits the files policy to the provider declaration", () => {
-    const telegram = PROVIDER_DECLARATIONS.telegram;
+    const telegram = TELEGRAM_CAPS;
     const form = policyToForm(null, telegram);
     // Telegram has no GIF; the §4.3 defaults stay inside what it declares.
     expect(form.fileTypes).toEqual(["image/png", "image/jpeg", "image/webp", "application/pdf"]);
@@ -216,6 +235,8 @@ describe("Channels page", () => {
     expect(screen.getByText("Add the bot to the chat and send one message, then press Discover.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Discover/u }));
     fireEvent.click(await screen.findByRole("radio", { name: /Taipei Meetups/u }));
+    expect((screen.getByLabelText("Kind") as HTMLSelectElement).value).toBe("chat");
+    expect([...(screen.getByLabelText("Kind") as HTMLSelectElement).options].map((option) => option.value)).toEqual(["chat"]);
     const label = screen.getByLabelText("Label") as HTMLInputElement;
     const slug = screen.getByLabelText(/^Slug/u) as HTMLInputElement;
     expect(label.value).toBe("Taipei Meetups");
@@ -236,7 +257,7 @@ describe("Channels page", () => {
     const [, init] = fetchMock.mock.calls.find(([url, request]) => String(url) === "/api/marketplace/channels" && request?.method === "POST")!;
     expect((init!.headers as Record<string, string>)["idempotency-key"]).toMatch(/^channel-create-/u);
     const body = JSON.parse(String(init!.body));
-    expect(body).toMatchObject({ provider: "telegram", slug: "taipei-meetups", label: "Taipei Meetups", destination: { externalId: "-3003" } });
+    expect(body).toMatchObject({ provider: "telegram", slug: "taipei-meetups", label: "Taipei Meetups", kind: "chat", destination: { externalId: "-3003" } });
     expect(body.policy.caps).toEqual({ perDay: 4, minIntervalSeconds: 600, onePerPhase: true });
     expect(body.policy.content.denyPatterns).toEqual(["casino", "crypto"]);
     expect(body.policy.content.files.types).toEqual(["image/png", "image/jpeg", "image/webp", "application/pdf"]);
@@ -315,8 +336,48 @@ describe("Channels page", () => {
     expect(link.getAttribute("rel")).toBe("noopener noreferrer");
     expect(screen.getByText("Fallback applied: voice→audio+transcript")).toBeTruthy();
     expect(screen.getByText("javascript:alert(1)").tagName).toBe("CODE");
-    expect(screen.getByText("Scheduled (1)")).toBeTruthy();
     expect(screen.getByText("<b>hi</b>")).toBeTruthy();
+  });
+
+  it("shows only provider cards and Portal guidance in inert mode", async () => {
+    const fetchMock = mockApi({ "GET /api/marketplace/channels": () => ({ ok: true, schema: 1, configured: false, providers: [{ id: "telegram", readiness: "credential_missing" }, { id: "discord", readiness: "credential_missing" }] }) });
+    renderPage();
+    expect(await screen.findByText("Channels aren't set up yet")).toBeTruthy();
+    expect(within(screen.getByLabelText("Telegram readiness")).getByText("Credential missing")).toBeTruthy();
+    expect(within(screen.getByLabelText("Discord readiness")).getByText("Credential missing")).toBeTruthy();
+    expect(screen.getAllByText(/Add the bot token under Account Connections in Teal Brick Portal/u).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: /Add channel|Discover/u })).toBeNull();
+    expect(screen.queryByText("Standing grants")).toBeNull();
+    expect(screen.queryByText("Receipts")).toBeNull();
+    expect(document.querySelector("input, textarea, select")).toBeNull();
+    // Inert mode calls nothing but the browse answer.
+    expect(new Set(fetchMock.mock.calls.map(([url]) => String(url).split("?")[0]))).toEqual(new Set(["/api/marketplace/channels"]));
+  });
+
+  it("lists waiting and scheduled posts and cancels a scheduled one after a confirmation", async () => {
+    let cancelled = false;
+    const fetchMock = mockApi({
+      "GET /api/marketplace/channels": () => browse({ channels: [channel()] }),
+      "GET /api/marketplace/channels/posts": () => ({ ok: true, schema: 1, posts: cancelled ? [] : [
+        { id: "post-s", channelId: "ch-1", channel: { slug: "community", label: "Community chat", provider: "telegram" }, agentId: "agent-henry", mode: "scheduled", status: "scheduled", sendAt: "2026-10-12T10:00:00.000Z", digestPrefix: DIGEST.slice(0, 12), authority: "grant:grant-1", reason: null, attachments: 1, createdAt: "2026-10-09T10:00:00.000Z" },
+        { id: "post-h", channelId: "ch-1", channel: { slug: "community", label: "Community chat", provider: "telegram" }, agentId: "agent-henry", mode: "immediate", status: "held", sendAt: null, digestPrefix: DIGEST.slice(0, 12), authority: null, reason: null, attachments: 0, approval: { id: "a-1", state: "pending", expiresAt: "2026-10-16T10:00:00.000Z" }, createdAt: "2026-10-09T11:00:00.000Z" },
+      ] }),
+      "POST /api/marketplace/channels/posts/post-s/cancel": () => { cancelled = true; return { ok: true, schema: 1, receipt: { status: "cancelled" } }; },
+    });
+    renderPage();
+    const scheduledRow = await screen.findByLabelText("Scheduled: Community chat");
+    const heldRow = screen.getByLabelText("Waiting for approval: Community chat");
+    expect(within(heldRow).queryByRole("button", { name: /Cancel/u })).toBeNull();
+    expect(within(heldRow).getByText(/Approve or deny it under Posts waiting for approval/u)).toBeTruthy();
+    fireEvent.click(within(scheduledRow).getByRole("button", { name: /Cancel/u }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Cancel the scheduled post to Community chat?")).toBeTruthy();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/cancel"))).toBe(false);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel post" }));
+    expect(await screen.findByText("Cancelled the scheduled post to Community chat.")).toBeTruthy();
+    await waitFor(() => expect(screen.queryByLabelText("Scheduled: Community chat")).toBeNull());
+    const listCall = fetchMock.mock.calls.find(([url]) => String(url).startsWith("/api/marketplace/channels/posts?"))!;
+    expect(String(listCall[0])).toContain("status=held%2Cscheduled");
   });
 
   it("sends a test message after a confirmation that names the destination", async () => {

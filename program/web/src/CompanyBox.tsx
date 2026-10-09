@@ -180,7 +180,7 @@ export function ArgumentsView({ value, depth = 0 }: { value: unknown; depth?: nu
  */
 export function ChannelHoldView({ summary, payload }: { summary: ChannelApprovalSummary; payload: ChannelPayloadView | null | undefined }) {
   const channels = useQuery({ queryKey: ["channels"], queryFn: getChannels, retry: false, staleTime: 30_000 });
-  const channel = channels.data?.channels.find((entry) => entry.id === summary.channelId);
+  const channel = channels.data?.configured ? channels.data.channels.find((entry) => entry.id === summary.channelId) : undefined;
   const transcripts = payload && "canonical" in payload ? transcriptsFromCanonical(payload.canonical) : [];
   const voiceFallback = payload && "fallbacks" in payload && payload.fallbacks.some((entry) => entry.startsWith("voice"));
   return <div className="channel-hold" aria-label="Channel post">
