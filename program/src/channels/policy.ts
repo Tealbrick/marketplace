@@ -799,26 +799,66 @@ export function evaluateContent(
   return errors.length === 0 ? { ok: true } : { ok: false, errors };
 }
 
+export type EventListingStatus = "confirmed" | "missing" | "unreachable";
+
 /**
- * Live half of `requireConfirmedEvent`: the listing answers HTTP 2xx after
- * redirects. Any error, timeout or non-https URL is `false`. Callers check
- * `eventHostAllowed` first; this function only fetches `https` URLs.
+ * Live half of `requireConfirmedEvent` (review F3). Redirects are never
+ * followed blindly: each request uses `redirect: "manual"`. A 3xx is
+ * confirmed only when its `Location` is `https` on a listing host; that target
+ * is then checked once (at most one hop, again manual), so a redirect to
+ * another host, a second redirect or a loop is not confirmed. 2xx is
+ * `confirmed`, 4xx (and any refused redirect) `missing`, 5xx, a network error
+ * or a timeout `unreachable` (transient).
+ */
+export async function eventListingStatus(
+  url: string,
+  options: { listingHosts: readonly string[]; fetchImpl?: typeof fetch; timeoutMs?: number },
+): Promise<EventListingStatus> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  let target = url;
+  for (let hop = 0; hop < 2; hop += 1) {
+    let response: Response;
+    try {
+      if (new URL(target).protocol !== "https:") return "missing";
+      response = await fetchImpl(target, {
+        method: "GET",
+        redirect: "manual",
+        signal: AbortSignal.timeout(options.timeoutMs ?? 10_000),
+        headers: { accept: "text/html,application/json;q=0.9,*/*;q=0.5" },
+      });
+    } catch {
+      return "unreachable";
+    }
+    await response.body?.cancel().catch(() => undefined);
+    if (response.status >= 200 && response.status < 300) return "confirmed";
+    if (response.status >= 300 && response.status < 400) {
+      if (hop > 0) return "missing";
+      const location = response.headers.get("location");
+      let next: URL;
+      try {
+        next = new URL(location ?? "", target);
+      } catch {
+        return "missing";
+      }
+      if (!location || next.toString() === target || !eventHostAllowed(next.toString(), options.listingHosts)) return "missing";
+      target = next.toString();
+      continue;
+    }
+    return response.status >= 400 && response.status < 500 ? "missing" : "unreachable";
+  }
+  return "missing";
+}
+
+/**
+ * Boolean form of `eventListingStatus`. Without `listingHosts` no redirect is
+ * confirmed. Callers check `eventHostAllowed` first.
  */
 export async function confirmEventLive(
   url: string,
-  options: { fetchImpl?: typeof fetch; timeoutMs?: number } = {},
+  options: { fetchImpl?: typeof fetch; timeoutMs?: number; listingHosts?: readonly string[] } = {},
 ): Promise<boolean> {
-  const fetchImpl = options.fetchImpl ?? fetch;
   try {
-    if (new URL(url).protocol !== "https:") return false;
-    const response = await fetchImpl(url, {
-      method: "GET",
-      redirect: "follow",
-      signal: AbortSignal.timeout(options.timeoutMs ?? 10_000),
-      headers: { accept: "text/html,application/json;q=0.9,*/*;q=0.5" },
-    });
-    await response.body?.cancel().catch(() => undefined);
-    return response.status >= 200 && response.status < 300;
+    return (await eventListingStatus(url, { ...options, listingHosts: options.listingHosts ?? [] })) === "confirmed";
   } catch {
     return false;
   }

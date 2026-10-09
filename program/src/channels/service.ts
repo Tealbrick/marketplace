@@ -7,7 +7,7 @@ import type { GovernanceActor, GovernedActionRisk } from "../governance.js";
 import type { SqliteMarketplaceStore } from "../store.js";
 import type { CompanyBoxApproval, ConnectorCapability, ConnectorUsageLedgerEntry, MarketplaceAgentConsent } from "../types.js";
 import { createGrantService, type GrantService } from "./grants.js";
-import { eventHostAllowed, grantCoversPost, maxPendingPerAgent, type PostCampaign } from "./policy.js";
+import { eventHostAllowed, eventListingStatus, grantCoversPost, maxPendingPerAgent, type PostCampaign } from "./policy.js";
 import type { ChannelCapabilities, ChannelProvider, ChannelProviderId, DiscoverResult, SendResult } from "./providers/types.js";
 import {
   CHANNEL_PROVIDER_IDS,
@@ -332,31 +332,12 @@ export function createChannelService(deps: ChannelServiceDeps) {
       if (!ref || !eventHostAllowed(ref, channel.policy.content.listingHosts)) {
         return { status: 422, error: "channel_event_unconfirmed", errors: ["channel_event_unconfirmed"] };
       }
-      const live = await eventListingStatus(ref);
+      const live = await eventListingStatus(ref, { listingHosts: channel.policy.content.listingHosts, fetchImpl: deps.eventFetch });
       // A listing that answers 4xx is not confirmed (definitive); a 5xx or a network error is transient (L3).
       if (live === "unreachable") return { status: 503, error: "channel_event_check_unavailable" };
       if (live === "missing") return { status: 422, error: "channel_event_unconfirmed", errors: ["channel_event_unconfirmed"] };
     }
     return null;
-  };
-
-  /** Live half of `requireConfirmedEvent`, telling a missing listing (4xx) from an unreachable one (5xx, error). */
-  const eventListingStatus = async (url: string): Promise<"confirmed" | "missing" | "unreachable"> => {
-    const fetchImpl = deps.eventFetch ?? fetch;
-    try {
-      if (new URL(url).protocol !== "https:") return "missing";
-      const response = await fetchImpl(url, {
-        method: "GET",
-        redirect: "follow",
-        signal: AbortSignal.timeout(10_000),
-        headers: { accept: "text/html,application/json;q=0.9,*/*;q=0.5" },
-      });
-      await response.body?.cancel().catch(() => undefined);
-      if (response.status >= 200 && response.status < 300) return "confirmed";
-      return response.status >= 400 && response.status < 500 ? "missing" : "unreachable";
-    } catch {
-      return "unreachable";
-    }
   };
 
   /** Send-time refusals that may clear by themselves: an approved hold keeps its approval for a retry (L3). */

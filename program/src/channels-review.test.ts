@@ -402,3 +402,30 @@ describe("F1: scheduled backlog limit per agent and channel", () => {
     expect(f.store.listCompanyBoxApprovals({ workspaceSlug: TENANT })).toHaveLength(2);
   });
 });
+
+describe("F3: the live event check does not follow redirects off the listing hosts", () => {
+  it("refuses a listing that redirects to another host, and sends after an on-host redirect", async () => {
+    const seen: Array<{ url: string; redirect?: RequestInit["redirect"] }> = [];
+    let location = "https://evil.example/fake-event";
+    const f = await setup({
+      options: {
+        channelEventFetch: (async (url: string, init?: RequestInit) => {
+          seen.push({ url: String(url), redirect: init?.redirect });
+          return String(url) === "https://lu.ma/abc" ? new Response(null, { status: 302, headers: { location } }) : new Response("ok", { status: 200 });
+        }) as unknown as typeof fetch,
+      },
+    });
+    const channel = await f.createChannel({ slug: "events", policy: EVENT_POLICY });
+    f.consentFor("agent-1", channel);
+    await f.proposeAndApprove(channel.id);
+    const evil = await f.post(channel.id, { text: "Meetup", campaign: { ref: "https://lu.ma/abc" } }, key());
+    expect(evil.statusCode).toBe(422);
+    expect(evil.json()).toMatchObject({ error: "channel_event_unconfirmed" });
+    expect(seen).toEqual([{ url: "https://lu.ma/abc", redirect: "manual" }]);
+    location = "https://lu.ma/e/abc";
+    const ok = await f.post(channel.id, { text: "Meetup", campaign: { ref: "https://lu.ma/abc" } }, key());
+    expect(ok.statusCode, ok.body).toBe(200);
+    expect(seen.slice(1).map((entry) => entry.url)).toEqual(["https://lu.ma/abc", "https://lu.ma/e/abc"]);
+    expect(f.telegram.sends).toHaveLength(1);
+  });
+});
