@@ -160,7 +160,7 @@
       "idempotency": "required",
       "effects": "external-effects",
       "review": "allowed",
-      "summary": "Post to a consented channel: 200 receipt under a covering standing grant or an owner-approved digest, otherwise 202 approval_pending",
+      "summary": "Post to a consented channel: 200 receipt under a covering standing grant or an owner-approved digest, otherwise 202 approval_pending (strict contract body; post id in the Tealbrick-Post-Id header)",
       "approvalAuthority": "app",
       "appHold": true
     },
@@ -176,7 +176,7 @@
       "idempotency": "required",
       "effects": "external-effects",
       "review": "allowed",
-      "summary": "Schedule a post (sendAt now+60 s to now+30 days); authority is checked and the digest bound now, then rechecked at send time",
+      "summary": "Schedule a post (sendAt now+60 s to now+30 days); authority is checked and the digest bound now, then rechecked at send time; a held schedule answers 202 approval_pending with the post id in the Tealbrick-Post-Id header",
       "approvalAuthority": "app",
       "appHold": true
     },
@@ -1130,8 +1130,9 @@
         },
         {
           "type": "object",
+          "additionalProperties": false,
+          "description": "202 approval_pending, exactly the contract approvalPendingSchema (strict). The post id is in the Tealbrick-Post-Id response header.",
           "required": [
-            "ok",
             "error",
             "approvalId",
             "digest",
@@ -1139,49 +1140,55 @@
             "payloadView"
           ],
           "properties": {
-            "ok": {
-              "const": false
-            },
             "error": {
               "const": "approval_pending"
             },
             "approvalId": {
-              "type": "string"
-            },
-            "postId": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{1,128}$"
             },
             "digest": {
-              "type": "string"
-            },
-            "digestPrefix": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
             },
             "expiresAt": {
               "type": "string"
             },
             "payloadView": {
               "type": "object",
+              "additionalProperties": false,
               "required": [
                 "canonical",
                 "files"
               ],
               "properties": {
                 "canonical": {
-                  "type": "string"
+                  "type": "string",
+                  "maxLength": 16000
                 },
                 "files": {
                   "type": "array",
+                  "maxItems": 32,
                   "items": {
                     "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "name",
+                      "sha256",
+                      "contentType"
+                    ],
                     "properties": {
                       "name": {
                         "type": "string"
                       },
                       "sha256": {
-                        "type": "string"
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
                       },
                       "contentType": {
+                        "type": "string"
+                      },
+                      "previewUrl": {
                         "type": "string"
                       }
                     }
