@@ -1405,6 +1405,62 @@ export class SqliteMarketplaceStore {
     return Number(result.changes) === 1 ? this.getCompanyBoxApproval(input.id) : null;
   }
 
+  /**
+   * `marketplace.approvals.resolve` single-shot claim (K1 review): a pending,
+   * unexpired approval of this agent moves to `resolving` before any await.
+   * Only one caller wins. A `resolving` row whose claim is older than
+   * `staleMs` (a crash during proof verification, before any provider call)
+   * may be claimed again. Returns the row and the claim stamp, or null.
+   */
+  claimCompanyBoxApprovalForResolve(input: {
+    id: string;
+    workspaceSlug: string;
+    agentId: string;
+    staleMs: number;
+  }): { approval: CompanyBoxApproval; stamp: string } | null {
+    this.expireCompanyBoxApprovals();
+    const now = Date.now();
+    const stamp = new Date(now).toISOString();
+    const stale = new Date(now - Math.max(input.staleMs, 1)).toISOString();
+    const result = this.db
+      .prepare(
+        `UPDATE company_box_approval SET state = 'resolving', updated_at = ?
+         WHERE id = ? AND workspace_slug = ? AND agent_id = ? AND expires_at > ?
+           AND (state = 'pending' OR (state = 'resolving' AND updated_at < ?))`,
+      )
+      .run(stamp, input.id, input.workspaceSlug, input.agentId, stamp, stale);
+    if (Number(result.changes) !== 1) return null;
+    return { approval: this.getCompanyBoxApproval(input.id)!, stamp };
+  }
+
+  /** A refused proof: `resolving` → `pending`, only for the claim that is still current. */
+  releaseCompanyBoxApprovalResolve(input: { id: string; stamp: string }): boolean {
+    const result = this.db
+      .prepare(
+        `UPDATE company_box_approval SET state = 'pending', updated_at = ?
+         WHERE id = ? AND state = 'resolving' AND updated_at = ?`,
+      )
+      .run(nowIso(), input.id, input.stamp);
+    return Number(result.changes) === 1;
+  }
+
+  /** A verified proof: `resolving` → `executing` (approve) or `denied`, only for the current claim. */
+  decideResolvingCompanyBoxApproval(input: {
+    id: string;
+    stamp: string;
+    decision: "approve" | "deny";
+    decidedBy: string;
+  }): CompanyBoxApproval | null {
+    const timestamp = nowIso();
+    const result = this.db
+      .prepare(
+        `UPDATE company_box_approval SET state = ?, decided_by = ?, decided_at = ?, updated_at = ?
+         WHERE id = ? AND state = 'resolving' AND updated_at = ?`,
+      )
+      .run(input.decision === "approve" ? "executing" : "denied", input.decidedBy, timestamp, timestamp, input.id, input.stamp);
+    return Number(result.changes) === 1 ? this.getCompanyBoxApproval(input.id) : null;
+  }
+
   finishCompanyBoxApproval(input: {
     id: string;
     state: "succeeded" | "failed";

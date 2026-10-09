@@ -814,39 +814,49 @@ export type ChannelPayloadDigestInput = {
   /** Operation, e.g. `post`, `schedule`, `test`. */
   op: string;
   text: string;
-  attachments: Array<{ sha256: string; contentType: string; name: string }>;
+  /**
+   * `kind` and `transcript` (spec 3.1) are part of the payload when given: the
+   * digest covers the post after fallbacks, so the owner approves exactly what
+   * is sent. Absent fields are dropped by the canonical form.
+   */
+  attachments: Array<{ sha256: string; contentType: string; name: string; kind?: string; transcript?: string }>;
   campaign?: PostCampaign | null;
   sendAt?: string | null;
 };
 
 /**
  * §4.6 payload digest. Attachments keep their order and carry only
- * `{sha256, contentType, name}`. A missing campaign digests as `{}`, so
+ * `{sha256, contentType, name}` plus `kind` and `transcript` when given. A missing campaign digests as `{}`, so
  * "no campaign" and "empty campaign" are the same payload. `sendAt` is
  * normalised to an ISO instant and omitted for immediate posts.
  */
 export function channelPayloadDigest(input: ChannelPayloadDigestInput): string {
+  return sha256Hex(channelPayloadCanonical(input));
+}
+
+/** The canonical JSON the §4.6 digest is computed over (shown to the owner as the payload view). */
+export function channelPayloadCanonical(input: ChannelPayloadDigestInput): string {
   const campaign: PostCampaign = {};
   if (input.campaign?.ref !== undefined && input.campaign.ref !== null) campaign.ref = input.campaign.ref;
   if (input.campaign?.phase !== undefined && input.campaign.phase !== null) campaign.phase = input.campaign.phase;
-  return sha256Hex(
-    canonicalJson({
-      v: 1,
-      workspace: input.workspace,
-      channelId: input.channelId,
-      provider: input.provider,
-      destination: input.destination,
-      op: input.op,
-      text: input.text,
-      attachments: input.attachments.map((file) => ({
-        sha256: file.sha256,
-        contentType: file.contentType,
-        name: file.name,
-      })),
-      campaign,
-      sendAt: input.sendAt ? new Date(input.sendAt).toISOString() : undefined,
-    }),
-  );
+  return canonicalJson({
+    v: 1,
+    workspace: input.workspace,
+    channelId: input.channelId,
+    provider: input.provider,
+    destination: input.destination,
+    op: input.op,
+    text: input.text,
+    attachments: input.attachments.map((file) => ({
+      sha256: file.sha256,
+      contentType: file.contentType,
+      name: file.name,
+      kind: file.kind,
+      transcript: file.transcript,
+    })),
+    campaign,
+    sendAt: input.sendAt ? new Date(input.sendAt).toISOString() : undefined,
+  });
 }
 
 /** §4.4 grant digest: SHA-256 of the canonical final grant terms. */

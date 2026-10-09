@@ -172,6 +172,8 @@ export type ChannelDestination = {
   externalId: string;
   title: string;
   url?: string;
+  /** Discord guild id, or Telegram forum topic thread id. */
+  parentId?: string;
 };
 
 export type ChannelRecord = {
@@ -237,6 +239,13 @@ export type ChannelPostStatus =
 /** `grant:<id>`, `approval:<id>` or `owner-test`. */
 export type ChannelPostAuthority = `grant:${string}` | `approval:${string}` | "owner-test";
 
+/** One attachment of a post as the agent sent it (before fallbacks): spec 3.1 post body. */
+export type ChannelPostAttachmentSpec = {
+  id: string;
+  kind: string;
+  transcript?: string;
+};
+
 export type ChannelPostRecord = {
   id: string;
   workspaceSlug: string;
@@ -247,6 +256,8 @@ export type ChannelPostRecord = {
   sendAt: string | null;
   text: string;
   attachmentIds: string[];
+  /** Same order as `attachmentIds`; `kind` and `transcript` as sent (rows written with ids only have none). */
+  attachments: ChannelPostAttachmentSpec[];
   campaign: PostCampaign;
   digest: string;
   authority: ChannelPostAuthority | null;
@@ -321,6 +332,18 @@ export const CHANNEL_POST_TRANSITIONS: Readonly<Record<ChannelPostStatus, readon
   skipped: [],
   cancelled: [],
   expired: [],
+};
+
+/**
+ * The only ways into `sending`, each inside its own reservation method under
+ * the transactional caps check (never through `finishPost`):
+ * `reservePost` (new row), `reserveScheduledPost` (`scheduled` → `sending`,
+ * claim held) and `reserveHeldPost` (`held` → `sending`, only with a valid
+ * owner approval of this exact digest).
+ */
+export const CHANNEL_POST_RESERVATIONS: Readonly<Partial<Record<ChannelPostStatus, readonly ChannelPostStatus[]>>> = {
+  scheduled: ["sending"],
+  held: ["sending"],
 };
 
 /** Default send lease for a `sending` row; after it, recovery marks it `uncertain`. */
@@ -416,6 +439,22 @@ function grantFromRow(row: Row): StandingGrantRecord {
   };
 }
 
+function attachmentSpecsFromJson(value: unknown): ChannelPostAttachmentSpec[] {
+  const entries = json<unknown[]>(value, []);
+  return entries.flatMap((entry): ChannelPostAttachmentSpec[] => {
+    if (typeof entry === "string") return [{ id: entry, kind: "" }];
+    if (entry && typeof entry === "object" && typeof (entry as { id?: unknown }).id === "string") {
+      const spec = entry as { id: string; kind?: unknown; transcript?: unknown };
+      return [{
+        id: spec.id,
+        kind: typeof spec.kind === "string" ? spec.kind : "",
+        ...(typeof spec.transcript === "string" ? { transcript: spec.transcript } : {}),
+      }];
+    }
+    return [];
+  });
+}
+
 function postFromRow(row: Row): ChannelPostRecord {
   const campaign: PostCampaign = {};
   if (row.campaign_ref !== null && row.campaign_ref !== undefined) campaign.ref = String(row.campaign_ref);
@@ -429,7 +468,8 @@ function postFromRow(row: Row): ChannelPostRecord {
     mode: row.mode as ChannelPostRecord["mode"],
     sendAt: text(row.send_at),
     text: String(row.text),
-    attachmentIds: json<string[]>(row.attachment_ids_json, []),
+    attachmentIds: attachmentSpecsFromJson(row.attachment_ids_json).map((spec) => spec.id),
+    attachments: attachmentSpecsFromJson(row.attachment_ids_json),
     campaign,
     digest: String(row.digest),
     authority: text(row.authority) as ChannelPostAuthority | null,
@@ -545,6 +585,8 @@ export type ChannelPostFields = {
   sendAt?: string | null;
   text: string;
   attachmentIds?: string[];
+  /** When given, stored instead of `attachmentIds` (ids, kinds and transcripts, in order). */
+  attachments?: ChannelPostAttachmentSpec[];
   campaign?: PostCampaign | null;
   digest: string;
   authority?: ChannelPostAuthority | null;
@@ -601,6 +643,26 @@ export type ReserveScheduledPostInput = {
 export type ReserveScheduledPostResult =
   | { ok: true; post: ChannelPostRecord }
   | { ok: false; error: ChannelCapError | "channel_post_not_claimed"; retryAfterSeconds?: number };
+
+export type ReserveHeldPostInput = {
+  workspaceSlug: string;
+  postId: string;
+  /** The `company_box_approval` row that holds the owner's decision on this post's digest. */
+  approvalId: string;
+  ceiling: ChannelCaps;
+  now: Date | string;
+  /** Holder of the send lease (`claimed_by`). */
+  reserver: string;
+  leaseMs?: number;
+};
+
+export type ReserveHeldPostResult =
+  | { ok: true; post: ChannelPostRecord }
+  | {
+      ok: false;
+      error: ChannelCapError | "channel_post_not_held" | "channel_approval_invalid";
+      retryAfterSeconds?: number;
+    };
 
 export type InsertReceiptInput = {
   postId: string;
@@ -1006,7 +1068,7 @@ export class ChannelStore {
         input.mode,
         optionalIso(input.sendAt),
         input.text,
-        JSON.stringify(input.attachmentIds ?? []),
+        JSON.stringify(input.attachments ?? input.attachmentIds ?? []),
         input.campaign?.ref ?? null,
         input.campaign?.phase ?? null,
         input.digest,
@@ -1238,6 +1300,95 @@ export class ChannelStore {
         .run(now, leaseUntil(now, input.leaseMs), now, input.workspaceSlug, input.postId, input.claimer);
       return { ok: true, post: this.getPost(input.workspaceSlug, input.postId)! };
     });
+  }
+
+  /**
+   * Owner-approved held post → `sending` (spec §6 3c/3d; review condition
+   * 8b(iv)). One `BEGIN IMMEDIATE` transaction: the post is still `held`,
+   * the approval row is approved (`executing`, decided) for exactly this
+   * post's digest and still valid (an immediate post before the approval
+   * expiry; a scheduled post was decided before its `sendAt`, which is the
+   * approval expiry), and the channel ceiling has room. Only then is the post
+   * counted, with `authority = approval:<id>` and a send lease. A refusal
+   * changes nothing, so neither the approval nor a cap slot is consumed.
+   */
+  reserveHeldPost(input: ReserveHeldPostInput): ReserveHeldPostResult {
+    const now = iso(input.now);
+    if (!input.reserver) {
+      throw new ChannelStoreError("channel_reserver_required", "reserveHeldPost needs a reserver id for the send lease.");
+    }
+    if (!(CHANNEL_POST_RESERVATIONS.held ?? []).includes("sending")) {
+      throw new ChannelStoreError("channel_transition_refused", "held posts cannot be reserved.");
+    }
+    return this.immediate<ReserveHeldPostResult>(() => {
+      const post = this.getPost(input.workspaceSlug, input.postId);
+      if (!post || post.status !== "held") return { ok: false, error: "channel_post_not_held" };
+      const approval = this.db
+        .prepare(
+          `SELECT state, fingerprint, decided_at, expires_at FROM company_box_approval
+          WHERE id = ? AND workspace_slug = ? AND agent_id = ?`,
+        )
+        .get(input.approvalId, input.workspaceSlug, post.agentId) as
+        | { state: string; fingerprint: string; decided_at: string | null; expires_at: string }
+        | undefined;
+      const valid =
+        approval !== undefined &&
+        approval.state === "executing" &&
+        approval.fingerprint === post.digest &&
+        approval.decided_at !== null &&
+        approval.decided_at <= approval.expires_at &&
+        (post.mode === "scheduled" || approval.expires_at > now);
+      if (!valid) return { ok: false, error: "channel_approval_invalid" };
+      const refusal = this.checkCaps({
+        workspaceSlug: post.workspaceSlug,
+        channelId: post.channelId,
+        grant: null,
+        ceiling: input.ceiling,
+        campaign: post.campaign,
+        now,
+        excludePostId: post.id,
+      });
+      if (refusal) return refusal;
+      const result = this.db
+        .prepare(
+          `UPDATE channel_post SET status = 'sending', authority = ?, reserved_at = ?, claimed_by = ?,
+            claim_expires_at = ?, updated_at = ?
+          WHERE workspace_slug = ? AND id = ? AND status = 'held'`,
+        )
+        .run(
+          `approval:${input.approvalId}`,
+          now,
+          input.reserver,
+          leaseUntil(now, input.leaseMs),
+          now,
+          input.workspaceSlug,
+          input.postId,
+        );
+      if (Number(result.changes) !== 1) return { ok: false, error: "channel_post_not_held" };
+      return { ok: true, post: this.getPost(input.workspaceSlug, input.postId)! };
+    });
+  }
+
+  /** Held scheduled posts whose send time has come (approved, still pending, or expired approvals). */
+  listDueHeldPosts(input: { now: Date | string; limit?: number }): ChannelPostRecord[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM channel_post WHERE status = 'held' AND mode = 'scheduled' AND send_at <= ?
+        ORDER BY send_at, id LIMIT ?`,
+      )
+      .all(iso(input.now), Math.min(Math.max(input.limit ?? 25, 1), 500)) as Row[];
+    return rows.map(postFromRow);
+  }
+
+  /** Counted posts (`sending`, `sent`, `uncertain`) on a channel since `since` (usage today). */
+  countCountedPosts(workspaceSlug: string, channelId: string, since: Date | string, authority?: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM channel_post WHERE workspace_slug = ? AND channel_id = ?
+          AND status IN (${COUNTED_SQL}) AND reserved_at > ? AND (? IS NULL OR authority = ?)`,
+      )
+      .get(workspaceSlug, channelId, iso(since), authority ?? null, authority ?? null) as { count: number };
+    return Number(row.count);
   }
 
   private checkCaps(input: {
