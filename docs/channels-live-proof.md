@@ -133,7 +133,7 @@ only (a Telegram id without a leading minus looks like a personal chat and is ha
 
 - §10.6 "a 429 is retried once": a live API cannot be driven into a 429 on purpose. It is a SKIP
   in the report and is covered by `src/channels/providers/discord.test.ts`.
-- §10.9 upgrade rehearsal 0.1.19 to 0.2.0 and rollback: needs the release images, separate.
+- §10.9 upgrade rehearsal 0.1.19 to 0.2.0 and rollback: separate, see `docs/channels-upgrade-rehearsal.md`.
 - Messages are sent as a bot, so Telegram bot privacy and rate limits apply as usual.
 
 ## Clean up
