@@ -53,7 +53,7 @@ Owner operations: `channels.create`, `channels.update`, `channels.pause`, `chann
 
 1. **Portal** grants a Channel to an agent (canvas edge → consent). There is no channel access without a grant.
 2. **Kit outward gate:** `channels.post` and `channels.schedule` are declared `outward`. A `per_payload` channel waits for the owner's approval of the exact payload in TBD, or through the owner's Buzz reply `approve <12+ hex digest prefix>` (`verifyOwnerApproval`). A `standing` channel runs under the standing grant, and Marketplace enforces the caps server-side.
-3. **Marketplace** enforces the policy (caps, pace, one-per-phase, confirmed event, content rules), idempotency, the audit trail and receipts. This is the same path as `tools.call` (rules/owner approval, usage ledger).
+3. **Marketplace** enforces the policy (caps, pace, one-per-phase, confirmed event, content rules), idempotency, the audit trail and receipts inside the existing `executeConsentedCall` path (consent → rules/owner approval → usage ledger → audit). Native adapters are new execution targets of that path; there is no parallel send path.
 4. **Credentials** stay in Marketplace (or in Composio for `composio` channels). They never reach agents, prompts or logs.
 5. Receipts follow the gate shape `{resultIds, resultUrls, status: sent|failed|pending, detail}`. `pending` is used for asynchronous executors (bridge jobs), and is updated later on the same digest.
 
@@ -96,7 +96,14 @@ Vercel Chat SDK (`github.com/vercel/chat`, MIT, TypeScript, Node ≥ 20) gives o
 - Bulk or unsolicited messaging, scraping member lists.
 - A general social-media scheduler UI (Postiz-like). Channels is the governed agent path.
 
-## 7. Open questions
+## 7. Coordination constraints (Lead · Miniapps, 2026-10-09)
+
+1. **Releases** are serial and cut by Lead · Miniapps. Channels work lands on `main` by PR and ships in a numbered release after 0.1.19.
+2. **0.1.19 is in flight.** It touches `program/web/src/Catalog.tsx`, `provider-health.ts` (Composio auth-config lookup) and the cards API (new `connectMode` field). Avoid these files until it merges, or rebase on it.
+3. **New tables** need an additive migration and a rehearsal like 0.1.18's: an in-place upgrade plus a rollback on one data directory.
+4. **One execution path.** Outward channel sends must keep the existing consent → rules/owner approval → usage ledger → audit path (`executeConsentedCall`). Native channel adapters plug in as execution targets of that path. Never add a parallel send path.
+
+## 8. Open questions
 
 1. Credential storage: Marketplace secret store for native channels versus Composio for all channels. The proposal is native for messaging, Composio for heavy-OAuth apps.
 2. A persistent worker for the Discord gateway and Telegram polling: a sidecar or a separate service?
