@@ -8031,6 +8031,11 @@ export async function buildMarketplaceApp(
       options.store.finishCompanyBoxApproval({ id: approval.id, state: "failed", error: "approval_authority_revoked" });
       return { status: 403, response: { ok: false, schema: 1, traceId, error: "approval_authority_revoked" } as Record<string, unknown> };
     }
+    if (post.status !== "held") {
+      // The post ended before the decision (cancelled, expired, skipped): the approval has nothing to run.
+      options.store.finishCompanyBoxApproval({ id: approval.id, state: "failed", error: `channel_post_${post.status}` });
+      return { status: 409, response: { ok: false, schema: 1, traceId, error: `channel_post_${post.status}` } as Record<string, unknown> };
+    }
     if (post.mode === "scheduled") {
       return { status: 200, response: { ok: true, schema: 1, traceId, scheduled: true, postId: post.id, sendAt: post.sendAt } as Record<string, unknown> };
     }

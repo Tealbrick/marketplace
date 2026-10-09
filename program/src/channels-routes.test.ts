@@ -638,3 +638,40 @@ describe("channels: hygiene (§10 item 8, review condition 8b(ii))", () => {
     expect(lines.join("\n")).not.toContain(DISCORD_TOKEN);
   });
 });
+
+describe("channels: confirmed event (live check at send time)", () => {
+  it("sends only when the campaign listing is on a listing host and answers 2xx now", async () => {
+    let listing = 404;
+    const checked: string[] = [];
+    const f = await setup({
+      options: {
+        channelEventFetch: (async (url: string | URL | Request) => {
+          checked.push(String(url));
+          return new Response("", { status: listing });
+        }) as typeof fetch,
+      },
+    });
+    const channel = await f.createChannel({
+      slug: "events",
+      policy: {
+        standingGrants: "allowed",
+        caps: { perDay: 6, minIntervalSeconds: 0, onePerPhase: true },
+        content: { requireConfirmedEvent: true, listingHosts: ["lu.ma"] },
+      },
+    });
+    f.consentFor("agent-1", channel);
+    await f.proposeAndApprove(channel.id);
+    const offHost = await f.post(channel.id, { text: "Event", campaign: { ref: "https://evil.example/e", phase: "announce" } }, key());
+    expect(offHost.statusCode).toBe(422);
+    expect(offHost.json()).toMatchObject({ error: "channel_event_unconfirmed" });
+    expect(checked).toEqual([]);
+    const gone = await f.post(channel.id, { text: "Event", campaign: { ref: "https://lu.ma/meetup", phase: "announce" } }, key());
+    expect(gone.statusCode).toBe(422);
+    expect(gone.json()).toMatchObject({ error: "channel_event_unconfirmed" });
+    expect(checked).toEqual(["https://lu.ma/meetup"]);
+    listing = 200;
+    const live = await f.post(channel.id, { text: "Event", campaign: { ref: "https://lu.ma/meetup", phase: "announce" } }, key());
+    expect(live.statusCode, live.body).toBe(200);
+    expect(f.telegram.sends).toHaveLength(1);
+  });
+});

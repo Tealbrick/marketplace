@@ -1103,6 +1103,13 @@ export function createChannelService(deps: ChannelServiceDeps) {
       if (channel && post.workspaceSlug === org) writeReceipt({ post, channel, status: "uncertain", reason: "send_lease_expired" });
       audit("marketplace.channels.post.uncertain", post, channel?.provider ?? "unknown", { reason: "send_lease_expired" });
     }
+    // Immediate holds whose approval expired or was denied end with a receipt (the agent learns it on retry too).
+    for (const post of channels.listPosts(org, { status: "held", limit: 200 })) {
+      if (post.mode !== "immediate") continue;
+      const approval = approvalForPost(post);
+      if (approval?.state === "expired") endPost(post, channels.getChannel(org, post.channelId), "expired", "approval_expired");
+      else if (approval?.state === "denied") endPost(post, channels.getChannel(org, post.channelId), "skipped", "approval_denied");
+    }
     const late = (post: ChannelPostRecord) => post.sendAt !== null && input.now.getTime() - Date.parse(post.sendAt) > CHANNEL_SCHEDULE_LATE_MS;
     // Held scheduled posts at their send time: send if approved, else expire (the approval expired at sendAt).
     for (const post of channels.listDueHeldPosts({ now: input.now })) {
