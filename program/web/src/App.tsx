@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, AlertTriangle, Boxes, CheckCircle2, Filter, KeyRound, LoaderCircle, PackageCheck, Plug, RefreshCw, Search, Settings, ShieldCheck, X } from "lucide-react";
+import { Activity, AlertTriangle, Boxes, CheckCircle2, Filter, KeyRound, LoaderCircle, Megaphone, PackageCheck, Plug, RefreshCw, Search, Settings, ShieldCheck, X } from "lucide-react";
 import { BrandMark, Button, Field, IconButton, Tag } from "@tealbrick/ui";
 
 import { ActivityPage } from "./Activity";
@@ -8,13 +8,15 @@ import { AgentGrantsPage } from "./AgentGrants";
 import { revokeAgentGrant } from "./agent-grants-api";
 import { getBootstrap, getCardDetail, getCardSummaries, getCompanyBoxApprovals, getLiveness, getOperatorSession, getRuntimeHealth, unlockOperator, unlockWithEmergencyCode } from "./api";
 import { CatalogRow, ConfirmDialog, type ConfirmState, PluginWorkspace } from "./Catalog";
+import { CHANNELS_QUERY_KEY, ChannelsPage } from "./Channels";
+import { getChannels } from "./channels-api";
 import { ConnectionsPage } from "./Connections";
 import { SettingsDialog } from "./Settings";
 import type { AgentGrantSummary, BrowserProviderHealth, OperatorSession } from "./types";
 import { APPROVAL_STATUS_COPY, approvalStatus, type ApprovalStatus, CONNECT_MODE_LABELS, CONNECT_MODE_ORDER, SESSION_ENDED_COPY, shortScope } from "./copy";
 import { InlineError, ProviderDot, StatePanel, words } from "./ui";
 
-type Section = "catalog" | "installed" | "connections" | "grants" | "activity";
+type Section = "catalog" | "installed" | "connections" | "channels" | "grants" | "activity";
 const PAGE_SIZE = 60;
 
 type SignedOutReason = "ended" | "signedOut" | null;
@@ -68,18 +70,19 @@ export function RulesStatusDot({ status }: { status: ApprovalStatus | undefined 
   return <span className={`provider-dot provider-dot--${copy ? DOT_FOR_TONE[copy.tone] : "unknown"}`} title={copy?.detail ?? "Checking approvals…"} />;
 }
 
-function MarketplaceNav({ section, onSection, providers, rules, version, onSettings, pendingApprovals = 0 }: { section: Section; onSection: (section: Section) => void; providers?: Record<string, BrowserProviderHealth>; rules?: ApprovalStatus; version?: string; onSettings: () => void; pendingApprovals?: number }) {
+function MarketplaceNav({ section, onSection, providers, rules, version, onSettings, pendingApprovals = 0, proposedGrants = 0 }: { section: Section; onSection: (section: Section) => void; providers?: Record<string, BrowserProviderHealth>; rules?: ApprovalStatus; version?: string; onSettings: () => void; pendingApprovals?: number; proposedGrants?: number }) {
   const entries: Array<{ id: Section; label: string; icon: typeof Boxes }> = [
     { id: "catalog", label: "Catalog", icon: Boxes },
     { id: "installed", label: "Installed", icon: PackageCheck },
     { id: "connections", label: "Connections", icon: Plug },
+    { id: "channels", label: "Channels", icon: Megaphone },
     { id: "grants", label: "Agent grants", icon: ShieldCheck },
     { id: "activity", label: "Activity", icon: Activity },
   ];
   return (
     <aside className="navigation-rail">
       <header className="brand-lockup"><BrandMark /><span><strong>Marketplace</strong><small>Teal Brick capabilities</small></span></header>
-      <nav aria-label="Marketplace sections">{entries.map(({ id, label, icon: Icon }) => <button className={section === id ? "is-active" : ""} key={id} onClick={() => onSection(id)}><Icon size={17} />{label}{id === "connections" && pendingApprovals > 0 && <span className="nav-badge" title="Agent requests waiting for your approval" aria-label={`${pendingApprovals} approvals waiting`}>{pendingApprovals}</span>}</button>)}</nav>
+      <nav aria-label="Marketplace sections">{entries.map(({ id, label, icon: Icon }) => <button className={section === id ? "is-active" : ""} key={id} onClick={() => onSection(id)}><Icon size={17} />{label}{id === "connections" && pendingApprovals > 0 && <span className="nav-badge" title="Agent requests waiting for your approval" aria-label={`${pendingApprovals} approvals waiting`}>{pendingApprovals}</span>}{id === "channels" && proposedGrants > 0 && <span className="nav-badge" title="Standing grant proposals waiting for your decision" aria-label={`${proposedGrants} grant proposals waiting`}>{proposedGrants}</span>}</button>)}</nav>
       <section className="provider-summary">
         <p className="eyebrow">Status</p>
         <div className="rules-status-row" title={rules ? `${APPROVAL_STATUS_COPY[rules].label}. ${APPROVAL_STATUS_COPY[rules].detail}` : undefined}><RulesStatusDot status={rules} /><span>Approvals</span><small>{rules ? APPROVAL_STATUS_COPY[rules].short : "checking"}</small></div>
@@ -121,6 +124,7 @@ export function App() {
   const liveness = useQuery({ queryKey: ["liveness"], queryFn: getLiveness, enabled: authenticated, retry: false, refetchInterval: 30_000 });
   const runtimeHealth = useQuery({ queryKey: ["runtime-health"], queryFn: getRuntimeHealth, enabled: authenticated, retry: false, refetchInterval: 30_000 });
   const approvals = useQuery({ queryKey: ["company-box-approvals"], queryFn: () => getCompanyBoxApprovals(), enabled: authenticated, retry: false, refetchInterval: 30_000 });
+  const channels = useQuery({ queryKey: CHANNELS_QUERY_KEY, queryFn: getChannels, enabled: authenticated, retry: false, refetchInterval: 30_000 });
   const cards = useQuery({
     queryKey: ["cards", workspaceSlug, deferredSearch, source, connectMode, installed, offset],
     queryFn: () => getCardSummaries({ workspaceSlug, search: deferredSearch, source, connectMode, installed, offset, limit: PAGE_SIZE }),
@@ -166,7 +170,7 @@ export function App() {
     if (!selectedId || !items.some((card) => card.pluginId === selectedId)) setSelectedId(items[0]?.pluginId ?? null);
   }, [cards.data?.items, selectedId]);
 
-  const refresh = () => { setNotice(null); void cards.refetch(); if (selectedId) void detail.refetch(); void queryClient.invalidateQueries({ queryKey: ["agent-grants", workspaceSlug] }); void queryClient.invalidateQueries({ queryKey: ["agent-action-catalog", workspaceSlug] }); void liveness.refetch(); void runtimeHealth.refetch(); };
+  const refresh = () => { setNotice(null); void cards.refetch(); if (selectedId) void detail.refetch(); void queryClient.invalidateQueries({ queryKey: ["agent-grants", workspaceSlug] }); void queryClient.invalidateQueries({ queryKey: ["agent-action-catalog", workspaceSlug] }); void queryClient.invalidateQueries({ queryKey: CHANNELS_QUERY_KEY }); void queryClient.invalidateQueries({ queryKey: ["channel-receipts"] }); void liveness.refetch(); void runtimeHealth.refetch(); };
 
   const requestRevoke = (grant: AgentGrantSummary) => setConfirm({
     title: `Revoke access for ${grant.agentId}?`,
@@ -185,11 +189,11 @@ export function App() {
   if (!workspaceSlug) return <main className="boot-state"><BrandMark /><LoaderCircle className="spin" /><span>Loading your organization…</span></main>;
 
   return <main className="app-shell">
-    <MarketplaceNav pendingApprovals={approvals.data?.pendingCount ?? 0} section={section} onSection={setSection} providers={cards.data?.providers} rules={approvalStatus(runtimeHealth.data)} version={bootstrap.data?.program.version} onSettings={() => setSettingsOpen(true)} />
+    <MarketplaceNav pendingApprovals={approvals.data?.pendingCount ?? 0} proposedGrants={channels.data?.pendingGrants.length ?? 0} section={section} onSection={setSection} providers={cards.data?.providers} rules={approvalStatus(runtimeHealth.data)} version={bootstrap.data?.program.version} onSettings={() => setSettingsOpen(true)} />
     <section className="application-frame">
       {operatorSession.data?.session.emergency && <div className="auth-warning" role="status"><AlertTriangle size={18} /><span>{operatorSession.data.session.emergency.banner}</span></div>}
       <header className="topbar"><div className="verified-scope"><span className="eyebrow">Workspace</span>{workspaceName ? <strong className="workspace-name" title={workspaceSlug}>{workspaceName}</strong> : <code title={workspaceSlug}>{shortScope(workspaceSlug)}</code>}</div><div><ProgramState online={liveness.isError ? false : liveness.data ? true : null} rules={approvalStatus(runtimeHealth.data)} /><Button size="small" className="topbar-refresh" onClick={refresh}><RefreshCw size={14} aria-hidden="true" /><span className="topbar-refresh__label">Refresh</span></Button><IconButton className="topbar-settings" aria-label="Open settings" onClick={() => setSettingsOpen(true)}><Settings size={16} /></IconButton></div></header>
-      {section === "grants" ? <AgentGrantsPage workspaceSlug={workspaceSlug} onRevoke={requestRevoke} onNavigate={setSection} /> : cards.error ? <StatePanel error={cards.error} onRetry={() => void cards.refetch()} /> : section === "connections" && cards.data ? <ConnectionsPage connections={cards.data.connections} providers={cards.data.providers} onChanged={refresh} /> : section === "activity" ? <ActivityPage workspaceSlug={workspaceSlug} /> : installed && cards.data && cards.data.filteredTotal === 0 && !deferredSearch && source === "all" && connectMode === "all" ? <section className="collection-page"><div className="collection-empty"><PackageCheck size={28} /><h2>Nothing installed yet</h2><p>Install connectors from the catalog to make them available to your workspace and agents.</p><Button tone="primary" onClick={() => setSection("catalog")}><Boxes size={15} />Browse the catalog</Button></div></section> : <div className="catalog-layout">
+      {section === "grants" ? <AgentGrantsPage workspaceSlug={workspaceSlug} onRevoke={requestRevoke} onNavigate={setSection} /> : section === "channels" ? <ChannelsPage workspaceSlug={workspaceSlug} /> : cards.error ? <StatePanel error={cards.error} onRetry={() => void cards.refetch()} /> : section === "connections" && cards.data ? <ConnectionsPage connections={cards.data.connections} providers={cards.data.providers} onChanged={refresh} /> : section === "activity" ? <ActivityPage workspaceSlug={workspaceSlug} /> : installed && cards.data && cards.data.filteredTotal === 0 && !deferredSearch && source === "all" && connectMode === "all" ? <section className="collection-page"><div className="collection-empty"><PackageCheck size={28} /><h2>Nothing installed yet</h2><p>Install connectors from the catalog to make them available to your workspace and agents.</p><Button tone="primary" onClick={() => setSection("catalog")}><Boxes size={15} />Browse the catalog</Button></div></section> : <div className="catalog-layout">
         <aside className="catalog-index"><div className="index-heading"><div><p className="eyebrow">{installed ? "Your workspace" : "Catalog"}</p><h2>{installed ? "Installed" : "Discover"}</h2></div><Tag>{cards.data?.filteredTotal ?? 0}</Tag></div><label className="search-box"><Search size={15} /><input aria-label="Search catalog" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search providers and tools…" /></label><label className="source-filter"><Filter size={14} /><select aria-label="Filter by source" value={source} onChange={(event) => setSource(event.target.value)}><option value="all">All sources</option>{cards.data?.sources.map((entry) => <option key={entry} value={entry}>{words(entry)}</option>)}</select></label><ConnectModeFilter counts={cards.data?.connectModeCounts} value={connectMode} onChange={setConnectMode} /><div className="catalog-list">{cards.isLoading ? <div className="list-loading"><LoaderCircle className="spin" />Loading catalog…<small>Showing up to {PAGE_SIZE} at a time.</small></div> : cards.data?.items.length ? cards.data.items.map((card) => <CatalogRow key={card.pluginId} card={card} selected={selectedId === card.pluginId} onSelect={() => setSelectedId(card.pluginId)} />) : <div className="list-empty">No matching capabilities.</div>}</div>{cards.data && cards.data.filteredTotal > PAGE_SIZE && <footer className="index-footer"><Button size="small" disabled={offset === 0} onClick={() => setOffset((value) => Math.max(0, value - PAGE_SIZE))}>Previous</Button><span>{offset + 1}–{Math.min(offset + PAGE_SIZE, cards.data.filteredTotal)} of {cards.data.filteredTotal}</span><Button size="small" disabled={!cards.data.hasMore} onClick={() => setOffset((value) => value + PAGE_SIZE)}>Next</Button></footer>}</aside>
         <section className="primary-workspace">{detail.error ? <StatePanel error={detail.error} onRetry={() => void detail.refetch()} /> : <PluginWorkspace card={detail.data?.card ?? null} loading={detail.isLoading && Boolean(selectedId)} workspaceSlug={workspaceSlug} onConfirm={setConfirm} onRefresh={refresh} />}</section>
       </div>}
