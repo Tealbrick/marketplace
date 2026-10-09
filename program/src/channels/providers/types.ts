@@ -4,21 +4,46 @@
 
 export type ChannelProviderId = "telegram" | "discord";
 
-export type ChannelFileCapability = {
-  types: string[];
+/** Version of the closed capability vocabulary (spec 3.1). New keys need a contract minor bump. */
+export const CHANNEL_CAPABILITIES_VERSION = 1;
+
+export type AttachmentKind = "image" | "file" | "audio" | "voice" | "video";
+
+/** Media kind limits: allowed content types (lowercase, no parameters) and the per-file byte cap. */
+export type MediaCapability = {
+  types: readonly string[];
   maxBytes: number;
-  maxCount: number;
 };
 
-/** Closed vocabulary `channelCapabilities: 1` (spec 3.1). Keys are nested: `send.text` is `send: { text }`. */
+export type ImageCapability = MediaCapability & {
+  /** Most images in one album (and, in P1, the cap for all attachments of one message). */
+  albumMax: number;
+};
+
+export type VoiceNativeCapability = MediaCapability & {
+  native: true;
+  maxSeconds?: number;
+};
+
+/** The provider has no voice message of its own: a voice post is sent as an audio file plus its transcript text. */
+export type VoiceFallbackCapability = MediaCapability & {
+  fallback: "audio+transcript";
+};
+
 export type ChannelCapabilities = {
-  send: {
-    text: boolean;
-    maxChars: number;
-    files: ChannelFileCapability | false;
-    markup: "plain" | "markdown" | "html";
-    mentions: "suppressed";
-  };
+  channelCapabilities: typeof CHANNEL_CAPABILITIES_VERSION;
+  text: { maxChars: number; captionMaxChars?: number };
+  markup: "plain" | "markdown-v2" | "discord-markdown" | "mrkdwn" | "html";
+  mentions: "suppressed";
+  image: ImageCapability | false;
+  file: MediaCapability | false;
+  audio: MediaCapability | false;
+  voice: VoiceNativeCapability | VoiceFallbackCapability | false;
+  video: MediaCapability | false;
+  thread: { topics: boolean; replies: boolean } | false;
+  reactions: boolean;
+  buttons: { url: boolean; callback: boolean };
+  poll: boolean;
   edit: boolean;
   delete: boolean;
   schedule: { native: boolean };
@@ -46,6 +71,13 @@ export type ChannelDestination = {
 };
 
 export type OutboundAttachment = {
+  /** Must be declared by the provider (spec 3.1); the content type must match that kind. */
+  kind: AttachmentKind;
+  /**
+   * Plain text, at most 1000 characters. Only for `voice`. REQUIRED when the provider's voice is a fallback
+   * (it is posted as text). A provider with native voice does not post it.
+   */
+  transcript?: string;
   bytes: Uint8Array;
   contentType: string;
   name: string;
@@ -71,6 +103,8 @@ export type SendResult = {
    * (resultIds is not empty). A blind retry would duplicate the delivered messages.
    */
   partial?: true;
+  /** Named fallback the adapter applied, for the receipt (spec 3.1), e.g. "voice→audio+transcript". */
+  fallback?: string;
 };
 
 export type VerifyFailureReason = "credential_missing" | "credential_invalid" | "provider_unavailable";

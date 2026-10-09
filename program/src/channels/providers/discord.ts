@@ -1,3 +1,4 @@
+import { applyFallbacks } from "./capabilities.js";
 import {
   asRecord,
   classifyFailure,
@@ -14,15 +15,16 @@ import {
   type RequestBody,
 } from "./common.js";
 import { DISCORD_CHANNEL_RULE, createRateLimiter, requestWithRetry } from "./rate.js";
-import type {
-  ChannelCapabilities,
-  ChannelDestination,
-  ChannelProvider,
-  ChannelProviderOptions,
-  DiscoverResult,
-  OutboundMessage,
-  SendResult,
-  VerifyResult,
+import {
+  CHANNEL_CAPABILITIES_VERSION,
+  type ChannelCapabilities,
+  type ChannelDestination,
+  type ChannelProvider,
+  type ChannelProviderOptions,
+  type DiscoverResult,
+  type OutboundMessage,
+  type SendResult,
+  type VerifyResult,
 } from "./types.js";
 
 // Discord REST v10 adapter. REST only, no gateway, no privileged intents.
@@ -33,18 +35,23 @@ const MiB = 1024 * 1024;
 
 export const DISCORD_MAX_TEXT_CHARS = 2000;
 
+// Voice has no native P1 path (voice messages with waveform are P2): it is sent as an audio file plus its
+// transcript text in the same message. Images, files, audio and video are attachments of the one message,
+// with a shared cap of 4 attachments per message.
 const CAPABILITIES: ChannelCapabilities = {
-  send: {
-    text: true,
-    maxChars: DISCORD_MAX_TEXT_CHARS,
-    files: {
-      types: ["image/png", "image/jpeg", "image/webp", "application/pdf"],
-      maxBytes: 10 * MiB,
-      maxCount: 4,
-    },
-    markup: "markdown",
-    mentions: "suppressed",
-  },
+  channelCapabilities: CHANNEL_CAPABILITIES_VERSION,
+  text: { maxChars: DISCORD_MAX_TEXT_CHARS },
+  markup: "discord-markdown",
+  mentions: "suppressed",
+  image: { types: ["image/png", "image/jpeg", "image/webp", "image/gif"], maxBytes: 10 * MiB, albumMax: 4 },
+  file: { types: ["application/pdf", "text/plain", "application/zip", "application/octet-stream"], maxBytes: 10 * MiB },
+  audio: { types: ["audio/mpeg", "audio/mp4", "audio/ogg"], maxBytes: 10 * MiB },
+  voice: { fallback: "audio+transcript", types: ["audio/ogg"], maxBytes: 10 * MiB },
+  video: { types: ["video/mp4"], maxBytes: 10 * MiB },
+  thread: false,
+  reactions: false,
+  buttons: { url: false, callback: false },
+  poll: false,
   edit: false,
   delete: false,
   schedule: { native: false },
@@ -186,13 +193,13 @@ export function createDiscordProvider(options: ChannelProviderOptions = {}): Cha
     if (!SNOWFLAKE.test(destination.externalId) || (destination.parentId !== undefined && !SNOWFLAKE.test(destination.parentId))) {
       return refuse("channel_destination_invalid", "the Discord channel or guild id is invalid");
     }
-    const attachments = message.attachments ?? [];
-    const refusal = validateOutbound({
-      text: message.text,
-      attachments,
-      maxChars: CAPABILITIES.send.maxChars,
-      files: CAPABILITIES.send.files,
-    });
+    // The same pure function the caller uses before the digest: voice becomes audio plus a transcript line.
+    const post = applyFallbacks(CAPABILITIES, { text: message.text, attachments: message.attachments ?? [] });
+    if ("error" in post) {
+      return refuse(post.error.errorCode, post.error.detail);
+    }
+    const { attachments } = post;
+    const refusal = validateOutbound({ text: post.text, attachments, caps: CAPABILITIES });
     if (refusal) {
       return refusal;
     }
@@ -210,7 +217,7 @@ export function createDiscordProvider(options: ChannelProviderOptions = {}): Cha
 
     // allowed_mentions.parse is always empty: @everyone, @here, roles and users ping nobody.
     const payload = {
-      ...(message.text.trim().length > 0 ? { content: message.text } : {}),
+      ...(post.text.trim().length > 0 ? { content: post.text } : {}),
       allowed_mentions: { parse: [] as string[] },
     };
     const build = (): RequestBody => {
@@ -251,6 +258,7 @@ export function createDiscordProvider(options: ChannelProviderOptions = {}): Cha
       status: "sent",
       resultIds: [sent.id],
       resultUrls: guildId ? [discordMessageUrl(guildId, destination.externalId, sent.id)] : [],
+      ...(post.fallbacks.length > 0 ? { fallback: post.fallbacks.join(",") } : {}),
     };
   }
 
