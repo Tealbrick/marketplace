@@ -27,11 +27,11 @@ steps:
         set -eu
         W="$CI_WORKSPACE"
         RUN=/tmp/conformance
-        mkdir -p "$RUN/data" "$RUN/runner"
+        mkdir -p "$RUN/data"
         corepack enable && corepack prepare pnpm@9.15.4 --activate
         (cd program && pnpm install --frozen-lockfile)
-        npm install --prefix "$RUN/runner" --no-audit --no-fund @tealbrick/conformance@0.1.0-alpha.1
-        CLI="$RUN/runner/node_modules/@tealbrick/conformance/dist/cli.js"
+        CLI="$W/program/node_modules/@tealbrick/conformance/dist/cli.js"
+        [ -f "$CLI" ] || { echo "conformance runner missing: $CLI"; exit 1; }
         rand() { node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))'; }
         wait_for() { # url, seconds
           node -e 'const [u,s]=process.argv.slice(1);const end=Date.now()+s*1000;(async()=>{for(;;){try{if((await fetch(u)).ok)return}catch{}if(Date.now()>end){console.error("timeout waiting for "+u);process.exit(1)}await new Promise(r=>setTimeout(r,500))}})()' "$1" "$2"

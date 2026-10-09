@@ -21,8 +21,8 @@ importers:
         specifier: ^5.90.20
         version: 5.101.4(react@19.2.8)
       '@tealbrick/contract':
-        specifier: 0.1.0-alpha.3
-        version: 0.1.0-alpha.3
+        specifier: 0.1.0-alpha.6
+        version: 0.1.0-alpha.6
       '@tealbrick/ui':
         specifier: 0.2.2
         version: 0.2.2(react@19.2.8)
@@ -51,6 +51,9 @@ importers:
       '@playwright/test':
         specifier: ^1.58.2
         version: 1.62.1
+      '@tealbrick/conformance':
+        specifier: 0.1.0-alpha.4
+        version: 0.1.0-alpha.4
       '@testing-library/jest-dom':
         specifier: ^6.9.1
         version: 6.10.0(@testing-library/dom@10.4.1)
@@ -74,7 +77,7 @@ importers:
         version: 0.28.1
       jsdom:
         specifier: ^28.0.0
-        version: 28.1.0
+        version: 28.1.0(@noble/hashes@2.4.0)
       tsx:
         specifier: ^4.20.6
         version: 4.22.4
@@ -86,7 +89,7 @@ importers:
         version: 7.3.5(@types/node@24.13.2)(tsx@4.22.4)
       vitest:
         specifier: ^3.2.4
-        version: 3.2.6(@types/node@24.13.2)(jsdom@28.1.0)(tsx@4.22.4)
+        version: 3.2.6(@types/node@24.13.2)(jsdom@28.1.0(@noble/hashes@2.4.0))(tsx@4.22.4)
 
 packages:
 
@@ -609,6 +612,14 @@ packages:
     resolution: {integrity: sha512-9I2Zn6+NJLfaGoz9jN3lpwDgAYvfGeNYdbAIjJOqzs4Tpc+VU3Jqq4IofSUBKajiDS8k9fZIg18/z13mpk1bsA==}
     engines: {node: '>=8'}
 
+  '@noble/curves@2.4.0':
+    resolution: {integrity: sha512-P4/62zrgfH33CneE3Dn4WhJVA22YUU0eR51wKIan4NVRvwsA0YnPTwWGpNbpuacSujmSFLvyzpyuR30+fbq2Ew==}
+    engines: {node: '>= 20.19.0'}
+
+  '@noble/hashes@2.4.0':
+    resolution: {integrity: sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA==}
+    engines: {node: '>= 20.19.0'}
+
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
 
@@ -972,8 +983,13 @@ packages:
     peerDependencies:
       react: ^18 || ^19
 
-  '@tealbrick/contract@0.1.0-alpha.3':
-    resolution: {integrity: sha512-rMmQsArfyta/326VHIil4JkOtExwir18xrDoFn5mvDL5SP8L/6XI0UqzgYZR/Dm3cZcUjzIeGaTRk1FYj2tOMA==}
+  '@tealbrick/conformance@0.1.0-alpha.4':
+    resolution: {integrity: sha512-I3KEWwPGHzlXJ+FdqnX5bz/j5qKTnH5PHC+M+REdaFJJcSOG0inmfV8/804kogPOQYEWjmfBzu29q9Ae2gWNvQ==}
+    engines: {node: '>=24'}
+    hasBin: true
+
+  '@tealbrick/contract@0.1.0-alpha.6':
+    resolution: {integrity: sha512-I1/QJkYbxK1Tc7qBinNFtyvF8B6PvTKWeyghN4CtdPvGQoBJSWH9Ve1jkdqF21neoYM84bO8cQ5KC0MesF+XSw==}
     engines: {node: '>=24'}
     hasBin: true
 
@@ -2218,7 +2234,9 @@ snapshots:
   '@esbuild/win32-x64@0.28.1':
     optional: true
 
-  '@exodus/bytes@1.15.1': {}
+  '@exodus/bytes@1.15.1(@noble/hashes@2.4.0)':
+    optionalDependencies:
+      '@noble/hashes': 2.4.0
 
   '@fastify/accept-negotiator@2.1.0': {}
 
@@ -2284,6 +2302,12 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.5.5
 
   '@lukeed/ms@2.0.2': {}
+
+  '@noble/curves@2.4.0':
+    dependencies:
+      '@noble/hashes': 2.4.0
+
+  '@noble/hashes@2.4.0': {}
 
   '@pinojs/redact@0.4.0': {}
 
@@ -2571,8 +2595,14 @@ snapshots:
       '@tanstack/query-core': 5.101.4
       react: 19.2.8
 
-  '@tealbrick/contract@0.1.0-alpha.3':
+  '@tealbrick/conformance@0.1.0-alpha.4':
     dependencies:
+      '@noble/curves': 2.4.0
+      '@tealbrick/contract': 0.1.0-alpha.6
+
+  '@tealbrick/contract@0.1.0-alpha.6':
+    dependencies:
+      '@noble/curves': 2.4.0
       zod: 4.6.5
 
   '@tealbrick/ui@0.2.2(react@19.2.8)':
@@ -2810,10 +2840,10 @@ snapshots:
 
   csstype@3.2.3: {}
 
-  data-urls@7.0.0:
+  data-urls@7.0.0(@noble/hashes@2.4.0):
     dependencies:
       whatwg-mimetype: 5.0.0
-      whatwg-url: 16.0.1
+      whatwg-url: 16.0.1(@noble/hashes@2.4.0)
     transitivePeerDependencies:
       - '@noble/hashes'
 
@@ -2986,9 +3016,9 @@ snapshots:
       package-json-from-dist: 1.0.1
       path-scurry: 2.0.2
 
-  html-encoding-sniffer@6.0.0:
+  html-encoding-sniffer@6.0.0(@noble/hashes@2.4.0):
     dependencies:
-      '@exodus/bytes': 1.15.1
+      '@exodus/bytes': 1.15.1(@noble/hashes@2.4.0)
     transitivePeerDependencies:
       - '@noble/hashes'
 
@@ -3032,16 +3062,16 @@ snapshots:
 
   js-tokens@9.0.1: {}
 
-  jsdom@28.1.0:
+  jsdom@28.1.0(@noble/hashes@2.4.0):
     dependencies:
       '@acemir/cssom': 0.9.31
       '@asamuzakjp/dom-selector': 6.8.1
       '@bramus/specificity': 2.4.2
-      '@exodus/bytes': 1.15.1
+      '@exodus/bytes': 1.15.1(@noble/hashes@2.4.0)
       cssstyle: 6.2.0
-      data-urls: 7.0.0
+      data-urls: 7.0.0(@noble/hashes@2.4.0)
       decimal.js: 10.6.0
-      html-encoding-sniffer: 6.0.0
+      html-encoding-sniffer: 6.0.0(@noble/hashes@2.4.0)
       http-proxy-agent: 7.0.2
       https-proxy-agent: 7.0.6
       is-potential-custom-element-name: 1.0.1
@@ -3053,7 +3083,7 @@ snapshots:
       w3c-xmlserializer: 5.0.0
       webidl-conversions: 8.0.1
       whatwg-mimetype: 5.0.0
-      whatwg-url: 16.0.1
+      whatwg-url: 16.0.1(@noble/hashes@2.4.0)
       xml-name-validator: 5.0.0
     transitivePeerDependencies:
       - '@noble/hashes'
@@ -3432,7 +3462,7 @@ snapshots:
       fsevents: 2.3.3
       tsx: 4.22.4
 
-  vitest@3.2.6(@types/node@24.13.2)(jsdom@28.1.0)(tsx@4.22.4):
+  vitest@3.2.6(@types/node@24.13.2)(jsdom@28.1.0(@noble/hashes@2.4.0))(tsx@4.22.4):
     dependencies:
       '@types/chai': 5.2.3
       '@vitest/expect': 3.2.6
@@ -3459,7 +3489,7 @@ snapshots:
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 24.13.2
-      jsdom: 28.1.0
+      jsdom: 28.1.0(@noble/hashes@2.4.0)
     transitivePeerDependencies:
       - jiti
       - less
@@ -3482,9 +3512,9 @@ snapshots:
 
   whatwg-mimetype@5.0.0: {}
 
-  whatwg-url@16.0.1:
+  whatwg-url@16.0.1(@noble/hashes@2.4.0):
     dependencies:
-      '@exodus/bytes': 1.15.1
+      '@exodus/bytes': 1.15.1(@noble/hashes@2.4.0)
       tr46: 6.0.0
       webidl-conversions: 8.0.1
     transitivePeerDependencies:
