@@ -151,6 +151,8 @@ Single source of truth: the Marketplace DB holds channel policy and standing gra
 
 ## 5. Operations (`tealbrick.miniapp/v1` manifest additions)
 
+**Operation ids (as built).** The contract validator (alpha.3) accepts only three-part ids `marketplace.<resource>.<verb>`, so four-part names below are built with a hyphenated resource: `channel-attachments.upload`, `channel-scheduled.cancel`, `channel-receipts.list|export|purge`, `channel-grants.list|propose|narrow|withdraw|approve|decline|revoke`, `channel-posts.resolve`; the owner list is `marketplace.channels.browse`. Provider readiness is reported in `/api/portal/readiness` (`channels.providers`) and the owner browse answer (Marketplace has no `/readyz`). A channel consent must carry `actionGroup: channel:<slug>`; a connection-wide consent without it is refused for channel operations.
+
 `effects` uses the contract vocabulary (`read-only`, `writes-app-state`, `external-effects`). Marketplace risk classification marks every `external-effects` channel op as **outward**. Paths are under `/api/marketplace/v1/agent/channels` (agent) and `/api/marketplace/channels` (owner).
 
 ### 5.1 Agent audience
