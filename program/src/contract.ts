@@ -46,10 +46,11 @@ export const MARKETPLACE_MANIFEST: Manifest = assertManifest(manifestJson);
 export const MARKETPLACE_APP_ID = MARKETPLACE_MANIFEST.app.id;
 export const MARKETPLACE_APP_MAJOR = MARKETPLACE_MANIFEST.app.major;
 
-/** The two operations an agent may call. Every other declared operation has `audience: "owner"`. */
+/** Agent-audience operations outside Channels (the channel ones are in channels/routes.ts). Every other declared operation has `audience: "owner"`. */
 export const AGENT_OPERATION = Object.freeze({
   consentsList: "marketplace.consents.list",
   toolsCall: "marketplace.tools.call",
+  approvalsResolve: "marketplace.approvals.resolve",
 } as const);
 
 export const PORTAL_APP_GRANT_PREFIX = "tbag_";

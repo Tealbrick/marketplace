@@ -12,6 +12,7 @@ import {
   MARKETPLACE_MANIFEST,
   resolveLaunchRoute,
 } from "./contract.js";
+import { CHANNEL_AGENT_OPERATION } from "./channels/routes.js";
 import { MarketplaceOperatorSessionManager } from "./operator-auth.js";
 import { SqliteMarketplaceStore } from "./store.js";
 
@@ -283,7 +284,12 @@ describe("tealbrick.app.json", () => {
     expect(MARKETPLACE_MANIFEST.runtime.tenantEnv).toBe("TEALBRICK_TENANT_ID");
     expect(MARKETPLACE_MANIFEST.runtime.claim).toBe("/.well-known/tealbrick/claim");
     const agent = MARKETPLACE_MANIFEST.operations.filter((operation) => operation.audience !== "owner");
-    expect(agent.map((operation) => operation.id)).toEqual([AGENT_OPERATION.consentsList, AGENT_OPERATION.toolsCall]);
+    expect(agent.map((operation) => operation.id)).toEqual([
+      AGENT_OPERATION.consentsList,
+      AGENT_OPERATION.toolsCall,
+      ...Object.values(CHANNEL_AGENT_OPERATION),
+      AGENT_OPERATION.approvalsResolve,
+    ]);
     expect(agent[0]).toMatchObject({ method: "GET", crud: ["read"], effects: "read-only" });
     // The contract requires an idempotency key for any operation that creates (validator rule).
     expect(agent[1]).toMatchObject({ method: "POST", crud: ["create"], effects: "external-effects", idempotency: "required" });
@@ -298,7 +304,26 @@ describe("tealbrick.app.json", () => {
       "marketplace.settings.update",
       "marketplace.approvals.approve",
     ]));
-    expect(owner.length).toBe(16);
+    expect(owner).toEqual(expect.arrayContaining([
+      "marketplace.channels.discover",
+      "marketplace.channels.create",
+      "marketplace.channels.update",
+      "marketplace.channels.test",
+      "marketplace.channel-grants.approve",
+      "marketplace.channel-posts.resolve",
+      "marketplace.channel-receipts.purge",
+    ]));
+    expect(owner.length).toBe(16 + 16);
+    // Channels P1: the two account-sourced bot tokens arrive as provider env, never stored by Portal.
+    const channels = MARKETPLACE_MANIFEST.settings?.groups.find((group) => group.id === "channels");
+    expect(channels?.fields.map((field) => [field.key, field.env])).toEqual([
+      ["channels.telegram.botToken", "MARKETPLACE_CHANNELS_TELEGRAM_BOT_TOKEN"],
+      ["channels.discord.botToken", "MARKETPLACE_CHANNELS_DISCORD_BOT_TOKEN"],
+    ]);
+    expect(MARKETPLACE_MANIFEST.runtime.env?.allow).toEqual(expect.arrayContaining([
+      "MARKETPLACE_CHANNELS_TELEGRAM_BOT_TOKEN",
+      "MARKETPLACE_CHANNELS_DISCORD_BOT_TOKEN",
+    ]));
   });
 
   it("maps every operation to a real route of the app", async () => {
@@ -616,7 +641,10 @@ describe("control endpoints", () => {
     const headers = { authorization: `Bearer ${SERVICE}` };
     const read = await f.app.inject({ method: "GET", url: "/.well-known/tealbrick/settings", headers });
     expect(read.statusCode).toBe(200);
-    expect(read.json().account).toEqual({ "composio.apiKey": { source: "account", set: true } });
+    expect(read.json().account).toEqual({
+      "channels.discord.botToken": { set: false, source: "account" },
+      "channels.telegram.botToken": { set: false, source: "account" },
+      "composio.apiKey": { source: "account", set: true } });
     expect(read.body).not.toContain("test-composio-key");
     const revision = read.json().revision as string;
     const bad = await f.app.inject({ method: "PUT", url: "/.well-known/tealbrick/settings", headers, payload: { values: { "composio.baseUrl": "https://evil.example/api" } } });

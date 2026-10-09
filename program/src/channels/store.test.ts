@@ -710,3 +710,201 @@ describe("tenant isolation (R4)", () => {
     ).toMatchObject({ ok: true, replayed: false });
   });
 });
+
+describe("reserveHeldPost (review condition 8b(iv))", () => {
+  async function heldFixture(input: { mode?: "immediate" | "scheduled"; sendAt?: string } = {}) {
+    const f = await fixture();
+    const now = new Date();
+    const post = f.channels.insertPost({
+      workspaceSlug: WS,
+      channelId: f.channel.id,
+      agentId: "agent-1",
+      consentId: "consent-row-1",
+      mode: input.mode ?? "immediate",
+      sendAt: input.sendAt ?? null,
+      text: "Meetup tonight",
+      attachments: [{ id: "cha_1", kind: "image" }],
+      digest: "d".repeat(64),
+      idempotencyKey: "held-key-0001",
+      status: "held",
+      now,
+    });
+    if (!post.ok) throw new Error(post.error);
+    const approval = f.store.createCompanyBoxApproval({
+      workspaceSlug: WS,
+      pluginId: "channels-telegram",
+      actionKey: "channel.post",
+      capability: "connector.dispatch",
+      agentId: "agent-1",
+      sourceKind: "channel-consent",
+      sourceRef: "consent-row-1",
+      idempotencyKey: `channel-post:${post.post.id}`,
+      fingerprint: "d".repeat(64),
+      arguments: { postId: post.post.id },
+      argumentsPreview: "",
+      ttlMs: 3_600_000,
+    });
+    return { ...f, now, post: post.post, approval };
+  }
+  const reserve = (f: Awaited<ReturnType<typeof heldFixture>>, extra: Partial<Parameters<ChannelStore["reserveHeldPost"]>[0]> = {}) =>
+    f.channels.reserveHeldPost({
+      workspaceSlug: WS,
+      postId: f.post.id,
+      approvalId: f.approval.id,
+      ceiling: CEILING,
+      now: f.now,
+      reserver: "test-reserver",
+      ...extra,
+    });
+
+  it("stores the attachment kinds and transcripts of a post in order", async () => {
+    const f = await heldFixture();
+    expect(f.post.attachmentIds).toEqual(["cha_1"]);
+    expect(f.post.attachments).toEqual([{ id: "cha_1", kind: "image" }]);
+  });
+
+  it("refuses a pending, denied or foreign-digest approval and changes nothing", async () => {
+    const f = await heldFixture();
+    expect(reserve(f)).toEqual({ ok: false, error: "channel_approval_invalid" });
+    f.store.decideCompanyBoxApproval({ id: f.approval.id, workspaceSlug: WS, decision: "deny", decidedBy: "owner" });
+    expect(reserve(f)).toEqual({ ok: false, error: "channel_approval_invalid" });
+    expect(f.channels.getPost(WS, f.post.id)!.status).toBe("held");
+  });
+
+  it("moves an approved held post to sending exactly once, counted, with the approval authority and a lease", async () => {
+    const f = await heldFixture();
+    f.store.decideCompanyBoxApproval({ id: f.approval.id, workspaceSlug: WS, decision: "approve", decidedBy: "owner" });
+    const first = reserve(f);
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    expect(first.post).toMatchObject({ status: "sending", authority: `approval:${f.approval.id}`, claimedBy: "test-reserver" });
+    expect(first.post.reservedAt).not.toBeNull();
+    expect(first.post.claimExpiresAt).not.toBeNull();
+    expect(reserve(f)).toEqual({ ok: false, error: "channel_post_not_held" });
+  });
+
+  it("leaves the post held and the approval unused when the ceiling refuses", async () => {
+    const f = await heldFixture();
+    f.store.decideCompanyBoxApproval({ id: f.approval.id, workspaceSlug: WS, decision: "approve", decidedBy: "owner" });
+    const busy = f.channels.reservePost({
+      workspaceSlug: WS,
+      channelId: f.channel.id,
+      agentId: "agent-2",
+      consentId: "c2",
+      mode: "immediate",
+      text: "other",
+      digest: "e".repeat(64),
+      idempotencyKey: "other-key-0001",
+      ceiling: CEILING,
+      now: f.now,
+      reserver: "r",
+    });
+    expect(busy.ok).toBe(true);
+    const refused = reserve(f);
+    expect(refused).toMatchObject({ ok: false, error: "channel_min_interval" });
+    expect(f.channels.getPost(WS, f.post.id)!.status).toBe("held");
+    expect(f.store.getCompanyBoxApproval(f.approval.id)!.state).toBe("executing");
+  });
+
+  it("never offers held -> sending through finishPost", async () => {
+    const f = await heldFixture();
+    expect(() => f.channels.finishPost(WS, f.post.id, { status: "sending", from: ["held"] })).toThrow(ChannelStoreError);
+    expect(CHANNEL_POST_TRANSITIONS.held).not.toContain("sending");
+  });
+});
+
+describe("reservation live check (review M2)", () => {
+  it("refuses a paused channel, an inactive consent row and an inactive grant inside the transaction", async () => {
+    const { store, channels, channel } = await fixture();
+    const base = {
+      workspaceSlug: WS,
+      channelId: channel.id,
+      agentId: "agent-1",
+      consentId: "consent-row-x",
+      mode: "immediate" as const,
+      text: "hello",
+      digest: "a".repeat(64),
+      ceiling: CEILING,
+      now: at(0),
+      reserver: "r",
+    };
+    expect(channels.reservePost({ ...base, idempotencyKey: "live-key-0001", live: { consentRowId: "missing-consent", grantId: null } })).toEqual({
+      ok: false,
+      error: "consent_inactive",
+    });
+    const grant = channels.createStandingGrant({
+      workspaceSlug: WS,
+      channelId: channel.id,
+      agentId: "agent-1",
+      consentId: "consent-row-x",
+      purpose: "p",
+      caps: { perDay: 6, minIntervalSeconds: 0, onePerPhase: true },
+      scope: { files: false, immediate: true, scheduled: true },
+      expires: at(60 * 24),
+      now: at(0),
+    });
+    expect(
+      channels.reservePost({ ...base, idempotencyKey: "live-key-0002", grant: { id: grant.id, caps: grant.caps }, live: { consentRowId: null, grantId: grant.id } }),
+    ).toEqual({ ok: false, error: "grant_inactive" });
+    channels.setChannelStatus(WS, channel.id, "paused", at(0));
+    expect(channels.reservePost({ ...base, idempotencyKey: "live-key-0003", live: { consentRowId: null, grantId: null } })).toEqual({
+      ok: false,
+      error: "channel_paused",
+    });
+    expect(channels.listPosts(WS)).toEqual([]);
+    void store;
+  });
+});
+
+describe("reserveHeldPost binds the approval to its post (review F2)", () => {
+  it("refuses post B with post A's approval even when both have the same digest", async () => {
+    const { store, channels, channel } = await fixture();
+    const now = new Date();
+    const held = (key: string) => {
+      const inserted = channels.insertPost({
+        workspaceSlug: WS,
+        channelId: channel.id,
+        agentId: "agent-1",
+        consentId: "consent-row-1",
+        mode: "immediate",
+        text: "Same payload",
+        digest: "c".repeat(64),
+        idempotencyKey: key,
+        status: "held",
+        now,
+      });
+      if (!inserted.ok) throw new Error(inserted.error);
+      return inserted.post;
+    };
+    const a = held("same-digest-a-0001");
+    const b = held("same-digest-b-0001");
+    const approve = (postId: string) => {
+      const approval = store.createCompanyBoxApproval({
+        workspaceSlug: WS,
+        pluginId: "channels-telegram",
+        actionKey: "channel.post",
+        capability: "connector.dispatch",
+        agentId: "agent-1",
+        sourceKind: "channel-consent",
+        sourceRef: "consent-row-1",
+        idempotencyKey: `channel-post:${postId}`,
+        fingerprint: "c".repeat(64),
+        arguments: { postId },
+        argumentsPreview: "",
+        ttlMs: 3_600_000,
+      });
+      return approval;
+    };
+    const approvalA = approve(a.id);
+    approve(b.id); // B's approval stays pending
+    store.decideCompanyBoxApproval({ id: approvalA.id, workspaceSlug: WS, decision: "approve", decidedBy: "owner" });
+    const reserve = (postId: string) =>
+      channels.reserveHeldPost({ workspaceSlug: WS, postId, approvalId: approvalA.id, ceiling: { ...CEILING, minIntervalSeconds: 0 }, now, reserver: "r" });
+    expect(reserve(b.id)).toEqual({ ok: false, error: "channel_approval_invalid" });
+    expect(channels.getPost(WS, b.id)!.status).toBe("held");
+    expect(channels.denyApprovedHold({ workspaceSlug: WS, approvalId: approvalA.id, postId: b.id, decidedBy: "owner", now })).toBe(false);
+    expect(reserve(a.id)).toMatchObject({ ok: true, post: { id: a.id, status: "sending", authority: `approval:${approvalA.id}` } });
+    expect(reserve(a.id)).toEqual({ ok: false, error: "channel_post_not_held" });
+    expect(channels.getPost(WS, b.id)!.status).toBe("held");
+  });
+});

@@ -232,13 +232,23 @@ export type MarketplacePortalGrantRequest = {
   approvalUrl: string;
   expiresAt: string;
   idempotencyKey: string;
-  selection: {
-    pluginId: string;
-    actionKey: string;
-    accountId: string;
-    resourceKind: string;
-    resourceRef: string;
-  };
+  selection:
+    | {
+        pluginId: string;
+        actionKey: string;
+        accountId: string;
+        resourceKind: string;
+        resourceRef: string;
+      }
+    | {
+        /** Handoff v1.4 class selection, stored label-free. */
+        pluginId: string;
+        accountId: string;
+        resourceKind: string;
+        resourceRef: string;
+        grantClass: "read" | "write" | "outward";
+        actionGroup?: string;
+      };
   state: "pending" | "redeemed" | "denied" | "expired";
   consentId: string | null;
   createdAt: string;
@@ -337,6 +347,8 @@ export type ProviderExecutionResult = {
 
 export type CompanyBoxApprovalState =
   | "pending"
+  /** An agent's owner-signed proof is being verified (single-shot claim; no provider call yet). */
+  | "resolving"
   | "executing"
   | "succeeded"
   | "failed"
@@ -352,7 +364,7 @@ export type CompanyBoxApproval = {
   capability: ConnectorCapability;
   agentId: string;
   /** How the agent's authority was proven: a stored grant or a Portal consent. */
-  sourceKind: "agent-grant" | "runtime-lease";
+  sourceKind: "agent-grant" | "runtime-lease" | "channel-consent";
   sourceRef: string;
   idempotencyKey: string | null;
   fingerprint: string;

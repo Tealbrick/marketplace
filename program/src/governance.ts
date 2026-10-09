@@ -24,7 +24,14 @@ export type AgentAttestation =
   /** Portal handoff consent redeemed from Portal for this deployment. */
   | "portal-consent"
   /** Runtime receiver call carrying a verified Portal consent and lease. */
-  | "runtime-lease";
+  | "runtime-lease"
+  /**
+   * Channel send whose outward authority is an owner approval: the owner
+   * approved this exact payload digest, or approved the standing grant that
+   * covers it (Channels spec §4.4, §6 3c). Set only by the channel path after
+   * that authority is resolved, never from request input.
+   */
+  | "owner-approval";
 
 /**
  * The authenticated actor behind a governed action, resolved from the request
@@ -65,7 +72,7 @@ export type OwnerGovernedDecision =
       effect: "allow";
       decisionId: string;
       reason: string;
-      basis: "operator" | "service-admin" | "portal-consent";
+      basis: "operator" | "service-admin" | "portal-consent" | "owner-approval";
     }
   | {
       effect: "deny";
@@ -99,6 +106,14 @@ export function ownerGovernedDecision(input: {
   risk?: GovernedActionRisk;
 }): OwnerGovernedDecision {
   const { actor, operation, pluginId } = input;
+  if (actor?.kind === "agent" && actor.attestation === "owner-approval" && operation === "execute") {
+    return {
+      effect: "allow",
+      decisionId: `owner-governed:owner-approval:${operation}:${pluginId}`,
+      reason: "Outward action approved by the workspace owner (exact payload approval or owner-approved standing grant).",
+      basis: "owner-approval",
+    };
+  }
   if (input.risk?.outward && operation === "execute" && actor?.kind !== "operator") {
     return {
       effect: "deny",

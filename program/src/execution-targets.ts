@@ -9,11 +9,37 @@ export type PreparedExecution = {
   toolName: string;
   summary: string;
   run: () => Promise<unknown>;
+  /**
+   * Undo what `prepare` reserved when the idempotency step refuses the call
+   * (replay, conflict or in progress), so nothing stays consumed. Optional;
+   * the connector targets reserve nothing.
+   */
+  release?: () => void;
 };
 
 export type ExecutionPreparation =
   | { ok: true; prepared: PreparedExecution }
-  | { ok: false; statusCode: number; error: string };
+  | { ok: false; statusCode: number; error: string; detail?: Record<string, unknown> };
+
+/**
+ * Thrown by a target's `run` when it knows the outcome is not a success:
+ * `failed` (nothing was delivered) or `uncertain` (it may have been). The
+ * shared tail records it like any failure, with this code, HTTP status,
+ * runtime-operation status and output (e.g. a channel receipt). Any other
+ * throw keeps the existing "reconciliation required" handling.
+ */
+export class ConsentedExecutionOutcome extends Error {
+  constructor(
+    readonly code: string,
+    readonly statusCode: number,
+    readonly operationStatus: "succeeded" | "reconciliation-required",
+    readonly output: unknown,
+    readonly detail?: string,
+  ) {
+    super(code);
+    this.name = "ConsentedExecutionOutcome";
+  }
+}
 
 export type ExecutionTarget<Context> = {
   id: string;

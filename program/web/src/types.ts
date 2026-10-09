@@ -479,7 +479,7 @@ export interface CompanyBoxApproval {
   capability: ConnectorCapabilityName;
   agentId: string;
   argumentsPreview: string;
-  state: "pending" | "executing" | "succeeded" | "failed" | "denied" | "expired";
+  state: "pending" | "resolving" | "executing" | "succeeded" | "failed" | "denied" | "expired";
   createdAt: string;
   expiresAt: string;
   decidedAt: string | null;

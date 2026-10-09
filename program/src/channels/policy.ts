@@ -80,10 +80,24 @@ export type ChannelPolicy = {
     listingHosts: string[];
     denyPatterns: string[];
   };
-  schedule: { window?: ChannelScheduleWindow };
+  schedule: {
+    window?: ChannelScheduleWindow;
+    /**
+     * Most not-yet-sent posts (`scheduled` + `held`) one agent may have on this
+     * channel. 1–50; default min(2 × caps.perDay, 50).
+     */
+    maxPendingPerAgent?: number;
+  };
   /** Email channels only: exact addresses and `@domain` entries. */
   recipients?: string[];
 };
+
+export const MAX_PENDING_PER_AGENT_LIMIT = 50;
+
+/** The backlog limit in force: the policy value, or the default for policies stored before the field existed. */
+export function maxPendingPerAgent(policy: ChannelPolicy): number {
+  return policy.schedule.maxPendingPerAgent ?? Math.min(2 * policy.caps.perDay, MAX_PENDING_PER_AGENT_LIMIT);
+}
 
 export type ChannelPolicyInput = {
   standingGrants?: ChannelPolicy["standingGrants"];
@@ -91,7 +105,7 @@ export type ChannelPolicyInput = {
   content?: Partial<Omit<ChannelPolicy["content"], "files">> & {
     files?: Partial<ChannelFilePolicy>;
   };
-  schedule?: { window?: ChannelScheduleWindow };
+  schedule?: { window?: ChannelScheduleWindow; maxPendingPerAgent?: number };
   recipients?: string[];
 };
 
@@ -380,6 +394,15 @@ export function validatePolicy(
         ...(window.days ? { days: [...new Set(window.days)].sort() } : {}),
       };
     }
+  }
+
+  const maxPending = source.schedule?.maxPendingPerAgent;
+  if (maxPending !== undefined) {
+    if (!isPositiveInt(maxPending, MAX_PENDING_PER_AGENT_LIMIT)) {
+      errors.push({ field: "schedule.maxPendingPerAgent", message: `Must be an integer from 1 to ${MAX_PENDING_PER_AGENT_LIMIT}.` });
+    } else policy.schedule.maxPendingPerAgent = maxPending;
+  } else {
+    policy.schedule.maxPendingPerAgent = Math.min(2 * policy.caps.perDay, MAX_PENDING_PER_AGENT_LIMIT);
   }
 
   if (source.recipients !== undefined) {
@@ -776,26 +799,66 @@ export function evaluateContent(
   return errors.length === 0 ? { ok: true } : { ok: false, errors };
 }
 
+export type EventListingStatus = "confirmed" | "missing" | "unreachable";
+
 /**
- * Live half of `requireConfirmedEvent`: the listing answers HTTP 2xx after
- * redirects. Any error, timeout or non-https URL is `false`. Callers check
- * `eventHostAllowed` first; this function only fetches `https` URLs.
+ * Live half of `requireConfirmedEvent` (review F3). Redirects are never
+ * followed blindly: each request uses `redirect: "manual"`. A 3xx is
+ * confirmed only when its `Location` is `https` on a listing host; that target
+ * is then checked once (at most one hop, again manual), so a redirect to
+ * another host, a second redirect or a loop is not confirmed. 2xx is
+ * `confirmed`, 4xx (and any refused redirect) `missing`, 5xx, a network error
+ * or a timeout `unreachable` (transient).
+ */
+export async function eventListingStatus(
+  url: string,
+  options: { listingHosts: readonly string[]; fetchImpl?: typeof fetch; timeoutMs?: number },
+): Promise<EventListingStatus> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  let target = url;
+  for (let hop = 0; hop < 2; hop += 1) {
+    let response: Response;
+    try {
+      if (new URL(target).protocol !== "https:") return "missing";
+      response = await fetchImpl(target, {
+        method: "GET",
+        redirect: "manual",
+        signal: AbortSignal.timeout(options.timeoutMs ?? 10_000),
+        headers: { accept: "text/html,application/json;q=0.9,*/*;q=0.5" },
+      });
+    } catch {
+      return "unreachable";
+    }
+    await response.body?.cancel().catch(() => undefined);
+    if (response.status >= 200 && response.status < 300) return "confirmed";
+    if (response.status >= 300 && response.status < 400) {
+      if (hop > 0) return "missing";
+      const location = response.headers.get("location");
+      let next: URL;
+      try {
+        next = new URL(location ?? "", target);
+      } catch {
+        return "missing";
+      }
+      if (!location || next.toString() === target || !eventHostAllowed(next.toString(), options.listingHosts)) return "missing";
+      target = next.toString();
+      continue;
+    }
+    return response.status >= 400 && response.status < 500 ? "missing" : "unreachable";
+  }
+  return "missing";
+}
+
+/**
+ * Boolean form of `eventListingStatus`. Without `listingHosts` no redirect is
+ * confirmed. Callers check `eventHostAllowed` first.
  */
 export async function confirmEventLive(
   url: string,
-  options: { fetchImpl?: typeof fetch; timeoutMs?: number } = {},
+  options: { fetchImpl?: typeof fetch; timeoutMs?: number; listingHosts?: readonly string[] } = {},
 ): Promise<boolean> {
-  const fetchImpl = options.fetchImpl ?? fetch;
   try {
-    if (new URL(url).protocol !== "https:") return false;
-    const response = await fetchImpl(url, {
-      method: "GET",
-      redirect: "follow",
-      signal: AbortSignal.timeout(options.timeoutMs ?? 10_000),
-      headers: { accept: "text/html,application/json;q=0.9,*/*;q=0.5" },
-    });
-    await response.body?.cancel().catch(() => undefined);
-    return response.status >= 200 && response.status < 300;
+    return (await eventListingStatus(url, { ...options, listingHosts: options.listingHosts ?? [] })) === "confirmed";
   } catch {
     return false;
   }
@@ -811,42 +874,55 @@ export type ChannelPayloadDigestInput = {
   provider: string;
   /** Destination `externalId`. */
   destination: string;
+  /** Destination `parentId` (Discord guild, Telegram forum topic), when the destination has one. */
+  destinationParentId?: string;
   /** Operation, e.g. `post`, `schedule`, `test`. */
   op: string;
   text: string;
-  attachments: Array<{ sha256: string; contentType: string; name: string }>;
+  /**
+   * `kind` and `transcript` (spec 3.1) are part of the payload when given: the
+   * digest covers the post after fallbacks, so the owner approves exactly what
+   * is sent. Absent fields are dropped by the canonical form.
+   */
+  attachments: Array<{ sha256: string; contentType: string; name: string; kind?: string; transcript?: string }>;
   campaign?: PostCampaign | null;
   sendAt?: string | null;
 };
 
 /**
  * §4.6 payload digest. Attachments keep their order and carry only
- * `{sha256, contentType, name}`. A missing campaign digests as `{}`, so
+ * `{sha256, contentType, name}` plus `kind` and `transcript` when given. A missing campaign digests as `{}`, so
  * "no campaign" and "empty campaign" are the same payload. `sendAt` is
  * normalised to an ISO instant and omitted for immediate posts.
  */
 export function channelPayloadDigest(input: ChannelPayloadDigestInput): string {
+  return sha256Hex(channelPayloadCanonical(input));
+}
+
+/** The canonical JSON the §4.6 digest is computed over (shown to the owner as the payload view). */
+export function channelPayloadCanonical(input: ChannelPayloadDigestInput): string {
   const campaign: PostCampaign = {};
   if (input.campaign?.ref !== undefined && input.campaign.ref !== null) campaign.ref = input.campaign.ref;
   if (input.campaign?.phase !== undefined && input.campaign.phase !== null) campaign.phase = input.campaign.phase;
-  return sha256Hex(
-    canonicalJson({
-      v: 1,
-      workspace: input.workspace,
-      channelId: input.channelId,
-      provider: input.provider,
-      destination: input.destination,
-      op: input.op,
-      text: input.text,
-      attachments: input.attachments.map((file) => ({
-        sha256: file.sha256,
-        contentType: file.contentType,
-        name: file.name,
-      })),
-      campaign,
-      sendAt: input.sendAt ? new Date(input.sendAt).toISOString() : undefined,
-    }),
-  );
+  return canonicalJson({
+    v: 1,
+    workspace: input.workspace,
+    channelId: input.channelId,
+    provider: input.provider,
+    destination: input.destination,
+    destinationParentId: input.destinationParentId || undefined,
+    op: input.op,
+    text: input.text,
+    attachments: input.attachments.map((file) => ({
+      sha256: file.sha256,
+      contentType: file.contentType,
+      name: file.name,
+      kind: file.kind,
+      transcript: file.transcript,
+    })),
+    campaign,
+    sendAt: input.sendAt ? new Date(input.sendAt).toISOString() : undefined,
+  });
 }
 
 /** §4.4 grant digest: SHA-256 of the canonical final grant terms. */

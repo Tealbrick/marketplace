@@ -136,6 +136,7 @@ function EntryCard({ entry, onSetup, onChanged, onNotice }: { entry: CompanyBoxE
 
 const APPROVAL_STATE_LABEL: Record<CompanyBoxApproval["state"], string> = {
   pending: "Waiting",
+  resolving: "Checking approval",
   executing: "Running",
   succeeded: "Approved · ran",
   failed: "Approved · failed",

@@ -18,6 +18,36 @@ export type MarketplacePortalSelection = {
   capability?: ConnectorCapability;
 };
 
+/**
+ * Handoff v1.4 class selection (Portal portal-core#104): a connector account
+ * and a grant class instead of one actionKey; Marketplace alone expands it to
+ * operations. `actionGroupLabel` is display-only: sent on grant-request
+ * inside the selection, stripped by Portal before canonicalisation, never
+ * stored by either side and never part of authority.
+ */
+export type MarketplacePortalClassSelection = {
+  pluginId: string;
+  accountId: string;
+  resourceKind: string;
+  resourceRef: string;
+  grantClass: "read" | "write" | "outward";
+  actionGroup?: string;
+  actionGroupLabel?: string;
+};
+
+export type MarketplacePortalAnySelection = MarketplacePortalSelection | MarketplacePortalClassSelection;
+
+export function isClassSelection(selection: MarketplacePortalAnySelection): selection is MarketplacePortalClassSelection {
+  return Object.prototype.hasOwnProperty.call(selection, "grantClass");
+}
+
+/** Portal capability names: the v1.2 three plus the v1.4 class capabilities. */
+export type MarketplacePortalCapability =
+  | ConnectorCapability
+  | "connector.class.read"
+  | "connector.class.write"
+  | "connector.class.outward";
+
 export type MarketplacePortalConsentEnvelope = {
   schema: 1;
   authorized: boolean;
@@ -31,9 +61,9 @@ export type MarketplacePortalConsentEnvelope = {
   consentId: string | null;
   consentRevision: number;
   state: "pending" | "active" | "revoked" | "approved" | "denied";
-  capabilities: ConnectorCapability[];
+  capabilities: MarketplacePortalCapability[];
   requiredActions: string[];
-  selection: MarketplacePortalSelection;
+  selection: MarketplacePortalAnySelection;
 };
 
 export type MarketplacePortalLaunchSession = {
@@ -136,6 +166,67 @@ function capabilities(value: unknown): ConnectorCapability[] {
   );
 }
 
+function envelopeCapabilities(value: unknown): MarketplacePortalCapability[] {
+  if (!Array.isArray(value)) {
+    throw new PortalHandoffError(
+      "portal_handoff_invalid",
+      503,
+      "Portal handoff response has invalid capabilities.",
+    );
+  }
+  return value.filter(
+    (entry): entry is MarketplacePortalCapability =>
+      entry === "connector.observe" ||
+      entry === "connector.dispatch" ||
+      entry === "connector.admin" ||
+      entry === "connector.class.read" ||
+      entry === "connector.class.write" ||
+      entry === "connector.class.outward",
+  );
+}
+
+const ACTION_GROUP = /^[A-Za-z0-9 _.:/-]{1,80}$/u;
+
+/** v1.4 class selection as Portal returns it: exactly the five keys plus an optional actionGroup (never a label). */
+function classSelection(input: Record<string, unknown>): MarketplacePortalClassSelection {
+  const hasGroup = Object.prototype.hasOwnProperty.call(input, "actionGroup");
+  const keys = ["pluginId", "accountId", "resourceKind", "resourceRef", "grantClass", ...(hasGroup ? ["actionGroup"] : [])];
+  const grantClass = input.grantClass;
+  if (
+    Object.keys(input).length !== keys.length ||
+    keys.some((key) => !Object.prototype.hasOwnProperty.call(input, key)) ||
+    (grantClass !== "read" && grantClass !== "write" && grantClass !== "outward") ||
+    (hasGroup && (typeof input.actionGroup !== "string" || !ACTION_GROUP.test(input.actionGroup)))
+  ) {
+    throw new PortalHandoffError(
+      "portal_handoff_invalid",
+      503,
+      "Portal handoff response has an invalid class selection.",
+    );
+  }
+  const result: MarketplacePortalClassSelection = {
+    pluginId: requiredString(input.pluginId, "selection.pluginId"),
+    accountId: requiredString(input.accountId, "selection.accountId"),
+    resourceKind: requiredString(input.resourceKind, "selection.resourceKind"),
+    resourceRef: requiredString(input.resourceRef, "selection.resourceRef"),
+    grantClass,
+    ...(hasGroup ? { actionGroup: input.actionGroup as string } : {}),
+  };
+  if (result.resourceRef !== `account:${result.accountId}`) {
+    throw new PortalHandoffError(
+      "portal_handoff_invalid",
+      503,
+      "Portal handoff response has an invalid resource binding.",
+    );
+  }
+  return result;
+}
+
+function anySelection(value: unknown): MarketplacePortalAnySelection {
+  const input = object(value);
+  return Object.prototype.hasOwnProperty.call(input, "grantClass") ? classSelection(input) : selection(input);
+}
+
 function selection(value: unknown): MarketplacePortalSelection {
   const input = object(value);
   const result: MarketplacePortalSelection = {
@@ -212,13 +303,13 @@ function consentEnvelope(value: unknown): MarketplacePortalConsentEnvelope {
         : requiredString(input.consentId, "consentId"),
     consentRevision: Math.max(1, Math.floor(numberValue(input.consentRevision, "consentRevision"))),
     state,
-    capabilities: capabilities(input.capabilities),
+    capabilities: envelopeCapabilities(input.capabilities),
     requiredActions: Array.isArray(input.requiredActions)
       ? input.requiredActions.filter(
           (entry): entry is string => typeof entry === "string" && Boolean(entry.trim()),
         )
       : [],
-    selection: selection(input.selection),
+    selection: anySelection(input.selection),
   };
 }
 
@@ -232,7 +323,7 @@ export function createPortalHandoffClient(input: {
     deploymentId: string;
     session: string;
     agentId: string;
-    selection: MarketplacePortalSelection;
+    selection: MarketplacePortalAnySelection;
     idempotencyKey: string;
   }): Promise<MarketplacePortalGrantRequest>;
   redeemGrant(input: {

@@ -5,6 +5,7 @@ import {
   MIB,
   channelPayloadDigest,
   confirmEventLive,
+  eventListingStatus,
   effectiveCaps,
   evaluateContent,
   eventHostAllowed,
@@ -81,7 +82,7 @@ describe("validatePolicy", () => {
         listingHosts: [],
         denyPatterns: [],
       },
-      schedule: {},
+      schedule: { maxPendingPerAgent: 12 },
     });
     // The frozen default is never mutated by normalisation.
     expect(DEFAULT_CHANNEL_POLICY.caps.perDay).toBe(6);
@@ -402,7 +403,7 @@ describe("confirmEventLive", () => {
   it("is true only for a 2xx answer", async () => {
     const ok = vi.fn(async () => new Response("ok", { status: 200 }));
     expect(await confirmEventLive("https://lu.ma/x", { fetchImpl: ok as unknown as typeof fetch })).toBe(true);
-    expect(ok).toHaveBeenCalledWith("https://lu.ma/x", expect.objectContaining({ redirect: "follow" }));
+    expect(ok).toHaveBeenCalledWith("https://lu.ma/x", expect.objectContaining({ redirect: "manual" }));
     const missing = vi.fn(async () => new Response("gone", { status: 404 }));
     expect(await confirmEventLive("https://lu.ma/x", { fetchImpl: missing as unknown as typeof fetch })).toBe(false);
   });
@@ -472,5 +473,61 @@ describe("digests", () => {
     const digest = standingGrantDigest(input);
     expect(standingGrantDigest({ ...input, terms: terms({ caps: { perDay: 2, minIntervalSeconds: 900, onePerPhase: true } }) })).not.toBe(digest);
     expect(standingGrantDigest({ ...input, consentId: "c2" })).not.toBe(digest);
+  });
+});
+
+describe("eventListingStatus redirects (review F3)", () => {
+  const redirect = (location: string, status = 302) => new Response(null, { status, headers: { location } });
+  const sequence = (...responses: Array<Response | (() => Response)>) => {
+    const calls: Array<{ url: string; redirect?: RequestInit["redirect"] }> = [];
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      calls.push({ url: String(url), redirect: init?.redirect });
+      const next = responses.shift();
+      if (!next) throw new Error("no more responses");
+      return typeof next === "function" ? next() : next;
+    }) as unknown as typeof fetch;
+    return { fetchImpl, calls };
+  };
+  const hosts = ["lu.ma"];
+
+  it("never follows a redirect to another host", async () => {
+    const { fetchImpl, calls } = sequence(redirect("https://evil.example/event"), new Response("ok"));
+    expect(await eventListingStatus("https://lu.ma/x", { listingHosts: hosts, fetchImpl })).toBe("missing");
+    expect(calls).toEqual([{ url: "https://lu.ma/x", redirect: "manual" }]);
+    const http = sequence(redirect("http://lu.ma/x"));
+    expect(await eventListingStatus("https://lu.ma/x", { listingHosts: hosts, fetchImpl: http.fetchImpl })).toBe("missing");
+    const lookalike = sequence(redirect("https://lu.ma.evil.io/x"));
+    expect(await eventListingStatus("https://lu.ma/x", { listingHosts: hosts, fetchImpl: lookalike.fetchImpl })).toBe("missing");
+  });
+
+  it("confirms one redirect within an allowed host, checking the target with redirect manual", async () => {
+    const { fetchImpl, calls } = sequence(redirect("/e/abc", 301), new Response("ok"));
+    expect(await eventListingStatus("https://lu.ma/x", { listingHosts: hosts, fetchImpl })).toBe("confirmed");
+    expect(calls).toEqual([
+      { url: "https://lu.ma/x", redirect: "manual" },
+      { url: "https://lu.ma/e/abc", redirect: "manual" },
+    ]);
+    const sub = sequence(redirect("https://www.lu.ma/e/abc"), new Response("ok"));
+    expect(await eventListingStatus("https://lu.ma/x", { listingHosts: hosts, fetchImpl: sub.fetchImpl })).toBe("confirmed");
+  });
+
+  it("does not confirm a redirect loop or a second hop", async () => {
+    const loop = sequence(redirect("https://lu.ma/x"));
+    expect(await eventListingStatus("https://lu.ma/x", { listingHosts: hosts, fetchImpl: loop.fetchImpl })).toBe("missing");
+    expect(loop.calls).toHaveLength(1);
+    const pingPong = sequence(redirect("https://lu.ma/y"), redirect("https://lu.ma/x"));
+    expect(await eventListingStatus("https://lu.ma/x", { listingHosts: hosts, fetchImpl: pingPong.fetchImpl })).toBe("missing");
+    expect(pingPong.calls).toHaveLength(2);
+    const twoHops = sequence(redirect("https://lu.ma/y"), redirect("https://lu.ma/z"), new Response("ok"));
+    expect(await eventListingStatus("https://lu.ma/x", { listingHosts: hosts, fetchImpl: twoHops.fetchImpl })).toBe("missing");
+    // confirmEventLive without listing hosts never confirms a redirect.
+    const bare = sequence(redirect("https://lu.ma/y"), new Response("ok"));
+    expect(await confirmEventLive("https://lu.ma/x", { fetchImpl: bare.fetchImpl })).toBe(false);
+  });
+
+  it("tells a missing listing from an unreachable one", async () => {
+    expect(await eventListingStatus("https://lu.ma/x", { listingHosts: hosts, fetchImpl: sequence(new Response("", { status: 404 })).fetchImpl })).toBe("missing");
+    expect(await eventListingStatus("https://lu.ma/x", { listingHosts: hosts, fetchImpl: sequence(new Response("", { status: 503 })).fetchImpl })).toBe("unreachable");
+    expect(await eventListingStatus("https://lu.ma/x", { listingHosts: hosts, fetchImpl: sequence(() => { throw new TypeError("fetch failed"); }).fetchImpl })).toBe("unreachable");
   });
 });
