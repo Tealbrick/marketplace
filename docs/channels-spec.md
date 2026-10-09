@@ -147,7 +147,7 @@ Single source of truth: the Marketplace DB holds channel policy and standing gra
 
 ### 4.6 Payload digest
 
-`digest = sha256(canonicalJson({v: 1, workspace, channelId, provider, destination: externalId, op, text, attachments: [{sha256, contentType, name}], campaign, sendAt?}))`, with the kit `canonicalJson` (sorted keys, no whitespace, undefined dropped, arrays in order). The digest binds the tenant, the destination and the exact file bytes (the kit digest binds only tool and input). The owner sees the full payload, image previews and file hashes before approving. Any change after approval needs a new approval.
+`digest = sha256(canonicalJson({v: 1, workspace, channelId, provider, destination: {externalId, parentId}, op, text, attachments: [{sha256, contentType, name}], campaign, sendAt?}))`, with the kit `canonicalJson` (sorted keys, no whitespace, undefined dropped, arrays in order). The digest binds the tenant, the destination and the exact file bytes (the kit digest binds only tool and input). The owner sees the full payload, image previews and file hashes before approving. Any change after approval needs a new approval.
 
 ## 5. Operations (`tealbrick.miniapp/v1` manifest additions)
 
@@ -204,6 +204,8 @@ A channel consent is a v1.4 **class grant**: `pluginId: channels-<provider>`, `a
    e. idempotency: `marketplace_runtime_operation` (`UNIQUE(consent_id, idempotency_key)`), existing replay and conflict semantics.
 4. Executor target `channel-native` (Telegram, Discord, …) or `composio`. HTTP 429: honour `retry_after` once if ≤ 30 s, then `failed`. Timeout or abort after the request left: `uncertain` (counts for caps, blocks retry of the same post until the owner resolves it).
 5. Receipt, `recordUsage` (shapes only), `recordEvent` (metadata + content SHA-256, §12.8).
+
+**Approved holds at send time.** Channel status, consent and grant are re-checked inside the reservation transaction, so a pause or revoke during a send-time wait stops the send. A definitive refusal (content, digest mismatch, caps, deny, expiry) ends the held post `skipped` and fails the approval; the agent must ask again. A transient failure (event page unreachable, credential or provider unavailable) leaves the post held and the approval unspent until it expires. The owner can deny an approval that is executing while its post is still held. A destination change suspends the channel's active grants and invalidates pending holds (digest mismatch). Uploads must match their declared type (magic bytes and file extension).
 
 **Scheduled posts.** `channels.schedule` runs steps 1–3c at schedule time (authority is checked and the digest is bound then) and stores `scheduled`. An in-process ticker (every 30 s; Marketplace runs one replica) claims due rows with a guarded `UPDATE … WHERE status = 'scheduled'`, then repeats 3a, 3b, 3d at send time and confirms that the grant or approval is still valid. If anything fails: `skipped` with the reason, never a silent retry. A post more than 15 minutes late (downtime) becomes `expired`. Owner approval of a scheduled per-payload post expires at `sendAt`.
 
