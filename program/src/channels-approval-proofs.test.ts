@@ -665,7 +665,9 @@ describe("review findings (PR #39)", () => {
     expect(t.f.telegram.sends).toHaveLength(0);
   });
 
-  it("B1 reviewer probe: holds that share a real 12-hex prefix cannot be cross-approved", async () => {
+  // Grinds a real 12-hex prefix collision (about 2 minutes). Runs only with
+  // CHANNELS_SLOW_TESTS=1 (nightly); the fast B1 tests above cover the rules.
+  it.runIf(process.env.CHANNELS_SLOW_TESTS === "1")("B1 reviewer probe: holds that share a real 12-hex prefix cannot be cross-approved", async () => {
     const t = await setup();
     await t.setKey(OWNER.pubkey);
     const template = await t.hold("template");
