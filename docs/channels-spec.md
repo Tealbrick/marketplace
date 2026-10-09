@@ -1,111 +1,285 @@
-# Marketplace Channels (spec, draft v0.1)
+# Marketplace Channels (spec v0.2)
 
-Status: draft, 2026-10-09. Owner: Lead · Channels (new lane inside the Marketplace miniapp). It builds on the existing connection, consent and `marketplace.tools.call` path ([contract.md](contract.md)) and on the kit outward-action gate (kit 0.3.0-rc.13).
+Status: proposed, 2026-10-09. Owner: Lead · Channels (a lane inside the Marketplace miniapp). Code review: Lead · Miniapps. Approval: Coordinator · Teal Brick.
+Builds on: the Marketplace consent and `executeConsentedCall` path ([contract.md](contract.md)), Portal class grants (`operator-handoff.v1.4`), the miniapp contract §12 (Forge `projects/tealbrick/decisions/tealbrick-miniapp-development-contract.md`), the engine adapter pattern in the miniapps PRD §2, and the kit 0.3.0-rc.13 outward gate.
+Build plan: [channels-build-plan.md](channels-build-plan.md).
 
-## 1. Problem
+## 1. Problem and goal
 
-Marketplace governs **connectors** (toolkit, actions, connection, consent). For messaging and publishing, that is not enough:
-- The **destination** (a Telegram chat, a Discord channel, a LINE Official Account, a Slack channel, a Facebook Page) is only an argument that the agent passes. Nothing records which destinations an organization owns, which agent may use which one, its posting rules, its rate, its audience, or its receipts.
-- Limits and approval rules for posting end up inside each agent's private tools, so other agents and customers cannot reuse them, and the organization cannot see them.
-- Composio covers sending for many apps. But every message and token then goes through a third party, and Composio has no destination or policy layer, and no inbound for several channels.
+A **channel** is an outward communication surface: a Telegram chat, a Discord channel, a Slack channel, an X account, a LinkedIn Page, a Listmonk list, an email sending identity, a community forum category. Today these are either arguments that an agent passes to a generic connector, or one agent's private host tools (Henry's `henry_bots`, `henry_mail`). Nothing records which destinations a workspace owns, which agent may use which one, the posting rules, the rate, or the receipts.
 
-## 2. Concept
+Goal: Channels is a first-class part of Marketplace. Any agent in a workspace uses a channel through the **same Portal grant, the same owner approval queue and the same execution path** as every other connector. The policy lives in Marketplace, not in an agent's tools. Henry's host tools are interim and are retired per §11.
 
-A **Channel** is one connection, plus one destination, plus a policy. Agents are granted Channels, not toolkits.
+## 2. Model
 
 ```
-Connection (credential, provider)  1──n  Channel (destination + policy)  n──n  Agent grant (Portal)
-                                                    │
-                                     Receipts · Inbound events · Audit
+Connection (one credential per provider per workspace)
+   1──n  Channel (destination + policy ceiling)
+            n──n  Agent consent (Portal class grant, actionGroup = channel:<slug>)
+            1──n  Standing grant (agent proposes, owner approves, narrowing only)
+            1──n  Post (immediate or scheduled) ──1 Receipt
 ```
 
-### Channel record
+Invariants:
+- **C1 One path.** Every send goes through `executeConsentedCall`: consent → policy → owner approval or standing grant → idempotency → executor → usage ledger → audit. Native adapters are execution targets of that path. There is no parallel send path.
+- **C2 Narrowing only.** Effective authority = Portal consent ∩ channel policy ceiling ∩ standing grant (if any) ∩ provider limits. No layer can widen another.
+- **C3 Outward by default.** Every operation that puts content in front of a third party is outward. Without an active standing grant that covers the exact post, it waits for the owner's approval of the exact payload digest.
+- **C4 Credentials never reach agents.** Tokens are not in prompts, responses, receipts, logs, audit or error reports.
+- **C5 No emulation.** An operation that a provider adapter does not declare returns `channel_capability_unavailable` (PRD §2.1 A2).
+- **C6 Real identities only.** Bot accounts, Pages, organisation sending addresses. No fake person accounts. Platforms without an API are out of scope (§12).
+
+## 3. Channel types and providers
+
+| Kind | Destination | Providers (phase) | Executor |
+|---|---|---|---|
+| `chat` | chat, group, channel, forum topic, thread | Telegram (P1), Discord (P1), Slack (P2), LINE OA, WhatsApp Cloud (later) | native |
+| `newsletter` | one list (optionally a segment) | Listmonk (P2) | native |
+| `email` | one sending identity + recipient allowlist | SMTP or Resend (P2), Gmail via Clerk token (later) | native |
+| `social` | one account or Page | X, LinkedIn Page, Facebook Page, Instagram (P3) | composio |
+| `community` | one forum category | Discourse (P3) | native |
+
+### 3.1 Provider capability declaration (pattern from PRD §2.2)
+
+Each provider adapter declares what it can do. **Static** in the manifest (`channels.providers[]`), **live** in readiness (`/readyz` and the Channels UI): `available`, `credential_missing`, `credential_invalid`, `paused`, `unavailable`. A live capability never exceeds the static one. Portal and the UI derive options from these values only.
+
+Closed vocabulary (`channelCapabilities: 1`):
+
+| Key | Values |
+|---|---|
+| `send.text` | bool |
+| `send.maxChars` | integer (Telegram 4096, caption 1024; Discord 2000; …) |
+| `send.files` | `{types: [...], maxBytes, maxCount}` or `false` |
+| `send.markup` | `plain` \| `markdown` \| `html` |
+| `send.mentions` | `suppressed` (always for broadcast mentions: `@everyone`, `@here`, `@channel`) |
+| `edit`, `delete` | bool (P2) |
+| `schedule.native` | bool (provider-side scheduling, e.g. Slack `chat.scheduleMessage`) |
+| `events.create` | bool (Discord guild scheduled events, P2) |
+| `discover` | `updates` \| `list` \| `manual` |
+| `inbound` | `webhook` \| `poll` \| `gateway` \| `none` |
+| `audience.count` | bool |
+| `limits` | `{perChatPerSecond?, perChatPerMinute?, retryAfter: honoured}` |
+
+A text over `send.maxChars` is refused with `channel_text_too_long`. It is never silently cut (Henry lesson: Discord truncation, Telegram caption split).
+
+## 4. Records
+
+### 4.1 Connection (existing `connector_connection`)
+
+One row per (workspace, `channels-<provider>`), `backend: native` or `composio`. `metadata` holds the bot identity only (`botId`, `botUsername`, `verifiedAt`) and a `credentialRef` (`provider-env:<NAME>`, `marketplace-secret:<id>` or `composio:<provider>:<connectedAccountId>`). v1 allows one credential per provider per workspace; one Telegram or Discord bot already reaches many destinations. More credentials per provider are a later additive change (indexed setting slots).
+
+### 4.2 Channel (`channel`)
 
 | Field | Meaning |
 |---|---|
-| `id`, `organizationId`, `label` | Stable id; human label ("Community Telegram") |
-| `provider` | `telegram`, `discord`, `slack`, `line`, `whatsapp_cloud`, `facebook_page`, `instagram`, `linkedin_page`, `x`, `browser:<site>` |
-| `executor` | `native` (Marketplace adapter), `composio` (toolkit), or `bridge` (Local Runtime Bridge browser job on a device) |
-| `connectionId` | The existing Marketplace connection that holds the credential |
-| `destination` | `{kind: chat\|channel\|group\|page\|account\|broadcast, externalId, url?, title}`; discovered from the provider, never typed by an agent |
-| `audience`, `language` | For agents and for the organization's view |
-| `policy.effects` | Always `outward` for post/broadcast/schedule |
-| `policy.approval` | `standing` (standing grant: caps apply, no per-post approval) or `per_payload` (every post waits for owner approval of the exact payload) |
-| `policy.caps` | `perDay`, `minIntervalSeconds`, `onePerPhase` (one post per destination per event phase) |
-| `policy.requireConfirmedEvent` | The post must reference a live public listing (allowlisted listing hosts) |
-| `policy.contentRules` | Optional: max length, required link, forbidden mentions (`@everyone`), language |
-| `inbound` | `{enabled, mode: webhook\|poll\|gateway, routeTo: agentId?}` |
-| `status` | `draft`, `active`, `paused`, `revoked` |
+| `id`, `workspaceSlug`, `slug`, `label` | `slug` is `^[a-z0-9][a-z0-9-]{1,47}$`; used in `actionGroup` |
+| `kind`, `provider`, `connectionId` | §3, §4.1 |
+| `destination` | `{type, externalId, title, url?}`, picked from discovery, never typed by an agent |
+| `audience`, `language`, `purpose` | Text shown to agents in `channels.list` and to the owner |
+| `policy` | Ceiling, §4.3 |
+| `status` | `draft`, `active`, `paused`, `archived` |
+| `revision` | Increments on each policy change |
 
-### Agent operations (new, `tealbrick.miniapp/v1`)
+### 4.3 Channel policy (owner-set ceiling)
 
-| Operation | Effects | Purpose |
-|---|---|---|
-| `marketplace.channels.list` | read-only | The calling agent's granted channels, with policy and caps used today |
-| `marketplace.channels.post` | outward | `{channelId, text, files?, eventUrl?, phase?}` → receipt. `Idempotency-Key` required |
-| `marketplace.channels.schedule` | outward | Schedule a post or a provider event (Discord scheduled event, Slack scheduled message) |
-| `marketplace.channels.read` | read-only | Recent messages in a channel the agent may read |
-| `marketplace.channels.receipts` | read-only | The agent's own receipts |
+| Field | Default (from Henry's tested caps) |
+|---|---|
+| `standingGrants` | `disabled`. When `allowed`, agents may propose standing grants for this channel |
+| `caps.perDay` / `caps.perHour` | 6 / unset. Shared by **all** agents on this channel |
+| `caps.minIntervalSeconds` | 600 |
+| `caps.onePerPhase` | true: one post per (channel, campaign ref, phase) |
+| `content.maxChars` | provider `send.maxChars` |
+| `content.files` | `{allowed: true, types: png,jpeg,webp,pdf, maxBytes: 10 MiB, maxCount: 4}` ∩ provider |
+| `content.requireConfirmedEvent` | false. When true, `campaign.ref` must be `https` on `content.listingHosts` (exact host or subdomain suffix) and answer HTTP 2xx at send time |
+| `content.denyPatterns` | Case-insensitive substrings that refuse a post |
+| `schedule.window` | Optional local-time window with time zone (no posts outside) |
+| `recipients` (email only) | Allowlist of exact addresses and `@domain` entries. Other recipients: draft only |
 
-Owner operations: `channels.create`, `channels.update`, `channels.pause`, `channels.discover` (lists destinations a connection can reach, e.g. Slack `conversations.list`, Discord guild channels, Telegram chats seen in updates), `channels.grant` (through the Portal consent flow).
+### 4.4 Standing grant (`channel_standing_grant`)
 
-### Governance
+A standing grant replaces per-post approval for a bounded set of posts by one agent on one channel. It never replaces the Portal consent.
 
-1. **Portal** grants a Channel to an agent (canvas edge → consent). There is no channel access without a grant.
-2. **Kit outward gate:** `channels.post` and `channels.schedule` are declared `outward`. A `per_payload` channel waits for the owner's approval of the exact payload in TBD, or through the owner's Buzz reply `approve <12+ hex digest prefix>` (`verifyOwnerApproval`). A `standing` channel runs under the standing grant, and Marketplace enforces the caps server-side.
-3. **Marketplace** enforces the policy (caps, pace, one-per-phase, confirmed event, content rules), idempotency, the audit trail and receipts inside the existing `executeConsentedCall` path (consent → rules/owner approval → usage ledger → audit). Native adapters are new execution targets of that path; there is no parallel send path.
-4. **Credentials** stay in Marketplace (or in Composio for `composio` channels). They never reach agents, prompts or logs.
-5. Receipts follow the gate shape `{resultIds, resultUrls, status: sent|failed|pending, detail}`. `pending` is used for asynchronous executors (bridge jobs), and is updated later on the same digest.
+| Field | Meaning |
+|---|---|
+| `id`, `channelId`, `agentId`, `consentId` | The grant is bound to the consent that was active when proposed |
+| `purpose` | 1–300 chars, shown to the owner ("weekly meetup announce/reminder/recap") |
+| `caps` | `{perDay, perHour?, minIntervalSeconds, onePerPhase}`, each ≤ the channel ceiling |
+| `scope.phases` | Subset of `announce`, `reminder`, `recap`, `update`, or unset (any) |
+| `scope.campaignRefs` | Optional globs on `campaign.ref` (e.g. `https://lu.ma/*`) |
+| `scope.files` | `false` or a subset of the channel file policy |
+| `scope.maxChars` | ≤ ceiling |
+| `scope.immediate`, `scope.scheduled` | Which post modes the grant covers |
+| `notBefore`, `expires` | `expires` is required and ≤ 90 days after approval |
+| `status` | `proposed`, `active`, `suspended`, `withdrawn`, `revoked`, `expired`, `declined` |
+| `digest`, `approvedBy`, `approvedAt`, `approvalSource` | SHA-256 of the canonical grant; `approvalSource` = `marketplace-ui` or `buzz-signed` |
 
-## 3. Executors and providers
+Lifecycle and rules:
+1. **Propose (agent).** `marketplace.channels.grants.propose` creates a `proposed` row. A proposal wider than the channel ceiling, or on a channel with `standingGrants: disabled`, is refused (`422 grant_exceeds_ceiling`, `409 standing_grants_disabled`). A proposal never authorises anything.
+2. **Approve (owner only).** In the Marketplace Approvals view, or by a signed owner Buzz reply `approve <12+ hex digest prefix>` (P2). The owner may approve as proposed or **narrow** any field before approval. The owner cannot widen a proposal; to allow more, the agent proposes again. Approval binds the digest of the final grant.
+3. **Narrow or withdraw (agent).** `grants.narrow` accepts only a subset of the current grant (any widening: `422 grant_widening_refused`). `grants.withdraw` ends it.
+4. **Revoke (owner).** Any time, effective immediately.
+5. **Automatic suspension.** A grant is `suspended` when its consent is revoked or no longer active, the channel is paused or archived, or the channel ceiling is lowered below the grant. Effective caps are always `min(grant, current ceiling)`; a suspended grant resumes only by a new approval.
+6. **Counters.** Caps are counted from `channel_post` rows inside the same SQLite write transaction that reserves the post (no read-then-append race). `sent` and `uncertain` posts count; `failed` and `skipped` do not.
 
-| Provider | Executor | Library or route | Inbound | Notes |
-|---|---|---|---|---|
-| Telegram | native | `@chat-adapter/telegram` (Vercel Chat SDK, MIT; raw Bot API, no extra deps) | webhook or poll | Bot as admin of the chat/channel; photos and documents |
-| Discord | native | thin REST on `discord-api-types`; scheduled events from OpenClaw `extensions/discord/src/send.guild.ts` (MIT, keep the notice) | gateway (phase 3, persistent worker) | Bot role limited to send and Create Events; never `@everyone` |
-| Slack | native | `@chat-adapter/slack` or `@slack/web-api` | Events API over HTTP | `conversations.list` for discovery |
-| LINE OA | native | `@line/bot-sdk` (Apache-2.0): push, reply, **broadcast**, narrowcast | webhook with signature check | Count quota per recipient; show the month's quota in the channel |
-| WhatsApp | native | official Cloud API (`@chat-adapter/whatsapp`) | webhook (`X-Hub-Signature-256`) | Opt-in and template rules. **Never Baileys** (unofficial client, breaks WhatsApp terms) |
-| Facebook Page, Instagram | composio | `facebook`, `instagram` toolkits (system-user token) | — | Page/IG only; groups have no API |
-| LinkedIn Page | composio | `linkedin` toolkit (Page admin OAuth) | — | Never automated personal posting |
-| X | composio | `twitter` toolkit | — | Pay-per-use cost; label as automated |
-| Sites with no API (Facebook groups, event platforms) | bridge | Local Runtime Bridge "browser job" (computer use on the owner's device) with hard stops in code | — | Always `per_payload`; real accounts only |
+Single source of truth: the Marketplace DB holds channel policy and standing grants. The kit's `native-serve.json` standing grants stay a harness-local, defence-in-depth layer and must not carry channel caps.
 
-Vercel Chat SDK (`github.com/vercel/chat`, MIT, TypeScript, Node ≥ 20) gives one adapter interface (post, edit, read, list, `handleWebhook`) that matches this spec. OpenClaw and Hermes Agent channel code is MIT but tightly coupled to their runtimes, so use it as **reference only**, except small leaf files.
+### 4.5 Post (`channel_post`) and attachment (`channel_attachment`)
 
-## 4. Setup flow (owner)
+`channel_post`: `id, channelId, agentId, consentId, mode (immediate|scheduled), sendAt?, text, attachmentIds, campaign {ref?, phase?}, digest, authority (grant:<id>|approval:<id>), status, idempotencyKey`. Status: `held`, `scheduled`, `sending`, `sent`, `failed`, `uncertain`, `skipped`, `cancelled`, `expired`.
 
-1. **Connect:** add the credential (bot token, OAuth, Composio connection) in Marketplace.
-2. **Discover:** Marketplace lists the destinations this connection can reach. The owner picks one. For Telegram, the owner writes one message in the chat so the bot sees it.
-3. **Create the Channel:** label, audience, policy (standing or per-payload, caps, rules).
-4. **Grant:** on the Portal canvas, draw the edge from the agent to the Channel, then consent.
-5. **Verify:** Marketplace sends a test message only after the owner's approval, and shows the receipt.
+`channel_attachment`: uploaded bytes in `/data/channels/attachments/<sha256>`, with `sha256, contentType, bytes, name, createdBy`. Retention follows the receipt (§7).
 
-## 5. Phases and acceptance
+### 4.6 Payload digest
 
-| Phase | Scope | Acceptance |
-|---|---|---|
-| 1 | Channel model, owner UI, `channels.list/post/receipts`; Telegram + Discord (send + files) + LINE (push + broadcast); policy enforcement; kit gate integration | An owner agent posts to a granted Telegram channel under a standing grant, gets a receipt, and is refused on the 7th post of the day, on a too-fast post and on an ungranted channel. A per-payload channel waits for owner approval and posts only the approved digest. |
-| 2 | Slack, WhatsApp Cloud; inbound webhooks with dedup; `channels.read` | An inbound message reaches the routed agent once, with the source channel. |
-| 3 | Composio-backed Page/IG/LinkedIn/X; Discord gateway worker; scheduled events | The same receipts and policies across executors. |
-| 4 | Bridge executor (Local Runtime Bridge browser jobs) | A no-API destination post runs on the device only after per-payload approval, with a receipt URL. |
+`digest = sha256(canonicalJson({v: 1, workspace, channelId, provider, destination: externalId, op, text, attachments: [{sha256, contentType, name}], campaign, sendAt?}))`, with the kit `canonicalJson` (sorted keys, no whitespace, undefined dropped, arrays in order). The digest binds the tenant, the destination and the exact file bytes (the kit digest binds only tool and input). The owner sees the full payload, image previews and file hashes before approving. Any change after approval needs a new approval.
 
-## 6. Non-goals
+## 5. Operations (`tealbrick.miniapp/v1` manifest additions)
 
-- Unofficial clients (Baileys, userbots, self-bots) and fake persona accounts.
-- Bulk or unsolicited messaging, scraping member lists.
-- A general social-media scheduler UI (Postiz-like). Channels is the governed agent path.
+`effects` uses the contract vocabulary (`read-only`, `writes-app-state`, `external-effects`). Marketplace risk classification marks every `external-effects` channel op as **outward**. Paths are under `/api/marketplace/v1/agent/channels` (agent) and `/api/marketplace/channels` (owner).
 
-## 7. Coordination constraints (Lead · Miniapps, 2026-10-09)
+### 5.1 Agent audience
 
-1. **Releases** are serial and cut by Lead · Miniapps. Channels work lands on `main` by PR and ships in a numbered release after 0.1.19.
-2. **0.1.19 is in flight.** It touches `program/web/src/Catalog.tsx`, `provider-health.ts` (Composio auth-config lookup) and the cards API (new `connectMode` field). Avoid these files until it merges, or rebase on it.
-3. **New tables** need an additive migration and a rehearsal like 0.1.18's: an in-place upgrade plus a rollback on one data directory.
-4. **One execution path.** Outward channel sends must keep the existing consent → rules/owner approval → usage ledger → audit path (`executeConsentedCall`). Native channel adapters plug in as execution targets of that path. Never add a parallel send path.
+| Operation | Method, path | CRUD | Effects | Idempotency | Notes |
+|---|---|---|---|---|---|
+| `marketplace.channels.list` | GET `/` | read | read-only | — | Only channels this agent has a consent for: label, purpose, audience, capabilities, effective caps and usage today, own grants |
+| `marketplace.channels.get` | GET `/{channelId}` | read | read-only | — | 404 for channels without consent (same as unknown) |
+| `marketplace.channels.attachments.upload` | POST `/attachments` | create | writes-app-state | required | Raw bytes, ≤ channel/provider limits; returns `{attachmentId, sha256}`. Not outward |
+| `marketplace.channels.post` | POST `/{channelId}/posts` | create | external-effects | required | `{text, attachmentIds?, campaign?}` → `200 receipt` or `202 approval_pending` |
+| `marketplace.channels.schedule` | POST `/{channelId}/scheduled` | create | external-effects | required | Same body + `sendAt` (≥ now + 60 s, ≤ 30 days) |
+| `marketplace.channels.scheduled.cancel` | POST `/{channelId}/scheduled/{postId}/cancel` | update | writes-app-state | supported | Own posts only. Cancelling is narrowing; it never needs approval |
+| `marketplace.channels.receipts.list` | GET `/receipts` | read | read-only | — | Own receipts only |
+| `marketplace.channels.grants.list` | GET `/grants` | read | read-only | — | Own grants and their state |
+| `marketplace.channels.grants.propose` | POST `/{channelId}/grants` | create | writes-app-state | required | Creates `proposed`; §4.4 |
+| `marketplace.channels.grants.narrow` | POST `/grants/{grantId}/narrow` | update | writes-app-state | required | Subset only |
+| `marketplace.channels.grants.withdraw` | POST `/grants/{grantId}/withdraw` | delete | writes-app-state | supported | |
 
-## 8. Open questions
+Later phases: `marketplace.channels.events.create` (Discord scheduled event; create; external-effects; P2), `marketplace.channels.read` (recent inbound messages; read; read-only; P4).
 
-1. Credential storage: Marketplace secret store for native channels versus Composio for all channels. The proposal is native for messaging, Composio for heavy-OAuth apps.
-2. A persistent worker for the Discord gateway and Telegram polling: a sidecar or a separate service?
-3. Where the bridge executor's device registration lives (Local Runtime Bridge pairing versus Portal).
-4. A per-channel approval policy versus the kit standing-grant file: a single source of truth is needed.
+### 5.2 Owner audience (`audience: "owner"`, §12.8: never exposed to a harness, never granted to an agent or companion)
+
+| Operation | CRUD | Effects | Purpose |
+|---|---|---|---|
+| `marketplace.channels.discover` | read | read-only | Destinations the provider credential can reach (Telegram updates after the owner writes one message in the chat; Discord guild channels; Slack `conversations.list`; Listmonk lists) |
+| `marketplace.channels.create` / `.update` | create / update | writes-app-state | Channel and policy ceiling. Each policy change bumps `revision` and re-checks grants (§4.4 rule 5) |
+| `marketplace.channels.pause` / `.resume` / `.archive` | update / update / delete | writes-app-state | Archive is soft; receipts remain |
+| `marketplace.channels.test` | create | external-effects | Sends a fixed test text after the owner clicks; shows the receipt |
+| `marketplace.channels.grants.approve` / `.decline` / `.revoke` | update | writes-app-state | §4.4 |
+| `marketplace.channels.posts.resolve` | update | writes-app-state | Marks an `uncertain` post `sent` or `failed` after the owner checks the destination |
+| `marketplace.channels.receipts.export` / `.purge` | read / delete | read-only / writes-app-state | Retention (§7) |
+
+Per-payload approvals reuse the existing `marketplace.approvals.list|get|approve|deny` operations and queue. No new approval op.
+
+### 5.3 Portal grant mapping (no Portal schema change)
+
+A channel consent is a v1.4 **class grant**: `pluginId: channels-<provider>`, `accountId: <connectionId>`, `resourceKind: <provider>.connected-account`, `resourceRef: account:<connectionId>`, `grantClass: outward` (post, schedule) or `read` (list, get, receipts, P4 read), `actionGroup: channel:<slug>`. Marketplace is already authoritative for expanding class + group to operations. Without `actionGroup` the consent covers every channel on that connection; the Channels UI always sends one. The owner starts the request from the Channels view ("Grant to agent"), and Portal shows its normal consent dialog. Tether actions: `read, create` for outward (v1.4 table).
+
+## 6. Execution flow
+
+1. Grant guard: the `tbag_` grant maps the route to a manifest operation (existing preHandler). Owner ops refuse agents (`operation_owner_only`).
+2. Resolve channel + consent: the agent's active consent whose selection matches `channels-<provider>` / connection / `channel:<slug>`; otherwise 404.
+3. `executeConsentedCall` with that selection (C1). Inside it, the channel policy engine runs in this order, and nothing is consumed before all checks pass (fixes Henry's "approval spent on a refused post"):
+   a. channel `active`, connection `connected`, provider capability present (C5);
+   b. content rules: length, files, deny patterns, confirmed event (live check at send time), schedule window;
+   c. authority: an `active` standing grant whose scope covers this post → `authority = grant:<id>`; else an owner approval for this exact digest → `authority = approval:<id>`; else hold (`202 approval_pending` with `approvalId` and digest prefix) through the existing `holdCompanyBoxCall` queue, generalised to channel listings;
+   d. caps: channel ceiling and grant caps, counted and reserved in one `BEGIN IMMEDIATE` transaction;
+   e. idempotency: `marketplace_runtime_operation` (`UNIQUE(consent_id, idempotency_key)`), existing replay and conflict semantics.
+4. Executor target `channel-native` (Telegram, Discord, …) or `composio`. HTTP 429: honour `retry_after` once if ≤ 30 s, then `failed`. Timeout or abort after the request left: `uncertain` (counts for caps, blocks retry of the same post until the owner resolves it).
+5. Receipt, `recordUsage` (shapes only), `recordEvent` (metadata + content SHA-256, §12.8).
+
+**Scheduled posts.** `channels.schedule` runs steps 1–3c at schedule time (authority is checked and the digest is bound then) and stores `scheduled`. An in-process ticker (every 30 s; Marketplace runs one replica) claims due rows with a guarded `UPDATE … WHERE status = 'scheduled'`, then repeats 3a, 3b, 3d at send time and confirms that the grant or approval is still valid. If anything fails: `skipped` with the reason, never a silent retry. A post more than 15 minutes late (downtime) becomes `expired`. Owner approval of a scheduled per-payload post expires at `sendAt`.
+
+**Kit harness gate.** `channels.post` and `channels.schedule` are not read-only, so the kit harness also asks in TBD before the call leaves the agent (defence in depth; the Marketplace check is the authority). To avoid a double prompt under a standing grant, the contract needs an operation field `approvalAuthority: "app"` (contract change request K1, §13). Until then, standing grants remove the prompt only for scheduled sends (they run server-side) and the harness prompt stays for immediate posts.
+
+## 7. Receipts and audit
+
+Receipt (returned to the agent, kept in `channel_receipt`), compatible with the kit `ToolReceipt`:
+
+```json
+{"resultIds": ["<provider message id>"], "resultUrls": ["https://t.me/c/…/123"], "status": "sent",
+ "detail": "telegram chat <title>", "channelId": "…", "postId": "…", "digest": "<64 hex>",
+ "authority": "grant:<id>", "approvedAt": "…", "sentAt": "…", "provider": "telegram"}
+```
+
+`status`: `sent | failed | uncertain | pending | skipped | cancelled | expired`. A scheduled post returns `pending` with its `postId`; a later `receipts.list` shows the final state (the kit treats `pending` as non-terminal and records `receipt.update`).
+
+- `channel_receipt` is a **domain record** with the text, retention 90 days by default (owner setting), purgeable. It is not called an audit trail.
+- `audit_event` holds actor, operation, channel id, post id, outcome, time and the payload SHA-256 only (contract §12.8).
+- Usage ledger: shapes only (existing `usage-ledger.ts`).
+
+## 8. Credentials (contract §12.4, §12.4.1)
+
+| Provider | Credential | Hosted (Railway) | Self-hosted |
+|---|---|---|---|
+| Telegram | bot token | Account Connections writes the Railway shared variable `MARKETPLACE_CHANNELS_TELEGRAM_BOT_TOKEN` (settings field `source: "account"`, `destination: "provider-env"`) | `app-api` settings PUT → encrypted `connector_secret` |
+| Discord | bot token, application id | `MARKETPLACE_CHANNELS_DISCORD_BOT_TOKEN`, `…_APPLICATION_ID` | same |
+| Slack (P2) | bot token `xoxb-` | `MARKETPLACE_CHANNELS_SLACK_BOT_TOKEN` | same |
+| Listmonk (P2) | base URL, API user, token | `MARKETPLACE_CHANNELS_LISTMONK_{URL,USER,TOKEN}` | same |
+| Email (P2) | SMTP host/user/password or Resend key | `MARKETPLACE_CHANNELS_SMTP_*` / `…_RESEND_API_KEY` | same |
+| Gmail (later) | OAuth | Clerk token at use time (§12.4.1, `gmail.send`) | — |
+| X, LinkedIn Page, Facebook Page, Instagram (P3) | OAuth | existing Composio connected account | same |
+
+Rules: Portal and Marketplace never persist hosted credentials (Marketplace reads the env at start; rotation = edit the shared variable, redeploy). Readiness verifies each credential (`getMe`, `GET /users/@me`, `auth.test`) and reports `credential_missing|credential_invalid` without echoing it. Hygiene tests assert the token never appears in DB rows, responses, receipts, logs, audit or error reports. LinkedIn Page posting needs restricted scopes, so it stays on Composio until §12.4.1 allows it.
+
+## 9. Rate caps (three layers)
+
+1. **Provider limits** (adapter): Telegram ≈ 1 msg/s per chat and 20/min per group; Discord per-route buckets. A per-destination token bucket in the adapter plus `retry_after` handling.
+2. **Channel ceiling** (owner, shared by all agents): default 6/day, 600 s apart, one per phase.
+3. **Standing grant** (per agent, ≤ ceiling).
+
+Refusals: `429 channel_cap_per_day | channel_cap_per_hour | channel_min_interval (retryAfterSeconds) | channel_phase_duplicate`. Owner-approved per-payload posts also count toward the channel ceiling; the owner can raise the ceiling, but an approval does not bypass it.
+
+## 10. MVP: Telegram + Discord (Phase 1, Marketplace 0.2.0)
+
+- **Telegram:** Bot API over HTTPS (thin TS client on `fetch`; `@chat-adapter/telegram` only if it stays dependency-light). `sendMessage`, `sendPhoto`, `sendDocument` (multipart), `getMe`. Discovery: owner adds the bot, writes one message, Marketplace reads `getUpdates` (`message`, `channel_post`, `my_chat_member`) once per discovery; chat titles are untrusted text. Forum topics via `message_thread_id`. Receipt URL `https://t.me/<username>/<id>` for public, `https://t.me/c/<id>/<msg>` for private supergroups.
+- **Discord:** REST v10 with `discord-api-types`. `POST /channels/{id}/messages` with `allowed_mentions: {parse: []}` always; attachments via multipart `files[n]`. Discovery: `GET /users/@me/guilds` + `GET /guilds/{id}/channels` (text and announcement). Bot permissions: View Channels, Send Messages, Attach Files, Embed Links; Create Events only for P2. No privileged intents. No gateway in P1.
+- Owner UI (Channels tab): provider readiness, discover, create and edit channel and ceiling, grant to agent (→ Portal consent), standing-grant inbox (approve, narrow, decline, revoke), per-payload approvals (existing queue, with full text, image preview and file hashes), scheduled posts, receipts.
+- Scheduled posting under standing grants (§6).
+
+Acceptance (dev, real test chat and test channel):
+1. An agent with consent and an active standing grant posts to the Telegram channel and gets a `sent` receipt with a working URL.
+2. The 7th post that day is refused (`channel_cap_per_day`), a post 5 minutes after the last is refused (`channel_min_interval`), a second `announce` for the same campaign ref is refused, and a post to a channel without consent returns 404.
+3. On a channel without a grant, the post returns `202 approval_pending`; the owner approves in Marketplace; the retry with the same idempotency key posts exactly the approved digest. A changed text needs a new approval.
+4. A grant proposal wider than the ceiling is refused; the owner narrows a proposal and approves; the agent's widening `narrow` is refused.
+5. A scheduled post under a grant is sent on time; a grant revoked before `sendAt` gives a `skipped` receipt.
+6. Discord: `@everyone` in the text pings nobody; a photo posts with the text; a 429 is retried once.
+7. Revoking the Portal consent suspends the grant and refuses the next post.
+8. Hygiene: the bot tokens appear nowhere in DB rows, responses, receipts, logs, audit.
+9. Upgrade rehearsal 0.1.19 → 0.2.0 in place, then rollback to 0.1.19 on the same data directory starts and ignores the new tables.
+
+## 11. Henry migration
+
+1. Martin adds the Telegram and Discord bot tokens through Account Connections (credentials are Martin's).
+2. The owner creates Henry's channels with Henry's current caps as the ceiling (6/day, 600 s, one per phase, confirmed event with the current listing hosts).
+3. Henry proposes standing grants (promo announce/reminder/recap); Martin approves.
+4. Cut over: Henry's `bots_post` is turned off when its channel is live (never both, to avoid double posts). `henry_mail` moves to an email channel in P2. `henry_desktop` stays: no-API platforms are not Channels.
+
+## 12. Non-goals
+
+- Platforms without an API (Facebook groups, OpenChat, event sites): they use Codex computer use with per-post approval, outside Channels. (Draft v0.1 had a `bridge` executor; it is removed.)
+- Unofficial clients (Baileys, userbots, self-bots) and fake person accounts.
+- Bulk or unsolicited messaging, scraping member lists, cold email.
+- A general social-media scheduler UI. Channels is the governed agent path.
+
+## 13. Cross-lane requests
+
+| Id | Owner | Request | Needed by |
+|---|---|---|---|
+| K1 | Lead · Packages (contract) | Operation field `approvalAuthority: "app"`: the app holds outward approval server-side, so the harness does not prompt; it still records the receipt | P1 nice-to-have, P2 required |
+| K2 | Lead · Packages (kit) | Export `verifyOwnerApproval` and `buzzApprovalRelay` on a server-safe subpath (`@tealbrick/kit/owner-approval`) | P2 (Buzz approvals in Marketplace) |
+| PO1 | Lead · Portal | Confirm the consent dialog renders `actionGroup: channel:<slug>` with the channel label from the review response; confirm 0.1 → 0.2 upgrade path | P1 |
+| MI1 | Lead · Miniapps | Review the executor seam refactor of `executeConsentedCall` (no behaviour change) before Channels code lands | P1 first PR |
+
+## 14. Coordination constraints (Lead · Miniapps, 2026-10-09)
+
+1. Releases are serial and cut by Lead · Miniapps. Channels ships as Marketplace 0.2.0 after 0.1.19; app `major` stays 1.
+2. 0.1.19 is in flight (`Catalog.tsx`, `provider-health.ts`, cards API `connectMode`). Channels branches start from main after 0.1.19 merges.
+3. New tables are additive (`CREATE TABLE IF NOT EXISTS`, no data rewrite), with an in-place upgrade and a rollback rehearsal on one data directory.
+4. One execution path (C1).
+5. Lead · Miniapps is a required reviewer on every Channels PR that changes `program/`, `web/`, migrations, `tealbrick.app.json`, `release/`, `.woodpecker/` or recipes.
+6. All new code, tests and tooling are TypeScript.
+
+## 15. Resolved questions from v0.1
+
+1. **Credentials:** native for messaging, newsletters and email (Railway shared variable, or `connector_secret` self-hosted); Composio for heavy-OAuth social apps (§8).
+2. **Persistent worker:** in-process inside Marketplace (single replica) for the scheduler (P1) and for Telegram webhook and Discord gateway (P4). A separate service only if Marketplace ever runs more than one replica.
+3. **Bridge device registration:** removed with the bridge executor (§12).
+4. **Policy source of truth:** the Marketplace DB (§4.4). The kit file stays harness-local.
