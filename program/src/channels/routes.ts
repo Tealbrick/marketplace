@@ -527,7 +527,7 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
     const supplied = [request.query, request.body]
       .map((value) => (value && typeof value === "object" && !Buffer.isBuffer(value) ? (value as Record<string, unknown>).workspaceSlug : undefined))
       .find((value) => value !== undefined);
-    if (supplied !== undefined && supplied !== principal.organizationId) {
+    if (principal.organizationId !== org || (supplied !== undefined && supplied !== principal.organizationId)) {
       reply.code(403);
       return null;
     }
