@@ -81,7 +81,7 @@ describe("validatePolicy", () => {
         listingHosts: [],
         denyPatterns: [],
       },
-      schedule: {},
+      schedule: { maxPendingPerAgent: 12 },
     });
     // The frozen default is never mutated by normalisation.
     expect(DEFAULT_CHANNEL_POLICY.caps.perDay).toBe(6);

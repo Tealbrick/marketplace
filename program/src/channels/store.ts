@@ -597,11 +597,16 @@ export type ChannelPostFields = {
 export type InsertPostInput = ChannelPostFields & {
   status: ChannelPostStatus;
   now?: Date | string;
+  /**
+   * Backlog limit (review F1): most `scheduled` + `held` posts this agent may
+   * have on this channel, counted inside the insert transaction.
+   */
+  maxPending?: number;
 };
 
 export type InsertPostResult =
   | { ok: true; post: ChannelPostRecord; created: boolean }
-  | { ok: false; error: "channel_not_found" | "channel_idempotency_conflict" };
+  | { ok: false; error: "channel_not_found" | "channel_idempotency_conflict" | "channel_schedule_backlog_full" };
 
 export type ReservationGrant = {
   id: string;
@@ -1050,6 +1055,15 @@ export class ChannelStore {
         return this.idempotencyConflict(existing, input)
           ? { ok: false, error: "channel_idempotency_conflict" }
           : { ok: true, post: existing, created: false };
+      }
+      if (input.maxPending !== undefined) {
+        const pending = this.db
+          .prepare(
+            `SELECT COUNT(*) AS count FROM channel_post WHERE workspace_slug = ? AND agent_id = ? AND channel_id = ?
+              AND status IN ('scheduled', 'held')`,
+          )
+          .get(input.workspaceSlug, input.agentId, input.channelId) as { count: number };
+        if (Number(pending.count) >= input.maxPending) return { ok: false, error: "channel_schedule_backlog_full" };
       }
       const id = this.insertPostRow(input, input.status, timestamp, null, null);
       return { ok: true, post: this.getPost(input.workspaceSlug, id)!, created: true };

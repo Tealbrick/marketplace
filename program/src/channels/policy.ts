@@ -80,10 +80,24 @@ export type ChannelPolicy = {
     listingHosts: string[];
     denyPatterns: string[];
   };
-  schedule: { window?: ChannelScheduleWindow };
+  schedule: {
+    window?: ChannelScheduleWindow;
+    /**
+     * Most not-yet-sent posts (`scheduled` + `held`) one agent may have on this
+     * channel. 1–50; default min(2 × caps.perDay, 50).
+     */
+    maxPendingPerAgent?: number;
+  };
   /** Email channels only: exact addresses and `@domain` entries. */
   recipients?: string[];
 };
+
+export const MAX_PENDING_PER_AGENT_LIMIT = 50;
+
+/** The backlog limit in force: the policy value, or the default for policies stored before the field existed. */
+export function maxPendingPerAgent(policy: ChannelPolicy): number {
+  return policy.schedule.maxPendingPerAgent ?? Math.min(2 * policy.caps.perDay, MAX_PENDING_PER_AGENT_LIMIT);
+}
 
 export type ChannelPolicyInput = {
   standingGrants?: ChannelPolicy["standingGrants"];
@@ -91,7 +105,7 @@ export type ChannelPolicyInput = {
   content?: Partial<Omit<ChannelPolicy["content"], "files">> & {
     files?: Partial<ChannelFilePolicy>;
   };
-  schedule?: { window?: ChannelScheduleWindow };
+  schedule?: { window?: ChannelScheduleWindow; maxPendingPerAgent?: number };
   recipients?: string[];
 };
 
@@ -380,6 +394,15 @@ export function validatePolicy(
         ...(window.days ? { days: [...new Set(window.days)].sort() } : {}),
       };
     }
+  }
+
+  const maxPending = source.schedule?.maxPendingPerAgent;
+  if (maxPending !== undefined) {
+    if (!isPositiveInt(maxPending, MAX_PENDING_PER_AGENT_LIMIT)) {
+      errors.push({ field: "schedule.maxPendingPerAgent", message: `Must be an integer from 1 to ${MAX_PENDING_PER_AGENT_LIMIT}.` });
+    } else policy.schedule.maxPendingPerAgent = maxPending;
+  } else {
+    policy.schedule.maxPendingPerAgent = Math.min(2 * policy.caps.perDay, MAX_PENDING_PER_AGENT_LIMIT);
   }
 
   if (source.recipients !== undefined) {

@@ -343,3 +343,62 @@ describe("L8: upload type checks", () => {
     expect(f.store.channels.listPosts(TENANT)).toEqual([]);
   });
 });
+
+describe("F1: scheduled backlog limit per agent and channel", () => {
+  it("refuses the 13th pending post with the default (2 × perDay = 12) and frees a slot on cancel or send", async () => {
+    const f = await setup();
+    const channel = await f.createChannel({ slug: "backlog" });
+    f.consentFor("agent-1", channel);
+    f.consentFor("agent-2", channel);
+    await f.proposeAndApprove(channel.id);
+    expect((await f.owner("GET", "/api/marketplace/channels")).json().channels[0].policy.schedule.maxPendingPerAgent).toBe(12);
+    const schedule = (index: number, token?: string) =>
+      f.agent("POST", `/api/marketplace/v1/agent/channels/${channel.id}/scheduled`, {
+        key: key(),
+        ...(token ? { token } : {}),
+        payload: { text: `Post ${index}`, sendAt: new Date(f.now + 120_000 + index * 60_000).toISOString() },
+      });
+    const ids: string[] = [];
+    for (let index = 0; index < 12; index += 1) {
+      const ok = await schedule(index);
+      expect(ok.statusCode, ok.body).toBe(200);
+      ids.push(ok.json().receipt.postId);
+    }
+    const thirteenth = await schedule(12);
+    expect(thirteenth.statusCode).toBe(429);
+    expect(thirteenth.json()).toMatchObject({ error: "channel_schedule_backlog_full" });
+    // An immediate post under the grant is sent at once, so it is never pending.
+    const now = await f.post(channel.id, { text: "Now", campaign: { phase: "update" } }, key());
+    expect(now.statusCode).toBe(200);
+    // The limit is per agent: another agent still has room.
+    expect((await schedule(13, `tbag_${"b".repeat(43)}`)).statusCode).toBe(202);
+    // Cancelling frees a slot.
+    expect((await f.agent("POST", `/api/marketplace/v1/agent/channels/${channel.id}/scheduled/${ids[0]}/cancel`, {})).statusCode).toBe(200);
+    expect((await schedule(14)).statusCode).toBe(200);
+    expect((await schedule(15)).statusCode).toBe(429);
+    // Sending frees a slot.
+    const firstDue = f.now + 120_000 + 1 * 60_000;
+    f.setClock(firstDue + 1_000);
+    await f.runtime.tick(new Date(firstDue + 1_000));
+    expect(f.store.channels.getPost(TENANT, ids[1]!)!.status).toBe("sent");
+    expect((await schedule(16)).statusCode).toBe(200);
+  });
+
+  it("validates schedule.maxPendingPerAgent (1–50) and counts held immediate posts", async () => {
+    const f = await setup();
+    const bad = await f.owner("POST", "/api/marketplace/channels", { provider: "telegram", slug: "bad", label: "bad", destination: { externalId: "-1001234" }, policy: { schedule: { maxPendingPerAgent: 51 } } }, { "idempotency-key": key() });
+    expect(bad.statusCode).toBe(409); // destination not discovered yet
+    await f.owner("GET", "/api/marketplace/channels/discover?provider=telegram");
+    const invalid = await f.owner("POST", "/api/marketplace/channels", { provider: "telegram", slug: "bad", label: "bad", destination: { externalId: "-1001234" }, policy: { schedule: { maxPendingPerAgent: 51 } } }, { "idempotency-key": key() });
+    expect(invalid.statusCode).toBe(422);
+    expect(JSON.stringify(invalid.json().errors)).toContain("schedule.maxPendingPerAgent");
+    const channel = await f.createChannel({ slug: "tight", policy: { standingGrants: "allowed", caps: { perDay: 6, minIntervalSeconds: 0, onePerPhase: true }, schedule: { maxPendingPerAgent: 2 } } });
+    f.consentFor("agent-1", channel);
+    expect((await f.post(channel.id, { text: "one" }, key())).statusCode).toBe(202);
+    expect((await f.post(channel.id, { text: "two" }, key())).statusCode).toBe(202);
+    const third = await f.post(channel.id, { text: "three" }, key());
+    expect(third.statusCode).toBe(429);
+    expect(third.json()).toMatchObject({ error: "channel_schedule_backlog_full" });
+    expect(f.store.listCompanyBoxApprovals({ workspaceSlug: TENANT })).toHaveLength(2);
+  });
+});

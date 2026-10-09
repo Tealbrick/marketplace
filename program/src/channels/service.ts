@@ -7,7 +7,7 @@ import type { GovernanceActor, GovernedActionRisk } from "../governance.js";
 import type { SqliteMarketplaceStore } from "../store.js";
 import type { CompanyBoxApproval, ConnectorCapability, ConnectorUsageLedgerEntry, MarketplaceAgentConsent } from "../types.js";
 import { createGrantService, type GrantService } from "./grants.js";
-import { eventHostAllowed, grantCoversPost, type PostCampaign } from "./policy.js";
+import { eventHostAllowed, grantCoversPost, maxPendingPerAgent, type PostCampaign } from "./policy.js";
 import type { ChannelCapabilities, ChannelProvider, ChannelProviderId, DiscoverResult, SendResult } from "./providers/types.js";
 import {
   CHANNEL_PROVIDER_IDS,
@@ -599,6 +599,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
 
   // ----- holds (3c) ----------------------------------------------------------
 
+  const insertStatus = (error: string) => (error === "channel_not_found" ? 404 : error === "channel_schedule_backlog_full" ? 429 : 409);
   const approvalKey = (postId: string) => `channel-post:${postId}`;
   const approvalForPost = (post: ChannelPostRecord) =>
     store.findCompanyBoxApprovalByKey({ workspaceSlug: org, agentId: post.agentId, idempotencyKey: approvalKey(post.id) });
@@ -682,9 +683,10 @@ export function createChannelService(deps: ChannelServiceDeps) {
       idempotencyKey: input.idempotencyKey,
       status: "held",
       now: deps.now(),
+      maxPending: maxPendingPerAgent(input.channel.policy),
     });
     if (!inserted.ok) {
-      return refusalReply({ status: inserted.error === "channel_not_found" ? 404 : 409, error: inserted.error }, input.traceId);
+      return refusalReply({ status: insertStatus(inserted.error), error: inserted.error }, input.traceId);
     }
     const approval = ensureApproval(inserted.post, input.channel, input.consent.id);
     if (inserted.created) audit("marketplace.channels.post.held", inserted.post, input.channel.provider, { approvalId: approval.id });
@@ -816,8 +818,9 @@ export function createChannelService(deps: ChannelServiceDeps) {
           idempotencyKey: input.idempotencyKey,
           status: "scheduled",
           now: deps.now(),
+          maxPending: maxPendingPerAgent(channel.policy),
         });
-        if (!inserted.ok) return answer(refusalReply({ status: inserted.error === "channel_not_found" ? 404 : 409, error: inserted.error }, traceId));
+        if (!inserted.ok) return answer(refusalReply({ status: insertStatus(inserted.error), error: inserted.error }, traceId));
         const receipt = writeReceipt({ post: inserted.post, channel, status: "pending", payloadText: payload.text, fallbacks: payload.fallbacks, approvedAt: grant.approvedAt });
         audit("marketplace.channels.post.scheduled", inserted.post, channel.provider, { sendAt: inserted.post.sendAt });
         return answer({ status: 200, body: { ok: true, schema: 1, traceId, receipt } });
