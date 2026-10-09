@@ -494,7 +494,26 @@ export interface CompanyBoxApprovalsResponse {
   ok: true;
   workspaceSlug: string;
   pendingCount: number;
+  /** The owner's Buzz approval key (fingerprint, trust source, status; never the key). */
+  ownerKey?: OwnerKeyView;
   approvals: CompanyBoxApproval[];
+}
+
+/** Owner Buzz approval key (Channels spec §6.3): app-owned, owner-only; the UI only ever sees the fingerprint. */
+export interface OwnerKeyView {
+  setting: "approvals.ownerNostrPubkey";
+  fingerprint: string | null;
+  ownerKeySource: "owner-session" | "portal-attested" | null;
+  ownerKeyStatus: "unset" | "ok" | "mismatch";
+  attestedFingerprint: string | null;
+  setAt: string | null;
+}
+
+export interface OwnerKeyResponse {
+  ok: true;
+  ownerKey: OwnerKeyView;
+  changed?: boolean;
+  invalidatedHolds?: number;
 }
 
 // ----- Channels (spec docs/channels-spec.md v0.2, owner audience) -----------

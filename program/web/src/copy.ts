@@ -19,6 +19,28 @@ export const TELEGRAM_DISCOVER_HINT = "Add the bot to the chat and send one mess
 
 export const DISCORD_DISCOVER_HINT = "Invite the bot to your server with View Channels, Send Messages, Attach Files and Embed Links, then press Discover.";
 
+/** Owner Buzz approval key (Channels spec §6.3). */
+export const OWNER_KEY_SOURCE_COPY = {
+  "owner-session": "Set by the owner session (not attested by Portal)",
+  "portal-attested": "Attested by Portal",
+} as const;
+export const OWNER_KEY_MISMATCH_COPY = "This key is not the key that Portal attests for you. Buzz approvals are refused until the two keys are the same.";
+export const OWNER_KEY_HINT = "Enter your Buzz public key (64 hex characters or npub1…). Only this key can approve agent posts by a Buzz reply. Never enter your nsec.";
+export const OWNER_KEY_CHANGE_HINT = "A new key cancels Buzz approval for posts that wait now. Approve those posts here, or let the agent ask again.";
+
+/** What the Settings control shows for the owner key state: never the key, only its fingerprint and trust source. */
+export function ownerKeyDisplay(view: { fingerprint: string | null; ownerKeySource: keyof typeof OWNER_KEY_SOURCE_COPY | null; ownerKeyStatus: "unset" | "ok" | "mismatch" }): {
+  tone: "success" | "warning" | "danger" | "default";
+  label: string;
+  source: string | null;
+  warning: string | null;
+} {
+  if (view.ownerKeyStatus === "unset" || !view.fingerprint) return { tone: "default", label: "Not set", source: null, warning: null };
+  const source = view.ownerKeySource ? OWNER_KEY_SOURCE_COPY[view.ownerKeySource] : null;
+  if (view.ownerKeyStatus === "mismatch") return { tone: "danger", label: "Key mismatch", source, warning: OWNER_KEY_MISMATCH_COPY };
+  return { tone: view.ownerKeySource === "portal-attested" ? "success" : "warning", label: "Key set", source, warning: null };
+}
+
 export const UNCERTAIN_RESOLVE_HINT = "The provider may have posted this. Open the destination and look for the post first. Mark it sent only if you can see it. Mark it failed only if it isn't there: that lets the agent post it again.";
 
 const STATUS_LABELS: Record<string, string> = {

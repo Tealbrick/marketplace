@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ApiError } from "./api";
-import { APPROVAL_STATUS_COPY, approvalStatus, CONNECT_MODE_LABELS, CONNECT_MODE_ORDER, connectModeHint, connectModeLabel, connectModeTone, errorCopy, knownVersion, refreshErrorCopy, SESSION_ENDED_COPY, shortScope, statusLabel, words } from "./copy";
+import { APPROVAL_STATUS_COPY, approvalStatus, CONNECT_MODE_LABELS, CONNECT_MODE_ORDER, connectModeHint, connectModeLabel, connectModeTone, errorCopy, knownVersion, OWNER_KEY_MISMATCH_COPY, ownerKeyDisplay, refreshErrorCopy, SESSION_ENDED_COPY, shortScope, statusLabel, words } from "./copy";
 
 const apiError = (status: number, body: unknown, message = "raw server detail with MARKETPLACE_INTERNAL_AUTH_TOKEN") => new ApiError(message, status, body);
 
@@ -163,3 +163,22 @@ describe("customer-safe identifiers", () => {
   });
 });
 
+
+describe("owner Buzz approval key display (Channels §6.3)", () => {
+  it("shows the trust source for the owner-session and portal-attested states, and the mismatch warning", () => {
+    expect(ownerKeyDisplay({ fingerprint: null, ownerKeySource: null, ownerKeyStatus: "unset" })).toEqual({ tone: "default", label: "Not set", source: null, warning: null });
+    expect(ownerKeyDisplay({ fingerprint: "0123456789abcdef", ownerKeySource: "owner-session", ownerKeyStatus: "ok" })).toEqual({
+      tone: "warning",
+      label: "Key set",
+      source: "Set by the owner session (not attested by Portal)",
+      warning: null,
+    });
+    expect(ownerKeyDisplay({ fingerprint: "0123456789abcdef", ownerKeySource: "portal-attested", ownerKeyStatus: "ok" })).toEqual({ tone: "success", label: "Key set", source: "Attested by Portal", warning: null });
+    expect(ownerKeyDisplay({ fingerprint: "0123456789abcdef", ownerKeySource: "owner-session", ownerKeyStatus: "mismatch" })).toEqual({
+      tone: "danger",
+      label: "Key mismatch",
+      source: "Set by the owner session (not attested by Portal)",
+      warning: OWNER_KEY_MISMATCH_COPY,
+    });
+  });
+});
