@@ -623,6 +623,32 @@
       "audience": "owner"
     },
     {
+      "id": "marketplace.channel-posts.list",
+      "crud": [
+        "read"
+      ],
+      "method": "GET",
+      "path": "/api/marketplace/channels/posts",
+      "idempotency": "none",
+      "effects": "read-only",
+      "review": "none",
+      "summary": "Scheduled, held and uncertain channel posts (filter by status and channel) with send time, agent and digest prefix",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channel-posts.cancel",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/channels/posts/{postId}/cancel",
+      "idempotency": "supported",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Cancel a scheduled post; also closes its waiting or approved approval",
+      "audience": "owner"
+    },
+    {
       "id": "marketplace.channel-posts.resolve",
       "crud": [
         "update"

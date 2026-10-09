@@ -6,7 +6,7 @@ import { z } from "zod";
 import type { SqliteMarketplaceStore } from "../store.js";
 import type { MarketplaceAgentConsent } from "../types.js";
 import { GrantProposalSchema, GrantTermsSchema, grantView } from "./grants.js";
-import { GRANT_PHASES, validatePolicy } from "./policy.js";
+import { CHANNEL_KINDS, GRANT_PHASES, validatePolicy } from "./policy.js";
 import type { ChannelProviderId } from "./providers/types.js";
 import {
   CHANNEL_PROVIDER_IDS,
@@ -30,7 +30,7 @@ import {
   type ChannelService,
   type ConsentedDispatch,
 } from "./service.js";
-import { ChannelStoreError, writeAttachmentBytes, type ChannelRecord } from "./store.js";
+import { ChannelStoreError, writeAttachmentBytes, type ChannelPostRecord, type ChannelPostStatus, type ChannelRecord } from "./store.js";
 
 /** Manifest operation ids (contract alpha.3 ids are `<app>.<resource>.<verb>`, so sub-resources use a hyphen). */
 export const CHANNEL_AGENT_OPERATION = Object.freeze({
@@ -49,6 +49,12 @@ export const CHANNEL_AGENT_OPERATION = Object.freeze({
 
 export const AGENT_IDEMPOTENCY = /^[A-Za-z0-9_-]{8,100}$/u;
 const AGENT_PREFIX = "/api/marketplace/v1/agent/channels";
+/** Channel kinds each provider serves (spec §3). */
+const PROVIDER_KINDS: Readonly<Record<ChannelProviderId, readonly (typeof CHANNEL_KINDS)[number][]>> = {
+  telegram: ["chat"],
+  discord: ["chat"],
+};
+const POST_STATUSES: readonly ChannelPostStatus[] = ["held", "scheduled", "sending", "sent", "failed", "uncertain", "skipped", "cancelled", "expired"];
 const OWNER_PREFIX = "/api/marketplace/channels";
 const DAY_MS = 86_400_000;
 /** Largest upload accepted at all (Telegram bot file cap); each channel's own limit applies at post time. */
@@ -88,6 +94,7 @@ const CreateChannelSchema = z.strictObject({
   provider: z.enum(CHANNEL_PROVIDER_IDS as unknown as [ChannelProviderId, ...ChannelProviderId[]]),
   slug: z.string().regex(/^[a-z0-9][a-z0-9-]{1,47}$/u),
   label: z.string().regex(PLAIN_LABEL),
+  kind: z.enum(CHANNEL_KINDS).optional(),
   destination: DestinationPickSchema,
   audience: ChannelTextSchema.optional(),
   language: z.string().max(40).optional(),
@@ -472,23 +479,7 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
     if (!found || !post || post.channelId !== found.channel.id || post.agentId !== caller.agentId || post.mode !== "scheduled") {
       return fail(reply, 404, "channel_post_not_found");
     }
-    if (post.status === "cancelled") {
-      const receipt = channels.getReceiptByPost(org, post.id);
-      return { ok: true, schema: 1, replayed: true, ...(receipt ? { receipt: receiptView(receipt) } : {}) };
-    }
-    if (post.status !== "scheduled" && post.status !== "held") return fail(reply, 409, "channel_post_not_cancellable", { status: post.status });
-    // Cancelling only narrows: it never needs approval. A waiting approval is closed with it.
-    const ended = service.endPost(post, found.channel, "cancelled", "cancelled_by_agent");
-    if (!ended) return fail(reply, 409, "channel_post_not_cancellable");
-    const approval = post.status === "held" ? service.approvalForPost(post) : null;
-    if (approval?.state === "pending") {
-      store.decideCompanyBoxApproval({ id: approval.id, workspaceSlug: org, decision: "deny", decidedBy: `agent:${caller.agentId}:cancelled` });
-    } else if (approval?.state === "executing") {
-      // L4: an approved but unsent hold is cancelled with its approval.
-      service.finishApproval(approval.id, null, "channel_post_cancelled");
-    }
-    const receipt = channels.getReceiptByPost(org, post.id);
-    return { ok: true, schema: 1, ...(receipt ? { receipt: receiptView(receipt) } : {}) };
+    return cancelScheduled(reply, post, found.channel, `agent:${caller.agentId}`);
   });
 
   app.post(`${AGENT_PREFIX}/:channelId/grants`, async (request, reply) => {
@@ -509,6 +500,28 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
         : { status: outcome.status, body: { ok: false, schema: 1, error: outcome.error, ...(outcome.fields ? { fields: outcome.fields } : {}) } };
     });
   });
+
+  /**
+   * Cancels a scheduled post (agent: own posts; owner: any). Cancelling only narrows, so it never needs
+   * approval; a waiting approval is denied with it and an approved (executing) one is failed (L4, U3).
+   */
+  const cancelScheduled = (reply: FastifyReply, post: ChannelPostRecord, channel: ChannelRecord, actor: string) => {
+    if (post.status === "cancelled") {
+      const receipt = channels.getReceiptByPost(org, post.id);
+      return { ok: true, schema: 1, replayed: true, ...(receipt ? { receipt: receiptView(receipt) } : {}) };
+    }
+    if (post.status !== "scheduled" && post.status !== "held") return fail(reply, 409, "channel_post_not_cancellable", { status: post.status });
+    const ended = service.endPost(post, channel, "cancelled", actor.startsWith("agent:") ? "cancelled_by_agent" : "cancelled_by_owner");
+    if (!ended) return fail(reply, 409, "channel_post_not_cancellable");
+    const approval = post.status === "held" ? service.approvalForPost(post) : null;
+    if (approval?.state === "pending") {
+      store.decideCompanyBoxApproval({ id: approval.id, workspaceSlug: org, decision: "deny", decidedBy: `${actor}:cancelled` });
+    } else if (approval?.state === "executing") {
+      service.finishApproval(approval.id, null, "channel_post_cancelled");
+    }
+    const receipt = channels.getReceiptByPost(org, post.id);
+    return { ok: true, schema: 1, ...(receipt ? { receipt: receiptView(receipt) } : {}) };
+  };
 
   const ownGrant = (caller: Caller, grantId: string) => {
     const grant = channels.getStandingGrant(org, grantId);
@@ -589,8 +602,18 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
   app.get(OWNER_PREFIX, async (request, reply) => {
     const principal = await owner(request, reply, true);
     if (!principal) return ownerDenied(request);
-    const providers = Object.entries(service.readinessView()).map(([id, readiness]) => ({ id, readiness }));
-    if (!deps.configured) return { ok: true, schema: 1, configured: false, providers };
+    const readiness = service.readinessView();
+    if (!deps.configured) {
+      return { ok: true, schema: 1, configured: false, providers: Object.entries(readiness).map(([id, state]) => ({ id, readiness: state })) };
+    }
+    // U2: each configured provider's static capability declaration (§3.1), so the create form offers only declared kinds.
+    const providers = Object.entries(readiness).map(([id, state]) => ({
+      id,
+      readiness: state,
+      ...(state !== "credential_missing" && isChannelProviderId(id)
+        ? { capabilities: service.capabilitiesFor(id), kinds: PROVIDER_KINDS[id] }
+        : {}),
+    }));
     const connections = Object.fromEntries(
       CHANNEL_PROVIDER_IDS.map((provider) => {
         const connection = store.getConnection(org, channelPluginId(provider));
@@ -652,6 +675,11 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
     const key = header(request, "idempotency-key");
     if (!key || !AGENT_IDEMPOTENCY.test(key)) return fail(reply, 400, "idempotency_key_required");
     return idempotent(reply, { scope: `channel-create:${principal.id}`, key, request: input }, () => {
+      // U4: the kind must be one the provider serves (Telegram and Discord are chat providers in P1).
+      const kind = input.kind ?? "chat";
+      if (!PROVIDER_KINDS[input.provider].includes(kind)) {
+        return { status: 422, body: { ok: false, schema: 1, error: "channel_kind_unsupported", supported: PROVIDER_KINDS[input.provider] } };
+      }
       const connection = store.getConnection(org, channelPluginId(input.provider));
       if (!connection || connection.state !== "connected" || service.readinessView()[input.provider] !== "available") {
         return { status: 409, body: { ok: false, schema: 1, error: "channel_connection_unavailable" } };
@@ -666,7 +694,7 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
           workspaceSlug: org,
           slug: input.slug,
           label: input.label.trim(),
-          kind: "chat",
+          kind,
           provider: input.provider,
           connectionId: connection.id,
           destination: {
@@ -829,6 +857,68 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
       return outcome.ok ? { ok: true, schema: 1, grant: grantView(outcome.grant) } : fail(reply, outcome.status, outcome.error);
     });
   }
+
+  app.get(`${OWNER_PREFIX}/posts`, async (request, reply) => {
+    const principal = await owner(request, reply);
+    if (!principal) return ownerDenied(request);
+    const query = z
+      .object({
+        status: z.string().max(200).optional(),
+        channelId: z.string().max(100).optional(),
+        limit: z.coerce.number().int().min(1).max(500).default(100),
+        workspaceSlug: z.string().optional(),
+        actorId: z.string().optional(),
+      })
+      .safeParse(request.query);
+    if (!query.success) return fail(reply, 400, "validation_failed");
+    const statuses = (query.data.status ?? "held,scheduled,uncertain").split(",").map((value) => value.trim()).filter(Boolean);
+    if (statuses.some((value) => !(POST_STATUSES as readonly string[]).includes(value))) return fail(reply, 400, "validation_failed");
+    const labels = new Map(channels.listChannels(org).map((channel) => [channel.id, channel]));
+    const posts = statuses
+      .flatMap((status) => channels.listPosts(org, { status: status as ChannelPostStatus, channelId: query.data.channelId, limit: query.data.limit }))
+      .sort((a, b) => (a.sendAt ?? a.createdAt).localeCompare(b.sendAt ?? b.createdAt) || a.id.localeCompare(b.id))
+      .slice(0, query.data.limit)
+      .map((post) => {
+        const channel = labels.get(post.channelId);
+        const approval = post.status === "held" ? service.approvalForPost(post) : null;
+        return {
+          id: post.id,
+          channelId: post.channelId,
+          channel: channel ? { slug: channel.slug, label: channel.label, provider: channel.provider } : null,
+          agentId: post.agentId,
+          mode: post.mode,
+          status: post.status,
+          sendAt: post.sendAt,
+          digestPrefix: post.digest.slice(0, 12),
+          authority: post.authority,
+          reason: post.reason,
+          attachments: post.attachments.length,
+          ...(approval ? { approval: { id: approval.id, state: approval.state, expiresAt: approval.expiresAt } } : {}),
+          createdAt: post.createdAt,
+        };
+      });
+    return { ok: true, schema: 1, posts };
+  });
+
+  app.post(`${OWNER_PREFIX}/posts/:postId/cancel`, async (request, reply) => {
+    const principal = await owner(request, reply);
+    if (!principal) return ownerDenied(request);
+    const { postId } = request.params as { postId: string };
+    const post = channels.getPost(org, postId);
+    const channel = post ? channels.getChannel(org, post.channelId) : null;
+    if (!post || !channel || post.mode !== "scheduled") return fail(reply, 404, "channel_post_not_found");
+    const result = cancelScheduled(reply, post, channel, principal.id);
+    if (result.ok && !("replayed" in result)) {
+      store.recordAudit({
+        workspaceSlug: org,
+        pluginId: channelPluginId(channel.provider),
+        eventType: "marketplace.channels.post.cancelled_by_owner",
+        actorId: principal.id,
+        metadata: { channelId: channel.id, postId: post.id, digest: post.digest },
+      });
+    }
+    return result;
+  });
 
   app.post(`${OWNER_PREFIX}/posts/:postId/resolve`, async (request, reply) => {
     const principal = await owner(request, reply);
