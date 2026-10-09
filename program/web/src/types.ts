@@ -486,6 +486,8 @@ export interface CompanyBoxApproval {
   decidedBy: string | null;
   error: string | null;
   result?: unknown;
+  /** Present when the held call is a channel post. */
+  channel?: ChannelApprovalSummary;
 }
 
 export interface CompanyBoxApprovalsResponse {
@@ -494,3 +496,220 @@ export interface CompanyBoxApprovalsResponse {
   pendingCount: number;
   approvals: CompanyBoxApproval[];
 }
+
+// ----- Channels (spec docs/channels-spec.md v0.2, owner audience) -----------
+
+export type ChannelProviderId = "telegram" | "discord";
+export type ChannelReadiness = "available" | "credential_missing" | "credential_invalid" | "paused" | "unavailable";
+export type ChannelStatus = "draft" | "active" | "paused" | "archived";
+export type GrantPhase = "announce" | "reminder" | "recap" | "update";
+
+export interface ChannelDestination {
+  type: string;
+  externalId: string;
+  /** Untrusted provider text. Always rendered as plain text. */
+  title: string;
+  url?: string;
+  parentId?: string;
+}
+
+export interface ChannelScheduleWindow {
+  timeZone: string;
+  start: string;
+  end: string;
+  days?: number[];
+}
+
+export interface ChannelPolicy {
+  standingGrants: "disabled" | "allowed";
+  caps: { perDay: number; perHour?: number; minIntervalSeconds: number; onePerPhase: boolean };
+  content: {
+    maxChars?: number;
+    files: { allowed: boolean; types: string[]; maxBytes: number; maxCount: number };
+    requireConfirmedEvent: boolean;
+    listingHosts: string[];
+    denyPatterns: string[];
+  };
+  schedule: { window?: ChannelScheduleWindow };
+}
+
+export type ChannelMediaCapability = { types: string[]; maxBytes: number } | false;
+
+/** What agents can send on one channel: the provider declaration narrowed by the channel policy. */
+export interface ChannelEffectiveCapabilities {
+  channelCapabilities: number;
+  text: { maxChars: number; captionMaxChars?: number };
+  markup: string;
+  mentions: "suppressed";
+  image: ChannelMediaCapability;
+  file: ChannelMediaCapability;
+  audio: ChannelMediaCapability;
+  video: ChannelMediaCapability;
+  voice: ({ native: true; types: string[]; maxBytes: number; maxSeconds?: number }) | ({ fallback: string; types: string[]; maxBytes: number }) | false;
+  maxAttachments: number;
+  thread: { topics: boolean; replies: boolean } | false;
+  schedule: { native: boolean };
+  limits: { perChatPerSecond?: number; perChatPerMinute?: number; retryAfter: string };
+}
+
+export interface GrantCaps { perDay: number; perHour?: number; minIntervalSeconds: number; onePerPhase: boolean }
+export type GrantFileScope = false | { types?: string[]; maxBytes?: number; maxCount?: number };
+export interface GrantScope {
+  phases?: GrantPhase[];
+  campaignRefs?: string[];
+  files: GrantFileScope;
+  maxChars?: number;
+  immediate: boolean;
+  scheduled: boolean;
+}
+export interface GrantTerms { caps: GrantCaps; scope: GrantScope; notBefore?: string | null; expires: string }
+
+export type StandingGrantStatus = "proposed" | "active" | "suspended" | "withdrawn" | "revoked" | "expired" | "declined";
+
+export interface StandingGrantView extends GrantTerms {
+  id: string;
+  channelId: string;
+  agentId: string;
+  purpose: string;
+  notBefore: string | null;
+  status: StandingGrantStatus;
+  digest: string;
+  proposedAt: string;
+  approvedAt: string | null;
+  approvalSource: string | null;
+  reason: string | null;
+}
+
+/** A Portal v1.4 class selection narrowed to one channel ("Grant to agent"). */
+export interface ChannelGrantSelection {
+  pluginId: string;
+  accountId: string;
+  resourceKind: string;
+  resourceRef: string;
+  grantClass: "outward" | "read";
+  actionGroup: string;
+  /** Display-only, plain text ≤ 80; Portal never stores it. */
+  actionGroupLabel?: string;
+}
+
+export interface ChannelView {
+  id: string;
+  workspaceSlug: string;
+  slug: string;
+  label: string;
+  kind: string;
+  provider: string;
+  connectionId: string;
+  destination: ChannelDestination;
+  audience: string;
+  language: string;
+  purpose: string;
+  policy: ChannelPolicy;
+  status: ChannelStatus;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+  capabilities: ChannelEffectiveCapabilities | null;
+  usageToday: number;
+  grants: StandingGrantView[];
+  grantSelection: ChannelGrantSelection;
+}
+
+export interface ChannelConnectionView {
+  connectionId: string;
+  state: string;
+  botUsername: string | null;
+  verifiedAt: string | null;
+}
+
+export interface UncertainChannelPost {
+  id: string;
+  channelId: string;
+  agentId: string;
+  digest: string;
+  reason: string | null;
+  updatedAt: string;
+}
+
+export interface ChannelsBrowseResponse {
+  ok: true;
+  schema: 1;
+  readiness: Partial<Record<ChannelProviderId, ChannelReadiness>>;
+  connections: Partial<Record<ChannelProviderId, ChannelConnectionView | null>>;
+  channels: ChannelView[];
+  pendingGrants: StandingGrantView[];
+  uncertainPosts: UncertainChannelPost[];
+}
+
+export interface ChannelDiscoverResponse {
+  ok: true;
+  schema: 1;
+  provider: ChannelProviderId;
+  destinations: ChannelDestination[];
+}
+
+export type ChannelReceiptStatus = "sent" | "failed" | "uncertain" | "pending" | "skipped" | "cancelled" | "expired";
+
+export interface ChannelReceipt {
+  resultIds: string[];
+  resultUrls: string[];
+  status: ChannelReceiptStatus;
+  detail: string | null;
+  channelId: string;
+  postId: string;
+  digest: string;
+  authority: string | null;
+  approvedAt: string | null;
+  sentAt: string | null;
+  provider: string;
+  fallback?: string;
+}
+
+export interface ChannelReceiptExport extends ChannelReceipt {
+  agentId: string;
+  text: string | null;
+  createdAt: string;
+}
+
+export interface ChannelCreateInput {
+  provider: ChannelProviderId;
+  slug: string;
+  label: string;
+  destination: { externalId: string; parentId?: string };
+  audience?: string;
+  language?: string;
+  purpose?: string;
+  policy?: ChannelPolicyInput;
+}
+
+export interface ChannelPolicyInput {
+  standingGrants?: ChannelPolicy["standingGrants"];
+  caps?: Partial<ChannelPolicy["caps"]>;
+  content?: Partial<Omit<ChannelPolicy["content"], "files">> & { files?: Partial<ChannelPolicy["content"]["files"]> };
+  schedule?: { window?: ChannelScheduleWindow };
+}
+
+/** The held channel post in an approvals list item (never the text). */
+export interface ChannelApprovalSummary {
+  channelId: string | null;
+  label: string | null;
+  provider: string | null;
+  postId: string | null;
+  postStatus: string | null;
+  mode: "immediate" | "scheduled" | null;
+  sendAt: string | null;
+  digest: string;
+  digestPrefix: string;
+}
+
+/** The exact payload the digest covers, on the owner detail view of a channel hold. */
+export type ChannelPayloadView =
+  | {
+      digest: string;
+      matchesHeldDigest: boolean;
+      text: string;
+      canonical: string;
+      files: Array<{ name: string; sha256: string; contentType: string; kind: string; bytes: number }>;
+      fallbacks: string[];
+    }
+  | { error: string };

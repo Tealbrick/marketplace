@@ -12,6 +12,15 @@ export type ErrorCopy = {
 
 export const SESSION_ENDED_COPY = "Your session ended — relaunch Marketplace from Teal Brick Portal.";
 
+/** Bot tokens are entered only in Portal (spec §8); Marketplace never shows a token field. */
+export const CHANNEL_TOKEN_HINT = "Add the bot token under Account Connections in Teal Brick Portal. Marketplace never asks for the token here.";
+
+export const TELEGRAM_DISCOVER_HINT = "Add the bot to the chat and send one message, then press Discover.";
+
+export const DISCORD_DISCOVER_HINT = "Invite the bot to your server with View Channels, Send Messages, Attach Files and Embed Links, then press Discover.";
+
+export const UNCERTAIN_RESOLVE_HINT = "The provider may have posted this. Open the destination and look for the post first. Mark it sent only if you can see it. Mark it failed only if it isn't there: that lets the agent post it again.";
+
 const STATUS_LABELS: Record<string, string> = {
   catalogOnly: "Listed — not yet installable",
   authRequired: "Sign-in required",
@@ -267,6 +276,61 @@ export function errorCopy(error: Error): ErrorCopy {
       return { title: "This access can't be granted anymore", detail: "The action, account, or access level changed after the request was made, so nothing was granted. Refresh and request access again.", reference };
     case "portal_handoff_denied":
       return { title: "Access was declined in Teal Brick Portal", detail: "The request was denied, so no access was granted. Start a new request if this was a mistake.", reference };
+    case "channel_credential_missing":
+      return { title: "The bot token isn't added yet", detail: CHANNEL_TOKEN_HINT, reference };
+    case "channel_credential_invalid":
+      return { title: "The provider didn't accept the bot token", detail: "Replace the bot token under Account Connections in Teal Brick Portal. Marketplace never asks for it here.", reference };
+    case "channel_provider_unavailable":
+    case "channel_unavailable":
+      return { title: "Couldn't reach the provider", detail: "Marketplace couldn't contact the chat provider. Try again in a few minutes.", reference };
+    case "channel_consumer_conflict":
+      return { title: "Another Marketplace is reading this bot's updates", detail: "Only one Marketplace can read a Telegram bot's updates at a time. Try again in a minute.", reference };
+    case "channel_connection_unavailable":
+      return { title: "The bot isn't ready", detail: "Check the provider card above. The bot token must be added under Account Connections in Teal Brick Portal and verified.", reference };
+    case "channel_destination_not_discovered":
+      return { title: "Discover the destination again", detail: "Marketplace remembers discovered destinations for a short time only. Press Discover again and pick the destination from the list.", reference };
+    case "channel_policy_invalid":
+      return { title: "Check the posting rules", detail: "Some rules are outside what the provider allows. The fields are listed below.", reference };
+    case "channel_slug_taken":
+      return { title: "This slug is already used", detail: "Each channel needs its own slug. Change the slug and try again.", reference };
+    case "channel_revision_conflict":
+      return { title: "This channel changed in the meantime", detail: "Someone saved a newer version. Refresh, check the rules again and save.", reference };
+    case "channel_archived":
+      return { title: "This channel is archived", detail: "Archived channels keep their receipts but can't be changed or used again.", reference };
+    case "channel_not_active":
+      return { title: "The channel isn't active", detail: "Resume the channel before you send to it or approve grants for it.", reference };
+    case "channel_not_found":
+      return { title: "Channel not found", detail: "It may have been archived or removed. Refresh and try again.", reference };
+    case "channel_send_failed":
+      return { title: "The message wasn't delivered", detail: "The provider refused it or couldn't be reached. Nothing was posted.", reference };
+    case "channel_send_uncertain":
+      return { title: "Delivery is uncertain", detail: "The request left Marketplace but no answer came back. Check the destination, then resolve the post below.", reference };
+    case "channel_cap_per_day":
+    case "channel_cap_per_hour":
+    case "channel_min_interval":
+    case "channel_phase_duplicate":
+      return { title: "The channel's posting limit is reached", detail: "The channel ceiling counts every post, including tests. Wait, or raise the ceiling in the posting rules.", reference };
+    case "channel_outside_window":
+      return { title: "Outside the posting window", detail: "This channel only posts inside its schedule window. Try again inside the window, or change it.", reference };
+    case "grant_widening_refused":
+      return { title: "You can only narrow a proposal", detail: "An approved grant can never allow more than the agent proposed. To allow more, the agent proposes again. The fields that would widen it are listed below.", reference };
+    case "grant_exceeds_ceiling":
+      return { title: "The grant is above the channel ceiling", detail: "Lower the grant, or raise the channel's posting rules first. The fields over the ceiling are listed below.", reference };
+    case "standing_grants_disabled":
+      return { title: "Standing grants are off for this channel", detail: "Allow standing grants in the channel's posting rules before you approve one.", reference };
+    case "grant_consent_inactive":
+      return { title: "The agent's Portal consent ended", detail: "This grant is bound to a consent that is no longer active. Grant the agent access again, then ask it to propose again.", reference };
+    case "grant_not_pending":
+    case "grant_not_revocable":
+    case "grant_changed":
+      return { title: "This grant changed in the meantime", detail: "It was decided, withdrawn or changed elsewhere. Refresh to see its current state.", reference };
+    case "channel_post_not_uncertain":
+      return { title: "This post is already resolved", detail: "Refresh to see its current state.", reference };
+    case "channel_selection_mismatch":
+      return { title: "This channel's connection changed", detail: "The bot connection changed after the page loaded. Refresh and try again.", reference };
+    case "portal_session_required":
+    case "portal_session_expired":
+      return { title: "Open Marketplace from Teal Brick Portal first", detail: "Granting access needs a current Portal launch for this deployment. Relaunch Marketplace from Portal and try again.", reference };
     default:
       break;
   }
