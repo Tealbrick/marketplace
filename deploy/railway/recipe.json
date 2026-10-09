@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "tealbrick-marketplace-source",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "status": "candidate-for-portal-template",
   "distribution": "public-source",
   "source": {
