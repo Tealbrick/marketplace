@@ -57,12 +57,11 @@ function decode(jwt: string) {
   };
 }
 
-const WELL_KNOWN_CLAIM_PATH = "/.well-known/tealbrick/claim";
-const ALIAS_CLAIM_PATH = "/api/tealbrick/claim";
+const LEGACY_CLAIM_PATH = "/api/tealbrick/claim";
 
-// The canonical well-known path and the /api alias are the same handlers: the
-// whole suite runs against both.
-describe.each([WELL_KNOWN_CLAIM_PATH, ALIAS_CLAIM_PATH])("Marketplace instance claim at %s", (claimPath) => {
+// The legacy Portal claim (Marketplace protocol) stays unchanged on /api/tealbrick/claim for the 0.2.x
+// line. The manifest claim on /.well-known/tealbrick/claim is covered in manifest-claim.test.ts.
+describe.each([LEGACY_CLAIM_PATH])("Marketplace legacy instance claim at %s", (claimPath) => {
   it("keeps the same identity across a restart over the same data dir", async () => {
     const dir = await tempDir();
     const first = await build(dir);
@@ -217,58 +216,5 @@ describe.each([WELL_KNOWN_CLAIM_PATH, ALIAS_CLAIM_PATH])("Marketplace instance c
     const broken = await tempDir();
     await writeFile(path.join(broken, INSTANCE_CLAIM_IDENTITY_FILE), "{}", { mode: 0o600 });
     expect(() => new MarketplaceInstanceClaim(broken)).toThrow("Invalid");
-  });
-});
-
-describe("Marketplace instance claim path equivalence", () => {
-  it("serves identical identity and valid proofs on the well-known path and the alias", async () => {
-    const dir = await tempDir();
-    const { app, store } = await build(dir);
-    const [wellKnown, alias] = await Promise.all([WELL_KNOWN_CLAIM_PATH, ALIAS_CLAIM_PATH].map(
-      (url) => app.inject({ method: "GET", url, headers: bearer }),
-    ));
-    expect(wellKnown.statusCode).toBe(200);
-    expect(wellKnown.json()).toEqual(alias.json());
-    const identity = wellKnown.json();
-    const key = createPublicKey({ key: identity.publicJwk, format: "jwk" });
-    for (const url of [WELL_KNOWN_CLAIM_PATH, ALIAS_CLAIM_PATH]) {
-      const response = await app.inject({ method: "POST", url, headers: bearer, payload: challenge });
-      expect(response.statusCode).toBe(200);
-      const body = response.json();
-      expect(body.instanceId).toBe(identity.instanceId);
-      expect(body.publicJwk).toEqual(identity.publicJwk);
-      const jwt = decode(body.proof);
-      expect(verify(null, Buffer.from(jwt.signed), key, jwt.signature)).toBe(true);
-      expect(jwt.payload).toMatchObject({ typ: "tealbrick-app-claim", nonce, aud: issuer, instanceId: identity.instanceId, companyId });
-    }
-    await app.close();
-    store.close();
-  });
-
-  it("protects the well-known path exactly like the alias: anonymous 401, cookie or origin 403", async () => {
-    const dir = await tempDir();
-    const { app, store } = await build(dir);
-    const attempts: Array<[string, Record<string, string>]> = [
-      ["anonymous", {}],
-      ["operator cookie only", { cookie: "dg_marketplace_operator_session=x" }],
-      ["origin with credential", { ...bearer, origin: "https://evil.invalid" }],
-      ["cookie with credential", { ...bearer, cookie: "dg_marketplace_operator_session=x" }],
-      ["wrong bearer", { authorization: "Bearer wrong-token-value" }],
-    ];
-    for (const [, headers] of attempts) {
-      for (const method of ["GET", "POST"] as const) {
-        const [wellKnown, alias] = await Promise.all([WELL_KNOWN_CLAIM_PATH, ALIAS_CLAIM_PATH].map(
-          (url) => app.inject({ method, url, headers, ...(method === "POST" ? { payload: challenge } : {}) }),
-        ));
-        expect(wellKnown.statusCode).toBe(alias.statusCode);
-        expect(wellKnown.body).toBe(alias.body);
-        expect([401, 403]).toContain(wellKnown.statusCode);
-        expect(wellKnown.body).not.toContain("instanceId");
-      }
-    }
-    expect((await app.inject({ method: "GET", url: WELL_KNOWN_CLAIM_PATH })).statusCode).toBe(401);
-    expect((await app.inject({ method: "GET", url: WELL_KNOWN_CLAIM_PATH, headers: { origin: "https://evil.invalid" } })).statusCode).toBe(403);
-    await app.close();
-    store.close();
   });
 });

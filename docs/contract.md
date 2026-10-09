@@ -9,10 +9,11 @@ served at `/.well-known/tealbrick/manifest`. Validate it in CI with:
 npx -y @tealbrick/contract@0.1.0-alpha.6 validate tealbrick.app.json
 ```
 
-Nothing in this document changes the existing Portal paths: the instance
-claim, the Portal launch hand-off, the runtime lease receiver, connector secret
+The Portal launch hand-off, the runtime lease receiver, connector secret
 encryption (`MARKETPLACE_HANDOFF_ENCRYPTION_KEY`) and operator sessions work as
-before. See `docs/instance-claim.md` for the claim.
+before. The claim at `runtime.claim` (`/.well-known/tealbrick/claim`) is the
+contract kit's manifest claim; the legacy Marketplace claim stays at
+`/api/tealbrick/claim`. See [Claim](#claim) and `docs/instance-claim.md`.
 
 ## Kind
 
@@ -75,11 +76,42 @@ JSON with `resultTrust: "untrusted-provider-data"`, credential-like keys are
 redacted, the result is capped at 64 KiB, and the response carries
 `x-content-type-options: nosniff` and a `default-src 'none'` policy.
 
+## Claim
+
+`runtime.claim` is `/.well-known/tealbrick/claim`. It is served by the kit's
+claim handler (`createContractHandler` with `identity`, `claim` and
+`claimPaths: ["/.well-known/tealbrick/claim"]`), mounted only for that path
+(`program/src/manifest-claim.ts`):
+
+* `GET` → `{instanceId, publicJwk}`.
+* `POST {portalIssuer, nonce, companyId, jwksUri?, grantKids?}` → `{proof}`, an
+  EdDSA `tealbrick-app-claim` v1 JWT with exactly `typ`, `version`, `aud`
+  (= `portalIssuer`), `nonce`, `instanceId`, `companyId`, `iat`, `exp`
+  (`exp - iat` = 300 s).
+* Credential: a custom kit `CredentialVerifier` that applies the legacy claim
+  rule (internal token or `TEALBRICK_INSTANCE_TOKEN` as Bearer or
+  `x-knowledge-instance-token`, or the Portal instance proof in
+  `x-tealbrick-instance-proof`, constant time). The kit refuses any request
+  with `Origin` or `Cookie`.
+* `companyId` must equal `MARKETPLACE_ORGANIZATION_ID` (else the Portal
+  workspace binding); the issuer must equal the configured Portal issuer
+  (`claim.issuers`).
+* The claim key and instance id are the ones in
+  `instance-claim-identity.json`, shared with the legacy route. The binding and
+  the grant trust anchors are kept in `instance-claim-binding.json` (the kit's
+  `ClaimStore`), ready for `l2GrantOptionsFromClaim`.
+
+Contract alpha.7 adds the `x-tealbrick-contract` answer header on `GET` and
+`ownerSubject` in the `POST` body. Kit alpha.6 refuses a body with
+`ownerSubject` (`400 invalid_claim_request`), so Marketplace needs the kit bump
+before Portal Core sends it.
+
 ## Control endpoints
 
 `GET /healthz` (`{ok, app, version, major, ...}`), and under
 `/.well-known/tealbrick/`: `manifest`, `status`, `settings`, `companions`,
-`claim` (also at `/api/tealbrick/claim`, same identity) and `guidance/1`.
+`claim` (manifest protocol; the legacy protocol is at `/api/tealbrick/claim`,
+same identity) and `guidance/1`.
 `status`, `settings` and `companions` accept the Portal-held instance
 credential (`Authorization: Bearer`, `x-knowledge-instance-token` or
 `x-tealbrick-instance-proof`). `status` and `settings` also accept the 5-minute
