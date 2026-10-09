@@ -304,6 +304,28 @@ export type ChannelReceiptRecord = {
 export const COUNTED_POST_STATUSES = ["sending", "sent", "uncertain"] as const;
 const COUNTED_SQL = COUNTED_POST_STATUSES.map((status) => `'${status}'`).join(", ");
 
+/**
+ * Allowed `finishPost` transitions. Terminal states have no exit, and
+ * nothing moves back to `scheduled` or `sending` (that would re-send).
+ * `scheduled` → `sending` happens only through `reserveScheduledPost`, and
+ * a new `sending` row only through `reservePost`, both under the caps check.
+ * `uncertain` leaves only by owner resolve (`sent` or `failed`).
+ */
+export const CHANNEL_POST_TRANSITIONS: Readonly<Record<ChannelPostStatus, readonly ChannelPostStatus[]>> = {
+  held: ["cancelled", "expired", "skipped"],
+  scheduled: ["cancelled", "skipped", "expired"],
+  sending: ["sent", "failed", "uncertain"],
+  uncertain: ["sent", "failed"],
+  sent: [],
+  failed: [],
+  skipped: [],
+  cancelled: [],
+  expired: [],
+};
+
+/** Default send lease for a `sending` row; after it, recovery marks it `uncertain`. */
+export const DEFAULT_SEND_LEASE_MS = 300_000;
+
 export type ChannelCapError =
   | "channel_cap_per_day"
   | "channel_cap_per_hour"
@@ -332,6 +354,10 @@ function iso(value: Date | string): string {
 
 function optionalIso(value: Date | string | null | undefined): string | null {
   return value === null || value === undefined || value === "" ? null : iso(value);
+}
+
+function leaseUntil(now: string, leaseMs: number | undefined): string {
+  return new Date(Date.parse(now) + Math.max(leaseMs ?? DEFAULT_SEND_LEASE_MS, 1)).toISOString();
 }
 
 function createId(prefix: string) {
@@ -531,6 +557,10 @@ export type InsertPostInput = ChannelPostFields & {
   now?: Date | string;
 };
 
+export type InsertPostResult =
+  | { ok: true; post: ChannelPostRecord; created: boolean }
+  | { ok: false; error: "channel_not_found" | "channel_idempotency_conflict" };
+
 export type ReservationGrant = {
   id: string;
   caps: GrantCaps;
@@ -542,11 +572,19 @@ export type ReservePostInput = ChannelPostFields & {
   /** The channel ceiling caps at reservation time. */
   ceiling: ChannelCaps;
   now: Date | string;
+  /** Holder of the send lease (`claimed_by`), e.g. the request or process id. */
+  reserver: string;
+  /** Send lease length; default `DEFAULT_SEND_LEASE_MS`. */
+  leaseMs?: number;
 };
 
 export type ReservePostResult =
   | { ok: true; post: ChannelPostRecord; replayed: boolean }
-  | { ok: false; error: ChannelCapError; retryAfterSeconds?: number };
+  | {
+      ok: false;
+      error: ChannelCapError | "channel_not_found" | "channel_idempotency_conflict";
+      retryAfterSeconds?: number;
+    };
 
 export type ReserveScheduledPostInput = {
   workspaceSlug: string;
@@ -556,6 +594,8 @@ export type ReserveScheduledPostInput = {
   grant?: ReservationGrant | null;
   ceiling: ChannelCaps;
   now: Date | string;
+  /** Fresh send lease from `now`; default `DEFAULT_SEND_LEASE_MS`. */
+  leaseMs?: number;
 };
 
 export type ReserveScheduledPostResult =
@@ -791,29 +831,46 @@ export class ChannelStore {
     }
     const id = createId("chg");
     const timestamp = iso(input.now ?? new Date());
-    this.db
-      .prepare(
-        `INSERT INTO channel_standing_grant (
-          id, channel_id, workspace_slug, agent_id, consent_id, purpose, caps_json, scope_json,
-          not_before, expires, status, digest, proposed_at, approved_by, approved_at, approval_source,
-          decided_reason, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'proposed', NULL, ?, NULL, NULL, NULL, NULL, ?)`,
-      )
-      .run(
-        id,
-        input.channelId,
-        input.workspaceSlug,
-        input.agentId,
-        input.consentId,
-        purpose,
-        JSON.stringify(input.caps),
-        JSON.stringify(input.scope),
-        optionalIso(input.notBefore),
-        iso(input.expires),
-        timestamp,
-        timestamp,
-      );
-    return this.getStandingGrant(input.workspaceSlug, id)!;
+    return this.immediate(() => {
+      if (!this.channelInWorkspace(input.workspaceSlug, input.channelId)) {
+        throw new ChannelStoreError("channel_not_found", "Channel not found.");
+      }
+      this.db
+        .prepare(
+          `INSERT INTO channel_standing_grant (
+            id, channel_id, workspace_slug, agent_id, consent_id, purpose, caps_json, scope_json,
+            not_before, expires, status, digest, proposed_at, approved_by, approved_at, approval_source,
+            decided_reason, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'proposed', NULL, ?, NULL, NULL, NULL, NULL, ?)`,
+        )
+        .run(
+          id,
+          input.channelId,
+          input.workspaceSlug,
+          input.agentId,
+          input.consentId,
+          purpose,
+          JSON.stringify(input.caps),
+          JSON.stringify(input.scope),
+          optionalIso(input.notBefore),
+          iso(input.expires),
+          timestamp,
+          timestamp,
+        );
+      return this.getStandingGrant(input.workspaceSlug, id)!;
+    });
+  }
+
+  /** Tenant guard: the channel exists in this workspace. Call inside the write transaction. */
+  private channelInWorkspace(workspaceSlug: string, channelId: string): boolean {
+    return Boolean(
+      this.db.prepare("SELECT 1 FROM channel WHERE workspace_slug = ? AND id = ?").get(workspaceSlug, channelId),
+    );
+  }
+
+  /** Same key must mean the same post: same channel and same payload digest. */
+  private idempotencyConflict(existing: ChannelPostRecord, input: { channelId: string; digest: string }): boolean {
+    return existing.channelId !== input.channelId || existing.digest !== input.digest;
   }
 
   getStandingGrant(workspaceSlug: string, id: string): StandingGrantRecord | null {
@@ -896,17 +953,28 @@ export class ChannelStore {
   // ----- post --------------------------------------------------------------
 
   /**
-   * Inserts a post (e.g. `held` or `scheduled`). Idempotent on
-   * (workspace, agent, idempotency key): a repeat returns the existing row
-   * with `created: false`; comparing its digest is the caller's job.
+   * Inserts a post (`held` or `scheduled`). Idempotent on (workspace, agent,
+   * idempotency key): a repeat with the same channel and digest returns the
+   * existing row with `created: false`; a different channel or digest is
+   * `channel_idempotency_conflict`. The channel must belong to the workspace.
    */
-  insertPost(input: InsertPostInput): { post: ChannelPostRecord; created: boolean } {
+  insertPost(input: InsertPostInput): InsertPostResult {
+    if (input.status !== "held" && input.status !== "scheduled") {
+      throw new ChannelStoreError("channel_transition_refused", "insertPost creates only held or scheduled posts.");
+    }
     const timestamp = iso(input.now ?? new Date());
-    return this.immediate(() => {
+    return this.immediate<InsertPostResult>(() => {
+      if (!this.channelInWorkspace(input.workspaceSlug, input.channelId)) {
+        return { ok: false, error: "channel_not_found" };
+      }
       const existing = this.getPostByIdempotencyKey(input.workspaceSlug, input.agentId, input.idempotencyKey);
-      if (existing) return { post: existing, created: false };
-      const id = this.insertPostRow(input, input.status, timestamp, null);
-      return { post: this.getPost(input.workspaceSlug, id)!, created: true };
+      if (existing) {
+        return this.idempotencyConflict(existing, input)
+          ? { ok: false, error: "channel_idempotency_conflict" }
+          : { ok: true, post: existing, created: false };
+      }
+      const id = this.insertPostRow(input, input.status, timestamp, null, null);
+      return { ok: true, post: this.getPost(input.workspaceSlug, id)!, created: true };
     });
   }
 
@@ -915,6 +983,7 @@ export class ChannelStore {
     status: ChannelPostStatus,
     timestamp: string,
     reservedAt: string | null,
+    lease: { claimedBy: string; expiresAt: string } | null,
   ): string {
     if (input.mode === "scheduled" && !input.sendAt) {
       throw new ChannelStoreError("channel_send_at_required", "A scheduled post needs sendAt.");
@@ -926,7 +995,7 @@ export class ChannelStore {
           id, workspace_slug, channel_id, agent_id, consent_id, mode, send_at, text, attachment_ids_json,
           campaign_ref, campaign_phase, digest, authority, status, idempotency_key, claimed_by,
           claim_expires_at, reason, reserved_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -944,6 +1013,8 @@ export class ChannelStore {
         input.authority ?? null,
         status,
         input.idempotencyKey,
+        lease?.claimedBy ?? null,
+        lease?.expiresAt ?? null,
         input.reason ?? null,
         reservedAt,
         timestamp,
@@ -992,8 +1063,10 @@ export class ChannelStore {
   }
 
   /**
-   * Moves a post to a new status and clears any scheduler claim. Guards:
-   * `from` (allowed current statuses) and `claimer` (must hold the claim).
+   * Moves a post to a new status and clears any claim. `from` is mandatory
+   * and every `from` → `status` pair must be in `CHANNEL_POST_TRANSITIONS`
+   * (a disallowed pair throws `channel_transition_refused`). Guards: the
+   * current status is in `from`, and `claimer` (if given) holds the claim.
    * Returns null when a guard fails, so a lost race is visible to the caller.
    */
   finishPost(
@@ -1001,18 +1074,22 @@ export class ChannelStore {
     id: string,
     update: {
       status: ChannelPostStatus;
+      from: readonly ChannelPostStatus[];
       reason?: string | null;
-      from?: ChannelPostStatus[];
       claimer?: string;
       now?: Date | string;
     },
   ): ChannelPostRecord | null {
-    const clauses = ["workspace_slug = ?", "id = ?"];
-    const params: string[] = [workspaceSlug, id];
-    if (update.from && update.from.length > 0) {
-      clauses.push(`status IN (${update.from.map(() => "?").join(", ")})`);
-      params.push(...update.from);
+    if (!update.from || update.from.length === 0) {
+      throw new ChannelStoreError("channel_transition_refused", "finishPost needs the allowed current statuses.");
     }
+    for (const from of update.from) {
+      if (!(CHANNEL_POST_TRANSITIONS[from] ?? []).includes(update.status)) {
+        throw new ChannelStoreError("channel_transition_refused", `A post cannot move from ${from} to ${update.status}.`);
+      }
+    }
+    const clauses = ["workspace_slug = ?", "id = ?", `status IN (${update.from.map(() => "?").join(", ")})`];
+    const params: string[] = [workspaceSlug, id, ...update.from];
     if (update.claimer !== undefined) {
       clauses.push("claimed_by = ?");
       params.push(update.claimer);
@@ -1025,6 +1102,25 @@ export class ChannelStore {
       )
       .run(update.status, update.reason ?? null, iso(update.now ?? new Date()), ...params);
     return Number(result.changes) === 1 ? this.getPost(workspaceSlug, id) : null;
+  }
+
+  /**
+   * Crash recovery, instance-wide: every `sending` row whose send lease has
+   * expired becomes `uncertain` (it may have reached the provider). Never
+   * back to `scheduled`, so it is never re-claimed or re-sent; it still
+   * counts for caps until the owner resolves it.
+   */
+  recoverStaleSending(input: { now: Date | string }): ChannelPostRecord[] {
+    const now = iso(input.now);
+    const rows = this.db
+      .prepare(
+        `UPDATE channel_post SET status = 'uncertain', reason = 'send_lease_expired', claimed_by = NULL,
+          claim_expires_at = NULL, updated_at = ?
+        WHERE status = 'sending' AND (claim_expires_at IS NULL OR claim_expires_at < ?)
+        RETURNING *`,
+      )
+      .all(now, now) as Row[];
+    return rows.map(postFromRow).sort((a, b) => a.id.localeCompare(b.id));
   }
 
   /**
@@ -1067,18 +1163,34 @@ export class ChannelStore {
    * transaction, so two concurrent sends cannot both pass the last slot.
    * Counted statuses: `sending`, `sent`, `uncertain`. The channel ceiling is
    * shared by every agent; grant caps apply to the grant's own posts.
-   * Idempotent: a repeat of (workspace, agent, idempotency key) returns the
-   * existing row with `replayed: true` and inserts nothing.
+   * Idempotent: a repeat of (workspace, agent, idempotency key) with the
+   * same channel and digest returns the existing row with `replayed: true`;
+   * a different channel or digest is `channel_idempotency_conflict`. The
+   * channel must belong to the workspace (checked inside the transaction).
+   * The new `sending` row carries a send lease (`claimed_by` = reserver) so
+   * `recoverStaleSending` can mark it `uncertain` after a crash.
    */
   reservePost(input: ReservePostInput): ReservePostResult {
     const now = iso(input.now);
     if (input.grant && input.authority && input.authority !== `grant:${input.grant.id}`) {
       throw new ChannelStoreError("channel_authority_mismatch", "Authority does not name the reserving grant.");
     }
+    if (!input.reserver) {
+      throw new ChannelStoreError("channel_reserver_required", "reservePost needs a reserver id for the send lease.");
+    }
+    const lease = { claimedBy: input.reserver, expiresAt: leaseUntil(now, input.leaseMs) };
     return this.immediate<ReservePostResult>(() => {
+      if (!this.channelInWorkspace(input.workspaceSlug, input.channelId)) {
+        return { ok: false, error: "channel_not_found" };
+      }
       const existing = this.getPostByIdempotencyKey(input.workspaceSlug, input.agentId, input.idempotencyKey);
-      if (existing) return { ok: true, post: existing, replayed: true };
+      if (existing) {
+        return this.idempotencyConflict(existing, input)
+          ? { ok: false, error: "channel_idempotency_conflict" }
+          : { ok: true, post: existing, replayed: true };
+      }
       const refusal = this.checkCaps({
+        workspaceSlug: input.workspaceSlug,
         channelId: input.channelId,
         grant: input.grant ?? null,
         ceiling: input.ceiling,
@@ -1088,7 +1200,7 @@ export class ChannelStore {
       });
       if (refusal) return refusal;
       const authority = input.authority ?? (input.grant ? (`grant:${input.grant.id}` as const) : null);
-      const id = this.insertPostRow({ ...input, authority }, "sending", now, now);
+      const id = this.insertPostRow({ ...input, authority }, "sending", now, now, lease);
       return { ok: true, post: this.getPost(input.workspaceSlug, id)!, replayed: false };
     });
   }
@@ -1109,6 +1221,7 @@ export class ChannelStore {
         throw new ChannelStoreError("channel_authority_mismatch", "Authority does not name the reserving grant.");
       }
       const refusal = this.checkCaps({
+        workspaceSlug: post.workspaceSlug,
         channelId: post.channelId,
         grant: input.grant ?? null,
         ceiling: input.ceiling,
@@ -1119,15 +1232,16 @@ export class ChannelStore {
       if (refusal) return refusal;
       this.db
         .prepare(
-          `UPDATE channel_post SET status = 'sending', reserved_at = ?, updated_at = ?
+          `UPDATE channel_post SET status = 'sending', reserved_at = ?, claim_expires_at = ?, updated_at = ?
           WHERE workspace_slug = ? AND id = ? AND status = 'scheduled' AND claimed_by = ?`,
         )
-        .run(now, now, input.workspaceSlug, input.postId, input.claimer);
+        .run(now, leaseUntil(now, input.leaseMs), now, input.workspaceSlug, input.postId, input.claimer);
       return { ok: true, post: this.getPost(input.workspaceSlug, input.postId)! };
     });
   }
 
   private checkCaps(input: {
+    workspaceSlug: string;
     channelId: string;
     grant: ReservationGrant | null;
     ceiling: ChannelCaps;
@@ -1143,21 +1257,21 @@ export class ChannelStore {
     if (caps.onePerPhase && input.campaign?.ref && input.campaign.phase) {
       const duplicate = this.db
         .prepare(
-          `SELECT 1 FROM channel_post WHERE channel_id = ? AND status IN (${COUNTED_SQL})
+          `SELECT 1 FROM channel_post WHERE workspace_slug = ? AND channel_id = ? AND status IN (${COUNTED_SQL})
             AND campaign_ref = ? AND campaign_phase = ? AND id <> ? LIMIT 1`,
         )
-        .get(input.channelId, input.campaign.ref, input.campaign.phase, exclude);
+        .get(input.workspaceSlug, input.channelId, input.campaign.ref, input.campaign.phase, exclude);
       if (duplicate) return { ok: false, error: "channel_phase_duplicate" };
     }
 
     // (a)+(c) channel ceiling, shared by all agents; (b)+(c) the grant's own posts.
     const scopes: Array<{ where: string; params: string[]; caps: ChannelCaps }> = [
-      { where: "channel_id = ?", params: [input.channelId], caps: input.ceiling },
+      { where: "workspace_slug = ? AND channel_id = ?", params: [input.workspaceSlug, input.channelId], caps: input.ceiling },
     ];
     if (input.grant) {
       scopes.push({
-        where: "channel_id = ? AND authority = ?",
-        params: [input.channelId, `grant:${input.grant.id}`],
+        where: "workspace_slug = ? AND channel_id = ? AND authority = ?",
+        params: [input.workspaceSlug, input.channelId, `grant:${input.grant.id}`],
         caps,
       });
     }

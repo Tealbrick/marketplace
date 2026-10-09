@@ -9,6 +9,7 @@ import { MARKETPLACE_TABLES, SqliteMarketplaceStore } from "../store.js";
 import { sha256Hex } from "./canonical-json.js";
 import type { ChannelCaps } from "./policy.js";
 import {
+  CHANNEL_POST_TRANSITIONS,
   CHANNEL_TABLES,
   ChannelStoreError,
   migrateChannelTables,
@@ -75,8 +76,16 @@ function reserveInput(
     idempotencyKey: `key-${keySeq}`,
     ceiling: CEILING,
     now: at(0),
+    reserver: "req-1",
     ...overrides,
   };
+}
+
+/** Test-only: sets a row's status on a second connection, bypassing the transition table. */
+function forceStatus(store: SqliteMarketplaceStore, postId: string, status: string) {
+  const raw = new DatabaseSync(store.dbPath);
+  raw.prepare("UPDATE channel_post SET status = ? WHERE id = ?").run(status, postId);
+  raw.close();
 }
 
 function mustReserve(channels: ChannelStore, input: ReservePostInput) {
@@ -90,6 +99,12 @@ describe("channel schema", () => {
     const { store } = await fixture();
     for (const table of CHANNEL_TABLES) expect(MARKETPLACE_TABLES).toContain(table);
     expect(store.listTables().sort()).toEqual([...MARKETPLACE_TABLES].sort());
+  });
+
+  it("sets a 5 s busy timeout on the store connection", async () => {
+    const { store } = await fixture();
+    const db = (store as unknown as { db: DatabaseSync }).db;
+    expect(db.prepare("PRAGMA busy_timeout").get()).toEqual({ timeout: 5000 });
   });
 
   it("is additive: existing tables and rows are untouched and reopening is idempotent", async () => {
@@ -303,12 +318,15 @@ describe("caps reservation", () => {
   });
 
   it("does not count failed, skipped, cancelled or expired posts, but counts uncertain ones", async () => {
-    const { channels, channel } = await fixture();
+    const { store, channels, channel } = await fixture();
     const ceiling = { ...CEILING, perDay: 1 };
     const campaign = { ref: "https://lu.ma/abc", phase: "announce" };
     for (const status of ["failed", "skipped", "cancelled", "expired"] as const) {
       const post = mustReserve(channels, reserveInput(channel.id, { ceiling, campaign, now: at(0) }));
-      expect(channels.finishPost(WS, post.id, { status, reason: "test" })?.status).toBe(status);
+      // Only `failed` is reachable from `sending`; the others are forced to prove they never count.
+      if (status === "failed") channels.finishPost(WS, post.id, { status, from: ["sending"], reason: "test" });
+      else forceStatus(store, post.id, status);
+      expect(channels.getPost(WS, post.id)?.status).toBe(status);
     }
     const uncertain = mustReserve(channels, reserveInput(channel.id, { ceiling, campaign, now: at(0) }));
     channels.finishPost(WS, uncertain.id, { status: "uncertain", from: ["sending"] });
@@ -368,7 +386,7 @@ describe("caps reservation", () => {
 
 describe("scheduler claims", () => {
   async function scheduled(channels: ChannelStore, channelId: string, sendAt: string, key: string) {
-    return channels.insertPost({
+    const result = channels.insertPost({
       workspaceSlug: WS,
       channelId,
       agentId: "agent-a",
@@ -381,7 +399,9 @@ describe("scheduler claims", () => {
       idempotencyKey: key,
       status: "scheduled",
       now: at(0),
-    }).post;
+    });
+    if (!result.ok) throw new Error(result.error);
+    return result.post;
   }
 
   it("claims only due scheduled rows, never twice while the lease holds", async () => {
@@ -406,7 +426,7 @@ describe("scheduler claims", () => {
       ok: false,
       error: "channel_post_not_claimed",
     });
-    expect(channels.finishPost(WS, due.id, { status: "skipped", claimer: "tick-a" })).toBeNull();
+    expect(channels.finishPost(WS, due.id, { status: "skipped", from: ["scheduled"], claimer: "tick-a" })).toBeNull();
   });
 
   it("reserves a claimed post at send time and clears the claim when finished", async () => {
@@ -439,7 +459,7 @@ describe("scheduler claims", () => {
     const { channels, channel } = await fixture();
     const first = await scheduled(channels, channel.id, at(10), "s1");
     const again = channels.insertPost({ ...first, campaign: null, status: "scheduled" });
-    expect(again).toMatchObject({ created: false, post: { id: first.id } });
+    expect(again).toMatchObject({ ok: true, created: false, post: { id: first.id } });
     expect(() => channels.insertPost({ ...first, idempotencyKey: "s2", sendAt: null, campaign: null, status: "scheduled" })).toThrow(/sendAt/u);
   });
 });
@@ -475,5 +495,218 @@ describe("credential hygiene", () => {
     }
     raw.close();
     expect((await readFile(store.dbPath)).length).toBeGreaterThan(0);
+  });
+});
+
+describe("post transitions (R1)", () => {
+  const ALL = ["held", "scheduled", "sending", "sent", "failed", "uncertain", "skipped", "cancelled", "expired"] as const;
+  const ALLOWED: Record<string, string[]> = {
+    held: ["cancelled", "expired", "skipped"],
+    scheduled: ["cancelled", "skipped", "expired"],
+    sending: ["sent", "failed", "uncertain"],
+    uncertain: ["sent", "failed"],
+  };
+
+  it("pins the transition table", () => {
+    for (const from of ALL) {
+      expect([...CHANNEL_POST_TRANSITIONS[from]].sort()).toEqual([...(ALLOWED[from] ?? [])].sort());
+    }
+  });
+
+  it("allows exactly the table and refuses every other pair, including uncertain → scheduled", async () => {
+    const { store, channels, channel } = await fixture();
+    for (const from of ALL) {
+      for (const to of ALL) {
+        const post = mustReserve(channels, reserveInput(channel.id, { ceiling: { ...CEILING, perDay: 10_000, minIntervalSeconds: 0, onePerPhase: false } }));
+        forceStatus(store, post.id, from);
+        if ((ALLOWED[from] ?? []).includes(to)) {
+          expect(channels.finishPost(WS, post.id, { status: to, from: [from] }), `${from} → ${to}`).toMatchObject({
+            status: to,
+            claimedBy: null,
+            claimExpiresAt: null,
+          });
+        } else {
+          expect(() => channels.finishPost(WS, post.id, { status: to, from: [from] }), `${from} → ${to}`).toThrow(
+            expect.objectContaining({ code: "channel_transition_refused" }),
+          );
+          expect(channels.getPost(WS, post.id)?.status).toBe(from);
+        }
+      }
+    }
+    // Terminal and scheduled/sending targets are never reachable.
+    for (const terminal of ["sent", "failed", "skipped", "cancelled", "expired"] as const) {
+      expect(CHANNEL_POST_TRANSITIONS[terminal]).toEqual([]);
+    }
+    for (const from of ALL) {
+      expect(CHANNEL_POST_TRANSITIONS[from]).not.toContain("scheduled");
+      expect(CHANNEL_POST_TRANSITIONS[from]).not.toContain("sending");
+    }
+  });
+
+  it("requires from and returns null when the current status is not in it", async () => {
+    const { channels, channel } = await fixture();
+    const post = mustReserve(channels, reserveInput(channel.id));
+    expect(() => channels.finishPost(WS, post.id, { status: "sent", from: [] })).toThrow(/allowed current statuses/u);
+    expect(channels.finishPost(WS, post.id, { status: "sent", from: ["uncertain"] })).toBeNull();
+    expect(channels.getPost(WS, post.id)?.status).toBe("sending");
+  });
+});
+
+describe("send lease recovery (R2)", () => {
+  it("gives immediate reservations a lease", async () => {
+    const { channels, channel } = await fixture();
+    const post = mustReserve(channels, reserveInput(channel.id, { reserver: "proc-1", leaseMs: 60_000, now: at(0) }));
+    expect(post).toMatchObject({ status: "sending", claimedBy: "proc-1", claimExpiresAt: at(1) });
+    expect(() => channels.reservePost(reserveInput(channel.id, { reserver: "" }))).toThrow(/reserver/u);
+  });
+
+  it("recovers a crash after reserve as uncertain: never re-claimable, never re-sent", async () => {
+    const { channels, channel } = await fixture();
+    const input = reserveInput(channel.id, { reserver: "proc-1", leaseMs: 60_000, now: at(0) });
+    const post = mustReserve(channels, input);
+    expect(channels.recoverStaleSending({ now: at(0.5) })).toEqual([]);
+    const recovered = channels.recoverStaleSending({ now: at(2) });
+    expect(recovered).toMatchObject([{ id: post.id, status: "uncertain", reason: "send_lease_expired", claimedBy: null }]);
+    expect(channels.recoverStaleSending({ now: at(3) })).toEqual([]);
+    // Not claimable by the scheduler and not reservable again.
+    expect(channels.claimDuePosts({ now: at(3), claimer: "tick-a", leaseMs: 60_000 })).toEqual([]);
+    expect(channels.reserveScheduledPost({ workspaceSlug: WS, postId: post.id, claimer: "proc-1", ceiling: CEILING, now: at(3) })).toEqual({
+      ok: false,
+      error: "channel_post_not_claimed",
+    });
+    // The crashed process cannot report a late result as a fresh send, and the retry replays the uncertain row.
+    expect(channels.finishPost(WS, post.id, { status: "sent", from: ["sending"], claimer: "proc-1" })).toBeNull();
+    expect(channels.reservePost({ ...input, now: at(30) })).toMatchObject({ ok: true, replayed: true, post: { status: "uncertain" } });
+    expect(channels.listPosts(WS)).toHaveLength(1);
+    // Uncertain still counts against caps until the owner resolves it.
+    expect(channels.reservePost(reserveInput(channel.id, { ceiling: { ...CEILING, perDay: 1 }, now: at(30) }))).toMatchObject({
+      ok: false,
+      error: "channel_cap_per_day",
+    });
+    expect(channels.finishPost(WS, post.id, { status: "sent", from: ["uncertain"] })?.status).toBe("sent");
+  });
+
+  it("refreshes the lease when a scheduled post starts sending and recovers it the same way", async () => {
+    const { channels, channel } = await fixture();
+    const inserted = channels.insertPost({
+      workspaceSlug: WS,
+      channelId: channel.id,
+      agentId: "agent-a",
+      consentId: "consent-a",
+      mode: "scheduled",
+      sendAt: at(10),
+      text: "later",
+      digest: "f".repeat(64),
+      authority: "approval:apr_1",
+      idempotencyKey: "s1",
+      status: "scheduled",
+      now: at(0),
+    });
+    if (!inserted.ok) throw new Error(inserted.error);
+    channels.claimDuePosts({ now: at(10), claimer: "tick-a", leaseMs: 60_000 });
+    const sending = channels.reserveScheduledPost({ workspaceSlug: WS, postId: inserted.post.id, claimer: "tick-a", ceiling: CEILING, now: at(10.5), leaseMs: 120_000 });
+    expect(sending).toMatchObject({ ok: true, post: { status: "sending", claimExpiresAt: at(12.5) } });
+    expect(channels.recoverStaleSending({ now: at(12) })).toEqual([]);
+    expect(channels.recoverStaleSending({ now: at(13) }).map((post) => post.status)).toEqual(["uncertain"]);
+    expect(channels.claimDuePosts({ now: at(14), claimer: "tick-b", leaseMs: 60_000 })).toEqual([]);
+  });
+});
+
+describe("idempotency conflicts (R3)", () => {
+  it("replays the same digest and channel and refuses a different digest or channel", async () => {
+    const { channels, channel } = await fixture();
+    const other = channels.createChannel({
+      workspaceSlug: WS,
+      slug: "other",
+      label: "Other",
+      kind: "chat",
+      provider: "telegram",
+      connectionId: "conn_1",
+      destination: { type: "channel", externalId: "-100999", title: "Other" },
+    });
+    const input = reserveInput(channel.id, { now: at(0) });
+    const first = mustReserve(channels, input);
+    expect(channels.reservePost({ ...input, now: at(1) })).toMatchObject({ ok: true, replayed: true, post: { id: first.id } });
+    expect(channels.reservePost({ ...input, digest: "0".repeat(64), now: at(20) })).toEqual({ ok: false, error: "channel_idempotency_conflict" });
+    expect(channels.reservePost({ ...input, channelId: other.id, now: at(20) })).toEqual({ ok: false, error: "channel_idempotency_conflict" });
+    expect(channels.listPosts(WS)).toHaveLength(1);
+  });
+
+  it("applies the same rule to insertPost", async () => {
+    const { channels, channel } = await fixture();
+    const base = {
+      workspaceSlug: WS,
+      channelId: channel.id,
+      agentId: "agent-a",
+      consentId: "consent-a",
+      mode: "immediate" as const,
+      text: "held",
+      digest: "a".repeat(64),
+      idempotencyKey: "h1",
+      status: "held" as const,
+    };
+    const first = channels.insertPost(base);
+    expect(first).toMatchObject({ ok: true, created: true });
+    expect(channels.insertPost(base)).toMatchObject({ ok: true, created: false });
+    expect(channels.insertPost({ ...base, digest: "b".repeat(64) })).toEqual({ ok: false, error: "channel_idempotency_conflict" });
+    expect(() => channels.insertPost({ ...base, idempotencyKey: "h2", status: "sending" })).toThrow(/held or scheduled/u);
+  });
+});
+
+describe("tenant isolation (R4)", () => {
+  it("refuses another workspace's channel in reservePost, insertPost and createStandingGrant", async () => {
+    const { channels, channel } = await fixture();
+    expect(channels.reservePost(reserveInput(channel.id, { workspaceSlug: "org-2" }))).toEqual({ ok: false, error: "channel_not_found" });
+    expect(
+      channels.insertPost({
+        workspaceSlug: "org-2",
+        channelId: channel.id,
+        agentId: "agent-b",
+        consentId: "consent-b",
+        mode: "immediate",
+        text: "x",
+        digest: "a".repeat(64),
+        idempotencyKey: "k",
+        status: "held",
+      }),
+    ).toEqual({ ok: false, error: "channel_not_found" });
+    expect(() =>
+      channels.createStandingGrant({
+        workspaceSlug: "org-2",
+        channelId: channel.id,
+        agentId: "agent-b",
+        consentId: "consent-b",
+        purpose: "probe",
+        caps: { perDay: 1, minIntervalSeconds: 600, onePerPhase: true },
+        scope: { files: false, immediate: true, scheduled: false },
+        expires: at(60 * 24),
+      }),
+    ).toThrow(expect.objectContaining({ code: "channel_not_found" }));
+    expect(channels.listPosts("org-2")).toEqual([]);
+    expect(channels.listStandingGrants("org-2")).toEqual([]);
+  });
+
+  it("never counts another workspace's posts against caps", async () => {
+    const { store, channels, channel } = await fixture();
+    const b = channels.createChannel({
+      workspaceSlug: "org-2",
+      slug: "b-promo",
+      label: "B",
+      kind: "chat",
+      provider: "telegram",
+      connectionId: "conn_b",
+      destination: { type: "channel", externalId: "-200", title: "B" },
+    });
+    const campaign = { ref: "https://lu.ma/abc", phase: "announce" };
+    const grant = { id: "chg_shared", caps: { perDay: 1, minIntervalSeconds: 600, onePerPhase: true } };
+    const a = mustReserve(channels, reserveInput(channel.id, { grant, authority: "grant:chg_shared", campaign, now: at(0) }));
+    // Probe: a row of workspace A that names B's channel id must not leak into B's counts.
+    const raw = new DatabaseSync(store.dbPath);
+    raw.prepare("UPDATE channel_post SET channel_id = ? WHERE id = ?").run(b.id, a.id);
+    raw.close();
+    const ceiling = { ...CEILING, perDay: 1 };
+    expect(
+      channels.reservePost(reserveInput(b.id, { workspaceSlug: "org-2", agentId: "agent-b", ceiling, grant, authority: "grant:chg_shared", campaign, now: at(1) })),
+    ).toMatchObject({ ok: true, replayed: false });
   });
 });
