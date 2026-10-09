@@ -108,6 +108,14 @@ export class MarketplaceInstanceClaim {
   }
 
   /**
+   * The one claim signing key, for the manifest claim handler (`manifest-claim.ts`) only, so both claim
+   * paths sign with the same key under the same instance id. The KeyObject is never serialized or logged.
+   */
+  claimSigningKey(): KeyObject {
+    return this.key;
+  }
+
+  /**
    * Sign one Portal challenge. The caller supplies the Portal issuer and the
    * company (workspace) this instance is configured for; any other value is
    * rejected, so a stolen instance token cannot mint proofs for other scopes.

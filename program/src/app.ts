@@ -7,6 +7,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z, ZodError } from "zod";
 
 import { InstanceClaimError, MarketplaceInstanceClaim } from "./instance-claim.js";
+import { createManifestClaim, MANIFEST_CLAIM_PATH } from "./manifest-claim.js";
 import {
   applyComposioPolicyToListing,
   buildComposioCatalogListing,
@@ -912,8 +913,9 @@ function isMutation(method: string) {
   return !["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());
 }
 
-// Canonical claim path; the /api path stays a working alias for the same handlers.
-const MARKETPLACE_CLAIM_PATH = "/.well-known/tealbrick/claim";
+// Manifest claim path (contract kit handshake, `runtime.claim`) and the legacy Portal claim path
+// (Marketplace protocol, 0.2.x line). Both use the same instance id and Ed25519 key.
+const MARKETPLACE_CLAIM_PATH = MANIFEST_CLAIM_PATH;
 const MARKETPLACE_CLAIM_ALIAS_PATH = "/api/tealbrick/claim";
 
 function marketplacePublicPath(pathname: string) {
@@ -4245,12 +4247,8 @@ export async function buildMarketplaceApp(
    * accepted: the internal bearer (also as `x-knowledge-instance-token`) or
    * the Portal instance proof. A browser session, origin or cookie never is.
    */
-  const claimAuthorization = (request: FastifyRequest, reply: FastifyReply) => {
-    reply.header("cache-control", "no-store");
-    if (request.headers.cookie || request.headers.origin) {
-      reply.code(403).send({ ok: false, error: "claim_service_request_required" });
-      return false;
-    }
+  /** The one claim credential rule, shared by the legacy route and the manifest claim handler. */
+  const claimCredentialAccepted = (request: { headers: Record<string, unknown> }) => {
     const bearer = bearerTokenFrom(request);
     const legacy = headerValue(request, "x-knowledge-instance-token");
     const proof = headerValue(request, "x-tealbrick-instance-proof");
@@ -4262,7 +4260,15 @@ export async function buildMarketplaceApp(
       bearer !== null && marketplaceSecretMatches(bearer, instanceToken),
       legacy !== null && marketplaceSecretMatches(legacy, instanceToken),
     ];
-    if (!matches.some(Boolean)) {
+    return matches.some(Boolean);
+  };
+  const claimAuthorization = (request: FastifyRequest, reply: FastifyReply) => {
+    reply.header("cache-control", "no-store");
+    if (request.headers.cookie || request.headers.origin) {
+      reply.code(403).send({ ok: false, error: "claim_service_request_required" });
+      return false;
+    }
+    if (!claimCredentialAccepted(request)) {
       reply.code(401).send({ ok: false, error: "claim_instance_auth_required" });
       return false;
     }
@@ -4298,10 +4304,63 @@ export async function buildMarketplaceApp(
     }
   };
 
-  for (const claimPath of [MARKETPLACE_CLAIM_PATH, MARKETPLACE_CLAIM_ALIAS_PATH]) {
-    app.get(claimPath, claimIdentity);
-    app.post(claimPath, { bodyLimit: 4096 }, claimSign);
-  }
+  // Legacy Portal claim (Marketplace protocol): unchanged for the 0.2.x line.
+  app.get(MARKETPLACE_CLAIM_ALIAS_PATH, claimIdentity);
+  app.post(MARKETPLACE_CLAIM_ALIAS_PATH, { bodyLimit: 4096 }, claimSign);
+
+  // Manifest claim (contract kit handshake): same identity, same credential rule; the kit signs `{proof}`
+  // and pins the issuer, tenant and the grant trust anchors (jwksUri, grantKids) in the binding file.
+  const claimScopeCompany = configuredOrganizationId ?? portalConfiguration.workspaceId ?? tenantBinding;
+  const manifestClaim =
+    instanceClaim && options.instanceClaimDir
+      ? createManifestClaim({
+          identity: instanceClaim,
+          dataDir: options.instanceClaimDir,
+          accepts: (headers) => claimCredentialAccepted({ headers }),
+          scope: portalIssuerUrl && claimScopeCompany ? { portalIssuer: portalIssuerUrl, companyId: claimScopeCompany } : null,
+          // Metadata only: never a token, nonce or proof.
+          audit: (event) => {
+            try {
+              options.store.recordAudit({
+                workspaceSlug: organizationId,
+                pluginId: null,
+                eventType: "marketplace.contract.claim",
+                actorId: null,
+                metadata: { outcome: event.outcome, method: event.method, ...(event.credential ? { credential: event.credential } : {}) },
+              });
+            } catch {
+              // An audit failure must never change a claim outcome.
+            }
+          },
+        })
+      : null;
+  const serveManifestClaim = async (request: FastifyRequest, reply: FastifyReply) => {
+    reply.header("cache-control", "no-store");
+    // Without an identity the answer matches the legacy route (401 without a credential, else 503).
+    if (!manifestClaim) return request.method === "GET" ? claimIdentity(request, reply) : claimSign(request, reply);
+    const response = await manifestClaim.handler.handle({
+      method: request.method,
+      url: request.url,
+      headers: request.headers,
+      body: async () => request.body,
+    });
+    if (!response) {
+      // The kit serves GET and POST only (a HEAD falls through here).
+      if (request.method !== "POST") {
+        reply.code(405).header("allow", "GET, POST");
+        return { ok: false, error: "method_not_allowed" };
+      }
+      // POST without a configured Portal issuer and workspace: authenticate, then refuse to sign.
+      if (!claimAuthorization(request, reply)) return reply;
+      reply.code(503);
+      return { ok: false, error: "claim_scope_unconfigured" };
+    }
+    reply.code(response.status);
+    for (const [name, value] of Object.entries(response.headers)) reply.header(name, value);
+    return reply.send(response.body);
+  };
+  app.get(MARKETPLACE_CLAIM_PATH, serveManifestClaim);
+  app.post(MARKETPLACE_CLAIM_PATH, { bodyLimit: 4096 }, serveManifestClaim);
 
   // Contract control endpoints: manifest, status, settings and companions are served by the kit, which
   // authenticates them itself (instance credential or the 5-minute settings bearer). The claim stays above.
