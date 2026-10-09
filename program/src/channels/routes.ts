@@ -563,6 +563,10 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
       reply.code(403);
       return null;
     }
+    // An operator session binds `actorId` into every mutation body; the principal is the actor here.
+    if (request.body && typeof request.body === "object" && !Buffer.isBuffer(request.body)) {
+      delete (request.body as Record<string, unknown>).actorId;
+    }
     await deps.ready;
     return principal;
   };
