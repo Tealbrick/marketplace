@@ -283,3 +283,16 @@ describe("discord never leaks the token", () => {
     expect((results[0] as { detail: string }).detail).toContain("[redacted]");
   });
 });
+
+describe("discord send is one request", () => {
+  it("posts text and several attachments in one request, so a send can never be partly delivered", async () => {
+    const { provider, fake } = make([okMessage("3010")]);
+    const result = await provider.send(TOKEN, channel, {
+      text: "hello",
+      attachments: [attachment("a.png", "image/png"), attachment("b.pdf", "application/pdf")],
+    });
+    expect(result).toMatchObject({ status: "sent", resultIds: ["3010"] });
+    expect(result).not.toHaveProperty("partial");
+    expect(fake.requests).toHaveLength(1);
+  });
+});

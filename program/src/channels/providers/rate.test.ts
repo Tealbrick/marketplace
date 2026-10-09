@@ -106,3 +106,23 @@ describe("requestWithRetry", () => {
     expect(calls).toBe(2);
   });
 });
+
+describe("plan reservation", () => {
+  it("reserves a multi-step cost at once, leaving the bucket in debt so the next send waits longer", async () => {
+    const clock = createFakeClock();
+    const limiter = createRateLimiter(clock);
+    expect(await limiter.acquire("c", [TELEGRAM_CHAT_RULE], 3)).toEqual({ ok: true });
+    expect(clock.sleeps).toEqual([]);
+    expect(await limiter.acquire("c", [TELEGRAM_CHAT_RULE])).toEqual({ ok: true });
+    expect(clock.sleeps).toEqual([3000]);
+  });
+
+  it("refuses a plan that cannot start within the wait limit without taking any tokens", async () => {
+    const clock = createFakeClock();
+    const limiter = createRateLimiter({ ...clock, maxWaitMs: 500 });
+    expect(await limiter.acquire("c", [TELEGRAM_CHAT_RULE], 2)).toEqual({ ok: true });
+    expect(await limiter.acquire("c", [TELEGRAM_CHAT_RULE], 2)).toEqual({ ok: false, waitMs: 2000 });
+    clock.advance(2000);
+    expect(await limiter.acquire("c", [TELEGRAM_CHAT_RULE])).toEqual({ ok: true });
+  });
+});

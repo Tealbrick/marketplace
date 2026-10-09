@@ -73,10 +73,14 @@ export function createRateLimiter(input: {
         const taken: Array<{ bucket: Bucket; need: number }> = [];
         for (const rule of rules) {
           const bucket = bucketFor(key, rule, at);
-          const need = Math.min(Math.max(1, cost), rule.capacity);
+          // A multi-step send reserves its whole cost at once. It waits only for
+          // min(cost, capacity) tokens and may leave the bucket in debt, so a later
+          // send waits longer; a local limit never cuts a send in half.
+          const need = Math.max(1, cost);
+          const ready = Math.min(need, rule.capacity);
           taken.push({ bucket, need });
-          if (bucket.tokens < need) {
-            waitMs = Math.max(waitMs, Math.ceil(((need - bucket.tokens) / rule.refillPerSecond) * 1000));
+          if (bucket.tokens < ready) {
+            waitMs = Math.max(waitMs, Math.ceil(((ready - bucket.tokens) / rule.refillPerSecond) * 1000));
           }
         }
         if (waitMs === 0) {

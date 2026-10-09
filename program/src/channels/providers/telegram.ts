@@ -231,6 +231,8 @@ function parseSentMessages(json: unknown): SentMessage[] | undefined {
   return messages.length > 0 ? messages : undefined;
 }
 
+const TELEGRAM_STEP_SPACING_MS = 1000;
+
 export function createTelegramProvider(options: ChannelProviderOptions = {}): ChannelProvider {
   const runtime = resolveRuntime(options);
   const limiter = createRateLimiter({ now: runtime.now, sleep: runtime.sleep });
@@ -332,10 +334,12 @@ export function createTelegramProvider(options: ChannelProviderOptions = {}): Ch
     const resultUrls: string[] = [];
     const publicUsername = usernameFromUrl(destination.url) ?? (destination.externalId.startsWith("@") ? destination.externalId.slice(1) : undefined);
 
+    // After a partial delivery the result is always uncertain, never failed, so
+    // no retry can post the first parts again.
     const stop = (failure: Failure): SendResult => {
       const partial = resultIds.length > 0;
       return {
-        status: failure.status,
+        status: partial ? "uncertain" : failure.status,
         resultIds,
         resultUrls,
         errorCode: failure.errorCode,
@@ -344,14 +348,20 @@ export function createTelegramProvider(options: ChannelProviderOptions = {}): Ch
       };
     };
 
-    for (const step of steps) {
-      const slot = await limiter.acquire(`telegram:${destination.externalId}`, rules, step.cost);
-      if (!slot.ok) {
-        return stop({
-          status: "failed",
-          errorCode: "provider_rate_limited",
-          detail: `local rate limit; next free slot in ${Math.ceil(slot.waitMs / 1000)}s`,
-        });
+    // Reserve the whole plan before the first request.
+    const totalCost = steps.reduce((sum, step) => sum + step.cost, 0);
+    const slot = await limiter.acquire(`telegram:${destination.externalId}`, rules, totalCost);
+    if (!slot.ok) {
+      return stop({
+        status: "failed",
+        errorCode: "provider_rate_limited",
+        detail: `local rate limit; next free slot in ${Math.ceil(slot.waitMs / 1000)}s`,
+      });
+    }
+    for (const [index, step] of steps.entries()) {
+      if (index > 0) {
+        // Keep Telegram's one message per second per chat inside the reserved plan.
+        await runtime.sleep(TELEGRAM_STEP_SPACING_MS);
       }
       const result = await call(token, step.method, step.build);
       if (!isSuccess(result)) {

@@ -413,12 +413,36 @@ describe("telegram send: failures", () => {
   it("reports a partial delivery when the follow-up text fails after the media was sent", async () => {
     const { provider } = make([okMessage(70), jsonResponse(400, { ok: false, description: "Bad Request: message is too long" })]);
     const result = await provider.send(TOKEN, group, { text: "q".repeat(2000), attachments: [attachment("p.png", "image/png")] });
-    expect(result).toMatchObject({ status: "failed", errorCode: "provider_rejected", resultIds: ["70"], partial: true });
+    expect(result).toMatchObject({ status: "uncertain", errorCode: "provider_rejected", resultIds: ["70"], partial: true });
     expect(result.detail).toContain("partial delivery");
+  });
+
+  it("keeps a partial delivery uncertain even when the later failure alone would be failed", async () => {
+    const { provider } = make([okMessage(71), jsonResponse(503, {})]);
+    const result = await provider.send(TOKEN, group, { text: "q".repeat(2000), attachments: [attachment("p.png", "image/png")] });
+    expect(result).toMatchObject({ status: "uncertain", errorCode: "provider_unavailable", resultIds: ["71"], partial: true });
   });
 });
 
 describe("telegram local rate limiting", () => {
+  it("reserves the whole plan before the first request, so a local limit never cuts a post in half", async () => {
+    const replies = [...Array.from({ length: 19 }, (_, i) => okMessage(100 + i)), okMessage(200), okMessage(201)];
+    const { provider, fake, clock } = make(replies);
+    for (let i = 0; i < 19; i += 1) {
+      expect((await provider.send(TOKEN, group, { text: `n${i}` })).status).toBe("sent");
+    }
+    const sleepsBefore = clock.sleeps.length;
+    const requestsBefore = fake.requests.length;
+    // Two steps (media, then the long text): both are reserved up front, so the
+    // limiter waits before the first request and never between the two.
+    const result = await provider.send(TOKEN, group, { text: "q".repeat(2000), attachments: [attachment("p.png", "image/png")] });
+    expect(result).toMatchObject({ status: "sent", resultIds: ["200", "201"] });
+    expect(result).not.toHaveProperty("partial");
+    expect(fake.requests.length - requestsBefore).toBe(2);
+    expect(clock.sleeps.length).toBeGreaterThan(sleepsBefore);
+  });
+
+
   it("spaces two sends to one chat by 1 s and does not delay a different chat", async () => {
     const { provider, clock } = make([okMessage(1), okMessage(2), okMessage(3)]);
     const chat: ChannelDestination = { type: "chat", externalId: "5550001", title: "c" };
