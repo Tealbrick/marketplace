@@ -29,6 +29,7 @@ import {
 } from "./runtime.js";
 import {
   CHANNEL_ATTACHMENTS_SUBDIR,
+  channelPostApprovalKey,
   type ChannelPostRecord,
   type ChannelReceiptRecord,
   type ChannelReceiptStatus,
@@ -600,7 +601,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
   // ----- holds (3c) ----------------------------------------------------------
 
   const insertStatus = (error: string) => (error === "channel_not_found" ? 404 : error === "channel_schedule_backlog_full" ? 429 : 409);
-  const approvalKey = (postId: string) => `channel-post:${postId}`;
+  const approvalKey = channelPostApprovalKey;
   const approvalForPost = (post: ChannelPostRecord) =>
     store.findCompanyBoxApprovalByKey({ workspaceSlug: org, agentId: post.agentId, idempotencyKey: approvalKey(post.id) });
 
@@ -914,7 +915,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
 
   const approvedHold = async (input: { traceId: string; reply: FastifyReply }, channel: ChannelRecord, post: ChannelPostRecord, approvalId: string, base: SendBase) => {
     const approval = store.getCompanyBoxApproval(approvalId);
-    if (!approval || approval.fingerprint !== post.digest || approval.sourceKind !== "channel-consent") {
+    if (!approval || approval.fingerprint !== post.digest || approval.sourceKind !== "channel-consent" || approval.idempotencyKey !== approvalKey(post.id)) {
       input.reply.code(409);
       return { ok: false, schema: 1, traceId: input.traceId, error: "channel_approval_invalid" };
     }

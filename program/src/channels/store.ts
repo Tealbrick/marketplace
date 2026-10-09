@@ -346,6 +346,14 @@ export const CHANNEL_POST_RESERVATIONS: Readonly<Partial<Record<ChannelPostStatu
   held: ["sending"],
 };
 
+/**
+ * The `company_box_approval.idempotency_key` of a held channel post's approval.
+ * Unique per (workspace, agent), so it binds one approval to one post.
+ */
+export function channelPostApprovalKey(postId: string): string {
+  return `channel-post:${postId}`;
+}
+
 /** Default send lease for a `sending` row; after it, recovery marks it `uncertain`. */
 export const DEFAULT_SEND_LEASE_MS = 300_000;
 
@@ -1360,9 +1368,10 @@ export class ChannelStore {
       const approval = this.db
         .prepare(
           `SELECT state, fingerprint, decided_at, expires_at FROM company_box_approval
-          WHERE id = ? AND workspace_slug = ? AND agent_id = ?`,
+          WHERE id = ? AND workspace_slug = ? AND agent_id = ? AND idempotency_key = ?`,
         )
-        .get(input.approvalId, input.workspaceSlug, post.agentId) as
+        // Review F2: the approval must name THIS post (its unique key is `channel-post:<postId>`), not only its digest.
+        .get(input.approvalId, input.workspaceSlug, post.agentId, channelPostApprovalKey(post.id)) as
         | { state: string; fingerprint: string; decided_at: string | null; expires_at: string }
         | undefined;
       const valid =
@@ -1473,9 +1482,9 @@ export class ChannelStore {
       const result = this.db
         .prepare(
           `UPDATE company_box_approval SET state = 'denied', decided_by = ?, decided_at = ?, updated_at = ?
-          WHERE id = ? AND workspace_slug = ? AND state = 'executing' AND fingerprint = ?`,
+          WHERE id = ? AND workspace_slug = ? AND state = 'executing' AND fingerprint = ? AND idempotency_key = ?`,
         )
-        .run(input.decidedBy, now, now, input.approvalId, input.workspaceSlug, post.digest);
+        .run(input.decidedBy, now, now, input.approvalId, input.workspaceSlug, post.digest, channelPostApprovalKey(post.id));
       return Number(result.changes) === 1;
     });
   }
