@@ -215,7 +215,11 @@ channel_too_many_files | channel_voice_transcript_required |
 channel_send_at_invalid | grant_exceeds_ceiling | grant_widening_refused`,
 `429 channel_cap_per_day | channel_cap_per_hour | channel_min_interval |
 channel_phase_duplicate` (with `retryAfterSeconds`) `| approval_queue_full`,
-`501 approval_proof_unsupported`, `503 channel_credential_unavailable`.
+`501 approval_proof_unsupported`, `503 channel_credential_unavailable |
+channel_event_check_unavailable | approval_owner_unbound`; also `409
+channels_not_configured | channel_paused | consent_inactive |
+grant_inactive` and `422 channel_attachment_type_mismatch |
+channel_kind_unsupported`.
 
 Order and consumption (§6 3a–3e): nothing is held, reserved or consumed before
 every earlier check passed. At send time (immediate, approved, scheduled) the
@@ -241,13 +245,15 @@ same states.
 
 | Operation | Route |
 | --- | --- |
-| `marketplace.channels.browse` | `GET /api/marketplace/channels` (channels, provider readiness, connections, pending grants, uncertain posts) |
+| `marketplace.channels.browse` | `GET /api/marketplace/channels` (`configured`, `providers` with each configured provider's static capability declaration and kinds, channels, readiness, connections, pending grants, uncertain posts) |
 | `marketplace.channels.discover` | `GET /api/marketplace/channels/discover?provider=` |
-| `marketplace.channels.create` | `POST /api/marketplace/channels` (Idempotency-Key; destination from discovery only) |
+| `marketplace.channels.create` | `POST /api/marketplace/channels` (Idempotency-Key; destination from discovery only; optional `kind`, only kinds the provider serves, else `422 channel_kind_unsupported`) |
 | `marketplace.channels.update` | `PATCH /api/marketplace/channels/{channelId}` (bumps `revision`, re-checks grants) |
 | `marketplace.channels.pause` / `.resume` / `.archive` | `POST /api/marketplace/channels/{channelId}/pause|resume|archive` |
 | `marketplace.channels.test` | `POST /api/marketplace/channels/{channelId}/test` (fixed text, authority `owner-test`) |
 | `marketplace.channel-grants.approve` / `.decline` / `.revoke` | `POST /api/marketplace/channels/grants/{grantId}/approve|decline|revoke` (approve takes an optional narrower `final`) |
+| `marketplace.channel-posts.list` | `GET /api/marketplace/channels/posts?status=held,scheduled,uncertain&channelId=` (send time, channel, agent, digest prefix, approval state; no text) |
+| `marketplace.channel-posts.cancel` | `POST /api/marketplace/channels/posts/{postId}/cancel` (scheduled posts; closes a waiting approval, fails an approved one) |
 | `marketplace.channel-posts.resolve` | `POST /api/marketplace/channels/posts/{postId}/resolve` `{status: sent|failed}` |
 | `marketplace.channel-receipts.export` / `.purge` | `GET /api/marketplace/channels/receipts/export`, `POST /api/marketplace/channels/receipts/purge` `{olderThanDays}` (default 90) |
 
@@ -270,6 +276,41 @@ credential_invalid | unavailable`) is in `browse` and in
 `/api/portal/readiness` (`channels.providers`). Tokens are never in responses,
 receipts, rows, logs, audit or errors; provider text is redacted before it is
 written.
+
+### Inert mode
+
+Without any channel credential (no token in the environment or in
+`connector_secret`), Channels is inert: the scheduler timer is not started,
+every channel operation except the owner browse answers `409
+channels_not_configured`, the browse answers `{configured: false, providers:
+[{id, readiness: "credential_missing"}]}`, and `/api/portal/readiness` has no
+`channels` block. The channel tables are created (additive) and stay empty.
+
+### Send-time rules
+
+At send time (immediate, owner-approved, scheduled) the reservation
+transaction re-checks that the channel is active, the consent row is active
+and, under a standing grant, the grant is active (`409 channel_paused |
+consent_inactive | grant_inactive`), so a pause or revoke during the
+send-time awaits stops the send. A definitive refusal of an owner-approved
+hold (caps, content, digest mismatch, paused channel, revoked consent) ends it
+`skipped` and fails the approval; the agent must ask again. A transient one
+(`503 channel_event_check_unavailable | channel_credential_unavailable`, `409
+channel_connection_unavailable`) keeps an immediate hold and its approval for
+a retry with the same key. The owner may deny an approved approval while its
+post is still held. The digest also covers the destination `parentId`; a
+destination change suspends the channel's grants and ends its holds
+(`destination_changed`).
+
+Uploads: the bytes must match the declared content type (PNG, JPEG, WebP, GIF,
+PDF, OGG, MP3, MP4/M4A, ZIP, UTF-8 text) and the file name extension must
+belong to it (`422 channel_attachment_type_mismatch`);
+`application/octet-stream` is accepted only where a provider declares it and is
+never re-typed.
+
+Resolve: a proof is verified only against a pinned owner (Nostr pubkey for
+`nostr`, Portal user id for `portal`); without the pin the answer is `503
+approval_owner_unbound` before any verifier runs.
 
 ### Scheduler
 
