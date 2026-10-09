@@ -5,8 +5,10 @@ import { AlertTriangle, Boxes, Check, CircleSlash, Hourglass, KeyRound, LoaderCi
 import { Button, IconButton, Tag } from "@tealbrick/ui";
 
 import { ApiError, decideCompanyBoxApproval, getCompanyBox, getCompanyBoxApproval, getCompanyBoxApprovals, removeCompanyBoxEntry, setupCompanyBoxEntry, testCompanyBoxEntry } from "./api";
+import { getChannels } from "./channels-api";
+import { digestPrefix, formatBytes, providerLabel, transcriptsFromCanonical, typeName } from "./channels-model";
 import { errorCopy } from "./copy";
-import type { CompanyBoxApproval, CompanyBoxCredentialKey, CompanyBoxEntry, CompanyBoxResult } from "./types";
+import type { ChannelApprovalSummary, ChannelPayloadView, CompanyBoxApproval, CompanyBoxCredentialKey, CompanyBoxEntry, CompanyBoxResult } from "./types";
 import { formatWhen, InlineError, StatePanel, statusLabel, statusTone } from "./ui";
 
 const SOURCE_LABEL: Record<CompanyBoxEntry["source"], string> = { openapi: "REST API", mcp: "MCP server" };
@@ -171,50 +173,106 @@ export function ArgumentsView({ value, depth = 0 }: { value: unknown; depth?: nu
   return <dl className="args-view">{entries.map(([key, child]) => <div key={key}><dt>{key}</dt><dd><ArgumentsView value={child} depth={depth + 1} /></dd></div>)}</dl>;
 }
 
+/**
+ * A held channel post: everything the digest covers, as plain text. The
+ * owner sees the destination, the full text, every file with its SHA-256
+ * prefix, transcripts and the digest prefix before approving (spec §4.6, §6).
+ */
+export function ChannelHoldView({ summary, payload }: { summary: ChannelApprovalSummary; payload: ChannelPayloadView | null | undefined }) {
+  const channels = useQuery({ queryKey: ["channels"], queryFn: getChannels, retry: false, staleTime: 30_000 });
+  const channel = channels.data?.channels.find((entry) => entry.id === summary.channelId);
+  const transcripts = payload && "canonical" in payload ? transcriptsFromCanonical(payload.canonical) : [];
+  const voiceFallback = payload && "fallbacks" in payload && payload.fallbacks.some((entry) => entry.startsWith("voice"));
+  return <div className="channel-hold" aria-label="Channel post">
+    <dl className="fact-list channel-hold__facts">
+      <dt>Destination</dt><dd><strong>{summary.label ?? "Unknown channel"}</strong>{summary.provider ? ` · ${providerLabel(summary.provider)}` : ""}{channel ? <> · <span className="destination-title">{channel.destination.title}</span> ({channel.destination.type})</> : null}</dd>
+      <dt>When</dt><dd>{summary.mode === "scheduled" ? `Scheduled for ${formatWhen(summary.sendAt)}` : "Sends when you approve"}</dd>
+      <dt>Digest</dt><dd><code className="digest-prefix" title={summary.digest}>{summary.digestPrefix || digestPrefix(summary.digest)}</code></dd>
+    </dl>
+    {payload === undefined ? <span className="muted-detail">Loading the post…</span>
+      : payload === null ? <p className="inline-error" role="status"><AlertTriangle size={14} /><span>The post or its channel is no longer available.</span></p>
+      : "error" in payload ? <p className="inline-error" role="status"><AlertTriangle size={14} /><span>This post can't be sent as held any more ({errorCopy(new ApiError(payload.error, 409, { error: payload.error })).title}). Deny it; the agent can ask again.</span></p>
+      : <>
+        {!payload.matchesHeldDigest && <p className="inline-error" role="alert"><AlertTriangle size={14} /><span>The destination or a file changed after the agent asked. Approving will not send it; deny it instead.</span></p>}
+        <div className="channel-hold__text"><span className="eyebrow">Text ({payload.text.length.toLocaleString()} characters)</span><pre className="plain-text">{payload.text || "(no text)"}</pre></div>
+        {payload.files.length > 0 && <div><span className="eyebrow">Attachments</span><ul className="hold-files">{payload.files.map((file) => <li key={`${file.sha256}-${file.name}`}>
+          <strong className="hold-file__name">{file.name}</strong>
+          <span>{file.kind} · {typeName(file.contentType)} · {formatBytes(file.bytes)}</span>
+          <code title={file.sha256}>sha256 {digestPrefix(file.sha256)}</code>
+          {file.kind === "image" && <small className="muted-detail">No preview is available yet. Compare the hash with the file you expect.</small>}
+        </li>)}</ul></div>}
+        {transcripts.length > 0 && <div><span className="eyebrow">Voice transcript</span>{transcripts.map((entry, index) => <pre key={index} className="plain-text">{entry.transcript}</pre>)}</div>}
+        {payload.fallbacks.length > 0 && <p className="muted-detail">Fallback applied: {payload.fallbacks.join(", ")}.{voiceFallback ? " The voice note is sent as an audio file and its transcript is part of the text above." : ""}</p>}
+      </>}
+  </div>;
+}
+
+function channelDecisionNotice(approval: CompanyBoxApproval, result: Awaited<ReturnType<typeof decideCompanyBoxApproval>>) {
+  const label = approval.channel?.label ?? "the channel";
+  if (result.channel?.scheduled) return `Approved. The post to ${label} is sent at its scheduled time.`;
+  if (result.ok) return `Approved and posted to ${label}.`;
+  const code = typeof result.channel?.error === "string" ? result.channel.error : result.approval.error ?? undefined;
+  return `Approved, but the post to ${label} wasn't sent: ${failureCopy(code).title}.`;
+}
+
 function ApprovalRow({ approval, onDecided }: { approval: CompanyBoxApproval; onDecided: (notice: string) => void }) {
   const pendingRow = approval.state === "pending";
+  const channelHold = approval.channel;
   const full = useQuery({ queryKey: ["company-box-approval", approval.id], queryFn: () => getCompanyBoxApproval(approval.id), enabled: pendingRow, retry: false });
   const decide = useMutation({
     mutationFn: (decision: "approve" | "deny") => decideCompanyBoxApproval(approval.id, decision),
     onSuccess: (result, decision) =>
       onDecided(
         decision === "deny"
-          ? `Denied ${approval.operation.title} for ${approval.agentId}.`
-          : result.approval.state === "succeeded"
-            ? `Approved and ran ${approval.operation.title}.`
-            : `Approved, but ${approval.operation.title} failed: ${failureCopy(result.approval.error ?? undefined).title}.`,
+          ? channelHold ? `Denied the post to ${channelHold.label ?? "the channel"} from ${approval.agentId}.` : `Denied ${approval.operation.title} for ${approval.agentId}.`
+          : channelHold
+            ? channelDecisionNotice(approval, result)
+            : result.approval.state === "succeeded"
+              ? `Approved and ran ${approval.operation.title}.`
+              : `Approved, but ${approval.operation.title} failed: ${failureCopy(result.approval.error ?? undefined).title}.`,
       ),
   });
   const pending = approval.state === "pending";
-  return <div className="company-box-approval" aria-label={`${approval.app}: ${approval.operation.title}`}>
+  const payload = channelHold ? (full.data ? full.data.payloadView ?? null : undefined) : undefined;
+  const reviewable = channelHold ? Boolean(payload && !("error" in payload) && payload.matchesHeldDigest) : Boolean(full.data);
+  const title = channelHold ? `Post to ${channelHold.label ?? "a channel"}` : `${approval.app} · ${approval.operation.title}`;
+  return <div className="company-box-approval" aria-label={channelHold ? title : `${approval.app}: ${approval.operation.title}`}>
     <div>
-      <strong>{approval.app} · {approval.operation.title}</strong>
-      {approval.operation.method && <code>{approval.operation.method} {approval.operation.path}</code>}
+      <strong>{title}</strong>
+      {!channelHold && approval.operation.method && <code>{approval.operation.method} {approval.operation.path}</code>}
       <p>Requested by <strong>{approval.agentId}</strong> {formatWhen(approval.createdAt)}{pending ? ` · expires ${formatWhen(approval.expiresAt)}` : ""}</p>
-      {pendingRow
-        ? <div className="company-box-approval__args" aria-label="Arguments">{full.data ? <ArgumentsView value={full.data.arguments} /> : full.error ? <InlineError error={full.error} /> : <span className="muted-detail">Loading arguments…</span>}</div>
-        : <pre className="company-box-approval__args">{approval.argumentsPreview}</pre>}
+      {channelHold
+        ? pendingRow
+          ? full.error ? <InlineError error={full.error} /> : <ChannelHoldView summary={channelHold} payload={payload} />
+          : <p className="muted-detail">Digest <code title={channelHold.digest}>{channelHold.digestPrefix}</code>{channelHold.postStatus ? ` · post ${channelHold.postStatus}` : ""}</p>
+        : pendingRow
+          ? <div className="company-box-approval__args" aria-label="Arguments">{full.data ? <ArgumentsView value={full.data.arguments} /> : full.error ? <InlineError error={full.error} /> : <span className="muted-detail">Loading arguments…</span>}</div>
+          : <pre className="company-box-approval__args">{approval.argumentsPreview}</pre>}
       {decide.error && <InlineError error={decide.error} />}
     </div>
     {pending ? <div className="dialog-actions">
-      <Button size="small" tone="primary" disabled={decide.isPending || !full.data} title={full.data ? undefined : "Review the arguments first"} onClick={() => decide.mutate("approve")}>{decide.isPending && decide.variables === "approve" ? <LoaderCircle className="spin" size={14} /> : <Check size={14} />}Approve</Button>
+      <Button size="small" tone="primary" disabled={decide.isPending || !reviewable} title={reviewable ? undefined : channelHold ? "Review the post first" : "Review the arguments first"} onClick={() => decide.mutate("approve")}>{decide.isPending && decide.variables === "approve" ? <LoaderCircle className="spin" size={14} /> : <Check size={14} />}Approve</Button>
       <Button size="small" disabled={decide.isPending} onClick={() => decide.mutate("deny")}><CircleSlash size={14} />Deny</Button>
     </div> : <Tag tone={approval.state === "succeeded" ? "success" : approval.state === "failed" || approval.state === "denied" ? "danger" : "default"}>{APPROVAL_STATE_LABEL[approval.state]}</Tag>}
   </div>;
 }
 
-/** Outward calls agents asked for; each runs once, only after you approve it. */
-function ApprovalsPanel({ onNotice }: { onNotice: (notice: string) => void }) {
+/**
+ * Outward calls agents asked for; each runs once, only after you approve it.
+ * One queue for every outward call: the Channels view shows the same panel
+ * narrowed to channel posts (`only="channel"`).
+ */
+export function ApprovalsPanel({ onNotice, only }: { onNotice: (notice: string) => void; only?: "channel" }) {
   const queryClient = useQueryClient();
   const approvals = useQuery({ queryKey: ["company-box-approvals"], queryFn: () => getCompanyBoxApprovals(), retry: false, refetchInterval: 30_000 });
-  const items = approvals.data?.approvals ?? [];
+  const items = (approvals.data?.approvals ?? []).filter((approval) => only !== "channel" || approval.channel);
   const pending = items.filter((approval) => approval.state === "pending");
   const recent = items.filter((approval) => approval.state !== "pending").slice(0, 10);
   const decided = (notice: string) => { onNotice(notice); void queryClient.invalidateQueries({ queryKey: ["company-box-approvals"] }); };
   if (approvals.error) return <InlineError error={approvals.error} />;
   if (!items.length) return null;
-  return <section className="company-box-approvals" aria-labelledby="company-box-approvals-heading">
-    <div className="section-heading"><div><p className="eyebrow">Needs you</p><h3 id="company-box-approvals-heading"><Hourglass size={15} aria-hidden="true" /> Approvals</h3></div><Tag tone={pending.length ? "warning" : "default"} aria-label={`${pending.length} waiting`}>{pending.length}</Tag></div>
+  return <section className="company-box-approvals" aria-labelledby={only ? "channel-approvals-heading" : "company-box-approvals-heading"}>
+    <div className="section-heading"><div><p className="eyebrow">Needs you</p><h3 id={only ? "channel-approvals-heading" : "company-box-approvals-heading"}><Hourglass size={15} aria-hidden="true" /> {only === "channel" ? "Posts waiting for approval" : "Approvals"}</h3></div><Tag tone={pending.length ? "warning" : "default"} aria-label={`${pending.length} waiting`}>{pending.length}</Tag></div>
     {pending.length ? pending.map((approval) => <ApprovalRow key={approval.id} approval={approval} onDecided={decided} />) : <p className="muted-detail">Nothing waiting.</p>}
     {recent.length > 0 && <details><summary>Recent decisions</summary>{recent.map((approval) => <ApprovalRow key={approval.id} approval={approval} onDecided={decided} />)}</details>}
   </section>;
