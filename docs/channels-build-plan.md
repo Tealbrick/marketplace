@@ -8,7 +8,8 @@ Estimates are worker-days (wd) of focused implementation including tests. Calend
 - Coordinator confirms this plan.
 - 0.1.19 merged to main (Lead · Miniapps, ETA ~1 day). Channels branches start from that main.
 - PO1 answered by Lead · Portal (consent dialog shows `channel:<slug>`; 0.1 → 0.2 upgrade path accepted).
-- K1 filed with Lead · Packages (not blocking P1).
+- Coordinator accepted 2026-10-09 with conditions (one approval experience, standing-grant rules, TypeScript only, bot tokens via Account Connections by Martin, Henry cutover is Martin's go).
+- K1 (contract alpha.6 + kit rc.15, Portal trust flag PO2) and K2 (kit rc.14) agreed with Lead · Packages; they gate the P1 **release**, not P1 code.
 
 ## Phase 1: Marketplace 0.2.0, Channels core + Telegram + Discord (MVP)
 
@@ -23,19 +24,20 @@ Estimates are worker-days (wd) of focused implementation including tests. Calend
 | 1g | Scheduler: schedule, cancel, in-process ticker, send-time re-check, `skipped`/`expired` | 1 | 1e, 1f | new `program/src/channels/scheduler.ts` |
 | 1h | Owner UI: Channels tab (readiness, discover, create and edit, grant to agent → Portal consent, grant inbox, approvals with preview, scheduled, receipts) | 2.5 | 1c–1g APIs | new `program/web/src/channels/*.tsx` |
 | 1i | Manifest ops and settings fields, `docs/contract.md`, contract tests (owner-only loop, cross-agent 404, idempotency), conformance | 1 | 1c–1g | `tealbrick.app.json`, `program/src/*.test.ts` |
+| 1k | One approval experience: `202 approval_pending` shape with `payloadView`, `actionGroupLabel` in grant-review, `marketplace.approvals.resolve` verifying the forwarded owner-signed event with kit `owner-approval` (K2), `approvalAuthority` declarations (K1), conformance (a)–(e) | 1.5 | 1e, kit rc.14 / rc.15 | `channels/approvals.ts`, `tealbrick.app.json` |
 | 1j | Dev proof: real test Telegram chat and Discord channel, all §10 acceptance items; upgrade 0.1.19 → 0.2.0 and rollback rehearsal on one data directory | 1 | all | evidence in `/Users/puma/work/artifacts/marketplace-channels-0.2.0/` |
-| | **Phase 1 total** | **14.5 wd** | | ≈ 7–9 calendar days |
+| | **Phase 1 total** | **16 wd** | | ≈ 8–10 calendar days; release also waits for kit rc.15 + contract alpha.6 (K1) and Portal PO2 |
 
 PR sequence (each reviewed by Lead · Miniapps): (1) 1a seam; (2) 1b + 1d store and policy; (3) 1c providers; (4) 1e + 1f + 1g authority, grants, scheduler; (5) 1h UI; (6) 1i manifest and docs. Lead · Miniapps cuts 0.2.0 after 1j evidence. Prod rollout: evidence to Coordinator, Coordinator approves.
 
 Henry cutover (0.5 wd, after 0.2.0 is in prod): needs Martin to add the bot tokens through Account Connections (credentials are Martin's) and to approve Henry's first standing grants. Coordinated with Lead · Henry.
 
-## Phase 2: Marketplace 0.2.x, more providers and Buzz approvals (6–7 wd)
+## Phase 2: Marketplace 0.2.x, more providers (5.5–6.5 wd)
 
 - Email channel (SMTP or Resend; recipient allowlist; strangers become drafts) and Henry `henry_mail` cutover: 2 wd.
 - Listmonk newsletter channel (campaign create, test send to owner, send; list as destination): 1.5 wd.
 - Slack channel (`chat.postMessage`, files, `chat.scheduleMessage` as `schedule.native`): 1 wd.
-- Buzz signed owner approvals for posts and grants (needs K2): 1 wd.
+- Buzz approval of standing-grant proposals (posts are already covered in P1): 0.5 wd.
 - Discord scheduled events (`events.create`): 1 wd.
 
 ## Phase 3: social and community (4–5 wd)
@@ -52,7 +54,8 @@ Telegram webhook (secret token header), Slack Events API, Discord gateway worker
 |---|---|
 | `app.ts` is 8.7k lines and owned by Miniapps; merge conflicts with their sprints | Seam PR first; Channels code in `program/src/channels/`; small, early PRs |
 | First background worker in Marketplace | Single replica (recipe pins 1), guarded claims, restart-safe rows, `expired` after 15 min |
-| Double approval prompt (kit harness + Marketplace) | K1 `approvalAuthority: "app"`; until then, scheduled sends avoid it |
+| Double approval prompt (kit harness + Marketplace) | K1 with Portal trust flag; no app-authority hold ships to prod before K1 |
+| Portal refuses upgrade if template topology changes | No new services or volumes (scheduler in-process, attachments on `/data`); send the 0.2.0 template diff to Lead · Portal early |
 | Shared-variable credentials need a redeploy to rotate | Documented; readiness shows `credential_invalid` at once |
 | Telegram discovery depends on recent updates | Owner writes a message just before discovery; manual chat id entry is not allowed for agents, only for the owner with a verification send |
 | Provider terms (automation labels, X cost) | Automated-account labels in setup steps; X in P3 with a cost note |

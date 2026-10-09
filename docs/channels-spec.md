@@ -1,6 +1,6 @@
 # Marketplace Channels (spec v0.2)
 
-Status: proposed, 2026-10-09. Owner: Lead · Channels (a lane inside the Marketplace miniapp). Code review: Lead · Miniapps. Approval: Coordinator · Teal Brick.
+Status: accepted by Coordinator · Teal Brick 2026-10-09, with conditions (one approval experience §6; standing grants §4.4; TypeScript only; bot tokens only via Account Connections, entered by Martin; Henry cutover is Martin's go). Owner: Lead · Channels (a lane inside the Marketplace miniapp). Code review: Lead · Miniapps. Approval: Coordinator · Teal Brick.
 Builds on: the Marketplace consent and `executeConsentedCall` path ([contract.md](contract.md)), Portal class grants (`operator-handoff.v1.4`), the miniapp contract §12 (Forge `projects/tealbrick/decisions/tealbrick-miniapp-development-contract.md`), the engine adapter pattern in the miniapps PRD §2, and the kit 0.3.0-rc.13 outward gate.
 Build plan: [channels-build-plan.md](channels-build-plan.md).
 
@@ -151,6 +151,7 @@ Single source of truth: the Marketplace DB holds channel policy and standing gra
 | `marketplace.channels.grants.propose` | POST `/{channelId}/grants` | create | writes-app-state | required | Creates `proposed`; §4.4 |
 | `marketplace.channels.grants.narrow` | POST `/grants/{grantId}/narrow` | update | writes-app-state | required | Subset only |
 | `marketplace.channels.grants.withdraw` | POST `/grants/{grantId}/withdraw` | delete | writes-app-state | supported | |
+| `marketplace.approvals.resolve` | POST `/api/marketplace/v1/agent/approvals/{approvalId}/resolve` | update | writes-app-state | required | Forwarded by the kit (K1): the owner-signed approval event for the caller's own held call (§6). Not a channel-only op; it also serves held `tools.call` calls |
 
 Later phases: `marketplace.channels.events.create` (Discord scheduled event; create; external-effects; P2), `marketplace.channels.read` (recent inbound messages; read; read-only; P4).
 
@@ -170,7 +171,7 @@ Per-payload approvals reuse the existing `marketplace.approvals.list|get|approve
 
 ### 5.3 Portal grant mapping (no Portal schema change)
 
-A channel consent is a v1.4 **class grant**: `pluginId: channels-<provider>`, `accountId: <connectionId>`, `resourceKind: <provider>.connected-account`, `resourceRef: account:<connectionId>`, `grantClass: outward` (post, schedule) or `read` (list, get, receipts, P4 read), `actionGroup: channel:<slug>`. Marketplace is already authoritative for expanding class + group to operations. Without `actionGroup` the consent covers every channel on that connection; the Channels UI always sends one. The owner starts the request from the Channels view ("Grant to agent"), and Portal shows its normal consent dialog. Tether actions: `read, create` for outward (v1.4 table).
+A channel consent is a v1.4 **class grant**: `pluginId: channels-<provider>`, `accountId: <connectionId>`, `resourceKind: <provider>.connected-account`, `resourceRef: account:<connectionId>`, `grantClass: outward` (post, schedule) or `read` (list, get, receipts, P4 read), `actionGroup: channel:<slug>`. Marketplace is already authoritative for expanding class + group to operations. Without `actionGroup` the consent covers every channel on that connection; the Channels UI always sends one. The owner starts the request from the Channels view ("Grant to agent"), and Portal shows its normal consent dialog, labelled from the display-only `actionGroupLabel` that Marketplace adds to the grant-review answer. Tether actions: `read, create` for outward (v1.4 table).
 
 ## 6. Execution flow
 
@@ -187,7 +188,14 @@ A channel consent is a v1.4 **class grant**: `pluginId: channels-<provider>`, `a
 
 **Scheduled posts.** `channels.schedule` runs steps 1–3c at schedule time (authority is checked and the digest is bound then) and stores `scheduled`. An in-process ticker (every 30 s; Marketplace runs one replica) claims due rows with a guarded `UPDATE … WHERE status = 'scheduled'`, then repeats 3a, 3b, 3d at send time and confirms that the grant or approval is still valid. If anything fails: `skipped` with the reason, never a silent retry. A post more than 15 minutes late (downtime) becomes `expired`. Owner approval of a scheduled per-payload post expires at `sendAt`.
 
-**Kit harness gate.** `channels.post` and `channels.schedule` are not read-only, so the kit harness also asks in TBD before the call leaves the agent (defence in depth; the Marketplace check is the authority). To avoid a double prompt under a standing grant, the contract needs an operation field `approvalAuthority: "app"` (contract change request K1, §13). Until then, standing grants remove the prompt only for scheduled sends (they run server-side) and the harness prompt stays for immediate posts.
+**One approval experience (Coordinator condition, 2026-10-09).** The owner approves a channel post in the same places as every other outward action: TBD and a signed Buzz reply. There is never a second prompt for the same post, and there is never a path where neither layer asks (except an owner-approved standing grant, which is itself an owner approval with an expiry and a receipt per send).
+
+1. **K1, contract alpha.6 + kit rc.15.** Operations declare `approvalAuthority: "harness" | "app"` (default `harness`) and the defined response shape (`202 approval_pending {approvalId, digest, expiresAt, payloadView}` or `200` + receipt). The manifest alone never switches off the harness prompt: the kit honours `"app"` only when the operation is `external-effects` **and** the Portal-signed grant marks that registration as app-approval-trusted (a flag only Portal or the owner sets). Otherwise the harness prompts as today (fail closed). `channels.post`, `channels.schedule` and `channels.test` declare `"app"`.
+2. **Hold surfaces through the harness.** Marketplace answers `202 approval_pending` with `{approvalId, digest, payloadView}` (the canonical payload, file hashes, image previews by URL). The kit shows exactly this in TBD and DMs the owner on Buzz with the 12-hex digest prefix, the same as its own gate (16,000-char view limit; larger payloads are refused, never clipped).
+3. **Owner decision reaches Marketplace signed.** TBD approval and the Buzz reply `approve <12+ hex>` both produce an owner-signed Nostr event. The kit forwards the **full signed event** with the `approvalId` to Marketplace (`marketplace.approvals.resolve`, agent audience, binds only to the caller's own held call). Marketplace verifies it locally with the kit's `verifyOwnerApproval` (K2) over an in-memory `OwnerApprovalRelay` that returns the forwarded event: recomputed NIP-01 id, BIP-340 signature, owner pubkey pinned from the Portal claim, `h` tag, digest prefix match, age ≤ 15 min, single use. No relay read and no buzz CLI on the server. The Marketplace Approvals view (owner session) stays as a third surface on the same queue. The harness records `owner.approval` (channel `app`) and the final `outward.receipt`, and tells the model not to retry while pending.
+4. **Conformance** (kit conformance suite + Marketplace contract tests): (a) `approvalAuthority: "app"` on a `read-only` or `writes-app-state` op is rejected, and an `"app"` op without the Portal trust flag still gets the harness prompt; (b) an app-authority op called with no grant and no approval returns `202 approval_pending` and performs no provider call (provider-call counter = 0); (c) the harness surfaces that hold in TBD and Buzz; (d) a resolve with an unsigned, foreign-owner, stale, reused or digest-mismatched event is refused; (e) after a valid resolve, exactly one provider call runs with the approved digest.
+
+Until K1 and K2 ship, Marketplace runs under harness authority (the kit prompts) and does not ship app-authority holds to prod; P1 release waits for K1/K2 (§13).
 
 ## 7. Receipts and audit
 
@@ -263,9 +271,10 @@ Acceptance (dev, real test chat and test channel):
 
 | Id | Owner | Request | Needed by |
 |---|---|---|---|
-| K1 | Lead · Packages (contract) | Operation field `approvalAuthority: "app"`: the app holds outward approval server-side, so the harness does not prompt; it still records the receipt | P1 nice-to-have, P2 required |
-| K2 | Lead · Packages (kit) | Export `verifyOwnerApproval` and `buzzApprovalRelay` on a server-safe subpath (`@tealbrick/kit/owner-approval`) | P2 (Buzz approvals in Marketplace) |
-| PO1 | Lead · Portal | Confirm the consent dialog renders `actionGroup: channel:<slug>` with the channel label from the review response; confirm 0.1 → 0.2 upgrade path | P1 |
+| K1 | Lead · Packages (contract alpha.6 + kit rc.15) | `approvalAuthority` + response shape; honoured only with the Portal trust flag on `external-effects` ops; harness surfaces the app's hold in TBD and Buzz, forwards the owner-signed event, records receipts; conformance (a)–(e) in §6 | P1 release |
+| K2 | Lead · Packages (kit rc.14) | `@tealbrick/kit/owner-approval`: `verifyOwnerApproval`, `nostrSignatureValid`, `nostrEventId`, `MIN_DIGEST_PREFIX`, types (server-safe; no relay reader needed, §6.3); TBD approvals produce an owner-signed event | P1 release |
+| PO2 | Lead · Portal | App-approval-trusted flag per registration in the signed grant (set by Portal or owner only), for K1 | P1 release |
+| PO1 | Lead · Portal | Done 2026-10-09: shape accepted unchanged. Marketplace grant-review adds display-only `actionGroupLabel` (plain text ≤ 80, never stored or used for authority); Portal renders it, falls back to the slug. 0.2.0 must keep the 0.1.18 template topology (no new services or volumes) | P1 |
 | MI1 | Lead · Miniapps | Review the executor seam refactor of `executeConsentedCall` (no behaviour change) before Channels code lands | P1 first PR |
 
 ## 14. Coordination constraints (Lead · Miniapps, 2026-10-09)
