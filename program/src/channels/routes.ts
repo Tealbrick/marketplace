@@ -22,6 +22,8 @@ import {
   type ClassSelection,
 } from "./runtime.js";
 import {
+  CHANNEL_ATTACHMENT_QUOTA_BYTES,
+  CHANNEL_ATTACHMENT_UPLOADS_PER_DAY,
   CHANNEL_SCHEDULE_MAX_LEAD_MS,
   CHANNEL_SCHEDULE_MIN_LEAD_MS,
   receiptView,
@@ -399,26 +401,59 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
       });
       if (!typeCheck.ok) return fail(reply, typeCheck.status, typeCheck.error);
       const sha256 = createHash("sha256").update(bytes).digest("hex");
-      return idempotent(reply, { scope: `channel-upload:${caller.agentId}`, key, request: { sha256, contentType, name } }, () => {
-        writeAttachmentBytes(service.attachmentsDir, bytes, sha256);
-        const record = channels.insertAttachment({
-          workspaceSlug: org,
-          sha256,
-          contentType,
-          bytes: bytes.byteLength,
-          name,
-          createdBy: caller.agentId,
-          now: deps.now(),
-        });
-        store.recordAudit({
-          workspaceSlug: org,
-          pluginId: null,
-          eventType: "marketplace.channels.attachment.uploaded",
-          actorId: `agent:${caller.agentId}`,
-          metadata: { attachmentId: record.id, sha256, contentType, bytes: bytes.byteLength },
-        });
-        return { status: 201, body: { ok: true, schema: 1, attachmentId: record.id, sha256, bytes: bytes.byteLength, contentType } };
+      // Idempotent on the key; a quota refusal records nothing, so the same key may be retried later.
+      const scope = `channel-upload:${caller.agentId}`;
+      const fingerprint = createHash("sha256").update(JSON.stringify({ sha256, contentType, name })).digest("hex");
+      const previous = store.getMarketplaceRuntimeOperation({ consentId: scope, idempotencyKey: key });
+      if (previous) {
+        const stored = previous.response as { status?: number; body?: Record<string, unknown> } | null;
+        if (previous.fingerprint !== fingerprint) return fail(reply, 409, "idempotency_conflict");
+        if (previous.status === "succeeded" && stored?.body) {
+          reply.code(stored.status ?? 200);
+          return { ...stored.body, replayed: true };
+        }
+        return fail(reply, 409, "operation_in_progress");
+      }
+      const inserted = channels.insertAttachmentWithinQuota({
+        workspaceSlug: org,
+        sha256,
+        contentType,
+        bytes: bytes.byteLength,
+        name,
+        createdBy: caller.agentId,
+        now: deps.now(),
+        maxBytes: CHANNEL_ATTACHMENT_QUOTA_BYTES,
+        maxPerDay: CHANNEL_ATTACHMENT_UPLOADS_PER_DAY,
+        write: () => {
+          writeAttachmentBytes(service.attachmentsDir, bytes, sha256);
+        },
       });
+      if (!inserted.ok) {
+        return fail(reply, 429, inserted.error, {
+          limit: inserted.limit,
+          maxBytes: CHANNEL_ATTACHMENT_QUOTA_BYTES,
+          maxUploadsPerDay: CHANNEL_ATTACHMENT_UPLOADS_PER_DAY,
+        });
+      }
+      const record = inserted.record;
+      store.recordAudit({
+        workspaceSlug: org,
+        pluginId: null,
+        eventType: "marketplace.channels.attachment.uploaded",
+        actorId: `agent:${caller.agentId}`,
+        metadata: { attachmentId: record.id, sha256, contentType, bytes: bytes.byteLength },
+      });
+      const result = { status: 201, body: { ok: true, schema: 1, attachmentId: record.id, sha256, bytes: bytes.byteLength, contentType } };
+      try {
+        const operation = store.beginMarketplaceRuntimeOperation({ consentId: scope, idempotencyKey: key, fingerprint });
+        if (operation.created) {
+          store.finishMarketplaceRuntimeOperation({ id: operation.operation.id, status: "succeeded", response: result });
+        }
+      } catch {
+        // A concurrent upload with the same key won; this row is unreferenced and the cleanup removes it.
+      }
+      reply.code(result.status);
+      return result.body;
     });
   });
 
@@ -963,14 +998,16 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
       .safeParse(request.body ?? {});
     if (!parsed.success) return fail(reply, 400, "validation_failed");
     const before = new Date(deps.now().getTime() - parsed.data.olderThanDays * DAY_MS);
-    const purged = channels.purgeReceipts(org, before);
+    const { purged, skipped } = channels.purgeReceipts(org, before);
+    // Q1: attachments of finished posts go with their receipts (bounded; the tick continues).
+    service.cleanupAttachments(deps.now());
     store.recordAudit({
       workspaceSlug: org,
       pluginId: null,
       eventType: "marketplace.channels.receipts.purged",
       actorId: principal.id,
-      metadata: { before: before.toISOString(), purged },
+      metadata: { before: before.toISOString(), purged, skipped },
     });
-    return { ok: true, schema: 1, purged, before: before.toISOString() };
+    return { ok: true, schema: 1, purged, skipped, before: before.toISOString() };
   });
 }

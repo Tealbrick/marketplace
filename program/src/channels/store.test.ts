@@ -252,8 +252,11 @@ describe("channel records", () => {
     expect(channels.listReceipts(WS, { agentId: "agent-a" })).toHaveLength(1);
     expect(channels.listReceipts(WS, { agentId: "agent-b" })).toHaveLength(0);
     expect(() => channels.upsertReceipt({ ...base, workspaceSlug: "org-2", status: "sent" })).toThrow(/another workspace/u);
-    expect(channels.purgeReceipts(WS, at(-1))).toBe(0);
-    expect(channels.purgeReceipts(WS, at(5))).toBe(1);
+    expect(channels.purgeReceipts(WS, at(-1))).toEqual({ purged: 0, skipped: 0 });
+    // Q2: the post is still `sending`, so its receipt is kept.
+    expect(channels.purgeReceipts(WS, at(5))).toEqual({ purged: 0, skipped: 1 });
+    channels.finishPost(WS, post.id, { status: "sent", from: ["sending"] });
+    expect(channels.purgeReceipts(WS, at(5))).toEqual({ purged: 1, skipped: 0 });
     expect(channels.getReceiptByPost(WS, post.id)).toBeNull();
   });
 });
@@ -906,5 +909,116 @@ describe("reserveHeldPost binds the approval to its post (review F2)", () => {
     expect(reserve(a.id)).toMatchObject({ ok: true, post: { id: a.id, status: "sending", authority: `approval:${approvalA.id}` } });
     expect(reserve(a.id)).toEqual({ ok: false, error: "channel_post_not_held" });
     expect(channels.getPost(WS, b.id)!.status).toBe("held");
+  });
+});
+
+describe("attachment quota and cleanup (follow-up Q1)", () => {
+  const upload = (channels: ChannelStore, input: { agent?: string; bytes?: number; now: string; maxBytes?: number; maxPerDay?: number; content?: string; write?: () => void }) =>
+    channels.insertAttachmentWithinQuota({
+      workspaceSlug: WS,
+      sha256: sha256Hex(input.content ?? "x"),
+      contentType: "image/png",
+      bytes: input.bytes ?? 10,
+      name: "a.png",
+      createdBy: input.agent ?? "agent-1",
+      now: input.now,
+      maxBytes: input.maxBytes ?? 100,
+      maxPerDay: input.maxPerDay ?? 10,
+      write: input.write ?? (() => undefined),
+    });
+
+  it("refuses beyond the byte quota and the uploads-per-day limit without writing", async () => {
+    const { channels } = await fixture();
+    let writes = 0;
+    const write = () => {
+      writes += 1;
+    };
+    const limited = (input: Parameters<typeof upload>[1]) => upload(channels, { maxPerDay: 3, ...input });
+    expect(limited({ bytes: 60, now: at(0), write }).ok).toBe(true);
+    expect(limited({ bytes: 50, now: at(1), write })).toEqual({ ok: false, error: "channel_attachment_quota_exceeded", limit: "bytes" });
+    expect(limited({ bytes: 40, now: at(2), write }).ok).toBe(true);
+    expect(limited({ bytes: 50, now: at(3), agent: "agent-2", write }).ok).toBe(true);
+    expect(writes).toBe(3);
+    expect(limited({ bytes: 0, now: at(4), write }).ok).toBe(true);
+    expect(limited({ bytes: 0, now: at(5), write })).toEqual({ ok: false, error: "channel_attachment_quota_exceeded", limit: "uploads_per_day" });
+    // The day window rolls.
+    expect(limited({ bytes: 0, now: at(24 * 60 + 1), write }).ok).toBe(true);
+    expect(writes).toBe(5);
+  });
+
+  it("deletes unreferenced rows after 24 h and keeps files still used by open posts", async () => {
+    const root = await tempRoot();
+    const { channels, channel } = await fixture();
+    const write = (content: string) => () => {
+      writeAttachmentBytes(root, new TextEncoder().encode(content));
+    };
+    const loose = upload(channels, { content: "loose", now: at(0), write: write("loose") });
+    const shared1 = upload(channels, { content: "shared", now: at(0), write: write("shared") });
+    const shared2 = upload(channels, { content: "shared", now: at(0), write: write("shared") });
+    const held = upload(channels, { content: "held", now: at(0), write: write("held") });
+    if (!loose.ok || !shared1.ok || !shared2.ok || !held.ok) throw new Error("upload");
+    const insert = (key: string, attachmentId: string, status: "held" | "scheduled") => {
+      const inserted = channels.insertPost({
+        workspaceSlug: WS,
+        channelId: channel.id,
+        agentId: "agent-1",
+        consentId: "c1",
+        mode: status === "held" ? "immediate" : "scheduled",
+        sendAt: status === "held" ? null : at(60 * 48),
+        text: "t",
+        attachments: [{ id: attachmentId, kind: "image" }],
+        digest: sha256Hex(key),
+        idempotencyKey: key,
+        status,
+        now: at(0),
+      });
+      if (!inserted.ok) throw new Error(inserted.error);
+      return inserted.post;
+    };
+    insert("cleanup-held-0001", held.record.id, "held");
+    insert("cleanup-shared-0001", shared2.record.id, "scheduled");
+    const options = { rootDir: root, unreferencedAfterMs: 86_400_000, retentionMs: 90 * 86_400_000 };
+    expect(channels.cleanupAttachments({ ...options, now: at(60) })).toEqual({ deleted: 0, filesDeleted: 0 });
+    const result = channels.cleanupAttachments({ ...options, now: at(24 * 60 + 1) });
+    // loose and shared1 rows go; shared's file stays (shared2 is used by a scheduled post); held stays.
+    expect(result).toEqual({ deleted: 2, filesDeleted: 1 });
+    expect(channels.getAttachment(WS, loose.record.id)).toBeNull();
+    expect(channels.getAttachment(WS, shared1.record.id)).toBeNull();
+    expect(channels.getAttachment(WS, shared2.record.id)).not.toBeNull();
+    expect(channels.getAttachment(WS, held.record.id)).not.toBeNull();
+    expect(readAttachmentBytes(root, sha256Hex("shared")).toString()).toBe("shared");
+    expect(readAttachmentBytes(root, sha256Hex("held")).toString()).toBe("held");
+    expect(() => readAttachmentBytes(root, sha256Hex("loose"))).toThrow();
+  });
+
+  it("deletes a finished post's attachments only after its receipt is purged or the retention passed", async () => {
+    const root = await tempRoot();
+    const { channels, channel } = await fixture();
+    const up = upload(channels, { content: "flyer", now: at(0), write: () => void writeAttachmentBytes(root, new TextEncoder().encode("flyer")) });
+    if (!up.ok) throw new Error("upload");
+    const post = mustReserve(channels, { ...reserveInput(channel.id), attachments: [{ id: up.record.id, kind: "image" }], now: at(0) });
+    const options = { rootDir: root, unreferencedAfterMs: 86_400_000, retentionMs: 90 * 86_400_000 };
+    // Sending: never deleted.
+    expect(channels.cleanupAttachments({ ...options, now: at(60 * 48) }).deleted).toBe(0);
+    channels.finishPost(WS, post.id, { status: "sent", from: ["sending"], now: at(1) });
+    channels.upsertReceipt({ postId: post.id, workspaceSlug: WS, channelId: channel.id, agentId: "agent-a", provider: "telegram", digest: post.digest, status: "sent", now: at(1) });
+    // Finished with a receipt inside the retention: kept.
+    expect(channels.cleanupAttachments({ ...options, now: at(60 * 48) }).deleted).toBe(0);
+    // Receipt purged: deleted with its file.
+    expect(channels.purgeReceipts(WS, at(60 * 48))).toEqual({ purged: 1, skipped: 0 });
+    expect(channels.cleanupAttachments({ ...options, now: at(60 * 48) })).toEqual({ deleted: 1, filesDeleted: 1 });
+  });
+
+  it("deletes a finished post's attachments after the retention even if the receipt remains", async () => {
+    const root = await tempRoot();
+    const { channels, channel } = await fixture();
+    const up = upload(channels, { content: "old", now: at(0), write: () => void writeAttachmentBytes(root, new TextEncoder().encode("old")) });
+    if (!up.ok) throw new Error("upload");
+    const post = mustReserve(channels, { ...reserveInput(channel.id), attachments: [{ id: up.record.id, kind: "image" }], now: at(0) });
+    channels.finishPost(WS, post.id, { status: "failed", from: ["sending"], now: at(1) });
+    channels.upsertReceipt({ postId: post.id, workspaceSlug: WS, channelId: channel.id, agentId: "agent-a", provider: "telegram", digest: post.digest, status: "failed", now: at(1) });
+    const options = { rootDir: root, unreferencedAfterMs: 86_400_000, retentionMs: 90 * 86_400_000 };
+    expect(channels.cleanupAttachments({ ...options, now: at(60 * 24 * 89) }).deleted).toBe(0);
+    expect(channels.cleanupAttachments({ ...options, now: at(60 * 24 * 91) }).deleted).toBe(1);
   });
 });

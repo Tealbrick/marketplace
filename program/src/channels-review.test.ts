@@ -429,3 +429,92 @@ describe("F3: the live event check does not follow redirects off the listing hos
     expect(f.telegram.sends).toHaveLength(1);
   });
 });
+
+describe("Q2: receipt purge only for finished posts", () => {
+  it("keeps receipts of held, scheduled and uncertain posts and reports {purged, skipped}", async () => {
+    const f = await setup();
+    const channel = await f.createChannel({ slug: "purge" });
+    f.consentFor("agent-1", channel);
+    await f.proposeAndApprove(channel.id);
+    const sent = await f.post(channel.id, { text: "Sent" }, key());
+    expect(sent.statusCode).toBe(200);
+    const scheduled = await f.agent("POST", `/api/marketplace/v1/agent/channels/${channel.id}/scheduled`, {
+      key: key(),
+      payload: { text: "Later", sendAt: new Date(f.now + 86_400_000).toISOString() },
+    });
+    expect(scheduled.json().receipt.status).toBe("pending");
+    f.telegram.reply({ status: "uncertain", resultIds: [], resultUrls: [], detail: "timeout" });
+    const uncertain = await f.post(channel.id, { text: "Unknown" }, key());
+    expect(uncertain.statusCode).toBe(502);
+    f.advance(60_000);
+    const purged = await f.owner("POST", "/api/marketplace/channels/receipts/purge", { olderThanDays: 0 });
+    expect(purged.json()).toMatchObject({ purged: 1, skipped: 2 });
+    expect(f.store.channels.getReceiptByPost(TENANT, sent.json().receipt.postId)).toBeNull();
+    expect(f.store.channels.getReceiptByPost(TENANT, scheduled.json().receipt.postId)).not.toBeNull();
+    expect(f.store.channels.getReceiptByPost(TENANT, uncertain.json().receipt.postId)).not.toBeNull();
+  });
+
+  it("the scheduler applies the 90-day retention to finished posts only", async () => {
+    const f = await setup();
+    const channel = await f.createChannel({ slug: "retention" });
+    f.consentFor("agent-1", channel);
+    await f.proposeAndApprove(channel.id);
+    const sent = await f.post(channel.id, { text: "Old" }, key());
+    f.telegram.reply({ status: "uncertain", resultIds: [], resultUrls: [], detail: "timeout" });
+    const uncertain = await f.post(channel.id, { text: "Old unknown" }, key());
+    const later = f.now + 91 * 86_400_000;
+    f.setClock(later);
+    await f.runtime.tick(new Date(later));
+    expect(f.store.channels.getReceiptByPost(TENANT, sent.json().receipt.postId)).toBeNull();
+    expect(f.store.channels.getReceiptByPost(TENANT, uncertain.json().receipt.postId)).not.toBeNull();
+  });
+});
+
+describe("Q1: attachment quota and cleanup through the app", () => {
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const upload = (f: ChannelFixture, content: string, idempotencyKey = key()) =>
+    f.app.inject({
+      method: "POST",
+      url: "/api/marketplace/v1/agent/channels/attachments?name=a.png",
+      headers: { authorization: `Bearer tbag_${"a".repeat(43)}`, "idempotency-key": idempotencyKey, "content-type": "image/png" },
+      payload: Buffer.concat([PNG, Buffer.from(content)]),
+    });
+
+  it("answers 429 channel_attachment_quota_exceeded after 50 uploads in a day; a refused key can be retried later", async () => {
+    const f = await setup();
+    const channel = await f.createChannel({ slug: "quota" });
+    f.consentFor("agent-1", channel);
+    for (let index = 0; index < 50; index += 1) {
+      expect((await upload(f, `file-${index}`)).statusCode).toBe(201);
+    }
+    const refusedKey = key();
+    const refused = await upload(f, "file-50", refusedKey);
+    expect(refused.statusCode).toBe(429);
+    expect(refused.json()).toMatchObject({ error: "channel_attachment_quota_exceeded", limit: "uploads_per_day", maxBytes: 200 * 1024 * 1024, maxUploadsPerDay: 50 });
+    // A replay of a stored upload is not a new upload.
+    const replayKey = key();
+    f.advance(25 * 3_600_000);
+    expect((await upload(f, "file-51", refusedKey)).statusCode).toBe(201);
+    expect((await upload(f, "file-52", replayKey)).statusCode).toBe(201);
+    expect((await upload(f, "file-52", replayKey)).json()).toMatchObject({ replayed: true });
+  });
+
+  it("the tick removes unreferenced uploads after 24 h but keeps the ones a held post uses", async () => {
+    const f = await setup();
+    const channel = await f.createChannel({ slug: "cleanup" });
+    f.consentFor("agent-1", channel);
+    const loose = (await upload(f, "loose")).json();
+    const used = (await upload(f, "used")).json();
+    const held = await f.post(channel.id, { text: "With flyer", attachments: [{ attachmentId: used.attachmentId, kind: "image" }] }, key());
+    expect(held.statusCode).toBe(202);
+    const later = f.now + 25 * 3_600_000;
+    f.setClock(later);
+    await f.runtime.tick(new Date(later));
+    expect(f.store.channels.getAttachment(TENANT, loose.attachmentId)).toBeNull();
+    expect(f.store.channels.getAttachment(TENANT, used.attachmentId)).not.toBeNull();
+    // The held post still sends exactly the approved bytes.
+    const approved = await f.owner("POST", `/api/marketplace/company-box/approvals/${held.json().approvalId}/approve`, {});
+    expect(approved.json()).toMatchObject({ approval: { state: "succeeded" } });
+    expect(f.telegram.sends).toHaveLength(1);
+  });
+});
