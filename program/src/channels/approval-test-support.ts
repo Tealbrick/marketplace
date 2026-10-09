@@ -3,6 +3,7 @@ import { createHash, generateKeyPairSync, randomUUID, sign, type JsonWebKey, typ
 
 import { nostrEventId, OWNER_APPROVAL_HEADER_TYP, OWNER_APPROVAL_TYP } from "@tealbrick/contract";
 
+import { NOSTR_MIN_PREFIX_HEX } from "./approvals.js";
 import type { OwnerClaimBinding, OwnerPinSource } from "./owner-pin.js";
 
 // ----- secp256k1 / BIP-340 (BigInt; slow but dependency-free, enough for tests) -----------------
@@ -81,7 +82,7 @@ export function signedApproval(input: { key: NostrKey; channel: string; digest: 
     created_at: input.createdAt ?? Math.floor(Date.now() / 1000),
     kind: input.kind ?? 9,
     tags: [["h", input.channel]],
-    content: input.content ?? `approve ${input.digest.slice(0, input.prefixLength ?? 12)}`,
+    content: input.content ?? `approve ${input.digest.slice(0, input.prefixLength ?? NOSTR_MIN_PREFIX_HEX)}`,
   };
   const id = nostrEventId(unsigned);
   return { id, ...unsigned, sig: schnorrSign(Buffer.from(id, "hex"), input.key) };

@@ -67,13 +67,14 @@ import {
 } from "./execution-targets.js";
 import {
   createContractOwnerApprovalVerifier,
+  NOSTR_AMBIGUITY_WINDOW_MS,
   RESOLVE_CLAIM_STALE_MS,
   RESOLVE_IDEMPOTENCY_KEY,
   type OwnerApprovalBinding,
   type OwnerApprovalVerifier,
 } from "./channels/approvals.js";
 import { currentOwnerKeyView, registerOwnerKeyRoutes } from "./channels/owner-key-routes.js";
-import { NO_OWNER_PIN, readAttestedOwnerNostrPubkey, readOwnerPin, type OwnerPinSource } from "./channels/owner-pin.js";
+import { NO_OWNER_PIN, readAttestedOwnerNostrPubkey, readOwnerPin, type OwnerKeyAttestation, type OwnerPinSource } from "./channels/owner-pin.js";
 import { CHANNEL_AGENT_OPERATION, registerChannelRoutes } from "./channels/routes.js";
 import {
   CHANNEL_TOKEN_ENV,
@@ -882,9 +883,12 @@ function agentGuidance() {
     "3. `POST /api/marketplace/v1/agent/channels/{channelId}/posts` with `{text, attachments?: [{attachmentId, kind,",
     "   transcript?}], campaign?: {ref, phase}}` and an `Idempotency-Key`. `200` returns a `receipt`. `202",
     "   approval_pending` means the owner must approve this exact payload: do not retry with a new key or changed",
-    "   text; retry with the same key later. Undeclared kinds answer `channel_capability_unavailable`; long text is",
-    "   refused, never cut.",
-    "4. `POST .../{channelId}/scheduled` adds `sendAt` (60 s to 30 days ahead); `receipts` show the final state.",
+    "   text; retry with the same key later. The 202 body is `{error, approvalId, digest, expiresAt, payloadView}`;",
+    "   the post id is in the `Tealbrick-Post-Id` response header. `409 channel_digest_prefix_collision` means another",
+    "   held post looks too similar: change the text and retry. Undeclared kinds answer",
+    "   `channel_capability_unavailable`; long text is refused, never cut.",
+    "4. `POST .../{channelId}/scheduled` adds `sendAt` (60 s to 30 days ahead); a held schedule also answers 202 with",
+    "   the `Tealbrick-Post-Id` header; `receipts` show the final state.",
     "5. `POST .../{channelId}/grants` proposes a standing grant; only the owner can approve it.",
     "",
     "Installing, connecting, consenting and approving are owner actions. They are not available to agents.",
@@ -8439,6 +8443,8 @@ export async function buildMarketplaceApp(
     options.ownerApprovalVerifier ??
     createContractOwnerApprovalVerifier({
       isUsed: (proofId) => options.store.channels.isApprovalProofUsed(proofId),
+      prefixAmbiguous: ({ prefix, approvalId, digest, now }) =>
+        options.store.approvalPrefixAmbiguous({ prefix, approvalId, digest, workspaceSlug: organizationId, since: new Date(now.getTime() - NOSTR_AMBIGUITY_WINDOW_MS) }),
       jwksFetch: options.ownerApprovalJwksFetch ?? options.portalFetch,
     });
   /** The manifest operation a held call came from (`op` of a Portal owner assertion). */
@@ -8454,10 +8460,12 @@ export async function buildMarketplaceApp(
    * current owner setting (same fingerprint and epoch, not `key_changed`), and equal to the Portal-attested
    * key when Portal attests one (rule 4; Portal v2). Synchronous apart from the attestation read.
    */
-  const nostrKeyFor = (approval: CompanyBoxApproval, attested: string | null): ResolveRefusal | { ok: true; pubkey: string; fingerprint: string; setAtMs: number } => {
+  const nostrKeyFor = (approval: CompanyBoxApproval, attestation: OwnerKeyAttestation | null): ResolveRefusal | { ok: true; pubkey: string; fingerprint: string; setAtMs: number } => {
+    // Review B2: an unreadable or malformed attestation counts as a mismatch (fail closed), never as absent.
+    if (!attestation || attestation.status === "error") return { ok: false, status: 503, error: "approval_owner_key_mismatch" };
     const key = options.store.channels.getOwnerKey(organizationId);
     if (!key?.pubkey || !key.fingerprint) return { ok: false, status: 503, error: "approval_owner_unbound" };
-    if (attested !== null && attested !== key.pubkey) return { ok: false, status: 503, error: "approval_owner_key_mismatch" };
+    if (attestation.status === "attested" && attestation.pubkey !== key.pubkey) return { ok: false, status: 503, error: "approval_owner_key_mismatch" };
     const pin = options.store.channels.getApprovalOwnerPin(approval.id);
     if (!pin || pin.keyStatus !== "pinned" || pin.keyFingerprint !== key.fingerprint || pin.keyEpoch !== key.epoch) {
       return { ok: false, status: 409, error: "approval_owner_key_changed" };

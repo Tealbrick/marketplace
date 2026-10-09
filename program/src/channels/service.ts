@@ -6,6 +6,7 @@ import { ConsentedExecutionOutcome, type ExecutionPreparation, type ExecutionTar
 import type { GovernanceActor, GovernedActionRisk } from "../governance.js";
 import type { SqliteMarketplaceStore } from "../store.js";
 import type { CompanyBoxApproval, ConnectorCapability, ConnectorUsageLedgerEntry, MarketplaceAgentConsent } from "../types.js";
+import { NOSTR_MIN_PREFIX_HEX } from "./approvals.js";
 import { createGrantService, type GrantService } from "./grants.js";
 import { eventHostAllowed, eventListingStatus, grantCoversPost, maxPendingPerAgent, type PostCampaign } from "./policy.js";
 import type { ChannelCapabilities, ChannelProvider, ChannelProviderId, DiscoverResult, SendResult } from "./providers/types.js";
@@ -668,6 +669,11 @@ export function createChannelService(deps: ChannelServiceDeps) {
     }
     if (store.countPendingCompanyBoxApprovals({ workspaceSlug: org, agentId: input.consent.agentId }) >= APPROVAL_MAX_PENDING_PER_AGENT) {
       return refusalReply({ status: 429, error: "approval_queue_full" }, input.traceId);
+    }
+    // Review B1: a Buzz reply approves by digest prefix, so two live holds must never share one. Nothing is
+    // consumed; the agent may change the text and retry.
+    if (store.hasLiveApprovalWithPrefix({ workspaceSlug: org, prefix: input.payload.digest.slice(0, NOSTR_MIN_PREFIX_HEX) })) {
+      return refusalReply({ status: 409, error: "channel_digest_prefix_collision" }, input.traceId);
     }
     const inserted = channels.insertPost({
       workspaceSlug: org,

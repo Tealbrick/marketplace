@@ -1,5 +1,6 @@
 import {
   createJwksResolver,
+  MAX_CLOCK_SKEW_SECONDS,
   NOSTR_APPROVAL_MAX_AGE_MS,
   NOSTR_FUTURE_SKEW_MS,
   ownerApprovalOptionsFromClaim,
@@ -88,6 +89,16 @@ export type OwnerApprovalVerifier = {
   verify(input: OwnerApprovalVerifyInput): Promise<OwnerApprovalVerification>;
 };
 
+/**
+ * Shortest digest prefix a Buzz reply may approve with (`approve <prefix>`), in hex characters. Contract alpha.7
+ * enforces ≥ 32; keep this check until the installed verifier enforces it (alpha.6 accepts 12). The same length
+ * is used for the proof-ambiguity check and the hold-collision check (review B1).
+ */
+export const NOSTR_MIN_PREFIX_HEX = 32;
+
+/** Review B1: other held calls of the workspace that share a proof's prefix count for this long (15 min max age + 5 min skew). */
+export const NOSTR_AMBIGUITY_WINDOW_MS = 20 * 60_000;
+
 /** The kit's idempotency key for a resolve: `resolve.<approvalId>.<decision>`. */
 export const RESOLVE_IDEMPOTENCY_KEY = /^resolve\.([A-Za-z0-9_-]{1,100})\.(approve|deny)$/u;
 
@@ -115,7 +126,7 @@ const NOSTR_REASONS: Array<[RegExp, string]> = [
   [/too old/u, "stale"],
   [/future/u, "not_yet_valid"],
   [/prefix does not match/u, "wrong_digest"],
-  [/at least/u, "digest_prefix_too_short"],
+  [/at least/u, "prefix_too_short"],
   [/more than one/u, "ambiguous"],
   [/kind/u, "wrong_kind"],
   [/id does not match/u, "bad_id"],
@@ -127,6 +138,12 @@ function nostrRefusal(text: string): { ok: false; status: number; error: string;
   if (reason === "replayed") return { ok: false, status: 409, error: "approval_proof_reused", reason };
   if (reason === "misconfigured") return { ok: false, status: 503, error: "approval_owner_unbound", reason };
   return { ok: false, status: 403, error: "approval_proof_invalid", reason };
+}
+
+/** Every `approve <hex>` prefix in a Buzz reply, lowercased (the contract accepts exactly one). */
+function approvedPrefixes(content: unknown): string[] {
+  if (typeof content !== "string") return [];
+  return [...content.matchAll(/\bapprove\s+([0-9a-f]+)\b/giu)].map((match) => match[1]!.toLowerCase());
 }
 
 function boundedAmr(value: unknown): string[] | undefined {
@@ -148,6 +165,12 @@ function boundedDevice(value: unknown): string | undefined {
  */
 export function createContractOwnerApprovalVerifier(deps: {
   isUsed: (proofId: string) => boolean;
+  /**
+   * Review B1: true when another held call shares `prefix` with this one: any approval of the workspace (any
+   * state) with a different digest created within `NOSTR_AMBIGUITY_WINDOW_MS`, or any other live (pending,
+   * resolving, executing) held call of the instance. A Buzz reply binds only its prefix, not the approvalId.
+   */
+  prefixAmbiguous: (input: { prefix: string; approvalId: string; digest: string; now: Date }) => boolean;
   jwksFetch?: typeof fetch;
 }): OwnerApprovalVerifier {
   // One resolver per pinned key source: it caches and pins key material per kid (a changed key under a kid is refused).
@@ -175,6 +198,11 @@ export function createContractOwnerApprovalVerifier(deps: {
         if (!binding.ownerPubkey || !binding.ownerKeyFingerprint || binding.ownerKeySetAtMs === null) {
           return { ok: false, status: 503, error: "approval_owner_unbound" };
         }
+        // Review B1: the local 32-hex minimum runs before the contract verifier (alpha.6 accepts 12).
+        const event = proof.event as { content?: unknown };
+        if (approvedPrefixes(event.content).some((candidate) => candidate.length < NOSTR_MIN_PREFIX_HEX)) {
+          return { ok: false, status: 409, error: "approval_proof_prefix_too_short", reason: "prefix_too_short" };
+        }
         const result = await verifyNostrApprovalProof({
           event: proof.event,
           channel: proof.channel,
@@ -185,6 +213,15 @@ export function createContractOwnerApprovalVerifier(deps: {
           now: nowMs,
         });
         if (!result.ok) return nostrRefusal(result.reason);
+        // The contract accepted exactly one `approve <prefix>` naming this digest; bind it to this hold alone.
+        const prefixes = approvedPrefixes(proof.event.content);
+        const prefix = prefixes.length === 1 ? prefixes[0]! : null;
+        if (!prefix || prefix.length < NOSTR_MIN_PREFIX_HEX || !input.digest.startsWith(prefix)) {
+          return { ok: false, status: 409, error: "approval_proof_prefix_too_short", reason: "prefix_too_short" };
+        }
+        if (deps.prefixAmbiguous({ prefix, approvalId: input.approvalId, digest: input.digest, now: input.now })) {
+          return { ok: false, status: 409, error: "approval_proof_ambiguous", reason: "ambiguous_prefix" };
+        }
         const createdAtMs = proof.event.created_at * 1000;
         // Signed before the current key was set: a proof for the old key epoch (rule 3).
         if (createdAtMs < Math.floor(binding.ownerKeySetAtMs / 1000) * 1000) {
@@ -232,7 +269,8 @@ export function createContractOwnerApprovalVerifier(deps: {
         decision: result.decision,
         proofId: result.jti,
         kind: "portal",
-        expiresAt: new Date(Math.max(result.expiresAt, nowMs)).toISOString(),
+        // Review L3: keep the used jti until exp + the verifier's clock skew (it is accepted until then).
+        expiresAt: new Date(Math.max(result.expiresAt, nowMs) + MAX_CLOCK_SKEW_SECONDS * 1000).toISOString(),
         decidedBy: `owner:${ownerUserId}`,
         ...(amr ? { amr } : {}),
         ...(device ? { device } : {}),
