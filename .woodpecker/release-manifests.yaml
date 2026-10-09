@@ -10,6 +10,9 @@
 #
 # The source archive check runs `git archive` on the recorded source snapshot,
 # so this pipeline clones the full history.
+labels:
+  platform: linux/amd64
+
 when:
   - event: manual
 

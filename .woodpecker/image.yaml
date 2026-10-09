@@ -2,6 +2,9 @@
 # builds, using an unprivileged builder: no privileged step, no host socket, no
 # added capabilities, no secrets. Publishing stays a release-time job (see
 # check.yaml).
+labels:
+  platform: linux/amd64
+
 when:
   - event: pull_request
   - event: push
