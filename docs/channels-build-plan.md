@@ -42,6 +42,12 @@ Henry cutover (0.5 wd, after 0.2.0 is in prod): needs Martin to add the bot toke
 5. Every real send, including the 1j proof, goes only to Martin-owned test chats.
 6. New ops in `tealbrick.app.json` with effects and idempotency; Woodpecker conformance stays green.
 
+## Status (2026-10-09, night)
+
+Merged to main: #29 seam, #30 adapters, #32 native media, #31 store/policy, #33 routes/holds/grants/scheduler (merge commit). Approved, merging on green: #34 owner UI, #36 attachment quota + finished-only purge. Open: #35 live proof script (dry-run verified; live run is Martin's go with test bots).
+Release gates for 0.2.0: Lead · Miniapps' contract bump (alpha.6 → alpha.7), then 1k (real Nostr/Portal proofs from `@tealbrick/contract`, owner Buzz key setting, `approvalAuthority: "app"`), 1j live proof on Martin-owned test chats, upgrade/rollback rehearsal, Portal settings provenance (#108) at cut.
+External approval surfaces (TBD, Buzz) need the owner pins: `ownerSubject` arrives only on the manifest claim path (portal-core#113, contract ≥ alpha.7). Marketplace moves to the manifest claim path in a separate PR owned by Lead · Miniapps (legacy claim side by side for one release; Martin's prod registration preserved; prod switch Coordinator-approved). Until then `approvals.resolve` fails closed and owners approve in the Marketplace UI; 0.2.0 is not blocked by this.
+
 ## Phase 2: Marketplace 0.2.x, more providers and native features (7.5–9.5 wd)
 
 - Email channel (SMTP or Resend; recipient allowlist; strangers become drafts) and Henry `henry_mail` cutover: 2 wd.
