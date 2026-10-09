@@ -278,7 +278,7 @@ Acceptance (dev, real test chat and test channel):
 | K1 | Lead · Packages (contract alpha.6 + kit rc.15) | `approvalAuthority` + response shape; honoured only with the Portal trust flag on `external-effects` ops; harness surfaces the app's hold in TBD and Buzz, forwards the owner-signed event, records receipts; conformance (a)–(e) in §6 | P1 release |
 | K2 | Lead · Packages (kit rc.14) | `@tealbrick/kit/owner-approval`: `verifyOwnerApproval`, `nostrSignatureValid`, `nostrEventId`, `MIN_DIGEST_PREFIX`, types (server-safe; no relay reader needed, §6.3) | P1 release |
 | PO2 | Lead · Portal | App-approval-trusted flag per registration in the signed grant (set by Portal or owner only), for K1 | P1 release |
-| PO3 | Lead · Portal (mint, ≈1 d); TBD client owner to be assigned by Coordinator | Owner-only mint endpoint for the `proof: "portal"` assertion with `typ` separation (§6.3); TBD client requests it on Approve/Deny | P1 release (interim: Buzz only) |
+| PO3 | Lead · Portal (Core mint ≈1 d + TBD client change, assigned by Coordinator 2026-10-09) | Owner-only mint endpoint for the `proof: "portal"` assertion with `typ` separation (§6.3); TBD client requests it on Approve/Deny | P1 release (interim: Buzz only) |
 | PO1 | Lead · Portal | Done 2026-10-09: shape accepted unchanged. Marketplace grant-review adds display-only `actionGroupLabel` (plain text ≤ 80, never stored or used for authority); Portal renders it, falls back to the slug. 0.2.0 must keep the 0.1.18 template topology (no new services or volumes) | P1 |
 | MI1 | Lead · Miniapps | Review the executor seam refactor of `executeConsentedCall` (no behaviour change) before Channels code lands | P1 first PR |
 
