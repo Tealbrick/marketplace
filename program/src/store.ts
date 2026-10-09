@@ -34,6 +34,11 @@ import type {
 } from "./types.js";
 import { boundedStoredOutput, shapeOf } from "./usage-ledger.js";
 import { compatDebugEnabled } from "./legacy-ids.js";
+import {
+  CHANNEL_TABLES,
+  ChannelStore,
+  migrateChannelTables,
+} from "./channels/store.js";
 
 export const MARKETPLACE_TABLES = [
   "marketplace_listing",
@@ -58,6 +63,7 @@ export const MARKETPLACE_TABLES = [
   "health_event",
   "audit_event",
   "company_box_approval",
+  ...CHANNEL_TABLES,
 ] as const;
 
 type JsonRecord = Record<string, unknown>;
@@ -510,6 +516,7 @@ export class SqliteMarketplaceStore {
   private readonly logPath: string | null;
   private readonly debug: boolean;
   private readonly handoffEncryptionKey: Buffer | null;
+  private channelStore: ChannelStore | null = null;
 
   constructor(
     readonly dbPath: string,
@@ -902,7 +909,15 @@ export class SqliteMarketplaceStore {
     this.addColumnIfMissing(
       "ALTER TABLE marketplace_listing ADD COLUMN workspace_slug TEXT",
     );
+    // Channels (0.2.0): additive tables only; older builds ignore them.
+    migrateChannelTables(this.db);
     this.migratePortalHandoffSessions();
+  }
+
+  /** Channels records (spec §4) on the same database connection. */
+  get channels(): ChannelStore {
+    this.channelStore ??= new ChannelStore(this.db);
+    return this.channelStore;
   }
 
   private addColumnIfMissing(statement: string) {
