@@ -10,8 +10,9 @@ import {
   ATTACHMENT_KINDS,
   MAX_ATTACHMENTS_PER_MESSAGE,
   applyFallbacks,
-  capabilityForKind,
+  capabilitySupports,
   kindLimits,
+  wiredCapabilities,
 } from "./providers/capabilities.js";
 import { scrubSecrets, validateOutbound } from "./providers/common.js";
 import { createDiscordProvider } from "./providers/discord.js";
@@ -126,10 +127,13 @@ export function policyCapabilities(caps: ChannelCapabilities): ChannelProviderCa
 }
 
 /**
- * What an agent may use on this channel: the provider declaration narrowed by
- * the channel policy (C2). A media kind the policy leaves no type for is false.
+ * What an agent may use on this channel: the provider declaration narrowed to
+ * the wired features (AGENT_WIRED_FEATURES) and by the channel policy (C2).
+ * A media kind the policy leaves no type for is false.
  */
-export function effectiveCapabilities(caps: ChannelCapabilities, policy: ChannelPolicy) {
+export function effectiveCapabilities(declared: ChannelCapabilities, policy: ChannelPolicy) {
+  // Only features an agent operation can use today (idempotent when the caller already narrowed it).
+  const caps = wiredCapabilities(declared);
   const files = policy.content.files;
   const narrow = (spec: MediaCapability | false) => {
     if (spec === false || !files.allowed) return false;
@@ -153,10 +157,19 @@ export function effectiveCapabilities(caps: ChannelCapabilities, policy: Channel
     },
     markup: caps.markup,
     mentions: caps.mentions,
+    dm: caps.dm,
     ...media,
     voice,
     maxAttachments: files.allowed ? Math.min(files.maxCount, MAX_ATTACHMENTS_PER_MESSAGE) : 0,
     thread: caps.thread,
+    reactions: caps.reactions,
+    edit: caps.edit,
+    delete: caps.delete,
+    canvas: caps.canvas,
+    presence: caps.presence,
+    ephemeral: caps.ephemeral,
+    live: caps.live,
+    inbound: caps.inbound,
     schedule: caps.schedule,
     limits: caps.limits,
   };
@@ -264,7 +277,7 @@ export function buildChannelPayload(input: {
     if (!record || record.createdBy !== input.agentId) {
       return { ok: false, refusal: refusal("channel_attachment_not_found", `attachment ${spec.id} is unknown`) };
     }
-    if (!(ATTACHMENT_KINDS as readonly string[]).includes(spec.kind) || capabilityForKind(caps, spec.kind as AttachmentKind) === null) {
+    if (!(ATTACHMENT_KINDS as readonly string[]).includes(spec.kind) || !capabilitySupports(caps, spec.kind)) {
       return { ok: false, refusal: refusal("channel_capability_unavailable", `this channel's provider does not declare "${spec.kind}"`) };
     }
     let bytes: Buffer;

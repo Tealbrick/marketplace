@@ -79,7 +79,7 @@ describe("U2: browse carries each configured provider's declaration", () => {
         id: "telegram",
         readiness: "available",
         kinds: ["chat"],
-        capabilities: expect.objectContaining({ channelCapabilities: 1, text: expect.objectContaining({ maxChars: 4096 }), voice: expect.objectContaining({ native: true }) }),
+        capabilities: expect.objectContaining({ channelCapabilities: 2, dm: { open: false, maxMembers: 0 }, inbound: { mode: "none", dedupe: false }, text: expect.objectContaining({ maxChars: 4096 }), voice: expect.objectContaining({ native: true }) }),
       }),
       { id: "discord", readiness: "credential_missing" },
     ]);

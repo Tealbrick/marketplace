@@ -424,12 +424,46 @@ function mediaValue(media: { types: readonly string[]; maxBytes: number } | fals
   return media === false ? "Not available" : `${media.types.map(typeName).join(", ")} · up to ${formatBytes(media.maxBytes)}`;
 }
 
+function mentionsUsers(caps: ChannelEffectiveCapabilities): boolean {
+  return typeof caps.mentions === "object" && caps.mentions.users;
+}
+
+function listOf(parts: Array<[boolean | undefined, string]>): string | null {
+  const names = parts.filter(([on]) => on).map(([, name]) => name);
+  return names.length === 0 ? null : names.join(", ");
+}
+
+/** Capability model v2 rows (P2 scope 2.1). The server answer is already declaration ∩ wired features, so a row is available only when an agent operation can use it; a missing key (a v1 answer) is not available. */
+function v2Rows(caps: ChannelEffectiveCapabilities): CapabilityRow[] {
+  const thread = caps.thread === false ? null : listOf([[caps.thread.replies, "replies"], [caps.thread.topics, "forum topics"], [caps.thread.forum, "forum posts"]]);
+  const reactions = typeof caps.reactions === "object" ? listOf([[caps.reactions.add, "add"], [caps.reactions.remove, "remove"], [caps.reactions.custom, "custom emoji"]]) : null;
+  const edit = typeof caps.edit === "object" && caps.edit.own ? caps.edit : null;
+  const remove = typeof caps.delete === "object" && caps.delete.own;
+  const presence = caps.presence ? listOf([[caps.presence.typing, "typing"], [caps.presence.status, "status"]]) : null;
+  const live = caps.live ? listOf([[caps.live.join, "join"], [caps.live.listen, "listen"], [caps.live.speak, "speak"], [caps.live.transcript, "transcript"]]) : null;
+  const inbound = typeof caps.inbound === "object" && caps.inbound.mode !== "none" ? caps.inbound : null;
+  const dm = caps.dm?.open ? caps.dm : null;
+  const sentence = (text: string | null) => (text ? text.charAt(0).toUpperCase() + text.slice(1) : "Not available");
+  return [
+    { key: "dm", label: "Direct messages", value: dm ? `Up to ${dm.maxMembers} ${dm.maxMembers === 1 ? "person" : "people"}` : "Not available", available: dm !== null },
+    { key: "thread", label: "Threads", value: sentence(thread), available: thread !== null },
+    { key: "reactions", label: "Reactions", value: sentence(reactions), available: reactions !== null },
+    { key: "edit", label: "Edit own messages", value: edit ? (edit.windowSeconds ? `Within ${formatSeconds(edit.windowSeconds)}` : "Yes") : "Not available", available: edit !== null },
+    { key: "delete", label: "Delete own messages", value: remove ? "Yes" : "Not available", available: remove },
+    { key: "canvas", label: "Canvas", value: caps.canvas === true ? "Shared document per channel" : "Not available", available: caps.canvas === true },
+    { key: "presence", label: "Typing and status", value: sentence(presence), available: presence !== null },
+    { key: "ephemeral", label: "Private or expiring messages", value: caps.ephemeral === true ? "Yes" : "Not available", available: caps.ephemeral === true },
+    { key: "live", label: "Live voice", value: caps.live && live ? `${sentence(live)} · up to ${caps.live.maxSessionMinutes} minutes` : "Not available", available: Boolean(caps.live && live) },
+    { key: "inbound", label: "Receiving messages", value: inbound ? `${inbound.mode}${inbound.dedupe ? " · duplicates removed" : ""}` : "Not available", available: inbound !== null },
+  ];
+}
+
 /** What agents can send on a channel, from its effective capabilities. */
 export function capabilityRows(caps: ChannelEffectiveCapabilities): CapabilityRow[] {
   const voice = caps.voice;
   return [
     { key: "text", label: "Text", value: `Up to ${caps.text.maxChars.toLocaleString()} characters${caps.text.captionMaxChars ? ` (${caps.text.captionMaxChars.toLocaleString()} as a caption with media)` : ""} · ${caps.markup === "plain" ? "plain text" : caps.markup}`, available: true },
-    { key: "mentions", label: "Mentions", value: "Broadcast mentions never ping anyone", available: true },
+    { key: "mentions", label: "Mentions", value: mentionsUsers(caps) ? "Named people can be mentioned · broadcast mentions never ping anyone" : "Broadcast mentions never ping anyone", available: true },
     { key: "image", label: "Images", value: mediaValue(caps.image), available: caps.image !== false },
     { key: "file", label: "Files", value: mediaValue(caps.file), available: caps.file !== false },
     { key: "audio", label: "Audio", value: mediaValue(caps.audio), available: caps.audio !== false },
@@ -445,7 +479,7 @@ export function capabilityRows(caps: ChannelEffectiveCapabilities): CapabilityRo
     },
     { key: "video", label: "Video", value: mediaValue(caps.video), available: caps.video !== false },
     { key: "attachments", label: "Attachments per post", value: caps.maxAttachments ? String(caps.maxAttachments) : "None", available: caps.maxAttachments > 0 },
-    { key: "thread", label: "Threads", value: caps.thread === false ? "Not available" : caps.thread.topics ? "Forum topics" : "Not available", available: caps.thread !== false && caps.thread.topics },
+    ...v2Rows(caps),
   ];
 }
 

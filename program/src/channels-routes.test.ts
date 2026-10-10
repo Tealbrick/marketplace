@@ -15,6 +15,7 @@ import {
   channelFixture,
   type ChannelFixture,
 } from "./channels/app-fixture.js";
+import type { ChannelCapabilities } from "./channels/providers/types.js";
 
 const fixtures: ChannelFixture[] = [];
 afterEach(async () => {
@@ -89,7 +90,23 @@ describe("channels: post with a standing grant (§10 item 1)", () => {
     expect(channels[0]).toMatchObject({
       grantClass: "outward",
       usageToday: { counted: 0, perDay: 6 },
-      capabilities: { text: { maxChars: 4096 }, voice: { native: true, types: ["audio/ogg"] }, video: false },
+      capabilities: {
+        channelCapabilities: 2,
+        text: { maxChars: 4096 },
+        voice: { native: true, types: ["audio/ogg"] },
+        video: false,
+        mentions: { users: false, broadcast: "suppressed" },
+        dm: { open: false, maxMembers: 0 },
+        thread: { replies: false, topics: true, forum: false },
+        reactions: { add: false, remove: false, custom: false },
+        edit: { own: false },
+        delete: { own: false },
+        canvas: false,
+        presence: { typing: false, status: false },
+        ephemeral: false,
+        live: false,
+        inbound: { mode: "none", dedupe: false },
+      },
     });
     expect(list.body).not.toContain("-1001234");
     const foreign = await f.agent("GET", `/api/marketplace/v1/agent/channels/${other.id}`);
@@ -99,6 +116,39 @@ describe("channels: post with a standing grant (§10 item 1)", () => {
     const posted = await f.post(other.id, text(), key());
     expect(posted.statusCode).toBe(404);
     expect(f.telegram.sends).toHaveLength(0);
+  });
+
+  it("never exposes a declared feature that no agent operation uses (wired filter)", async () => {
+    const f = await setup();
+    // The adapter declares reactions, edit, delete, DMs, mentions and inbound, but no route performs them.
+    const provider = f.telegram.provider as { capabilities: ChannelCapabilities };
+    provider.capabilities = {
+      ...provider.capabilities,
+      reactions: { add: true, remove: true, custom: true },
+      edit: { own: true, windowSeconds: 900 },
+      delete: { own: true },
+      dm: { open: true, maxMembers: 8 },
+      mentions: { users: true, broadcast: "suppressed" },
+      inbound: { mode: "webhook", dedupe: true },
+    };
+    const channel = await f.createChannel({ slug: "community" });
+    f.consentFor("agent-1", channel);
+    const hidden = {
+      reactions: { add: false, remove: false, custom: false },
+      edit: { own: false },
+      delete: { own: false },
+      dm: { open: false, maxMembers: 0 },
+      mentions: { users: false, broadcast: "suppressed" },
+      inbound: { mode: "none", dedupe: false },
+    };
+    const list = await f.agent("GET", "/api/marketplace/v1/agent/channels");
+    expect(list.json().channels[0].capabilities).toMatchObject({ ...hidden, thread: { topics: true }, voice: { native: true } });
+    const one = await f.agent("GET", `/api/marketplace/v1/agent/channels/${channel.id}`);
+    expect(one.json().channel.capabilities).toMatchObject(hidden);
+    const browse = await f.owner("GET", "/api/marketplace/channels");
+    const telegram = (browse.json().providers as Array<{ id: string; capabilities?: unknown }>).find((entry) => entry.id === "telegram");
+    expect(telegram?.capabilities).toMatchObject(hidden);
+    expect(browse.json().channels[0].capabilities).toMatchObject(hidden);
   });
 });
 

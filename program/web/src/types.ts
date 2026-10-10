@@ -561,16 +561,26 @@ export interface ChannelEffectiveCapabilities {
   channelCapabilities: number;
   text: { maxChars: number; captionMaxChars?: number };
   markup: string;
-  mentions: "suppressed";
+  mentions: { users: boolean; broadcast: "suppressed" } | "suppressed";
   image: ChannelMediaCapability;
   file: ChannelMediaCapability;
   audio: ChannelMediaCapability;
   video: ChannelMediaCapability;
   voice: ({ native: true; types: string[]; maxBytes: number; maxSeconds?: number }) | ({ fallback: string; types: string[]; maxBytes: number }) | false;
   maxAttachments: number;
-  thread: { topics: boolean; replies: boolean } | false;
+  thread: { replies: boolean; topics: boolean; forum?: boolean } | false;
   schedule: { native: boolean };
   limits: { perChatPerSecond?: number; perChatPerMinute?: number; retryAfter: string };
+  // Capability model v2 (channelCapabilities: 2). Absent in a v1 answer: the owner screen then shows them as not available.
+  dm?: { open: boolean; maxMembers: number };
+  reactions?: { add: boolean; remove: boolean; custom: boolean } | boolean;
+  edit?: { own: boolean; windowSeconds?: number } | boolean;
+  delete?: { own: boolean } | boolean;
+  canvas?: boolean;
+  presence?: { typing: boolean; status: boolean };
+  ephemeral?: boolean;
+  live?: { join: boolean; listen: boolean; speak: boolean; transcript: boolean; maxSessionMinutes: number } | false;
+  inbound?: { mode: "socket" | "webhook" | "poll" | "none"; dedupe: boolean } | string;
 }
 
 export interface GrantCaps { perDay: number; perHour?: number; minIntervalSeconds: number; onePerPhase: boolean }
@@ -658,6 +668,7 @@ export type ChannelMediaDeclaration = { types: string[]; maxBytes: number };
 export interface ChannelProviderCapabilities {
   text: { maxChars: number; captionMaxChars?: number };
   markup: string;
+  channelCapabilities?: number;
   image: (ChannelMediaDeclaration & { albumMax?: number }) | false;
   file: ChannelMediaDeclaration | false;
   audio: ChannelMediaDeclaration | false;

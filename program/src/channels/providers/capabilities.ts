@@ -130,3 +130,176 @@ export function applyFallbacks(
   }
   return { text, attachments, fallbacks };
 }
+
+/** Closed list of features a caller can ask a provider about (v2 vocabulary, P2 scope 2.1). */
+export const CHANNEL_FEATURES = [
+  "image",
+  "file",
+  "audio",
+  "voice",
+  "video",
+  "dm",
+  "thread.replies",
+  "thread.topics",
+  "thread.forum",
+  "mentions.users",
+  "reactions.add",
+  "reactions.remove",
+  "reactions.custom",
+  "edit",
+  "delete",
+  "canvas",
+  "presence.typing",
+  "presence.status",
+  "ephemeral",
+  "live.join",
+  "live.listen",
+  "live.speak",
+  "live.transcript",
+  "poll",
+  "buttons.url",
+  "buttons.callback",
+  "events.create",
+  "schedule.native",
+  "inbound",
+] as const;
+
+export type ChannelFeature = (typeof CHANNEL_FEATURES)[number];
+
+/**
+ * Pure: does the provider DECLARE this feature (spec 3.1)? A routes-side gate: an undeclared feature is refused
+ * with `channel_capability_unavailable`. A voice fallback counts as declared (it is named in the receipt).
+ * `edit` and `delete` mean the agent's own message. `inbound` means a mode other than `none`.
+ * An unknown feature name is never supported.
+ */
+export function capabilitySupports(caps: ChannelCapabilities, feature: ChannelFeature | (string & {})): boolean {
+  switch (feature) {
+    case "image":
+    case "file":
+    case "audio":
+    case "voice":
+    case "video":
+      return capabilityForKind(caps, feature as AttachmentKind) !== null;
+    case "dm":
+      return caps.dm.open;
+    case "thread.replies":
+      return caps.thread.replies;
+    case "thread.topics":
+      return caps.thread.topics;
+    case "thread.forum":
+      return caps.thread.forum;
+    case "mentions.users":
+      return caps.mentions.users;
+    case "reactions.add":
+      return caps.reactions.add;
+    case "reactions.remove":
+      return caps.reactions.remove;
+    case "reactions.custom":
+      return caps.reactions.custom;
+    case "edit":
+      return caps.edit.own;
+    case "delete":
+      return caps.delete.own;
+    case "canvas":
+      return caps.canvas;
+    case "presence.typing":
+      return caps.presence.typing;
+    case "presence.status":
+      return caps.presence.status;
+    case "ephemeral":
+      return caps.ephemeral;
+    case "live.join":
+    case "live.listen":
+    case "live.speak":
+    case "live.transcript":
+      return caps.live !== false && caps.live[feature.slice("live.".length) as "join" | "listen" | "speak" | "transcript"];
+    case "poll":
+      return caps.poll;
+    case "buttons.url":
+      return caps.buttons.url;
+    case "buttons.callback":
+      return caps.buttons.callback;
+    case "events.create":
+      return caps.events.create;
+    case "schedule.native":
+      return caps.schedule.native;
+    case "inbound":
+      return caps.inbound.mode !== "none";
+    default:
+      return false;
+  }
+}
+
+/** Refusal for an undeclared feature, or `null` when it is declared. Callers add no side effect before this check. */
+export function featureRefusal(caps: ChannelCapabilities, feature: ChannelFeature | (string & {})): SendError | null {
+  return capabilitySupports(caps, feature)
+    ? null
+    : { errorCode: "channel_capability_unavailable", detail: `this provider does not declare "${feature}"` };
+}
+
+/**
+ * Closed set of features an agent operation can really use TODAY (review of PR #43). The P1 post and schedule
+ * routes send text plus the declared attachment kinds (a fallback voice included) to a discovered destination,
+ * and a Telegram forum topic is such a destination (`thread.topics`). Nothing else has a route yet: no reply in a
+ * thread, mention of a person, DM, reaction, edit, delete, poll, button, event, native schedule (P1 scheduling is
+ * Marketplace-side), presence, canvas, live voice or inbound delivery.
+ * Adapters keep declaring what they CAN do; a later change adds a feature here in the same change that ships its
+ * operation. Agents and the owner UI only ever see `declaration ∩ wired` (see `wiredCapabilities`).
+ */
+export const AGENT_WIRED_FEATURES: ReadonlySet<ChannelFeature> = new Set<ChannelFeature>([
+  "image",
+  "file",
+  "audio",
+  "voice",
+  "video",
+  "thread.topics",
+]);
+
+/**
+ * Pure: the effective capability answer, the provider declaration narrowed to the wired features. Every feature
+ * outside `wired` reads as not available (`false`, `none`, zero members); everything that is not a feature
+ * (text limits, markup, discover, limits, broadcast suppression) is kept. For every feature,
+ * `capabilitySupports(wiredCapabilities(caps), f) === capabilitySupports(caps, f) && wired.has(f)`.
+ */
+export function wiredCapabilities(
+  caps: ChannelCapabilities,
+  wired: ReadonlySet<ChannelFeature> = AGENT_WIRED_FEATURES,
+): ChannelCapabilities {
+  const on = (feature: ChannelFeature) => wired.has(feature) && capabilitySupports(caps, feature);
+  const live = caps.live;
+  const liveOn = live !== false && (["live.join", "live.listen", "live.speak", "live.transcript"] as const).some(on);
+  const dmOn = on("dm");
+  const editOn = on("edit");
+  return {
+    ...caps,
+    mentions: { ...caps.mentions, users: on("mentions.users") },
+    dm: { open: dmOn, maxMembers: dmOn ? caps.dm.maxMembers : 0 },
+    image: on("image") ? caps.image : false,
+    file: on("file") ? caps.file : false,
+    audio: on("audio") ? caps.audio : false,
+    voice: on("voice") ? caps.voice : false,
+    video: on("video") ? caps.video : false,
+    thread: { replies: on("thread.replies"), topics: on("thread.topics"), forum: on("thread.forum") },
+    reactions: { add: on("reactions.add"), remove: on("reactions.remove"), custom: on("reactions.custom") },
+    buttons: { url: on("buttons.url"), callback: on("buttons.callback") },
+    poll: on("poll"),
+    edit: editOn ? caps.edit : { own: false },
+    delete: { own: on("delete") },
+    canvas: on("canvas"),
+    presence: { typing: on("presence.typing"), status: on("presence.status") },
+    ephemeral: on("ephemeral"),
+    live:
+      live !== false && liveOn
+        ? {
+            join: on("live.join"),
+            listen: on("live.listen"),
+            speak: on("live.speak"),
+            transcript: on("live.transcript"),
+            maxSessionMinutes: live.maxSessionMinutes,
+          }
+        : false,
+    schedule: { native: on("schedule.native") },
+    events: { create: on("events.create") },
+    inbound: on("inbound") ? caps.inbound : { mode: "none", dedupe: false },
+  };
+}

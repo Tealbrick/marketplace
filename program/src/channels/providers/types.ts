@@ -4,8 +4,12 @@
 
 export type ChannelProviderId = "telegram" | "discord";
 
-/** Version of the closed capability vocabulary (spec 3.1). New keys need a contract minor bump. */
-export const CHANNEL_CAPABILITIES_VERSION = 1;
+/**
+ * Version of the closed capability vocabulary (spec 3.1; P2 scope 2.1). New keys need a contract minor bump.
+ * v2 refines v1's `thread`, `reactions`, `edit`, `delete`, `mentions` and `inbound`, and adds `dm`, `canvas`,
+ * `presence`, `ephemeral` and `live`. A feature is offered only when its adapter really does it today.
+ */
+export const CHANNEL_CAPABILITIES_VERSION = 2;
 
 export type AttachmentKind = "image" | "file" | "audio" | "voice" | "video";
 
@@ -30,26 +34,49 @@ export type VoiceFallbackCapability = MediaCapability & {
   fallback: "audio+transcript";
 };
 
+/** Live voice sessions (huddles, voice channels). `false` when the provider has none. */
+export type LiveCapability = {
+  join: boolean;
+  listen: boolean;
+  speak: boolean;
+  transcript: boolean;
+  maxSessionMinutes: number;
+};
+
+export type InboundMode = "socket" | "webhook" | "poll" | "none";
+
 export type ChannelCapabilities = {
   channelCapabilities: typeof CHANNEL_CAPABILITIES_VERSION;
   text: { maxChars: number; captionMaxChars?: number };
   markup: "plain" | "markdown-v2" | "discord-markdown" | "mrkdwn" | "html";
-  mentions: "suppressed";
+  /** Mention named users; broadcast mentions never ping (`suppressed`) in every version. */
+  mentions: { users: boolean; broadcast: "suppressed" };
+  /** Direct messages to named people: `open` when the adapter can start one, up to `maxMembers` people. */
+  dm: { open: boolean; maxMembers: number };
   image: ImageCapability | false;
   file: MediaCapability | false;
   audio: MediaCapability | false;
   voice: VoiceNativeCapability | VoiceFallbackCapability | false;
   video: MediaCapability | false;
-  thread: { topics: boolean; replies: boolean } | false;
-  reactions: boolean;
+  /** `replies` reply in a thread, `topics` forum topics as destinations, `forum` post a new forum thread. */
+  thread: { replies: boolean; topics: boolean; forum: boolean };
+  reactions: { add: boolean; remove: boolean; custom: boolean };
   buttons: { url: boolean; callback: boolean };
   poll: boolean;
-  edit: boolean;
-  delete: boolean;
+  /** Edit or delete the agent's own message. `windowSeconds` is the provider's edit window, when it has one. */
+  edit: { own: boolean; windowSeconds?: number };
+  delete: { own: boolean };
+  /** Shared document per channel. */
+  canvas: boolean;
+  presence: { typing: boolean; status: boolean };
+  /** Messages that only one user sees, or that expire. */
+  ephemeral: boolean;
+  live: LiveCapability | false;
   schedule: { native: boolean };
   events: { create: boolean };
   discover: "updates" | "list" | "manual";
-  inbound: "webhook" | "poll" | "gateway" | "none";
+  /** How the provider delivers messages to agents (`none` today for every adapter) and whether events are de-duplicated. */
+  inbound: { mode: InboundMode; dedupe: boolean };
   audience: { count: boolean };
   limits: {
     perChatPerSecond?: number;

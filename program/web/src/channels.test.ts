@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ChannelsPage } from "./Channels";
-import { formToPolicy, policyToForm, slugFromLabel, slugProblem, wideningFields } from "./channels-model";
+import { capabilityRows, formToPolicy, policyToForm, slugFromLabel, slugProblem, wideningFields } from "./channels-model";
 import { ApprovalsPanel } from "./CompanyBox";
 import type { ChannelProviderCapabilities, ChannelsBrowseResponse, ChannelView, CompanyBoxApproval, StandingGrantView } from "./types";
 
@@ -78,17 +78,26 @@ function channel(overrides: Partial<ChannelView> = {}): ChannelView {
     createdAt: "2026-10-01T00:00:00.000Z",
     updatedAt: "2026-10-02T00:00:00.000Z",
     capabilities: {
-      channelCapabilities: 1,
+      channelCapabilities: 2,
       text: { maxChars: 4096, captionMaxChars: 1024 },
       markup: "plain",
-      mentions: "suppressed",
+      mentions: { users: false, broadcast: "suppressed" },
+      dm: { open: false, maxMembers: 0 },
       image: { types: ["image/png", "image/jpeg"], maxBytes: 10 * 1024 * 1024 },
       file: { types: ["application/pdf"], maxBytes: 10 * 1024 * 1024 },
       audio: false,
       video: false,
       voice: { native: true, types: ["audio/ogg"], maxBytes: 1024 * 1024 },
       maxAttachments: 4,
-      thread: { topics: true, replies: false },
+      thread: { replies: false, topics: true, forum: false },
+      reactions: { add: false, remove: false, custom: false },
+      edit: { own: false },
+      delete: { own: false },
+      canvas: false,
+      presence: { typing: false, status: false },
+      ephemeral: false,
+      live: false,
+      inbound: { mode: "none", dedupe: false },
       schedule: { native: false },
       limits: { perChatPerSecond: 1, perChatPerMinute: 20, retryAfter: "honoured" },
     },
@@ -173,6 +182,47 @@ describe("channels model", () => {
     expect(formToPolicy({ ...form, requireConfirmedEvent: true }, telegram).errors.listingHosts).toBeTruthy();
   });
 
+  it("labels the v2 capability keys and marks only declared ones available", () => {
+    const base = channel().capabilities!;
+    const rows = Object.fromEntries(capabilityRows(base).map((row) => [row.key, row]));
+    expect(rows.thread).toMatchObject({ label: "Threads", value: "Forum topics", available: true });
+    for (const key of ["dm", "reactions", "edit", "delete", "canvas", "presence", "ephemeral", "live", "inbound"]) {
+      expect(rows[key], key).toMatchObject({ value: "Not available", available: false });
+    }
+    const rich = Object.fromEntries(
+      capabilityRows({
+        ...base,
+        mentions: { users: true, broadcast: "suppressed" },
+        dm: { open: true, maxMembers: 8 },
+        thread: { replies: true, topics: false, forum: true },
+        reactions: { add: true, remove: true, custom: true },
+        edit: { own: true, windowSeconds: 900 },
+        delete: { own: true },
+        canvas: true,
+        presence: { typing: true, status: false },
+        ephemeral: true,
+        live: { join: true, listen: true, speak: false, transcript: true, maxSessionMinutes: 120 },
+        inbound: { mode: "socket", dedupe: true },
+      }).map((row) => [row.key, row]),
+    );
+    expect(rich.mentions.value).toMatch(/Named people/u);
+    expect(rich.dm).toMatchObject({ label: "Direct messages", value: "Up to 8 people", available: true });
+    expect(rich.thread).toMatchObject({ value: "Replies, forum posts", available: true });
+    expect(rich.reactions).toMatchObject({ value: "Add, remove, custom emoji", available: true });
+    expect(rich.edit).toMatchObject({ label: "Edit own messages", value: "Within 15 min", available: true });
+    expect(rich.delete).toMatchObject({ label: "Delete own messages", available: true });
+    expect(rich.canvas).toMatchObject({ label: "Canvas", available: true });
+    expect(rich.presence).toMatchObject({ label: "Typing and status", value: "Typing", available: true });
+    expect(rich.ephemeral.available).toBe(true);
+    expect(rich.live).toMatchObject({ label: "Live voice", value: "Join, listen, transcript · up to 120 minutes", available: true });
+    expect(rich.inbound).toMatchObject({ label: "Receiving messages", value: "socket · duplicates removed", available: true });
+    // A v1 answer (keys absent) shows no v2 feature as available and does not throw.
+    const v1 = { ...base, thread: false as const, mentions: "suppressed" as const } as Record<string, unknown>;
+    for (const key of ["dm", "reactions", "edit", "delete", "canvas", "presence", "ephemeral", "live", "inbound"]) delete v1[key];
+    const old = capabilityRows(v1 as never).filter((row) => ["dm", "reactions", "edit", "delete", "canvas", "presence", "ephemeral", "live", "inbound", "thread"].includes(row.key));
+    expect(old.every((row) => !row.available)).toBe(true);
+  });
+
   it("finds every widening field like the server", () => {
     const current = grant();
     const same = { caps: current.caps, scope: current.scope, notBefore: null, expires: current.expires };
@@ -206,6 +256,19 @@ describe("Channels page", () => {
     expect(within(missing).getByText("Credential missing")).toBeTruthy();
     expect(within(missing).getByText("Add the bot token under Account Connections in Teal Brick Portal. Marketplace never asks for the token here.")).toBeTruthy();
     expect((screen.getByRole("button", { name: /Add channel/u }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("lists the v2 capabilities with human-readable labels, only declared ones as available", async () => {
+    mockApi({ "GET /api/marketplace/channels": () => browse({ channels: [channel()] }) });
+    renderPage();
+    const list = (await screen.findAllByLabelText("What agents can send")).find((element) => element.tagName === "DL")!;
+    const row = (label: string) => within(list).getByText(label).closest("div")!;
+    expect(row("Threads").textContent).toContain("Forum topics");
+    expect(row("Threads").className).not.toContain("is-unavailable");
+    for (const label of ["Direct messages", "Reactions", "Edit own messages", "Delete own messages", "Canvas", "Typing and status", "Private or expiring messages", "Live voice", "Receiving messages"]) {
+      expect(row(label).className, label).toContain("is-unavailable");
+      expect(row(label).textContent).toContain("Not available");
+    }
   });
 
   it("renders a malicious chat title as plain text in discovery and the channel list", async () => {

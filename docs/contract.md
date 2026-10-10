@@ -208,6 +208,22 @@ caller answers `404 channel_not_found`, the same as an unknown channel.
 Marketplace requires the `actionGroup` (a whole-connection class consent does
 not reach channels in P1).
 
+**Capabilities answer shape changed (`channelCapabilities: 2`).** The
+`capabilities` object in `channels.list` and `channels.get` (and in the owner
+`browse` answer) now uses the v2 vocabulary: `mentions` is an object
+`{users, broadcast: "suppressed"}` (was the string `"suppressed"`), `thread` is
+`{replies, topics, forum}`, `reactions` is `{add, remove, custom}`, `edit` and
+`delete` are `{own}`, and `dm`, `canvas`, `presence`, `ephemeral`, `live` and
+`inbound {mode, dedupe}` are new. There is no manifest or contract version bump:
+agent consumers must branch on `channelCapabilities` (absent or `1` is the v1
+shape). The answer is **effective**, not the adapter's raw declaration: it is
+the declaration intersected with `AGENT_WIRED_FEATURES`
+(`program/src/channels/providers/capabilities.ts`), the closed set of features
+an agent operation can use today (the attachment kinds and forum topics as
+destinations). A feature an adapter can do but no route performs yet reads as
+`false`, `{own: false}` or `{mode: "none"}`. A later release that ships an
+operation adds its feature to that set in the same change.
+
 Post body: `{text, attachments?: [{attachmentId, kind, transcript?}],
 campaign?: {ref?, phase?}}` (`schedule` adds `sendAt`, now + 60 s to now + 30
 days). `kind` is `image|file|audio|voice|video` and must be declared by the
@@ -398,7 +414,7 @@ provider-env or account field.
 
 | Operation | Route |
 | --- | --- |
-| `marketplace.channels.browse` | `GET /api/marketplace/channels` (`configured`, `providers` with each configured provider's static capability declaration and kinds, channels, readiness, connections, pending grants, uncertain posts) |
+| `marketplace.channels.browse` | `GET /api/marketplace/channels` (`configured`, `providers` with each configured provider's effective capabilities (`channelCapabilities: 2`: v1 keys plus `dm`, `thread`, `mentions`, `reactions`, `edit`, `delete`, `canvas`, `presence`, `ephemeral`, `live`, `inbound`; the declaration narrowed to the wired features, so a feature no agent operation uses reads `false` or `none`) and kinds, channels, readiness, connections, pending grants, uncertain posts) |
 | `marketplace.channels.discover` | `GET /api/marketplace/channels/discover?provider=` |
 | `marketplace.channels.create` | `POST /api/marketplace/channels` (Idempotency-Key; destination from discovery only; optional `kind`, only kinds the provider serves, else `422 channel_kind_unsupported`) |
 | `marketplace.channels.update` | `PATCH /api/marketplace/channels/{channelId}` (bumps `revision`, re-checks grants) |
