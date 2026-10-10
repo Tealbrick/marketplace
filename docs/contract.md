@@ -199,12 +199,17 @@ spec's sub-resource ids use a hyphenated resource
 | `marketplace.channel-grants.withdraw` | `POST /api/marketplace/v1/agent/channels/grants/{grantId}/withdraw` | writes-app-state | supported |
 | `marketplace.channels.inbound` | `GET /api/marketplace/v1/agent/channels/inbound?limit=&before=` | read-only | none |
 | `marketplace.channels.reply` | `POST /api/marketplace/v1/agent/channels/inbound/{eventId}/reply` | external-effects (`approvalAuthority: "app"`, `appHold`) | required |
+| `marketplace.channel-messages.react` | `POST /api/marketplace/v1/agent/channels/{channelId}/messages/{messageId}/reactions` `{emoji, remove?}` | external-effects (`approvalAuthority: "app"`, `appHold`) | required |
+| `marketplace.channel-messages.edit` | `PATCH /api/marketplace/v1/agent/channels/{channelId}/messages/{messageId}` `{text}` | external-effects (`approvalAuthority: "app"`, `appHold`) | required |
+| `marketplace.channel-messages.delete` | `DELETE /api/marketplace/v1/agent/channels/{channelId}/messages/{messageId}` | external-effects (`approvalAuthority: "app"`, `appHold`) | required |
+| `marketplace.channel-people.find` | `POST /api/marketplace/v1/agent/channels/{channelId}/people/find` `{email}` or `{handle}` → `{person: {personRef, displayName, approved}}` | writes-app-state | required |
+| `marketplace.channel-people.message` | `POST /api/marketplace/v1/agent/channels/{channelId}/people/{personRef}/messages` `{text, attachments?}` | external-effects (`approvalAuthority: "app"`, `appHold`) | required |
 | `marketplace.approvals.resolve` | `POST /api/marketplace/v1/agent/approvals/{approvalId}/resolve` | writes-app-state | required (`resolve.<approvalId>.<decision>`) |
 
 Consent: a Portal v1.4 class grant `{pluginId: channels-<provider>, accountId:
 <connectionId>, resourceKind: <provider>.connected-account, resourceRef:
 account:<connectionId>, grantClass, actionGroup: channel:<slug>}`. `outward`
-is needed to post, schedule, cancel, upload and propose; `read` suffices for
+is needed to post, schedule, cancel, upload, propose, react, edit, delete, find people and send direct messages; `read` suffices for
 list, get, receipts and grants. A channel without such a consent for the
 caller answers `404 channel_not_found`, the same as an unknown channel.
 Marketplace requires the `actionGroup` (a whole-connection class consent does
@@ -222,15 +227,20 @@ shape). The answer is **effective**, not the adapter's raw declaration: it is
 the declaration intersected with `AGENT_WIRED_FEATURES`
 (`program/src/channels/providers/capabilities.ts`), the closed set of features
 an agent operation can use today (the attachment kinds, forum topics as
-destinations, `inbound` for `marketplace.channels.inbound` and
+destinations, `inbound` for `marketplace.channels.inbound`,
 `thread.replies` for `marketplace.channels.reply`, the only operation that
-replies in a thread). A feature an adapter can do but no route performs yet reads as
-`false`, `{own: false}` or `{mode: "none"}`. A later release that ships an
+replies in a thread, and, since routes v2, `reactions.add|remove|custom`,
+`edit`, `delete`, `dm`, `poll`, `mentions.users` and `markup.markdown-v2`; see
+[Routes v2](#routes-v2-channels-p2)). A feature an adapter can do but no route performs yet reads as
+`false`, `{own: false}` or `{mode: "none"}`, and `markupOptions` lists only
+the markups whose `markup.<name>` feature is wired. A later release that ships an
 operation adds its feature to that set in the same change.
 
 Post body: `{text, attachments?: [{attachmentId, kind, transcript?}],
-campaign?: {ref?, phase?}}` (`schedule` adds `sendAt`, now + 60 s to now + 30
-days). `kind` is `image|file|audio|voice|video` and must be declared by the
+campaign?: {ref?, phase?}, mentions?: [userId | {userId, name?}], markup?,
+poll?: {question, options, allowsMultiple?, durationHours?}}` (`schedule` adds
+`sendAt`, now + 60 s to now + 30 days, and takes no `poll`; see
+[Routes v2](#routes-v2-channels-p2) for `mentions`, `markup` and `poll`). `kind` is `image|file|audio|voice|video` and must be declared by the
 channel's provider. Declared fallbacks (Slack voice → audio + `Transcript:`
 line) are applied before the content rules and before the digest, so a
 transcript passes the same deny patterns and the owner approves exactly what is
@@ -422,7 +432,7 @@ provider-env or account field.
 
 | Operation | Route |
 | --- | --- |
-| `marketplace.channels.browse` | `GET /api/marketplace/channels` (`configured`, `providers` with each configured provider's effective capabilities (`channelCapabilities: 2`: v1 keys plus `dm`, `thread`, `mentions`, `reactions`, `edit`, `delete` (with an optional `windowSeconds`), `canvas`, `presence`, `ephemeral`, `live`, `inbound`, `poll` (`false` or the provider's limits) and the optional `markupOptions` (markups a post may ask for besides `markup`); the declaration narrowed to the wired features, so a feature no agent operation uses reads `false` or `none` and `markupOptions` is left out) and kinds, channels, readiness, connections, pending grants, uncertain posts) |
+| `marketplace.channels.browse` | `GET /api/marketplace/channels` (`configured`, `providers` with each configured provider's effective capabilities (`channelCapabilities: 2`: v1 keys plus `dm`, `thread`, `mentions`, `reactions`, `edit`, `delete` (with an optional `windowSeconds`), `canvas`, `presence`, `ephemeral`, `live`, `inbound`, `poll` (`false` or the provider's limits) and the optional `markupOptions` (markups a post may ask for besides `markup`); the declaration narrowed to the wired features, so a feature no agent operation uses reads `false` or `none` and `markupOptions` lists only wired markups; each connection carries its `peoplePolicy`) and kinds, channels, readiness, connections, pending grants, uncertain posts) |
 | `marketplace.channels.discover` | `GET /api/marketplace/channels/discover?provider=` |
 | `marketplace.channels.create` | `POST /api/marketplace/channels` (Idempotency-Key; destination from discovery only; optional `kind`, only kinds the provider serves, else `422 channel_kind_unsupported`) |
 | `marketplace.channels.update` | `PATCH /api/marketplace/channels/{channelId}` (bumps `revision`, re-checks grants) |
@@ -436,6 +446,8 @@ provider-env or account field.
 | `marketplace.channel-inbound-routes.update` | `PUT /api/marketplace/channels/{channelId}/inbound` `{enabled, agentId?, agentBuzzPubkey?}` → `{route, receivers}` (see [Inbound](#inbound-channels-p2); `agentBuzzPubkey` for the [Buzz bridge](#buzz-channels-p2)) |
 | `marketplace.channel-inbound-events.list` | `GET /api/marketplace/channels/inbound/events?channelId=&limit=&before=` (metadata, route outcome, at most 500 characters of text per event, receiver status) |
 | `marketplace.channel-inbound-settings.update` | `PUT /api/marketplace/channels/inbound/settings` `{textRetentionDays?: 1-365, discordMessageContent?: bool}` |
+| `marketplace.channel-people-policy.get` / `.update` | `GET|PUT /api/marketplace/channels/connections/{connectionId}/people-policy` `{mode: none|allowlist|workspace, people?, domains?}` (see [Routes v2](#routes-v2-channels-p2)) |
+| `marketplace.channel-people.list` / `.revoke` | `GET /api/marketplace/channels/connections/{connectionId}/people?approved=`, `POST .../people/{personRef}/revoke` |
 | `marketplace.channel-buzz-identity.get` / `.update`, `marketplace.channel-buzz-key.generate`, `marketplace.channel-buzz-auth-tag.revoke` | `GET|PUT /api/marketplace/channels/buzz/identity`, `POST .../identity/key`, `DELETE .../identity/auth-tag` (see [Buzz](#buzz-channels-p2)) |
 
 "Grant to agent" is `marketplace.consents.request` with the channel's class
@@ -471,8 +483,13 @@ From a manifest), installs it and adds the Bot User OAuth Token under Account
 Connections. Internal apps keep Slack's normal history-read limits; new
 non-Marketplace distributed apps are limited since 29 May 2025, so the app is
 never distributed. Least privilege: the manifest requests only the bot scopes
-of features that ship today: `chat:write` (post, the owner test), `files:write`
-(upload v2), `channels:read` and `groups:read` (discovery). There is no
+of features that ship today: `chat:write` (post, the owner test, edit and
+delete of the agent's own message), `files:write` (upload v2), `channels:read`
+and `groups:read` (discovery), and since routes v2 `users:read.email` (find a
+person by email), `im:write` (open a direct message with one person) and
+`reactions:write` (reactions). Existing installs must update the app from the
+manifest and reinstall it to get the three new scopes; until then those
+operations fail with `slack: missing_scope` and nothing is sent. There is no
 `chat:write.public`: the bot posts only where it is a member, and discovery
 (`conversations.list`, public and private, members only, archived excluded, at
 most 1000) lists only those channels. `verify` records the installed workspace
@@ -484,11 +501,10 @@ team or missing. The optional signing secret
 affects readiness, and is redacted like the bot token.
 
 Scopes that later features add (each lands in the change that ships the
-feature, never earlier): replies in a thread, edit and delete of the agent's
-own message and native schedule need no new scope (`chat:write`); mention a
-named person and find a person by handle add `users:read`; find a person by
-email adds `users:read.email`; open a direct message with one person (owner
-approval on first contact) adds `im:write`; reactions add `reactions:write`;
+feature, never earlier): native schedule needs no new scope (`chat:write`);
+find a person by handle adds `users:read` (not requested: Slack people are
+found by email only, a handle answers `422 channel_person_query_unsupported`;
+named mentions need no scope);
 receiving messages (inbound) adds `channels:history` and `groups:history` and
 the event subscriptions `message.channels` and `message.groups` in the inbound
 manifest variant `docs/channels-slack-app-manifest.inbound.json` (request URL
@@ -513,14 +529,12 @@ token, one `files.completeUploadExternal` with the text as `initial_comment`);
 a failure before the share step is `failed` (nothing is visible), a failure at
 or after it is `uncertain`. Slack returns file ids, not a message ts, for a
 file post, so those receipts carry `F…` ids. Voice is a declared fallback
-(audio file + transcript). Adapter-level only, with no agent operation and
-not in the agent capability answer (wired filter) until a later change ships
-the route and its scope: `react` (`reactions.add/remove`), `edit`
-(`chat.update`), `remove` (`chat.delete`), `findPerson`
-(`users.lookupByEmail`, or a handle from a `users.list` cache of at most 10
-minutes that is never returned), `openDirect` (`conversations.open`), named
-mentions in `send` (replies in `send` are used only by
-`marketplace.channels.reply`), and the opt-in `scheduleNative`
+(audio file + transcript). Used by the routes v2 operations: `react`
+(`reactions.add/remove`), `edit` (`chat.update`), `remove` (`chat.delete`),
+`findPerson` (`users.lookupByEmail`; the handle path through a `users.list`
+cache stays unused), `openDirect` (`conversations.open`) and named mentions in
+`send` (replies in `send` are used only by `marketplace.channels.reply`).
+Adapter-level only (wired filter): the opt-in `scheduleNative`
 (`chat.scheduleMessage`, 1 minute to 120 days ahead, 30 per 5 minutes per
 channel). Marketplace's own scheduler stays the default,
 because it re-checks authority and caps at send time. Limits: one message per
@@ -528,8 +542,10 @@ second per channel; HTTP 429 `Retry-After` is honoured once (≤ 30 s).
 
 ### Telegram and Discord additions (Channels P2)
 
-Adapter methods only (the agent routes for reply, react, edit, delete, polls and
-DMs come later); the declarations say exactly what they do.
+The routes v2 operations use these adapter methods (reply through
+`marketplace.channels.reply`; react, edit, delete, polls, markup and DMs
+through [Routes v2](#routes-v2-channels-p2)); the declarations say exactly
+what they do.
 
 Telegram (`telegram.ts`, Bot API 10.3): replies use `reply_parameters`
 `{message_id, allow_sending_without_reply: false}` on the first message of a
@@ -647,9 +663,10 @@ Teams user id (`29:…`) or an Entra object id that the caller lists (with its
 `name`); an undeclared `<at>` tag is refused, so a team, channel or tag is
 never mentioned. No files, images, cards or reactions in this version.
 `edit` = `PUT .../activities/{id}`, `remove` = `DELETE`. Mentions, `edit`,
-`remove`, `findPerson` and `openDirect` are adapter-level only: no agent
-operation uses them yet, so the wired filter keeps them out of the agent
-capability answer. Thread replies are used by `marketplace.channels.reply`
+`remove`, `findPerson` and `openDirect` are used by the routes v2 operations
+(Marketplace checks the message id against its own sent-message ledger before
+an edit or delete; a mention needs its `name` and an `<at>name</at>` in the
+text, checked before any hold). Thread replies are used by `marketplace.channels.reply`
 (reply to the source thread of an inbound event). `findPerson` (Graph
 `users?$filter=mail eq … or userPrincipalName eq …`, User.Read.All
 application permission) and `openDirect` (`POST {serviceUrl}/v3/conversations`,
@@ -955,6 +972,124 @@ them) go after the same retention, at most 500 rows (oldest out). The purge
 runs in every scheduler tick and, bounded, at start and on each owner browse,
 so it also runs with the scheduler off or in inert mode (audit
 `marketplace.channels.inbound.purged` with counts only).
+
+### Routes v2 (Channels P2)
+
+Reactions, edits, deletes, direct messages to named people, polls, markup and
+named mentions. There is **one outward path**: every operation below is a
+`channel_post` row through `executeConsentedCall` exactly like a post (consent
+head, 3a channel and capability, 3b content, then the checks of this section,
+3c authority, 3d caps, 3e idempotency, provider call, receipt, usage ledger and
+audit). The agent's `Idempotency-Key` is prefixed per operation internally
+(`msg-react:`, `msg-edit:`, `msg-delete:`, `person-dm:`), so a reaction, edit,
+delete, DM and plain post never share a row. The action, person, mentions,
+markup and poll are stored beside the post (`channel_post_op`, keyed like it)
+so a held operation is rebuilt with the same payload at send time; the same key
+with another body is `409 channel_idempotency_conflict`.
+
+Digest (§4.6, additive; plain posts keep their digest): `op` (`post`,
+`schedule`, `reply`, `poll`, `react`, `edit`, `delete`, `dm`), the destination
+(`person:<platform user id>` for a DM, with `personId` and the `personName` the
+owner approves), `targetMessageId`, `emoji` and `remove`, `text`, `markup`,
+`mentions` (sorted by user id, with `name` when given), `poll` (question,
+options in order, `allowsMultiple` when true, `durationHours`), attachments
+(kind, sha256) and `replyTo`. Any change is a new digest and needs a new
+approval.
+
+Own messages only (review R3): a reaction, edit or delete names a message id
+that Marketplace itself posted to THIS channel's current destination: the id is
+in the sent-message ledger (`channel_sent_message`, written as soon as the
+provider call returns) for that channel and destination, the post's kept
+receipt (`sent` or `uncertain`) lists it, and the post is the calling agent's
+own (spec 2.1; another agent's post or the owner test is not a target).
+Anything else, a purged receipt or a destination changed since, is `404
+channel_message_not_ours`, before any hold or provider call; a deleted message is `409 channel_message_removed`. A provider
+window is respected at request time and again when an approved operation runs
+(Telegram deletes: 48 h, refused 60 s early: `422
+channel_delete_window_passed`; an approved hold past the window is skipped).
+
+Body rules (refused before any hold, never cut): a reaction has an emoji (1-64
+characters, the provider checks its own emoji set) and no text; an edit has
+non-empty text; a delete has none; none of them takes attachments, mentions,
+markup, a poll or a reply target. `mentions` needs `mentions.users` (Slack,
+Discord, Teams, Buzz; ≤ 20 distinct ids; Teams also needs each `name` and an
+`<at>name</at>` in the text). `markup` must be the default or one of
+`markupOptions` (Telegram `markdown-v2`). `poll` needs `poll` (Telegram,
+Discord), only on an immediate post, no attachments, inside the provider's
+limits (`422 channel_poll_invalid`); its question and options pass the deny
+patterns. The confirmed-event rule does not apply to reactions, edits, deletes
+or DMs; every other content rule does.
+
+Standing grants (review R4): new scope flags `reactions`, `edits`, `deletes`,
+`polls`, `dms` (default false; `true` is wider, so `narrow` refuses adding one;
+each needs `immediate`). A grant covers an operation only with its flag. The
+grant digest includes a flag only when true, so grants approved before routes
+v2 keep their digests.
+
+Caps (Coordinator, 2026-10-10): reactions, edits and deletes never count against
+the post caps (per day, per hour, minimum gap, one per phase; nor `usageToday`),
+so an agent can delete a mistaken post at once. They have their own caps in the
+channel ceiling, `caps.actions` (defaults and widest values: `reactionsPerDay`
+100, `editsPerDay` 20, `deletesPerDay` 50, no gap; `editMinIntervalSeconds` 30,
+at least 30, between two edits of the same message), counted for all agents in
+the same reservation transaction, and optionally tighter in a grant's
+`caps.actions` (an absent field inherits the ceiling; narrowing-aware; part of
+the grant digest only when present). Refusals: `429
+channel_cap_reactions_per_day | channel_cap_edits_per_day |
+channel_cap_deletes_per_day | channel_edit_min_interval` with
+`retryAfterSeconds`. Polls and direct messages are new outward content and stay
+on the post caps.
+
+People (review R5). The owner sets a people policy per connection (strict
+owner gate: the pinned owner's own Portal launch session with CSRF; a plain
+operator session is `403 owner_session_required`): `none` (default: no person
+can be found or messaged), `allowlist` or `workspace` (anyone the connected
+workspace or tenant can reach). An allowlist matches the person found by an
+immutable platform id listed in `people` (Slack `U…`, Teams Entra object id,
+Discord user id, Buzz npub or hex key) or, on Slack and Teams only, by the
+verified email (or Teams user principal name) in `people` or its domain in
+`domains` (Slack: only when the profile has `is_email_confirmed: true`;
+otherwise only the user id matches); display names, nicknames and handles never
+match. `channel-people.find`
+runs server-side: `none` refuses before the platform is asked (`403
+channel_people_disabled`); otherwise the platform is always asked and the
+policy is checked after the lookup. No directory-membership leak: under an
+allowlist, a person who exists but is not listed, an ambiguous match and nobody
+all answer the same `404 channel_person_not_found` (same body, same platform
+call); the real outcome (`not_allowed`, `not_found`, `ambiguous`) is only in the
+audit metadata and the owner's `recentFinds` (in the people listing).
+Finds are capped at 50 per agent per 24 h, the slot taken before the platform
+call (`429 channel_person_lookup_cap`). People are **per agent**: the answer is
+one opaque `personRef` (`prs_…`) that belongs to the calling agent (another
+agent finding the same person gets its own), the display name to confirm and
+`approved` for the caller's own approval only; a reference another agent
+obtained is `404 channel_person_not_found`, the same as an unknown one. Never
+a list (`404 channel_person_not_found`, `409 channel_person_ambiguous`). Slack
+finds by email only; Discord and Buzz by handle; Teams by email or user
+principal name (Graph flag); Telegram has no DMs (`422
+channel_capability_unavailable`). The first message to a person is always held
+for the owner's approval of the exact payload (a grant never covers it, even
+with `scope.dms`), per agent; once that message is sent the person is approved
+for that agent on that connection (`channel_agent_person.approved_at`) and that
+agent's `scope.dms` may cover its later messages. The policy is checked again at
+send time. The owner lists people per agent (with the platform id) and revokes
+an approval per (agent, person) (strict owner gate; that agent's next message is
+held again). Sent-message rows are purged with their receipts in the scheduler
+tick. Audit records the
+query kind and outcome, never the email or handle.
+
+Owner views: the Approvals queue and `channel-posts.list` carry `action`:
+`{op, emoji?, remove?, targetMessageId?, targetExcerpt?}` (the first 200
+characters of the target's kept receipt text) or `{op: "dm", person:
+{displayName, approved}}`; the approval `actionKey` is `channel.react|edit|
+delete|dm`, and the held operation for a Portal assertion `op` is the matching
+manifest operation.
+
+Self-loop (review R8): Telegram can deliver the bot's own channel post to the
+webhook before `sendMessage` answers. The receiver waits (at most 10 s) for
+sends to the same chat that are still in flight, then checks the message id
+against the sent-message ledger and receipts of the last 48 hours; the loop
+breaker's per-sender cap stays as the last guard.
 
 ### Inert mode
 

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  DEFAULT_ACTION_CAPS,
   DEFAULT_CHANNEL_POLICY,
   MIB,
   channelPayloadDigest,
@@ -70,7 +71,7 @@ describe("validatePolicy", () => {
     const result = policy();
     expect(result).toEqual({
       standingGrants: "disabled",
-      caps: { perDay: 6, minIntervalSeconds: 600, onePerPhase: true },
+      caps: { perDay: 6, minIntervalSeconds: 600, onePerPhase: true, actions: { reactionsPerDay: 100, editsPerDay: 20, editMinIntervalSeconds: 30, deletesPerDay: 50 } },
       content: {
         files: {
           allowed: true,
@@ -266,12 +267,13 @@ describe("effectiveCaps", () => {
         { perDay: 10, perHour: 2, minIntervalSeconds: 300, onePerPhase: false },
         { perDay: 6, minIntervalSeconds: 600, onePerPhase: true },
       ),
-    ).toEqual({ perDay: 6, perHour: 2, minIntervalSeconds: 600, onePerPhase: true });
+    ).toEqual({ perDay: 6, perHour: 2, minIntervalSeconds: 600, onePerPhase: true, actions: DEFAULT_ACTION_CAPS });
     expect(effectiveCaps(null, { perDay: 6, perHour: 3, minIntervalSeconds: 600, onePerPhase: false })).toEqual({
       perDay: 6,
       perHour: 3,
       minIntervalSeconds: 600,
       onePerPhase: false,
+      actions: DEFAULT_ACTION_CAPS,
     });
   });
 });

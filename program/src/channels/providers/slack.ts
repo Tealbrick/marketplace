@@ -273,7 +273,7 @@ function isSlackUploadUrl(value: unknown): value is string {
 
 // ---------------------------------------------------------------- Provider
 
-type Person = { userId: string; displayName: string; keys: string[] };
+type Person = { userId: string; displayName: string; keys: string[]; emailConfirmed: boolean };
 
 function personOf(raw: unknown): Person | undefined {
   const user = asRecord(raw);
@@ -286,7 +286,7 @@ function personOf(raw: unknown): Person | undefined {
   const keys = [user.name, profile.display_name, profile.display_name_normalized]
     .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     .map((value) => value.trim().toLowerCase());
-  return { userId: user.id, displayName, keys: [...new Set(keys)] };
+  return { userId: user.id, displayName, keys: [...new Set(keys)], emailConfirmed: user.is_email_confirmed === true };
 }
 
 export function createSlackProvider(options: ChannelProviderOptions = {}): ChannelProvider {
@@ -599,7 +599,8 @@ export function createSlackProvider(options: ChannelProviderOptions = {}): Chann
         return outcome.slackError === "users_not_found" ? notFound() : personFailure(outcome.failure);
       }
       const person = personOf(outcome.body.user);
-      return person ? { ok: true, userId: person.userId, displayName: person.displayName } : notFound();
+      // Slack's own flag: the email on the profile is confirmed by its owner (allowlists rely on it).
+      return person ? { ok: true, userId: person.userId, displayName: person.displayName, emailVerified: person.emailConfirmed } : notFound();
     }
     if (!handle || !HANDLE.test(handle)) return { ok: false, reason: "failed", errorCode: "person_query_invalid", detail: "the handle is invalid" };
     const listed = await directory(checked.token);

@@ -592,14 +592,22 @@ describe("slack findPerson and openDirect", () => {
   const member = (id: string, name: string, display: string, extra: Record<string, unknown> = {}) => ({ id, name, real_name: `${display} Real`, profile: { display_name: display }, ...extra });
 
   it("looks up by email in the form body (never the URL)", async () => {
-    const { provider, fake } = make([ok({ user: member("U0ANNA", "anna", "Anna") }), slackError("users_not_found"), ok({ user: member("U0GONE", "gone", "Gone", { deleted: true }) }), slackError("missing_scope")]);
-    expect(await provider.findPerson(TOKEN, { email: "anna@example.com" })).toEqual({ ok: true, userId: "U0ANNA", displayName: "Anna" });
+    const { provider, fake } = make([
+      ok({ user: member("U0ANNA", "anna", "Anna") }),
+      slackError("users_not_found"),
+      ok({ user: member("U0GONE", "gone", "Gone", { deleted: true }) }),
+      slackError("missing_scope"),
+      ok({ user: member("U0ANNA", "anna", "Anna", { is_email_confirmed: true }) }),
+    ]);
+    // Slack's is_email_confirmed is passed through as emailVerified (false unless Slack says true).
+    expect(await provider.findPerson(TOKEN, { email: "anna@example.com" })).toEqual({ ok: true, userId: "U0ANNA", displayName: "Anna", emailVerified: false });
     expect(method(fake.requests[0]!)).toBe("users.lookupByEmail");
     expect(fake.requests[0]!.url).not.toContain("anna");
     expect(form(fake.requests[0]!)).toEqual({ email: "anna@example.com" });
     expect(await provider.findPerson(TOKEN, { email: "nobody@example.com" })).toMatchObject({ ok: false, reason: "not_found" });
     expect(await provider.findPerson(TOKEN, { email: "gone@example.com" })).toMatchObject({ ok: false, reason: "not_found" });
     expect(await provider.findPerson(TOKEN, { email: "anna@example.com" })).toEqual({ ok: false, reason: "failed", errorCode: "provider_forbidden", detail: "slack: missing_scope" });
+    expect(await provider.findPerson(TOKEN, { email: "anna@example.com" })).toEqual({ ok: true, userId: "U0ANNA", displayName: "Anna", emailVerified: true });
   });
 
   it("finds by handle from a cached users.list (at most 10 minutes), never returning the list", async () => {
@@ -837,10 +845,13 @@ describe("slack inbound: team binding, event_id dedupe and the full check", () =
 });
 
 describe("slack capabilities exposed to agents (wired filter)", () => {
-  it("hides DM, reactions, edit, delete, mentions and native schedule until their operations ship; inbound and replies are wired", () => {
+  it("shows DM, reactions, edit, delete and mentions (routes v2); hides native schedule; inbound and replies are wired", () => {
     const effective = wiredCapabilities(createSlackProvider().capabilities);
-    for (const feature of ["inbound", "thread.replies"]) expect(capabilitySupports(effective, feature), feature).toBe(true);
-    for (const feature of ["dm", "reactions.add", "reactions.remove", "reactions.custom", "edit", "delete", "mentions.users", "schedule.native"]) {
+    for (const feature of ["inbound", "thread.replies", "dm", "reactions.add", "reactions.remove", "reactions.custom", "edit", "delete", "mentions.users"]) {
+      expect(AGENT_WIRED_FEATURES.has(feature as never), feature).toBe(true);
+      expect(capabilitySupports(effective, feature), feature).toBe(true);
+    }
+    for (const feature of ["schedule.native", "presence.typing"]) {
       expect(AGENT_WIRED_FEATURES.has(feature as never), feature).toBe(false);
       expect(capabilitySupports(effective, feature), feature).toBe(false);
     }

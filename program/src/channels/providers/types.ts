@@ -213,7 +213,11 @@ export type PersonQuery = { email?: string; handle?: string };
  * `ambiguous`: more than one person has this handle; the caller must ask by email.
  */
 export type FindPersonResult =
-  | { ok: true; userId: string; displayName: string }
+  /**
+   * `emailVerified`: the platform confirmed that this person owns the email asked for (Slack `is_email_confirmed`).
+   * An email or domain allowlist matches only a verified email; otherwise only the platform user id matches.
+   */
+  | { ok: true; userId: string; displayName: string; emailVerified?: boolean }
   | { ok: false; reason: "not_found" | "ambiguous" | "failed"; errorCode: string; detail: string };
 
 export type OpenDirectResult =

@@ -18,6 +18,7 @@ import {
   isChannelProviderId,
   largestAcceptedBytes,
   policyCapabilities,
+  postOpSpecOf,
   type ChannelPostBody,
   type ClassSelection,
 } from "./runtime.js";
@@ -26,6 +27,7 @@ import {
   CHANNEL_ATTACHMENT_UPLOADS_PER_DAY,
   CHANNEL_SCHEDULE_MAX_LEAD_MS,
   CHANNEL_SCHEDULE_MIN_LEAD_MS,
+  ACTION_KEY_PREFIX,
   INBOUND_REPLY_KEY_PREFIX,
   receiptView,
   type ChannelCallPlan,
@@ -34,6 +36,7 @@ import {
   type ConsentedDispatch,
 } from "./service.js";
 import { ChannelStoreError, writeAttachmentBytes, type ChannelPostRecord, type ChannelPostStatus, type ChannelRecord } from "./store.js";
+import { personOwnerView, validatePeoplePolicy } from "./people.js";
 import { replyTargetFor } from "./inbound.js";
 import { DELIVERED_STATUSES, INBOUND_TEXT_RETENTION_BOUNDS, type InboundEventRecord } from "./inbound-store.js";
 import type { InboundWorker } from "./inbound-worker.js";
@@ -57,6 +60,12 @@ export const CHANNEL_AGENT_OPERATION = Object.freeze({
   grantsWithdraw: "marketplace.channel-grants.withdraw",
   inbound: "marketplace.channels.inbound",
   reply: "marketplace.channels.reply",
+  // Channels P2 routes v2.
+  react: "marketplace.channel-messages.react",
+  edit: "marketplace.channel-messages.edit",
+  delete: "marketplace.channel-messages.delete",
+  findPerson: "marketplace.channel-people.find",
+  messagePerson: "marketplace.channel-people.message",
 } as const);
 
 export const AGENT_IDEMPOTENCY = /^[A-Za-z0-9_-]{8,100}$/u;
@@ -82,6 +91,20 @@ const CampaignSchema = z.strictObject({
   phase: z.enum(GRANT_PHASES).optional(),
 });
 
+/** A named mention: a platform user id, or `{userId, name}` (Teams renders `<at>name</at>`). */
+const MentionSchema = z.union([
+  z.string().min(1).max(128),
+  z.strictObject({ userId: z.string().min(1).max(128), name: z.string().min(1).max(80).optional() }),
+]);
+
+/** A native poll; the provider's own limits are checked before any hold (never cut). */
+const PollSchema = z.strictObject({
+  question: z.string().min(1).max(1000),
+  options: z.array(z.string().min(1).max(500)).min(1).max(20),
+  allowsMultiple: z.boolean().optional(),
+  durationHours: z.number().int().min(1).max(10_000).optional(),
+});
+
 const PostBodySchema = z.strictObject({
   text: z.string().max(10_000),
   attachments: z
@@ -95,9 +118,23 @@ const PostBodySchema = z.strictObject({
     .max(10)
     .optional(),
   campaign: CampaignSchema.optional(),
+  // Routes v2: named mentions, a declared markup option, and (immediate posts only) a native poll.
+  mentions: z.array(MentionSchema).max(20).optional(),
+  markup: z.string().min(1).max(40).optional(),
+  poll: PollSchema.optional(),
 });
 
-const ScheduleBodySchema = PostBodySchema.extend({ sendAt: z.string().max(40) });
+const ScheduleBodySchema = PostBodySchema.omit({ poll: true }).extend({ sendAt: z.string().max(40) });
+
+const ReactBodySchema = z.strictObject({ emoji: z.string().min(1).max(64), remove: z.boolean().optional() });
+const EditBodySchema = z.strictObject({ text: z.string().min(1).max(10_000) });
+const FindPersonSchema = z.strictObject({ email: z.string().min(3).max(254).optional(), handle: z.string().min(1).max(100).optional() });
+const PersonMessageSchema = z.strictObject({
+  text: z.string().max(10_000),
+  attachments: PostBodySchema.shape.attachments,
+});
+const PERSON_REF = /^prs_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
+const MESSAGE_ID = /^[^\s\p{Cc}]{1,256}$/u;
 
 // Teams conversation ids (`19:…@thread.tacv2`, personal `a:…`) are longer than Telegram and Discord ids.
 const DestinationPickSchema = z.strictObject({
@@ -159,6 +196,11 @@ export type ChannelRouteDeps = {
   traceIdFrom: (request: FastifyRequest) => string;
   /** The inbound worker (owner switches, receiver status). */
   inbound: InboundWorker;
+  /**
+   * The strict owner gate (Portal launch session + CSRF + pinned deployment owner) for owner-sensitive writes that
+   * widen what agents may do (routes v2 people policy and person revoke; review of PR #51).
+   */
+  ownerWriter: (request: FastifyRequest, reply: FastifyReply) => Promise<OwnerWriterGateResult>;
   /** The Buzz connection identity and the hook that applies a change (provider re-verify, socket, bridge sink). */
   buzz?: {
     identity: BuzzIdentity;
@@ -330,7 +372,7 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
   const ownerDenied = (request: FastifyRequest) =>
     notConfigured.has(request) ? NOT_CONFIGURED : { ok: false, error: "marketplace_operator_required" };
 
-  const postBody = (data: z.infer<typeof PostBodySchema>, sendAt: string | null): ChannelPostBody => ({
+  const postBody = (data: Omit<z.infer<typeof PostBodySchema>, "poll"> & { poll?: z.infer<typeof PollSchema> }, sendAt: string | null): ChannelPostBody => ({
     text: data.text,
     attachments: (data.attachments ?? []).map((attachment) => ({
       id: attachment.attachmentId,
@@ -339,7 +381,26 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
     })),
     campaign: { ...(data.campaign?.ref ? { ref: data.campaign.ref } : {}), ...(data.campaign?.phase ? { phase: data.campaign.phase } : {}) },
     sendAt,
+    ...(data.mentions && data.mentions.length > 0
+      ? { mentions: data.mentions.map((mention) => (typeof mention === "string" ? { userId: mention } : { userId: mention.userId, ...(mention.name ? { name: mention.name } : {}) })) }
+      : {}),
+    ...(data.markup !== undefined ? { markup: data.markup as ChannelPostBody["markup"] } : {}),
+    ...(data.poll ? { poll: data.poll } : {}),
   });
+
+  /**
+   * Routes v2: records the action, person, mentions, markup and poll beside the post (keyed like it) before the call,
+   * so a held post is rebuilt with the same payload. The same key with another body is a conflict.
+   */
+  const recordPostOp = (caller: Caller, internalKey: string, body: ChannelPostBody) =>
+    channels.actions.putPostOp({
+      workspaceSlug: org,
+      agentId: caller.agentId,
+      idempotencyKey: internalKey,
+      spec: postOpSpecOf(body),
+      existingPost: channels.getPostByIdempotencyKey(org, caller.agentId, internalKey) !== null,
+      now: deps.now(),
+    });
 
   // ----- agent routes (§5.1) ----------------------------------------------------
 
@@ -433,6 +494,8 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
     const replyTo = replyTargetFor(event);
     const linked = inboundStore.putReplyLink({ workspaceSlug: org, agentId: caller.agentId, idempotencyKey: internalKey, eventId: event.id, replyTo, now: deps.now() });
     if (linked === "conflict") return fail(reply, 409, "channel_idempotency_conflict");
+    const replyBody = { ...postBody(parsed.data, null), replyTo };
+    if (recordPostOp(caller, internalKey, replyBody) === "conflict") return fail(reply, 409, "channel_idempotency_conflict");
     return deps.executeConsentedCall({
       reply,
       traceId,
@@ -443,7 +506,7 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
         selection: channelClassSelection(found.channel, found.selection.grantClass === "outward" ? "outward" : "read"),
         channelId: found.channel.id,
         mode: "post",
-        body: { ...postBody(parsed.data, null), replyTo },
+        body: replyBody,
       },
     });
   });
@@ -597,6 +660,8 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
       }
       sendAt = new Date(at).toISOString();
     }
+    const body = postBody(parsed.data, sendAt);
+    if (found.selection.grantClass === "outward" && recordPostOp(caller, key, body) === "conflict") return fail(reply, 409, "channel_idempotency_conflict");
     return deps.executeConsentedCall({
       reply,
       traceId,
@@ -607,10 +672,151 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
         selection: channelClassSelection(found.channel, found.selection.grantClass === "outward" ? "outward" : "read"),
         channelId: found.channel.id,
         mode,
-        body: postBody(parsed.data, sendAt),
+        body,
       },
     });
   };
+
+  /**
+   * Routes v2 outward operations (reaction, edit, delete, direct message). Each is a post row through the same
+   * `executeConsentedCall` path as a post (review R1): channel and capability, content, own message / people policy,
+   * authority (a grant with the matching scope flag, else the owner's approval of this exact digest), caps,
+   * idempotency, provider call, receipt, usage ledger and audit. The internal key is prefixed per operation.
+   */
+  const actionCall = async <T extends z.ZodTypeAny>(input: {
+    request: FastifyRequest;
+    reply: FastifyReply;
+    operationId: string;
+    schema: T | null;
+    keyPrefix: string;
+    build: (data: z.infer<T>, params: Record<string, string>) => ChannelPostBody | { error: string; status: number };
+  }) => {
+    const { request, reply } = input;
+    const traceId = deps.traceIdFrom(request);
+    reply.header("content-security-policy", "default-src 'none'; sandbox");
+    const caller = await agentPreamble(request, reply, input.operationId);
+    if (!caller) return agentDenied(request);
+    const key = header(request, "idempotency-key");
+    if (!key || !AGENT_IDEMPOTENCY.test(key)) return fail(reply, 400, "idempotency_key_required");
+    let data: unknown = undefined;
+    if (input.schema) {
+      const parsed = input.schema.safeParse(request.body);
+      if (!parsed.success) return fail(reply, 400, "validation_failed");
+      data = parsed.data;
+    }
+    const params = request.params as Record<string, string>;
+    const found = consentedChannel(caller, params.channelId ?? "");
+    if (!found) return fail(reply, 404, "channel_not_found");
+    // Checked before anything is written (the post op), not only in the post path.
+    if (found.selection.grantClass !== "outward") return fail(reply, 403, "channel_outward_consent_required");
+    const built = input.build(data as z.infer<T>, params);
+    if ("error" in built) return fail(reply, built.status, built.error);
+    const internalKey = `${input.keyPrefix}${key}`;
+    if (recordPostOp(caller, internalKey, built) === "conflict") return fail(reply, 409, "channel_idempotency_conflict");
+    return deps.executeConsentedCall({
+      reply,
+      traceId,
+      scope: scopeFor(caller, found.consent),
+      input: { consentId: found.consent.consentId, selection: null, input: {}, idempotencyKey: internalKey },
+      via: "app-grant",
+      channel: {
+        selection: channelClassSelection(found.channel, "outward"),
+        channelId: found.channel.id,
+        mode: "post",
+        body: built,
+      },
+    });
+  };
+
+  const actionBody = (action: NonNullable<ChannelPostBody["action"]>, text = ""): ChannelPostBody => ({ text, attachments: [], campaign: {}, sendAt: null, action });
+  const messageIdOf = (params: Record<string, string>) => (MESSAGE_ID.test(params.messageId ?? "") ? params.messageId! : null);
+
+  app.post(`${AGENT_PREFIX}/:channelId/messages/:messageId/reactions`, { bodyLimit: 4 * 1024 }, (request, reply) =>
+    actionCall({
+      request,
+      reply,
+      operationId: CHANNEL_AGENT_OPERATION.react,
+      schema: ReactBodySchema,
+      keyPrefix: ACTION_KEY_PREFIX.react,
+      build: (data, params) => {
+        const messageId = messageIdOf(params);
+        if (!messageId) return { status: 404, error: "channel_message_not_ours" };
+        return actionBody({ op: "react", targetMessageId: messageId, emoji: data.emoji, ...(data.remove === true ? { remove: true } : {}) });
+      },
+    }),
+  );
+
+  app.patch(`${AGENT_PREFIX}/:channelId/messages/:messageId`, { bodyLimit: 64 * 1024 }, (request, reply) =>
+    actionCall({
+      request,
+      reply,
+      operationId: CHANNEL_AGENT_OPERATION.edit,
+      schema: EditBodySchema,
+      keyPrefix: ACTION_KEY_PREFIX.edit,
+      build: (data, params) => {
+        const messageId = messageIdOf(params);
+        if (!messageId) return { status: 404, error: "channel_message_not_ours" };
+        return actionBody({ op: "edit", targetMessageId: messageId }, data.text);
+      },
+    }),
+  );
+
+  app.delete(`${AGENT_PREFIX}/:channelId/messages/:messageId`, { bodyLimit: 4 * 1024 }, (request, reply) =>
+    actionCall({
+      request,
+      reply,
+      operationId: CHANNEL_AGENT_OPERATION.delete,
+      schema: null,
+      keyPrefix: ACTION_KEY_PREFIX.delete,
+      build: (_data, params) => {
+        const messageId = messageIdOf(params);
+        if (!messageId) return { status: 404, error: "channel_message_not_ours" };
+        return actionBody({ op: "delete", targetMessageId: messageId });
+      },
+    }),
+  );
+
+  app.post(`${AGENT_PREFIX}/:channelId/people/:personRef/messages`, { bodyLimit: 64 * 1024 }, (request, reply) =>
+    actionCall({
+      request,
+      reply,
+      operationId: CHANNEL_AGENT_OPERATION.messagePerson,
+      schema: PersonMessageSchema,
+      keyPrefix: ACTION_KEY_PREFIX.dm,
+      build: (data, params) => {
+        if (!PERSON_REF.test(params.personRef ?? "")) return { status: 404, error: "channel_person_not_found" };
+        return { ...postBody({ text: data.text, ...(data.attachments ? { attachments: data.attachments } : {}) }, null), action: { op: "dm", personRef: params.personRef! } };
+      },
+    }),
+  );
+
+  /**
+   * `marketplace.channel-people.find`: one person by email or handle (review R5). The lookup runs server-side; the
+   * agent gets one opaque reference, the display name to confirm and whether the owner already approved the person.
+   * Never a list of members.
+   */
+  app.post(`${AGENT_PREFIX}/:channelId/people/find`, { bodyLimit: 4 * 1024 }, async (request, reply) => {
+    const caller = await agentPreamble(request, reply, CHANNEL_AGENT_OPERATION.findPerson);
+    if (!caller) return agentDenied(request);
+    const key = header(request, "idempotency-key");
+    if (!key || !AGENT_IDEMPOTENCY.test(key)) return fail(reply, 400, "idempotency_key_required");
+    const parsed = FindPersonSchema.safeParse(request.body);
+    if (!parsed.success || (parsed.data.email === undefined) === (parsed.data.handle === undefined)) return fail(reply, 400, "validation_failed");
+    const { channelId } = request.params as { channelId: string };
+    const found = consentedChannel(caller, channelId);
+    if (!found) return fail(reply, 404, "channel_not_found");
+    if (found.selection.grantClass !== "outward") return fail(reply, 403, "channel_outward_consent_required");
+    return idempotent(reply, { scope: `channel-person-find:${caller.agentId}`, key, request: { channelId, query: parsed.data } }, async () => {
+      const outcome = await service.findPerson({ channel: found.channel, agentId: caller.agentId, query: parsed.data });
+      if (!outcome.ok) {
+        return { status: outcome.status, body: { ok: false, schema: 1, error: outcome.error, ...(outcome.detail ? { detail: outcome.detail } : {}) } };
+      }
+      return {
+        status: 200,
+        body: { ok: true, schema: 1, person: { personRef: outcome.person.personRef, displayName: outcome.person.displayName, approved: outcome.person.approvedAt !== null } },
+      };
+    });
+  });
 
   app.post(`${AGENT_PREFIX}/:channelId/posts`, { bodyLimit: 64 * 1024 }, (request, reply) =>
     channelCall(request, reply, CHANNEL_AGENT_OPERATION.post, "post"),
@@ -811,6 +1017,8 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
                 botUsername: typeof connection.metadata.botUsername === "string" ? connection.metadata.botUsername : null,
                 verifiedAt: typeof connection.metadata.verifiedAt === "string" ? connection.metadata.verifiedAt : null,
                 credentialRef: typeof connection.metadata.credentialRef === "string" ? connection.metadata.credentialRef : null,
+                // Routes v2 (R5): who agents may send direct messages to on this connection.
+                peoplePolicy: peoplePolicyView(connection.id),
               }
             : null,
         ];
@@ -1091,6 +1299,10 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
           reason: post.reason,
           attachments: post.attachments.length,
           ...(approval ? { approval: { id: approval.id, state: approval.state, expiresAt: approval.expiresAt } } : {}),
+          ...(() => {
+            const action = service.actionView(post);
+            return action ? { action } : {};
+          })(),
           createdAt: post.createdAt,
         };
       });
@@ -1130,6 +1342,117 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
     if (!outcome.ok) return fail(reply, outcome.status, outcome.error);
     const receipt = channels.getReceiptByPost(org, postId);
     return { ok: true, schema: 1, post: { id: outcome.post.id, status: outcome.post.status }, ...(receipt ? { receipt: receiptView(receipt) } : {}) };
+  });
+
+  // ----- owner people policy and approved people (routes v2, review R5) ----------------
+
+  const peoplePolicyView = (connectionId: string) => {
+    const policy = channels.actions.getPeoplePolicy(org, connectionId);
+    return { mode: policy.mode, people: policy.people, domains: policy.domains, updatedBy: policy.updatedBy, updatedAt: policy.updatedAt };
+  };
+
+  /** A Channels connection of this workspace by id (the people policy is per connection), with its provider. */
+  const channelConnection = (connectionId: string) => {
+    for (const provider of CHANNEL_PROVIDER_IDS) {
+      const connection = store.getConnection(org, channelPluginId(provider));
+      if (connection && connection.id === connectionId) return { connection, provider };
+    }
+    return null;
+  };
+
+  app.get(`${OWNER_PREFIX}/connections/:connectionId/people-policy`, async (request, reply) => {
+    const principal = await owner(request, reply);
+    if (!principal) return ownerDenied(request);
+    const { connectionId } = request.params as { connectionId: string };
+    const found = channelConnection(connectionId);
+    if (!found) return fail(reply, 404, "channel_connection_not_found");
+    return { ok: true, schema: 1, connectionId, provider: found.provider, policy: peoplePolicyView(connectionId) };
+  });
+
+  const PeoplePolicySchema = z.strictObject({
+    mode: z.enum(["none", "allowlist", "workspace"]),
+    people: z.array(z.string().max(254)).max(500).optional(),
+    domains: z.array(z.string().max(253)).max(500).optional(),
+    workspaceSlug: z.string().optional(),
+  });
+
+  /** The strict owner gate; answers like the Buzz identity writes. */
+  const strictOwner = async (request: FastifyRequest, reply: FastifyReply) => {
+    const gate = await deps.ownerWriter(request, reply);
+    return gate.ok ? { ok: true as const, actor: gate.actor } : { ok: false as const, body: { ok: false, schema: 1, error: gate.error === "marketplace_operator_required" ? "owner_session_required" : gate.error } };
+  };
+
+  app.put(`${OWNER_PREFIX}/connections/:connectionId/people-policy`, async (request, reply) => {
+    const principal = await owner(request, reply);
+    if (!principal) return ownerDenied(request);
+    // `workspace` widens who agents may contact: the pinned owner's own launch session only.
+    const gate = await strictOwner(request, reply);
+    if (!gate.ok) return gate.body;
+    const { connectionId } = request.params as { connectionId: string };
+    const found = channelConnection(connectionId);
+    if (!found) return fail(reply, 404, "channel_connection_not_found");
+    const parsed = PeoplePolicySchema.safeParse(request.body);
+    if (!parsed.success) return fail(reply, 400, "validation_failed");
+    const validated = validatePeoplePolicy(parsed.data);
+    if (!validated.ok) return fail(reply, 422, "channel_people_policy_invalid", { errors: validated.errors });
+    const before = channels.actions.getPeoplePolicy(org, connectionId);
+    const policy = channels.actions.setPeoplePolicy({
+      workspaceSlug: org,
+      connectionId,
+      mode: validated.mode,
+      people: validated.people,
+      domains: validated.domains,
+      actor: gate.actor,
+      now: deps.now(),
+    });
+    store.recordAudit({
+      workspaceSlug: org,
+      pluginId: channelPluginId(found.provider),
+      eventType: "marketplace.channels.people_policy.updated",
+      actorId: gate.actor,
+      // Counts only; the allowlist itself stays in the owner view.
+      metadata: { connectionId, from: before.mode, to: policy.mode, people: policy.people.length, domains: policy.domains.length },
+    });
+    return { ok: true, schema: 1, connectionId, provider: found.provider, policy: peoplePolicyView(connectionId) };
+  });
+
+  app.get(`${OWNER_PREFIX}/connections/:connectionId/people`, async (request, reply) => {
+    const principal = await owner(request, reply);
+    if (!principal) return ownerDenied(request);
+    const { connectionId } = request.params as { connectionId: string };
+    const found = channelConnection(connectionId);
+    if (!found) return fail(reply, 404, "channel_connection_not_found");
+    const query = z.object({ approved: z.enum(["true", "false"]).optional(), workspaceSlug: z.string().optional(), actorId: z.string().optional() }).safeParse(request.query ?? {});
+    if (!query.success) return fail(reply, 400, "validation_failed");
+    const people = channels.actions
+      .listPeople(org, connectionId)
+      .filter((person) => query.data.approved === undefined || (person.approvedAt !== null) === (query.data.approved === "true"))
+      .map(personOwnerView);
+    // The owner's recent finds: the real outcome (found, not_allowed, not_found, ...) that agents never see.
+    const recentFinds = channels.actions.listLookups(org, connectionId);
+    return { ok: true, schema: 1, connectionId, provider: found.provider, policy: peoplePolicyView(connectionId), people, recentFinds };
+  });
+
+  app.post(`${OWNER_PREFIX}/connections/:connectionId/people/:personRef/revoke`, async (request, reply) => {
+    const principal = await owner(request, reply);
+    if (!principal) return ownerDenied(request);
+    const gate = await strictOwner(request, reply);
+    if (!gate.ok) return gate.body;
+    const { connectionId, personRef } = request.params as { connectionId: string; personRef: string };
+    const found = channelConnection(connectionId);
+    const person = found ? channels.actions.getPerson(org, personRef) : null;
+    if (!found || !person || person.connectionId !== connectionId) return fail(reply, 404, "channel_person_not_found");
+    if (person.approvedAt === null) return { ok: true, schema: 1, replayed: true, person: personOwnerView(person) };
+    // Per (agent, person): another agent's approval of the same person is untouched.
+    const revoked = channels.actions.revokePerson({ workspaceSlug: org, personRef, actor: gate.actor, now: deps.now() })!;
+    store.recordAudit({
+      workspaceSlug: org,
+      pluginId: channelPluginId(found.provider),
+      eventType: "marketplace.channels.person.revoked",
+      actorId: gate.actor,
+      metadata: { connectionId, personRef, agentId: person.agentId },
+    });
+    return { ok: true, schema: 1, person: personOwnerView(revoked) };
   });
 
   // ----- owner inbound (P2 scope 2.2) ---------------------------------------------

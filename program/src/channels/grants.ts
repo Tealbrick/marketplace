@@ -32,6 +32,15 @@ export const GrantCapsSchema = z.strictObject({
   perHour: z.number().int().min(1).max(10_000).optional(),
   minIntervalSeconds: z.number().int().min(0).max(7 * 86_400),
   onePerPhase: z.boolean(),
+  // Routes v2 action caps (own caps, never the post caps); absent fields inherit the ceiling.
+  actions: z
+    .strictObject({
+      reactionsPerDay: z.number().int().min(0).max(100).optional(),
+      editsPerDay: z.number().int().min(0).max(20).optional(),
+      editMinIntervalSeconds: z.number().int().min(30).max(86_400).optional(),
+      deletesPerDay: z.number().int().min(0).max(50).optional(),
+    })
+    .optional(),
 });
 
 export const GrantScopeSchema = z.strictObject({
@@ -49,6 +58,12 @@ export const GrantScopeSchema = z.strictObject({
   immediate: z.boolean(),
   scheduled: z.boolean(),
   replies: z.boolean().optional(),
+  // Routes v2 (review R4): default false, `true` is wider.
+  reactions: z.boolean().optional(),
+  edits: z.boolean().optional(),
+  deletes: z.boolean().optional(),
+  polls: z.boolean().optional(),
+  dms: z.boolean().optional(),
 });
 
 export const GrantTermsSchema = z.strictObject({

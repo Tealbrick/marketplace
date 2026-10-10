@@ -245,9 +245,12 @@ export function featureRefusal(caps: ChannelCapabilities, feature: ChannelFeatur
 /**
  * Closed set of features an agent operation can really use TODAY (review of PR #43). The P1 post and schedule
  * routes send text plus the declared attachment kinds (a fallback voice included) to a discovered destination,
- * and a Telegram forum topic is such a destination (`thread.topics`). Nothing else has a route yet: no reply in a
- * thread, mention of a person, DM, reaction, edit, delete, poll, button, event, native schedule (P1 scheduling is
- * Marketplace-side), presence, canvas, live voice or inbound delivery.
+ * and a Telegram forum topic is such a destination (`thread.topics`). Routes v2 (review R7) adds the features
+ * whose operations now exist: reactions (`marketplace.channel-messages.react`, custom emoji passed through), edit
+ * and delete of a message Marketplace posted (`.edit`, `.delete`), direct messages to a named person
+ * (`marketplace.channel-people.find` / `.message`), native polls, named mentions and the declared markup options
+ * on a post. Still no route: thread forum posts, buttons, events, native schedule (P1 scheduling is
+ * Marketplace-side), presence, canvas, ephemeral messages and live voice.
  * Adapters keep declaring what they CAN do; a later change adds a feature here in the same change that ships its
  * operation. Agents and the owner UI only ever see `declaration ∩ wired` (see `wiredCapabilities`).
  */
@@ -262,6 +265,16 @@ export const AGENT_WIRED_FEATURES: ReadonlySet<ChannelFeature> = new Set<Channel
   // `marketplace.channels.reply` replies natively in the source thread (the only operation that sets `replyTo`).
   "inbound",
   "thread.replies",
+  // Channels P2 routes v2 (review R7).
+  "reactions.add",
+  "reactions.remove",
+  "reactions.custom",
+  "edit",
+  "delete",
+  "dm",
+  "poll",
+  "mentions.users",
+  "markup.markdown-v2",
 ]);
 
 /**
@@ -279,10 +292,12 @@ export function wiredCapabilities(
   const liveOn = live !== false && (["live.join", "live.listen", "live.speak", "live.transcript"] as const).some(on);
   const dmOn = on("dm");
   const editOn = on("edit");
-  // No route lets a post choose another markup yet, so `markupOptions` is not part of the effective answer.
-  const { markupOptions: _unwiredMarkup, ...declared } = caps;
+  // A markup option is offered only when its `markup.<name>` feature is wired (routes v2: the post body `markup`).
+  const { markupOptions, ...declared } = caps;
+  const wiredMarkup = (markupOptions ?? []).filter((markup) => (CHANNEL_FEATURES as readonly string[]).includes(`markup.${markup}`) && wired.has(`markup.${markup}` as ChannelFeature));
   return {
     ...declared,
+    ...(wiredMarkup.length > 0 ? { markupOptions: wiredMarkup } : {}),
     mentions: { ...caps.mentions, users: on("mentions.users") },
     dm: { open: dmOn, maxMembers: dmOn ? caps.dm.maxMembers : 0 },
     image: on("image") ? caps.image : false,

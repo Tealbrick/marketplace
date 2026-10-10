@@ -297,6 +297,83 @@
       "appHold": true
     },
     {
+      "id": "marketplace.channel-messages.react",
+      "crud": [
+        "create"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/v1/agent/channels/{channelId}/messages/{messageId}/reactions",
+      "input": "#/schemas/ChannelReactInput",
+      "output": "#/schemas/ChannelPostResult",
+      "idempotency": "required",
+      "effects": "external-effects",
+      "review": "allowed",
+      "summary": "Add or remove the bot's reaction on a message Marketplace posted to this channel (other ids: 404 channel_message_not_ours): 200 receipt under a standing grant with scope.reactions or an owner-approved digest, otherwise 202 approval_pending",
+      "approvalAuthority": "app",
+      "appHold": true
+    },
+    {
+      "id": "marketplace.channel-messages.edit",
+      "crud": [
+        "update"
+      ],
+      "method": "PATCH",
+      "path": "/api/marketplace/v1/agent/channels/{channelId}/messages/{messageId}",
+      "input": "#/schemas/ChannelEditInput",
+      "output": "#/schemas/ChannelPostResult",
+      "idempotency": "required",
+      "effects": "external-effects",
+      "review": "allowed",
+      "summary": "Replace the text of a message Marketplace posted to this channel (other ids: 404 channel_message_not_ours; provider edit window respected): 200 receipt under a standing grant with scope.edits or an owner-approved digest, otherwise 202 approval_pending",
+      "approvalAuthority": "app",
+      "appHold": true
+    },
+    {
+      "id": "marketplace.channel-messages.delete",
+      "crud": [
+        "delete"
+      ],
+      "method": "DELETE",
+      "path": "/api/marketplace/v1/agent/channels/{channelId}/messages/{messageId}",
+      "output": "#/schemas/ChannelPostResult",
+      "idempotency": "required",
+      "effects": "external-effects",
+      "review": "allowed",
+      "summary": "Delete a message Marketplace posted to this channel (other ids: 404 channel_message_not_ours; Telegram: within 48 hours): 200 receipt under a standing grant with scope.deletes or an owner-approved digest, otherwise 202 approval_pending",
+      "approvalAuthority": "app",
+      "appHold": true
+    },
+    {
+      "id": "marketplace.channel-people.find",
+      "crud": [
+        "create"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/v1/agent/channels/{channelId}/people/find",
+      "input": "#/schemas/PersonFindInput",
+      "output": "#/schemas/PersonFindResult",
+      "idempotency": "required",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Find one person by email or handle on this channel's connection, where the owner's people policy allows it; returns one opaque personRef, the display name to confirm and whether the owner already approved the person (never a member list)"
+    },
+    {
+      "id": "marketplace.channel-people.message",
+      "crud": [
+        "create"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/v1/agent/channels/{channelId}/people/{personRef}/messages",
+      "input": "#/schemas/PersonMessageInput",
+      "output": "#/schemas/ChannelPostResult",
+      "idempotency": "required",
+      "effects": "external-effects",
+      "review": "allowed",
+      "summary": "Send a direct message to a person found on this channel's connection: the first message to a person always answers 202 approval_pending (owner approval of the exact payload); later ones may be covered by a standing grant with scope.dms",
+      "approvalAuthority": "app",
+      "appHold": true
+    },
+    {
       "id": "marketplace.approvals.resolve",
       "crud": [
         "update"
@@ -806,6 +883,59 @@
       "audience": "owner"
     },
     {
+      "id": "marketplace.channel-people-policy.get",
+      "crud": [
+        "read"
+      ],
+      "method": "GET",
+      "path": "/api/marketplace/channels/connections/{connectionId}/people-policy",
+      "idempotency": "none",
+      "effects": "read-only",
+      "review": "none",
+      "summary": "The people policy of one Channels connection: none (default, no direct messages), allowlist (named people and email domains) or workspace",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channel-people-policy.update",
+      "crud": [
+        "update"
+      ],
+      "method": "PUT",
+      "path": "/api/marketplace/channels/connections/{connectionId}/people-policy",
+      "input": "#/schemas/PeoplePolicyInput",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Set who agents may send direct messages to on one Channels connection (none, allowlist of emails, handles and email domains, or workspace)",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channel-people.list",
+      "crud": [
+        "read"
+      ],
+      "method": "GET",
+      "path": "/api/marketplace/channels/connections/{connectionId}/people",
+      "idempotency": "none",
+      "effects": "read-only",
+      "review": "none",
+      "summary": "People agents found on one Channels connection, with the approved ones (the owner approved a first message) marked",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channel-people.revoke",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/channels/connections/{connectionId}/people/{personRef}/revoke",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Revoke an approved person: the next message to them needs the owner's approval again",
+      "audience": "owner"
+    },
+    {
       "id": "marketplace.channel-buzz-identity.get",
       "crud": [
         "read"
@@ -1086,6 +1216,72 @@
               ]
             }
           }
+        },
+        "mentions": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "userId"
+                ],
+                "properties": {
+                  "userId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "markup": {
+          "type": "string",
+          "description": "A markup the channel's capabilities.markupOptions lists (Telegram: markdown-v2)"
+        },
+        "poll": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "question",
+            "options"
+          ],
+          "properties": {
+            "question": {
+              "type": "string",
+              "minLength": 1
+            },
+            "options": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 20,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "allowsMultiple": {
+              "type": "boolean"
+            },
+            "durationHours": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
         }
       }
     },
@@ -1150,6 +1346,42 @@
         "sendAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "mentions": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "userId"
+                ],
+                "properties": {
+                  "userId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "markup": {
+          "type": "string",
+          "description": "A markup the channel's capabilities.markupOptions lists (Telegram: markdown-v2)"
         }
       }
     },
@@ -1955,6 +2187,32 @@
             },
             "onePerPhase": {
               "type": "boolean"
+            },
+            "actions": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Own caps for reactions, edits and deletes (never the post caps); absent fields inherit the channel ceiling",
+              "properties": {
+                "reactionsPerDay": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "editsPerDay": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 20
+                },
+                "editMinIntervalSeconds": {
+                  "type": "integer",
+                  "minimum": 30
+                },
+                "deletesPerDay": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 50
+                }
+              }
             }
           }
         },
@@ -2005,6 +2263,21 @@
               "type": "boolean"
             },
             "replies": {
+              "type": "boolean"
+            },
+            "reactions": {
+              "type": "boolean"
+            },
+            "edits": {
+              "type": "boolean"
+            },
+            "deletes": {
+              "type": "boolean"
+            },
+            "polls": {
+              "type": "boolean"
+            },
+            "dms": {
               "type": "boolean"
             }
           }
@@ -2055,6 +2328,32 @@
             },
             "onePerPhase": {
               "type": "boolean"
+            },
+            "actions": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Own caps for reactions, edits and deletes (never the post caps); absent fields inherit the channel ceiling",
+              "properties": {
+                "reactionsPerDay": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "editsPerDay": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 20
+                },
+                "editMinIntervalSeconds": {
+                  "type": "integer",
+                  "minimum": 30
+                },
+                "deletesPerDay": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 50
+                }
+              }
             }
           }
         },
@@ -2105,6 +2404,21 @@
               "type": "boolean"
             },
             "replies": {
+              "type": "boolean"
+            },
+            "reactions": {
+              "type": "boolean"
+            },
+            "edits": {
+              "type": "boolean"
+            },
+            "deletes": {
+              "type": "boolean"
+            },
+            "polls": {
+              "type": "boolean"
+            },
+            "dms": {
               "type": "boolean"
             }
           }
@@ -2705,6 +3019,186 @@
                 "type": "boolean"
               }
             }
+          }
+        }
+      }
+    },
+    "ChannelReactInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "emoji"
+      ],
+      "properties": {
+        "emoji": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "remove": {
+          "type": "boolean"
+        }
+      }
+    },
+    "ChannelEditInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text"
+      ],
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "PersonFindInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "required": [
+            "email"
+          ]
+        },
+        {
+          "required": [
+            "handle"
+          ]
+        }
+      ],
+      "properties": {
+        "email": {
+          "type": "string",
+          "maxLength": 254
+        },
+        "handle": {
+          "type": "string",
+          "maxLength": 100
+        }
+      }
+    },
+    "PersonFindResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "ok",
+            "person"
+          ],
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "person": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "personRef",
+                "displayName",
+                "approved"
+              ],
+              "properties": {
+                "personRef": {
+                  "type": "string",
+                  "pattern": "^prs_[0-9a-f-]{36}$"
+                },
+                "displayName": {
+                  "type": "string"
+                },
+                "approved": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "ok",
+            "error"
+          ],
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "error": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "PersonMessageInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text"
+      ],
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "attachments": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "attachmentId",
+              "kind"
+            ],
+            "properties": {
+              "attachmentId": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "image",
+                  "file",
+                  "audio",
+                  "voice",
+                  "video"
+                ]
+              },
+              "transcript": {
+                "type": "string",
+                "maxLength": 1000
+              }
+            }
+          }
+        }
+      }
+    },
+    "PeoplePolicyInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "none",
+            "allowlist",
+            "workspace"
+          ]
+        },
+        "people": {
+          "type": "array",
+          "maxItems": 500,
+          "items": {
+            "type": "string"
+          }
+        },
+        "domains": {
+          "type": "array",
+          "maxItems": 500,
+          "items": {
+            "type": "string"
           }
         }
       }

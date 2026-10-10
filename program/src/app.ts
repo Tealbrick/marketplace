@@ -934,6 +934,18 @@ function agentGuidance() {
     "7. `POST /api/marketplace/v1/agent/channels/inbound/{eventId}/reply` (marketplace.channels.reply) with the post",
     "   body and an `Idempotency-Key` replies natively in the source thread. It is a post: it needs your outward",
     "   consent for that channel and a covering standing grant or the owner's approval (202 as above).",
+    "8. A post body may add `mentions: [userId]` (named people; broadcast mentions never ping), `markup` (only one the",
+    "   channel's `capabilities.markupOptions` lists) and, on an immediate post, `poll: {question, options,",
+    "   allowsMultiple?, durationHours?}` within the provider's `capabilities.poll` limits.",
+    "9. On a message you posted to that channel (an id from your receipt): `POST .../{channelId}/messages/{messageId}/reactions`",
+    "   `{emoji, remove?}`, `PATCH .../{channelId}/messages/{messageId}` `{text}` and `DELETE .../{channelId}/messages/{messageId}`",
+    "   (each with an `Idempotency-Key`). Any other message id answers `404 channel_message_not_ours`.",
+    "10. Direct messages: `POST .../{channelId}/people/find` `{email}` or `{handle}` returns one `{personRef, displayName,",
+    "   approved}` (only where the owner's people policy allows; never a member list). Confirm the display name, then",
+    "   `POST .../{channelId}/people/{personRef}/messages` `{text, attachments?}`. The first message to a person always",
+    "   waits for the owner's approval (202); later ones may be covered by a standing grant with `scope.dms`.",
+    "11. Reactions, edits, deletes, polls and DMs are outward like posts: a standing grant covers them only with",
+    "   `scope.reactions`, `scope.edits`, `scope.deletes`, `scope.polls` or `scope.dms` set to true.",
     "",
     "Installing, connecting, consenting and approving are owner actions. They are not available to agents.",
     "",
@@ -5492,6 +5504,8 @@ export async function buildMarketplaceApp(
       sendAt: post?.sendAt ?? null,
       digest: approval.fingerprint,
       digestPrefix: approval.fingerprint.slice(0, 12),
+      // Routes v2: the operation kind, the emoji, the target message excerpt (edit, delete, reaction) or the person.
+      action: post ? channelService.actionView(post) : null,
     };
   };
   /** Owner detail view of a held channel post: the exact payload the digest covers (spec §6.2). */
@@ -5508,6 +5522,8 @@ export async function buildMarketplaceApp(
       canonical: built.payload.canonical,
       files: built.payload.files,
       fallbacks: built.payload.fallbacks,
+      op: built.payload.op,
+      action: channelService.actionView(post),
     };
   };
   const ownedApproval = (request: FastifyRequest, reply: FastifyReply) => {
@@ -8465,6 +8481,7 @@ export async function buildMarketplaceApp(
     },
     botIdFor: (provider) => channelService.botIdFor(provider),
     ingest: inboundIngest,
+    awaitOutbound: (provider, chatId) => channelService.awaitOutbound(provider, chatId),
   });
 
   channelRuntimes.set(app, {
@@ -8496,6 +8513,14 @@ export async function buildMarketplaceApp(
     dispatch: async (input) => (await dispatchConsentedCall(input)) as Record<string, unknown>,
     traceIdFrom,
     inbound: inboundWorker,
+    // Called per request (after the app is built), so the pin source declared below is initialised.
+    ownerWriter: (request, reply) =>
+      createOwnerWriterGate({
+        organizationId,
+        pinSource: ownerPinSource,
+        requireOperator,
+        ownerLaunchSession: (launch) => operatorSessions.ownerLaunchSession(launch.headers.cookie, launch.headers["x-csrf-token"]),
+      })(request, reply),
     ...(buzzProvider
       ? {
           buzz: {
@@ -8746,12 +8771,16 @@ export async function buildMarketplaceApp(
       jwksFetch: options.ownerApprovalJwksFetch ?? options.portalFetch,
     });
   /** The manifest operation a held call came from (`op` of a Portal owner assertion). */
+  const CHANNEL_HELD_OPERATIONS: Readonly<Record<string, string>> = {
+    "channel.schedule": CHANNEL_AGENT_OPERATION.schedule,
+    // Routes v2: each outward operation is held under its own manifest operation.
+    "channel.react": CHANNEL_AGENT_OPERATION.react,
+    "channel.edit": CHANNEL_AGENT_OPERATION.edit,
+    "channel.delete": CHANNEL_AGENT_OPERATION.delete,
+    "channel.dm": CHANNEL_AGENT_OPERATION.messagePerson,
+  };
   const heldOperation = (approval: CompanyBoxApproval) =>
-    approval.sourceKind === "channel-consent"
-      ? approval.actionKey === "channel.schedule"
-        ? CHANNEL_AGENT_OPERATION.schedule
-        : CHANNEL_AGENT_OPERATION.post
-      : AGENT_OPERATION.toolsCall;
+    approval.sourceKind === "channel-consent" ? CHANNEL_HELD_OPERATIONS[approval.actionKey] ?? CHANNEL_AGENT_OPERATION.post : AGENT_OPERATION.toolsCall;
   type ResolveRefusal = { ok: false; status: number; error: string };
   /**
    * The Buzz key a `nostr` proof is checked against: the key pinned on the hold at creation, still the

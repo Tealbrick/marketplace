@@ -12,14 +12,19 @@ import { createGrantService, type GrantService } from "./grants.js";
 import { eventHostAllowed, eventListingStatus, grantCoversPost, maxPendingPerAgent, type PostCampaign } from "./policy.js";
 import { wiredCapabilities } from "./providers/capabilities.js";
 import { parseTeamsCredential } from "./providers/teams.js";
-import type { ChannelCapabilities, ChannelProvider, ChannelProviderId, DiscoverResult, SendResult } from "./providers/types.js";
+import { npubEncode } from "./providers/nostr.js";
+import type { ActionResult, ChannelCapabilities, ChannelDestination as ProviderDestination, ChannelProvider, ChannelProviderId, DiscoverResult, SendResult } from "./providers/types.js";
+import type { PersonRecord } from "./actions-store.js";
+import { PERSON_LOOKUPS_PER_DAY, normalizePersonQuery, peoplePolicyRefusal, personLookupOf, type PersonLookup } from "./people.js";
 import {
   CHANNEL_PROVIDER_IDS,
   CHANNEL_SECRET_NAME,
   buildChannelPayload,
   channelPluginId,
   checkChannelContent,
+  destinationKey,
   isChannelProviderId,
+  postOpSpecOf,
   redactSecrets,
   resolveChannelCredential,
   resolveSlackSigningSecret,
@@ -60,6 +65,15 @@ export const CHANNEL_SEND_LEASE_MS = 300_000;
  * and a plain post can never share a post row, and the reply target is looked up only for reply posts.
  */
 export const INBOUND_REPLY_KEY_PREFIX = "inbound-reply:";
+/**
+ * Routes v2 internal idempotency key prefixes (the agent's key has no colon): a reaction, edit, delete or direct
+ * message never shares a post row with a plain post or with each other.
+ */
+export { ACTION_KEY_PREFIX } from "./store.js";
+/** A delete or edit inside a provider window is refused this long before the window ends (the send may take time). */
+const ACTION_WINDOW_MARGIN_MS = 60_000;
+/** The inbound self-loop check waits at most this long for a send to the same chat to return (review R8). */
+export const OUTBOUND_SETTLE_WAIT_MS = 10_000;
 /** Receipt retention (§7): 90 days by default. */
 export const CHANNEL_RECEIPT_RETENTION_MS = 90 * 86_400_000;
 /** Stored attachment bytes per (workspace, agent): 200 MiB (follow-up Q1). */
@@ -133,6 +147,8 @@ type ExecuteInput = ChannelCallPlan & {
 
 type ChannelExecutionContext = {
   channel: ChannelRecord;
+  /** `post` for posts, replies, polls and the owner test; else the routes v2 operation. */
+  op: "post" | "react" | "edit" | "delete" | "dm";
   provider: ChannelProvider;
   reserve: () => { ok: true; post: ChannelPostRecord } | { ok: false; statusCode: number; error: string; detail?: Record<string, unknown> };
   send: (post: ChannelPostRecord) => Promise<ReceiptView>;
@@ -392,7 +408,8 @@ export function createChannelService(deps: ChannelServiceDeps) {
     const caps = capabilitiesFor(channel.provider)!;
     const refusal = checkChannelContent({ payload, policy: channel.policy, caps, mode, now: deps.now() });
     if (refusal) return refusal;
-    if (live && channel.policy.content.requireConfirmedEvent) {
+    // A reaction, edit, delete or direct message is not an event announcement (see checkChannelContent).
+    if (live && channel.policy.content.requireConfirmedEvent && !payload.action) {
       const ref = payload.campaign.ref;
       if (!ref || !eventHostAllowed(ref, channel.policy.content.listingHosts)) {
         return { status: 422, error: "channel_event_unconfirmed", errors: ["channel_event_unconfirmed"] };
@@ -424,13 +441,46 @@ export function createChannelService(deps: ChannelServiceDeps) {
   /** A reply post (`marketplace.channels.reply`) carries its reply target in `channel_inbound_reply`, keyed like the post. */
   const bodyFromPost = (post: ChannelPostRecord): ChannelPostBody => {
     const link = post.idempotencyKey.startsWith(INBOUND_REPLY_KEY_PREFIX) ? channels.inbound.getReplyLink(org, post.agentId, post.idempotencyKey) : null;
+    // Routes v2: the action, person, mentions, markup and poll are kept beside the post, keyed like it.
+    const spec = channels.actions.getPostOp(org, post.agentId, post.idempotencyKey);
     return {
       text: post.text,
       attachments: post.attachments,
       campaign: post.campaign,
       sendAt: post.mode === "scheduled" ? post.sendAt : null,
       ...(link ? { replyTo: link.replyTo } : {}),
+      ...(spec?.action ? { action: spec.action } : {}),
+      ...(spec?.mentions?.length ? { mentions: spec.mentions } : {}),
+      ...(spec?.markup ? { markup: spec.markup as ChannelPostBody["markup"] } : {}),
+      ...(spec?.poll ? { poll: spec.poll } : {}),
     };
+  };
+
+  /**
+   * Routes v2 checks that read current state, at hold time and again at send time (definitive refusals):
+   * review R3, a reaction, edit or delete acts only on a message Marketplace posted to THIS channel destination
+   * (a kept receipt lists its id) for the same agent (spec 2.1: the agent's own message; another agent's post or the
+   * owner test is not a target), not yet deleted, and inside the provider's edit or delete window (Telegram: 48 h);
+   * review R5, a direct message only to a person the connection's people policy still allows.
+   */
+  const actionRefusal = (channel: ChannelRecord, payload: ChannelPayload, agentId: string): ChannelRefusal | null => {
+    const action = payload.action;
+    if (!action) return null;
+    if (action.op === "dm") {
+      const person = payload.person ? channels.actions.getPerson(org, payload.person.personRef) : null;
+      if (!person || person.connectionId !== channel.connectionId || person.agentId !== agentId) return { status: 404, error: "channel_person_not_found" };
+      const refused = peoplePolicyRefusal(channels.actions.getPeoplePolicy(org, channel.connectionId), channel.provider, personLookupOf(person), person.platformUserId, person.emailVerified);
+      return refused ? { status: refused.status, error: refused.error } : null;
+    }
+    const own = channels.actions.ownMessage({ workspaceSlug: org, channelId: channel.id, destinationKey: destinationKey(channel.destination), messageId: action.targetMessageId });
+    if (!own || own.agentId !== agentId) return { status: 404, error: "channel_message_not_ours" };
+    if (own.removedAt) return { status: 409, error: "channel_message_removed" };
+    const caps = capabilitiesFor(channel.provider);
+    const windowSeconds = action.op === "delete" ? caps?.delete.windowSeconds : action.op === "edit" ? caps?.edit.windowSeconds : undefined;
+    if (windowSeconds !== undefined && deps.now().getTime() - Date.parse(own.sentAt) > windowSeconds * 1000 - ACTION_WINDOW_MARGIN_MS) {
+      return { status: 422, error: action.op === "delete" ? "channel_delete_window_passed" : "channel_edit_window_passed" };
+    }
+    return null;
   };
 
   const payloadFor = (channel: ChannelRecord, agentId: string, mode: "immediate" | "scheduled", body: ChannelPostBody) =>
@@ -455,8 +505,10 @@ export function createChannelService(deps: ChannelServiceDeps) {
     fallbacks?: string[];
     approvedAt?: string | null;
     reason?: string | null;
+    /** Routes v2: the receipt's first detail part (the operation and its target) instead of the channel destination. */
+    label?: string;
   }): ReceiptView => {
-    const base = `${input.channel.provider} ${input.channel.destination.type} ${input.channel.destination.title}`;
+    const base = input.label ?? `${input.channel.provider} ${input.channel.destination.type} ${input.channel.destination.title}`;
     const fallback = input.fallbacks && input.fallbacks.length > 0 ? input.fallbacks.join(",") : input.result?.fallback;
     const detailParts = [
       input.result?.detail ? `${base}: ${input.result.detail}` : input.reason ? `${base}: ${input.reason}` : base,
@@ -519,16 +571,124 @@ export function createChannelService(deps: ChannelServiceDeps) {
 
   // ----- send (channel-native target run) ------------------------------------
 
-  const settleSend = async (channel: ChannelRecord, post: ChannelPostRecord, payload: ChannelPayload): Promise<ReceiptView> => {
+  // ----- outbound in flight (review R8) ----------------------------------------
+
+  /**
+   * Sends to one platform chat that have not returned yet. Telegram can deliver the bot's own channel post back to the
+   * webhook before `sendMessage` answers, so the inbound self-loop check waits for these (bounded) and then reads the
+   * sent-message ledger, which is written as soon as the provider call returns.
+   */
+  const inFlight = new Map<string, Set<Promise<unknown>>>();
+  const flightKey = (provider: string, chatId: string) => `${provider}|${chatId}`;
+  const track = <T>(provider: string, chatId: string, run: () => Promise<T>): Promise<T> => {
+    const key = flightKey(provider, chatId);
+    const promise = run();
+    const set = inFlight.get(key) ?? new Set<Promise<unknown>>();
+    set.add(promise);
+    inFlight.set(key, set);
+    const done = () => {
+      set.delete(promise);
+      if (set.size === 0 && inFlight.get(key) === set) inFlight.delete(key);
+    };
+    promise.then(done, done);
+    return promise;
+  };
+  /** Resolves when every send to this chat that was in flight has returned (and recorded its ids), or after the bound. */
+  const awaitOutbound = async (provider: string, chatId: string, timeoutMs = OUTBOUND_SETTLE_WAIT_MS): Promise<void> => {
+    const set = inFlight.get(flightKey(provider, chatId));
+    if (!set || set.size === 0) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      Promise.allSettled([...set]),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, timeoutMs);
+      }),
+    ]);
+    if (timer) clearTimeout(timer);
+  };
+
+  // ----- send (channel-native target run) ------------------------------------
+
+  const asSendResult = (result: ActionResult): SendResult => ({
+    status: result.status,
+    resultIds: [],
+    resultUrls: [],
+    ...(result.detail ? { detail: result.detail } : {}),
+    ...(result.errorCode ? { errorCode: result.errorCode } : {}),
+  });
+
+  /** The receipt label of a routes v2 operation: what it did and to which message or person (no message text). */
+  const actionLabel = (channel: ChannelRecord, payload: ChannelPayload): string | undefined => {
+    const action = payload.action;
+    const where = `${channel.provider} ${channel.destination.type} ${channel.destination.title}`;
+    if (!action) return payload.poll ? `${where} · poll` : undefined;
+    if (action.op === "dm") return `${channel.provider} direct message to ${payload.person?.displayName ?? "a person"}`;
+    if (action.op === "react") return `${where} · ${action.remove === true ? "remove reaction" : "reaction"} ${action.emoji} on ${action.targetMessageId}`;
+    return `${where} · ${action.op} ${action.targetMessageId}`;
+  };
+
+  /** One provider call for the payload's operation. Never throws; the caller classifies the result. */
+  const providerCall = async (channel: ChannelRecord, post: ChannelPostRecord, payload: ChannelPayload): Promise<SendResult> => {
     const provider = providerFor(channel.provider)!;
-    const credential = isChannelProviderId(channel.provider) ? credentials.get(channel.provider) : undefined;
-    let result: SendResult;
-    try {
-      result = await provider.send(credential?.value ?? null, toProviderDestination(channel), {
+    const credential = isChannelProviderId(channel.provider) ? credentials.get(channel.provider)?.value ?? null : null;
+    const destination = toProviderDestination(channel);
+    const action = payload.action;
+    const unsupported = (feature: string): SendResult => ({
+      status: "failed",
+      resultIds: [],
+      resultUrls: [],
+      errorCode: "channel_capability_unavailable",
+      detail: `the adapter has no ${feature} operation`,
+    });
+    if (action?.op === "react") {
+      if (!provider.react) return unsupported("reaction");
+      return asSendResult(await provider.react(credential, destination, action.targetMessageId, action.emoji, action.remove === true ? { remove: true } : {}));
+    }
+    if (action?.op === "edit") {
+      if (!provider.edit) return unsupported("edit");
+      return track(channel.provider, destination.externalId, () => provider.edit!(credential, destination, action.targetMessageId, { text: payload.text }));
+    }
+    if (action?.op === "delete") {
+      if (!provider.remove) return unsupported("delete");
+      const result = asSendResult(await provider.remove(credential, destination, action.targetMessageId));
+      if (result.status === "sent") {
+        channels.actions.markMessageRemoved({ workspaceSlug: org, channelId: channel.id, destinationKey: destinationKey(destination), messageId: action.targetMessageId, now: deps.now() });
+      }
+      return result;
+    }
+    if (action?.op === "dm") {
+      if (!provider.openDirect || !payload.person) return unsupported("direct message");
+      // Opening the DM posts nothing; a refusal here means nothing was sent.
+      const opened = await provider.openDirect(credential, payload.person.platformUserId);
+      if (!opened.ok) return { status: "failed", resultIds: [], resultUrls: [], errorCode: opened.errorCode, detail: opened.detail };
+      const personDestination: ProviderDestination = { ...opened.destination, type: "person" };
+      return provider.send(credential, personDestination, {
+        text: payload.text,
+        attachments: payload.attachments,
+        ...(payload.mentions ? { mentions: payload.mentions } : {}),
+      });
+    }
+    // A message to the channel destination: its ids are recorded as soon as the call returns (R3 ledger, R8).
+    return track(channel.provider, destination.externalId, async () => {
+      const result = await provider.send(credential, destination, {
         text: payload.text,
         attachments: payload.attachments,
         ...(payload.replyTo !== undefined ? { replyTo: payload.replyTo } : {}),
+        ...(payload.mentions ? { mentions: payload.mentions } : {}),
+        ...(payload.markup !== undefined ? { markup: payload.markup } : {}),
+        ...(payload.poll ? { poll: payload.poll } : {}),
       });
+      if (result.resultIds.length > 0 && result.status !== "failed") {
+        channels.actions.recordSentMessages({ workspaceSlug: org, channelId: channel.id, destinationKey: destinationKey(destination), postId: post.id, messageIds: result.resultIds.map(redact), now: deps.now() });
+      }
+      return result;
+    });
+  };
+
+  const settleSend = async (channel: ChannelRecord, post: ChannelPostRecord, payload: ChannelPayload): Promise<ReceiptView> => {
+    let result: SendResult;
+    try {
+      result = await providerCall(channel, post, payload);
     } catch {
       // Adapters never throw; if one does after the request left, delivery is unknown.
       result = { status: "uncertain", resultIds: [], resultUrls: [], errorCode: "channel_provider_error", detail: "the provider adapter failed" };
@@ -548,6 +708,23 @@ export function createChannelService(deps: ChannelServiceDeps) {
         : current;
     }
     const final = finished ?? post;
+    // Review R5: the owner approved this exact first message and it was sent, so the person is now approved on this
+    // connection; later messages may be covered by a grant with scope.dms (the owner can revoke the person).
+    if (status === "sent" && payload.action?.op === "dm" && payload.person && final.authority?.startsWith("approval:")) {
+      const person = channels.actions.getPerson(org, payload.person.personRef);
+      if (person && person.approvedAt === null) {
+        const approval = store.getCompanyBoxApproval(final.authority.slice("approval:".length));
+        channels.actions.approvePerson({ workspaceSlug: org, personRef: person.personRef, approvedBy: approval?.decidedBy ?? "owner", postId: final.id, now: deps.now() });
+        store.recordAudit({
+          workspaceSlug: org,
+          pluginId: channelPluginId(channel.provider),
+          eventType: "marketplace.channels.person.approved",
+          actorId: approval?.decidedBy ?? "owner",
+          metadata: { channelId: channel.id, connectionId: channel.connectionId, personRef: person.personRef, postId: final.id, approvalId: final.authority.slice("approval:".length) },
+        });
+      }
+    }
+    const label = actionLabel(channel, payload);
     const view = writeReceipt({
       post: final,
       channel,
@@ -556,9 +733,13 @@ export function createChannelService(deps: ChannelServiceDeps) {
       payloadText: payload.text,
       fallbacks: payload.fallbacks,
       approvedAt: approvedAtFor(final),
+      ...(label ? { label } : {}),
     });
     audit(`marketplace.channels.post.${status}`, final, channel.provider, {
       outcome: status,
+      op: payload.op,
+      ...(payload.action && payload.action.op !== "dm" ? { targetMessageId: payload.action.targetMessageId } : {}),
+      ...(payload.person ? { personRef: payload.person.personRef } : {}),
       ...(result.errorCode ? { errorCode: result.errorCode } : {}),
       ...(view.fallback ? { fallback: view.fallback } : {}),
       ...(result.partial ? { partial: true } : {}),
@@ -585,8 +766,8 @@ export function createChannelService(deps: ChannelServiceDeps) {
       return {
         ok: true,
         prepared: {
-          toolName: `channel.${context.channel.provider}.send`,
-          summary: `Posted to ${context.channel.provider} channel ${context.channel.slug}.`,
+          toolName: `channel.${context.channel.provider}.${context.op === "post" ? "send" : context.op}`,
+          summary: context.op === "post" ? `Posted to ${context.channel.provider} channel ${context.channel.slug}.` : `Ran ${context.op} on ${context.channel.provider} channel ${context.channel.slug}.`,
           run: () => context.send(post),
           release: () => context.release(post),
         },
@@ -594,7 +775,8 @@ export function createChannelService(deps: ChannelServiceDeps) {
     },
   };
 
-  const isCapError = (error: string) => error.startsWith("channel_cap_") || error === "channel_min_interval" || error === "channel_phase_duplicate";
+  const isCapError = (error: string) =>
+    error.startsWith("channel_cap_") || error === "channel_min_interval" || error === "channel_edit_min_interval" || error === "channel_phase_duplicate";
   const capsRefusal = (error: string, retryAfterSeconds?: number) => ({
     ok: false as const,
     statusCode: isCapError(error) ? 429 : error === "channel_not_found" ? 404 : 409,
@@ -617,8 +799,11 @@ export function createChannelService(deps: ChannelServiceDeps) {
     onReleased?: (post: ChannelPostRecord) => void;
   }) => {
     const provider = providerFor(input.channel.provider)!;
+    const op = input.payload.action?.op ?? "post";
+    const actionType = op === "post" ? "channel.post" : `channel.${op}`;
     const context: ChannelExecutionContext = {
       channel: input.channel,
+      op,
       provider,
       reserve: input.reserve,
       send: (post) => settleSend(input.channel, post, input.payload),
@@ -638,26 +823,27 @@ export function createChannelService(deps: ChannelServiceDeps) {
       pluginId: channelPluginId(input.channel.provider),
       provider: input.channel.provider,
       sourceExecutor: "native",
-      actionType: "channel.post",
+      actionType,
       capability: "connector.dispatch",
       consentId: input.consentId,
       leaseId: input.leaseId,
       actorId: input.actor.id,
       governance: {
         actor: input.actor,
-        risk: { write: true, outward: true, destructive: false },
+        // A delete removes a message from the destination: destructive for Rules (owner mode reads `outward`).
+        risk: { write: true, outward: true, destructive: op === "delete" },
         payload: {
           phase: "execute",
           agentId: input.agentId,
           consentId: input.consentId,
           leaseId: input.leaseId,
           // Shapes and the digest only: Rules sees what is approved, not the content.
-          action: { type: "channel.post", channelId: input.channel.id, digest: input.payload.digest, attachments: input.payload.files.length },
+          action: { type: actionType, channelId: input.channel.id, digest: input.payload.digest, attachments: input.payload.files.length },
           authority: input.authority,
           traceId: input.execute.traceId,
         },
       },
-      ledgerInput: { type: "channel.post", channelId: input.channel.id, digest: input.payload.digest, attachments: input.payload.files.length },
+      ledgerInput: { type: actionType, channelId: input.channel.id, digest: input.payload.digest, attachments: input.payload.files.length },
       prepare: () => (channelNativeTarget.matches(context) ? channelNativeTarget.prepare(context) : { ok: false, statusCode: 500, error: "execution_target_unresolved" }),
     });
   };
@@ -691,14 +877,19 @@ export function createChannelService(deps: ChannelServiceDeps) {
     headers: { [POST_ID_HEADER]: post.id, [TRACE_ID_HEADER]: traceId },
   });
 
-  const ensureApproval = (post: ChannelPostRecord, channel: ChannelRecord, consentRowId: string): CompanyBoxApproval => {
+  /** The approval action key of a held post: its manifest operation (routes v2 operations have their own). */
+  const approvalActionKey = (post: ChannelPostRecord, op: ChannelPayload["op"]) =>
+    post.mode === "scheduled" ? "channel.schedule" : op === "react" || op === "edit" || op === "delete" || op === "dm" ? `channel.${op}` : "channel.post";
+
+  const ensureApproval = (post: ChannelPostRecord, channel: ChannelRecord, consentRowId: string, op: ChannelPayload["op"]): CompanyBoxApproval => {
     const existing = approvalForPost(post);
     if (existing) return existing;
     const ttlMs = post.mode === "scheduled" && post.sendAt ? Math.max(1, Date.parse(post.sendAt) - Date.now()) : APPROVAL_TTL_MS;
+    const actionKey = approvalActionKey(post, op);
     const approval = store.createCompanyBoxApproval({
       workspaceSlug: org,
       pluginId: channelPluginId(channel.provider),
-      actionKey: post.mode === "scheduled" ? "channel.schedule" : "channel.post",
+      actionKey,
       capability: "connector.dispatch",
       agentId: post.agentId,
       sourceKind: "channel-consent",
@@ -707,7 +898,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
       fingerprint: post.digest,
       // References only; the owner view reads the post. No content in the approval row.
       arguments: { channelId: channel.id, postId: post.id, digest: post.digest },
-      argumentsPreview: `${channel.label} (${channel.provider}) · digest ${post.digest.slice(0, 12)}`,
+      argumentsPreview: `${channel.label} (${channel.provider})${actionKey === "channel.post" || actionKey === "channel.schedule" ? "" : ` · ${actionKey.slice("channel.".length)}`} · digest ${post.digest.slice(0, 12)}`,
       ttlMs,
     });
     store.recordAudit({
@@ -759,7 +950,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
     if (!inserted.ok) {
       return refusalReply({ status: insertStatus(inserted.error), error: inserted.error }, input.traceId);
     }
-    const approval = ensureApproval(inserted.post, input.channel, input.consent.id);
+    const approval = ensureApproval(inserted.post, input.channel, input.consent.id, input.payload.op);
     if (inserted.created) audit("marketplace.channels.post.held", inserted.post, input.channel.provider, { approvalId: approval.id });
     return pendingReply(inserted.post, approval, input.payload, input.traceId);
   };
@@ -835,7 +1026,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
           return answer(refusalReply({ status: 409, error: "channel_idempotency_conflict" }, traceId));
         }
         if (existing.status === "held") {
-          const approval = approvalForPost(existing) ?? ensureApproval(existing, channel, consent.id);
+          const approval = approvalForPost(existing) ?? ensureApproval(existing, channel, consent.id, payload.op);
           if (approval.state === "pending" || approval.state === "resolving") return answer(pendingReply(existing, approval, payload, traceId));
           if (approval.state === "denied") {
             endPost(existing, channel, "skipped", "approval_denied");
@@ -865,9 +1056,15 @@ export function createChannelService(deps: ChannelServiceDeps) {
       if (!fresh || fresh.status !== "active") {
         return answer(refusalReply({ status: 409, error: fresh?.status === "paused" ? "channel_paused" : "channel_not_active" }, traceId));
       }
+      // Routes v2: own message (R3), provider window, people policy (R5). Nothing is held or consumed before this.
+      const actionRefused = actionRefusal(channel, payload, consent.agentId);
+      if (actionRefused) return answer(refusalReply(actionRefused, traceId));
       const facts = {
         mode,
         reply: input.body.replyTo !== undefined,
+        ...(payload.action ? { action: payload.action.op } : {}),
+        poll: payload.poll !== undefined,
+        personApproved: payload.person?.approvedAt != null,
         sendAt: payload.sendAt,
         text: payload.text,
         attachments: payload.files.map((file) => ({ contentType: file.contentType, bytes: file.bytes, sha256: file.sha256, name: file.name })),
@@ -908,6 +1105,8 @@ export function createChannelService(deps: ChannelServiceDeps) {
         payload,
         authority: `grant:${grant.id}`,
         reserve: () => {
+          // R5: a person revoked since the grant check is no longer covered (checked again right before the send).
+          if (payload.person && channels.actions.getPerson(org, payload.person.personRef)?.approvedAt == null) return capsRefusal("channel_person_not_approved");
           const reserved = channels.reservePost({
             workspaceSlug: org,
             channelId: channel.id,
@@ -978,6 +1177,8 @@ export function createChannelService(deps: ChannelServiceDeps) {
     if (notSendable) return { ok: false, refusal: notSendable, final: !TRANSIENT_REFUSALS.has(notSendable.error) };
     const refused = await contentRefusal(channel, built.payload, post.mode, true);
     if (refused) return { ok: false, refusal: refused, final: !TRANSIENT_REFUSALS.has(refused.error) };
+    const actionRefused = actionRefusal(channel, built.payload, post.agentId);
+    if (actionRefused) return { ok: false, refusal: actionRefused, final: true };
     return { ok: true, payload: built.payload };
   };
 
@@ -1296,6 +1497,9 @@ export function createChannelService(deps: ChannelServiceDeps) {
     const report = { recovered: 0, expired: 0, sent: 0, skipped: 0, claimed: 0 };
     // §7 retention: receipts of finished posts older than the retention go; open posts keep theirs (Q2).
     channels.purgeReceipts(org, new Date(input.now.getTime() - CHANNEL_RECEIPT_RETENTION_MS));
+    // Routes v2: sent-message rows go with their receipts (or after the retention), and old lookup rows after 2 days.
+    channels.actions.purgeSentMessages(org, new Date(input.now.getTime() - CHANNEL_RECEIPT_RETENTION_MS));
+    channels.actions.purgeLookups(org, new Date(input.now.getTime() - 2 * 86_400_000));
     // Inbound retention: received text after the owner's retention (default 30 days), metadata rows after 90 days.
     purgeInbound(input.now);
     // Q1: unreferenced attachments after 24 h, finished posts' attachments after purge or retention (bounded).
@@ -1428,12 +1632,156 @@ export function createChannelService(deps: ChannelServiceDeps) {
     return typeof teamId === "string" && teamId.length > 0 ? teamId : null;
   };
 
+  // ----- people (routes v2, review R5) ----------------------------------------
+
+  /**
+   * `marketplace.channel-people.find`: one person by email or handle, server-side only. The connection's people
+   * policy is checked before the platform is asked (an agent cannot probe outside the allowlist), finds are capped per
+   * agent, and the answer is one opaque reference with a display name, never a list.
+   */
+  const findPerson = async (input: { channel: ChannelRecord; agentId: string; query: { email?: unknown; handle?: unknown } }): Promise<
+    { ok: true; person: PersonRecord } | { ok: false; status: number; error: string; detail?: string }
+  > => {
+    const { channel } = input;
+    const caps = capabilitiesFor(channel.provider);
+    const provider = providerFor(channel.provider);
+    if (!caps?.dm.open || !provider?.findPerson || !provider.openDirect) return { ok: false, status: 422, error: "channel_capability_unavailable", detail: 'this channel\'s provider does not declare "dm"' };
+    if (channel.status !== "active") return { ok: false, status: 409, error: "channel_not_active" };
+    const notSendable = sendable(channel);
+    if (notSendable) return { ok: false, status: notSendable.status, error: notSendable.error };
+    const lookup: PersonLookup | null = normalizePersonQuery(input.query);
+    if (!lookup) return { ok: false, status: 400, error: "channel_person_query_invalid", detail: "send exactly one of email or handle" };
+    // Slack: this release requests users:read.email only (review R6), so a handle (users.list) cannot be looked up.
+    if (channel.provider === "slack" && lookup.kind === "handle") {
+      return { ok: false, status: 422, error: "channel_person_query_unsupported", detail: "Slack finds a person by email only" };
+    }
+    const now = deps.now();
+    let lookupId: string | null = null;
+    const record = (outcome: string) => {
+      if (lookupId) channels.actions.finishLookup(org, lookupId, outcome);
+      else channels.actions.recordLookup({ workspaceSlug: org, agentId: input.agentId, connectionId: channel.connectionId, outcome, now });
+      store.recordAudit({
+        workspaceSlug: org,
+        pluginId: channelPluginId(channel.provider),
+        eventType: "marketplace.channels.person.lookup",
+        actorId: `agent:${input.agentId}`,
+        // Metadata only: the query kind and outcome, never the email or handle.
+        metadata: { channelId: channel.id, connectionId: channel.connectionId, kind: lookup.kind, outcome },
+      });
+    };
+    const policy = channels.actions.getPeoplePolicy(org, channel.connectionId);
+    if (policy.mode === "none") {
+      record("channel_people_disabled");
+      return { ok: false, status: 403, error: "channel_people_disabled" };
+    }
+    // No directory-membership leak (review of PR #51): under an allowlist, a person who exists but is not listed, an
+    // ambiguous match and nobody at all get the SAME answer, after the same platform call. The real outcome is only in
+    // the audit metadata and the owner's recent finds.
+    const notFound = { ok: false as const, status: 404, error: "channel_person_not_found" };
+    // The cap is checked and the slot taken in one synchronous step, before the platform is asked.
+    lookupId = channels.actions.reserveLookup({
+      workspaceSlug: org,
+      agentId: input.agentId,
+      connectionId: channel.connectionId,
+      limit: PERSON_LOOKUPS_PER_DAY,
+      since: new Date(now.getTime() - 86_400_000),
+      now,
+    });
+    if (!lookupId) return { ok: false, status: 429, error: "channel_person_lookup_cap" };
+    const credential = isChannelProviderId(channel.provider) ? credentials.get(channel.provider)?.value ?? null : null;
+    let found;
+    try {
+      found = await provider.findPerson(credential, lookup.kind === "email" ? { email: lookup.value } : { handle: lookup.value });
+    } catch {
+      found = { ok: false as const, reason: "failed" as const, errorCode: "provider_internal_error", detail: "unexpected adapter error" };
+    }
+    if (!found.ok) {
+      record(found.reason);
+      if (found.reason === "not_found") return notFound;
+      if (found.reason === "ambiguous") {
+        return policy.mode === "allowlist" ? notFound : { ok: false, status: 409, error: "channel_person_ambiguous", detail: redact(found.detail) };
+      }
+      return { ok: false, status: 502, error: "channel_person_lookup_failed", detail: redact(`${found.errorCode}: ${found.detail}`) };
+    }
+    // The platform id of the person found decides an allowlist (never a display name or nickname).
+    // Slack: an email or domain allowlist matches only an email Slack marks confirmed; otherwise only the user id.
+    const emailVerified = channel.provider === "teams" || found.emailVerified === true;
+    const notAllowed = peoplePolicyRefusal(policy, channel.provider, lookup, found.userId, emailVerified);
+    if (notAllowed) {
+      record("not_allowed");
+      return notFound;
+    }
+    record("found");
+    const person = channels.actions.upsertPerson({
+      workspaceSlug: org,
+      connectionId: channel.connectionId,
+      agentId: input.agentId,
+      provider: channel.provider,
+      platformUserId: found.userId,
+      displayName: redact(found.displayName).slice(0, 80) || found.userId,
+      lookupKind: lookup.kind,
+      lookupValue: lookup.value,
+      emailVerified,
+      now,
+    });
+    return { ok: true, person };
+  };
+
+  /**
+   * Owner views (Approvals, posts list): what a routes v2 post does, with the excerpt of the target message for an
+   * edit, delete or reaction (owner only; the text comes from the target's kept receipt) and the person's display
+   * name for a direct message. Null for a plain post.
+   */
+  const actionView = (post: ChannelPostRecord) => {
+    const spec = channels.actions.getPostOp(org, post.agentId, post.idempotencyKey);
+    if (!spec || (!spec.action && !spec.poll && !spec.mentions?.length && !spec.markup)) return null;
+    const channel = channels.getChannel(org, post.channelId);
+    const action = spec.action;
+    const base = {
+      op: action?.op ?? (spec.poll ? "poll" : "post"),
+      ...(spec.mentions?.length ? { mentions: spec.mentions.map((mention) => mention.name ?? mention.userId) } : {}),
+      ...(spec.markup ? { markup: spec.markup } : {}),
+      ...(spec.poll ? { poll: { question: spec.poll.question, options: spec.poll.options } } : {}),
+    };
+    if (!action) return base;
+    if (action.op === "dm") {
+      const person = channels.actions.getPerson(org, action.personRef);
+      return {
+        ...base,
+        person: person
+          ? {
+              personRef: person.personRef,
+              displayName: person.displayName,
+              // The immutable platform id (Buzz: npub) beside the user-controlled display name (review of PR #51).
+              platformUserId: person.provider === "buzz" ? npubEncode(person.platformUserId) : person.platformUserId,
+              lookup: { kind: person.lookupKind, value: person.lookupValue },
+              approved: person.approvedAt !== null,
+            }
+          : null,
+      };
+    }
+    const own = channel
+      ? channels.actions.ownMessage({ workspaceSlug: org, channelId: channel.id, destinationKey: destinationKey(channel.destination), messageId: action.targetMessageId })
+      : null;
+    const points = own?.text ? Array.from(own.text) : [];
+    return {
+      ...base,
+      targetMessageId: action.targetMessageId,
+      targetExcerpt: own?.text ? `${points.slice(0, 200).join("")}${points.length > 200 ? "…" : ""}` : null,
+      ...(action.op === "react" ? { emoji: action.emoji, remove: action.remove === true } : {}),
+    };
+  };
+
   /** The credential value for the inbound worker (gateway, webhook calls), only while the provider is available. */
   const inboundCredential = (provider: ChannelProviderId): string | null =>
     currentReadiness(provider) === "available" ? credentials.get(provider)?.value ?? null : null;
 
   return {
     configured,
+    findPerson,
+    awaitOutbound,
+    actionView,
+    actionRefusal,
     /** Re-reads and re-verifies one provider credential (Buzz identity changes at run time). */
     refreshProvider: bootProvider,
     teamsIdentity,

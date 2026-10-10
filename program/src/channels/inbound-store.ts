@@ -492,6 +492,15 @@ export class InboundStore {
         // A malformed row contributes nothing.
       }
     }
+    // Routes v2 (review R8): the sent-message ledger, written as soon as the provider call returns (before the receipt).
+    const ledger = this.db
+      .prepare(
+        `SELECT m.message_id FROM channel_sent_message m JOIN channel c ON c.id = m.channel_id AND c.workspace_slug = m.workspace_slug
+         WHERE m.workspace_slug = ? AND c.provider = ? AND substr(m.destination_key, 1, instr(m.destination_key, '|') - 1) = ? AND m.sent_at >= ?
+         ORDER BY m.sent_at DESC LIMIT 500`,
+      )
+      .all(workspaceSlug, provider, externalChannelId, since.toISOString()) as Row[];
+    for (const row of ledger) ids.add(String(row.message_id));
     return ids;
   }
 

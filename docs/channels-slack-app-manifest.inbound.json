@@ -6,7 +6,7 @@
   "display_information": {
     "name": "Teal Brick Marketplace",
     "description": "Agents post to the channels you approve, through Teal Brick Marketplace.",
-    "long_description": "Internal app for one workspace, inbound variant. Teal Brick Marketplace Channels uses this app to post agent messages and files to the channels the workspace owner allows, and to receive messages from the channels the owner routes to an agent. Every post is covered by an owner approval or an owner-approved standing grant. Invite the app to a channel with /invite before you use it.",
+    "long_description": "Internal app for one workspace, inbound variant. Teal Brick Marketplace Channels uses this app to post agent messages and files to the channels the workspace owner allows, react to and edit its own messages, and send direct messages to people the owner allows, and to receive messages from the channels the owner routes to an agent. Every post is covered by an owner approval or an owner-approved standing grant. Invite the app to a channel with /invite before you use it.",
     "background_color": "#0f5e5c"
   },
   "features": {
@@ -22,6 +22,9 @@
         "channels:read",
         "groups:read",
         "files:write",
+        "users:read.email",
+        "im:write",
+        "reactions:write",
         "channels:history",
         "groups:history"
       ]

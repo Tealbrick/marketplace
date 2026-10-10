@@ -13,7 +13,9 @@ import {
   GRANT_PHASES,
   GRANT_STATUS_LABEL,
   grantFieldLabel,
+  grantFlags,
   grantTerms,
+  GRANT_SCOPE_FLAGS,
   grantTone,
   MIB,
   toLocalInput,
@@ -21,7 +23,7 @@ import {
   wideningFields,
 } from "./channels-model";
 import { RefusalNotice } from "./ChannelForms";
-import type { ChannelView, GrantPhase, GrantTerms, StandingGrantView } from "./types";
+import type { ChannelView, GrantPhase, GrantScopeFlag, GrantTerms, StandingGrantView } from "./types";
 import { formatWhen } from "./ui";
 
 function capCell(value: number | undefined, format: (value: number) => string = String) {
@@ -58,6 +60,7 @@ function GrantScope({ grant }: { grant: StandingGrantView }) {
     <dt>Campaign links</dt><dd>{grant.scope.campaignRefs ? <ul className="plain-list">{grant.scope.campaignRefs.map((ref) => <li key={ref}><code>{ref}</code></li>)}</ul> : "Any campaign"}</dd>
     <dt>Files</dt><dd>{filesText(grant.scope.files)}</dd>
     <dt>Post modes</dt><dd>{modes || "None"}</dd>
+    <dt>Also covers</dt><dd>{grantFlags(grant.scope).length ? GRANT_SCOPE_FLAGS.filter(([flag]) => grant.scope[flag] === true).map(([, label]) => label).join(", ") : "Posts only (reactions, edits, deletes, polls and direct messages wait for you)"}</dd>
     <dt>Valid</dt><dd>{grant.notBefore ? `${formatWhen(grant.notBefore)} – ` : "Until "}{formatWhen(grant.expires)}</dd>
     <dt>Digest</dt><dd><code title={grant.digest}>{digestPrefix(grant.digest)}</code></dd>
   </dl>;
@@ -77,6 +80,7 @@ type Draft = {
   maxChars: string;
   immediate: boolean;
   scheduled: boolean;
+  flags: Partial<Record<GrantScopeFlag, boolean>>;
   expires: string;
   notBefore: string;
 };
@@ -97,6 +101,7 @@ function draftOf(grant: StandingGrantView): Draft {
     maxChars: grant.scope.maxChars !== undefined ? String(grant.scope.maxChars) : "",
     immediate: grant.scope.immediate,
     scheduled: grant.scope.scheduled,
+    flags: Object.fromEntries(grantFlags(grant.scope).map((flag) => [flag, true])),
     expires: toLocalInput(grant.expires),
     notBefore: toLocalInput(grant.notBefore),
   };
@@ -123,6 +128,7 @@ function termsOf(draft: Draft, grant: StandingGrantView): GrantTerms {
       maxChars: optionalNumber(draft.maxChars),
       immediate: draft.immediate,
       scheduled: draft.scheduled,
+      ...Object.fromEntries(Object.entries(draft.flags).filter(([, on]) => on === true)),
     },
     notBefore: draft.notBefore === original.notBefore ? grant.notBefore : fromLocalInput(draft.notBefore),
     expires: draft.expires === original.expires ? grant.expires : (fromLocalInput(draft.expires) ?? ""),
@@ -186,6 +192,9 @@ export function NarrowEditor({ grant, channel, onDone, onCancel }: { grant: Stan
       <label className="confirm-check"><input type="checkbox" checked={draft.immediate} disabled={!grant.scope.immediate} onChange={(event) => set("immediate", event.target.checked)} />Immediate posts</label>
       <label className="confirm-check"><input type="checkbox" checked={draft.scheduled} disabled={!grant.scope.scheduled} onChange={(event) => set("scheduled", event.target.checked)} />Scheduled posts</label>
     </div>
+    {grantFlags(grant.scope).length > 0 && <div className="checkbox-grid" role="group" aria-label="Also covers">
+      {GRANT_SCOPE_FLAGS.filter(([flag]) => grant.scope[flag] === true).map(([flag, label]) => <label key={flag} className="confirm-check"><input type="checkbox" checked={draft.flags[flag] === true} onChange={(event) => set("flags", { ...draft.flags, [flag]: event.target.checked })} />{label}</label>)}
+    </div>}
     <div className="form-grid two">
       <label>Starts<input type="datetime-local" value={draft.notBefore} min={toLocalInput(grant.notBefore) || undefined} max={draft.expires || undefined} onChange={(event) => set("notBefore", event.target.value)} /></label>
       <label>Expires<input type="datetime-local" value={draft.expires} max={toLocalInput(grant.expires)} required onChange={(event) => set("expires", event.target.value)} /></label>

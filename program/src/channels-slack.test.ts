@@ -31,6 +31,7 @@ function slackFetch(answers: Record<string, () => unknown>) {
 async function setup(environment: Record<string, string | undefined>, answers: Record<string, () => unknown>) {
   const slack = slackFetch(answers);
   const f = await channelFixture({
+    ownerPin: true,
     environment,
     options: {
       channelProviders: {
@@ -69,15 +70,15 @@ describe("channels: Slack provider through the runtime", () => {
       connections: { slack: { state: "connected", botUsername: "marketplace", credentialRef: "provider-env:MARKETPLACE_CHANNELS_SLACK_BOT_TOKEN" } },
     });
     const slackEntry = (browse.json().providers as Array<{ id: string; kinds?: string[]; capabilities?: Record<string, unknown> }>).find((entry) => entry.id === "slack");
-    // Only wired features: the adapter declares DM, reactions, edit, delete, mentions and native schedule, but no
-    // agent operation performs them yet, so the answer shows them as not available.
+    // Only wired features: DM, reactions, edit, delete and mentions are wired (routes v2); native schedule is
+    // declared by the adapter but no agent operation performs it, so the answer shows it as not available.
     const hidden = {
       markup: "mrkdwn",
-      mentions: { users: false, broadcast: "suppressed" },
-      dm: { open: false, maxMembers: 0 },
-      reactions: { add: false, remove: false, custom: false },
-      edit: { own: false },
-      delete: { own: false },
+      mentions: { users: true, broadcast: "suppressed" },
+      dm: { open: true, maxMembers: 1 },
+      reactions: { add: true, remove: true, custom: true },
+      edit: { own: true },
+      delete: { own: true },
       // Reply to source (marketplace.channels.reply) and inbound are wired.
       thread: { replies: true, topics: false, forum: false },
       inbound: { mode: "webhook", dedupe: true },
@@ -141,5 +142,56 @@ describe("channels: the Slack signing secret is redacted like a bot token", () =
     const receipts = await f.agent("GET", "/api/marketplace/v1/agent/channels/receipts");
     expect(receipts.body).not.toContain(signing);
     expect(JSON.stringify(f.store.channels.listPosts(TENANT, { limit: 10 }))).not.toContain(signing);
+  });
+});
+
+describe("channels: routes v2 through the real Slack adapter", () => {
+  it("reacts, edits and deletes the agent's own message and sends an approved first DM found by email", async () => {
+    let confirmed = false;
+    const { f, slack } = await setup(
+      { MARKETPLACE_CHANNELS_SLACK_BOT_TOKEN: SLACK_TOKEN },
+      {
+        "auth.test": AUTH_OK,
+        "conversations.list": () => ({ ok: true, channels: [{ id: "C0ENG", name: "engineering", is_member: true }], response_metadata: { next_cursor: "" } }),
+        "chat.postMessage": () => ({ ok: true, channel: "C0ENG", ts: "1800000000.000100" }),
+        "reactions.add": () => ({ ok: true }),
+        "chat.update": () => ({ ok: true, channel: "C0ENG", ts: "1800000000.000100" }),
+        "chat.delete": () => ({ ok: true }),
+        "users.lookupByEmail": () => ({ ok: true, user: { id: "U0ALICE", name: "alice", is_email_confirmed: confirmed, profile: { display_name: "Alice", real_name: "Alice Example" } } }),
+        "conversations.open": () => ({ ok: true, channel: { id: "D0ALICE01" } }),
+      },
+    );
+    const channel = await f.createChannel({ provider: "slack", slug: "eng" });
+    f.consentFor("agent-1", channel);
+    await f.proposeAndApprove(channel.id, { scope: { files: false, immediate: true, scheduled: false, reactions: true, edits: true, deletes: true, dms: true } });
+    const posted = await f.post(channel.id, { text: "Hello <@U0ALICE>", mentions: ["U0ALICE"] }, "slack-v2-post-0001");
+    expect(posted.statusCode, posted.body).toBe(200);
+    const ts = posted.json().receipt.resultIds[0] as string;
+    const base = `/api/marketplace/v1/agent/channels/${channel.id}/messages/${ts}`;
+    expect((await f.agent("POST", `${base}/reactions`, { key: "slack-v2-react-01", payload: { emoji: ":tada:" } })).statusCode).toBe(200);
+    expect((await f.agent("PATCH", base, { key: "slack-v2-edit-001", payload: { text: "Hello again" } })).statusCode).toBe(200);
+    expect((await f.agent("DELETE", base, { key: "slack-v2-delete-01" })).statusCode).toBe(200);
+    const form = (method: string) => slack.calls.find((call) => call.method === method)?.form;
+    expect(form("chat.postMessage")).toMatchObject({ channel: "C0ENG", text: "Hello <@U0ALICE>" });
+    expect(form("reactions.add")).toEqual({ channel: "C0ENG", timestamp: ts, name: "tada" });
+    expect(form("chat.update")).toMatchObject({ channel: "C0ENG", ts, text: "Hello again" });
+    expect(form("chat.delete")).toEqual({ channel: "C0ENG", ts });
+
+    await f.ownerWrite("PUT", `/api/marketplace/channels/connections/${channel.connectionId}/people-policy`, { mode: "allowlist", domains: ["example.com"] });
+    // An unconfirmed Slack email never matches an email or domain allowlist.
+    const unconfirmed = await f.agent("POST", `/api/marketplace/v1/agent/channels/${channel.id}/people/find`, { key: "slack-v2-find-000", payload: { email: "alice@example.com" } });
+    expect(unconfirmed.json()).toMatchObject({ error: "channel_person_not_found" });
+    confirmed = true;
+    const found = await f.agent("POST", `/api/marketplace/v1/agent/channels/${channel.id}/people/find`, { key: "slack-v2-find-001", payload: { email: "alice@example.com" } });
+    expect(found.json().person).toMatchObject({ approved: false });
+    // The email travels in the form body only.
+    expect(form("users.lookupByEmail")).toEqual({ email: "alice@example.com" });
+    const held = await f.agent("POST", `/api/marketplace/v1/agent/channels/${channel.id}/people/${found.json().person.personRef}/messages`, { key: "slack-v2-dm-00001", payload: { text: "Welcome!" } });
+    expect(held.statusCode, held.body).toBe(202);
+    expect(slack.calls.some((call) => call.method === "conversations.open")).toBe(false);
+    const approved = await f.owner("POST", `/api/marketplace/company-box/approvals/${held.json().approvalId}/approve`, {});
+    expect(approved.json()).toMatchObject({ channel: { receipt: { status: "sent" } } });
+    expect(form("conversations.open")).toMatchObject({ users: "U0ALICE" });
+    expect(slack.calls.filter((call) => call.method === "chat.postMessage").at(-1)!.form).toMatchObject({ channel: "D0ALICE01", text: "Welcome!" });
   });
 });

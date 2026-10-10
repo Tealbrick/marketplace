@@ -6,9 +6,9 @@ import { Button, IconButton, Tag } from "@tealbrick/ui";
 
 import { ApiError, decideCompanyBoxApproval, getCompanyBox, getCompanyBoxApproval, getCompanyBoxApprovals, removeCompanyBoxEntry, setupCompanyBoxEntry, testCompanyBoxEntry } from "./api";
 import { getChannels } from "./channels-api";
-import { digestPrefix, formatBytes, providerLabel, transcriptsFromCanonical, typeName } from "./channels-model";
+import { actionTitle, digestPrefix, formatBytes, providerLabel, transcriptsFromCanonical, typeName } from "./channels-model";
 import { BUZZ_CODE_CHARS, BUZZ_CODE_HINT, errorCopy } from "./copy";
-import type { ChannelApprovalSummary, ChannelPayloadView, CompanyBoxApproval, CompanyBoxCredentialKey, CompanyBoxEntry, CompanyBoxResult } from "./types";
+import type { ChannelActionView, ChannelApprovalSummary, ChannelPayloadView, CompanyBoxApproval, CompanyBoxCredentialKey, CompanyBoxEntry, CompanyBoxResult } from "./types";
 import { formatWhen, InlineError, StatePanel, statusLabel, statusTone } from "./ui";
 
 const SOURCE_LABEL: Record<CompanyBoxEntry["source"], string> = { openapi: "REST API", mcp: "MCP server" };
@@ -186,6 +186,7 @@ export function ChannelHoldView({ summary, payload }: { summary: ChannelApproval
   return <div className="channel-hold" aria-label="Channel post">
     <dl className="fact-list channel-hold__facts">
       <dt>Destination</dt><dd><strong>{summary.label ?? "Unknown channel"}</strong>{summary.provider ? ` · ${providerLabel(summary.provider)}` : ""}{channel ? <> · <span className="destination-title">{channel.destination.title}</span> ({channel.destination.type})</> : null}</dd>
+      {summary.action && <ChannelActionFacts action={summary.action} />}
       <dt>When</dt><dd>{summary.mode === "scheduled" ? `Scheduled for ${formatWhen(summary.sendAt)}` : "Sends when you approve"}</dd>
       <dt>Digest</dt><dd><code className="digest-prefix" title={summary.digest}>{summary.digestPrefix || digestPrefix(summary.digest)}</code></dd>
       <dt>Buzz code</dt><dd><code className="digest-prefix" title={BUZZ_CODE_HINT}>{digestPrefix(summary.digest, BUZZ_CODE_CHARS)}</code><p className="muted-detail">{BUZZ_CODE_HINT}</p></dd>
@@ -195,7 +196,7 @@ export function ChannelHoldView({ summary, payload }: { summary: ChannelApproval
       : "error" in payload ? <p className="inline-error" role="status"><AlertTriangle size={14} /><span>This post can't be sent as held any more ({errorCopy(new ApiError(payload.error, 409, { error: payload.error })).title}). Deny it; the agent can ask again.</span></p>
       : <>
         {!payload.matchesHeldDigest && <p className="inline-error" role="alert"><AlertTriangle size={14} /><span>The destination or a file changed after the agent asked. Approving will not send it; deny it instead.</span></p>}
-        <div className="channel-hold__text"><span className="eyebrow">Text ({payload.text.length.toLocaleString()} characters)</span><pre className="plain-text">{payload.text || "(no text)"}</pre></div>
+        {summary.action?.op !== "react" && summary.action?.op !== "delete" && <div className="channel-hold__text"><span className="eyebrow">{summary.action?.op === "edit" ? "New text" : "Text"} ({payload.text.length.toLocaleString()} characters)</span><pre className="plain-text">{payload.text || "(no text)"}</pre></div>}
         {payload.files.length > 0 && <div><span className="eyebrow">Attachments</span><ul className="hold-files">{payload.files.map((file) => <li key={`${file.sha256}-${file.name}`}>
           <strong className="hold-file__name">{file.name}</strong>
           <span>{file.kind} · {typeName(file.contentType)} · {formatBytes(file.bytes)}</span>
@@ -208,12 +209,31 @@ export function ChannelHoldView({ summary, payload }: { summary: ChannelApproval
   </div>;
 }
 
+/**
+ * Routes v2: what the held operation does. A reaction shows its emoji, an edit or delete the start of the message
+ * Marketplace posted (from its receipt), a direct message the person's name and whether this is the first message.
+ */
+function ChannelActionFacts({ action }: { action: ChannelActionView }) {
+  return <>
+    {action.op === "react" && <><dt>Reaction</dt><dd>{action.remove ? "Remove " : "Add "}<code>{action.emoji}</code></dd></>}
+    {(action.op === "react" || action.op === "edit" || action.op === "delete") && <>
+      <dt>{action.op === "edit" ? "Message to change" : action.op === "delete" ? "Message to delete" : "On message"}</dt>
+      <dd>{action.targetExcerpt ? <pre className="plain-text">{action.targetExcerpt}</pre> : <span className="muted-detail">The original text is no longer kept.</span>}<small className="muted-detail">Message id <code>{action.targetMessageId}</code></small></dd>
+    </>}
+    {action.op === "dm" && <><dt>Person</dt><dd>{action.person ? <><strong>{action.person.displayName}</strong>{action.person.platformUserId ? <> · <code>{action.person.platformUserId}</code></> : null}{action.person.lookup ? <> · found by <code>{action.person.lookup.value}</code></> : null}{action.person.approved ? "" : " · first message: after you approve, later messages may be covered by a standing grant with direct messages"}</> : "Unknown person"}</dd></>}
+    {action.poll && <><dt>Poll</dt><dd><strong>{action.poll.question}</strong><ul className="plain-list">{action.poll.options.map((option) => <li key={option}>{option}</li>)}</ul></dd></>}
+    {action.mentions?.length ? <><dt>Mentions</dt><dd>{action.mentions.join(", ")}</dd></> : null}
+    {action.markup && <><dt>Markup</dt><dd><code>{action.markup}</code></dd></>}
+  </>;
+}
+
 function channelDecisionNotice(approval: CompanyBoxApproval, result: Awaited<ReturnType<typeof decideCompanyBoxApproval>>) {
   const label = approval.channel?.label ?? "the channel";
+  const what = actionTitle(approval.channel?.action, label);
   if (result.channel?.scheduled) return `Approved. The post to ${label} is sent at its scheduled time.`;
-  if (result.ok) return `Approved and posted to ${label}.`;
+  if (result.ok) return approval.channel?.action && approval.channel.action.op !== "post" && approval.channel.action.op !== "poll" ? `Approved and done: ${what}.` : `Approved and posted to ${label}.`;
   const code = typeof result.channel?.error === "string" ? result.channel.error : result.approval.error ?? undefined;
-  return `Approved, but the post to ${label} wasn't sent: ${failureCopy(code).title}.`;
+  return `Approved, but "${what}" wasn't sent: ${failureCopy(code).title}.`;
 }
 
 function ApprovalRow({ approval, onDecided }: { approval: CompanyBoxApproval; onDecided: (notice: string) => void }) {
@@ -236,7 +256,7 @@ function ApprovalRow({ approval, onDecided }: { approval: CompanyBoxApproval; on
   const pending = approval.state === "pending";
   const payload = channelHold ? (full.data ? full.data.payloadView ?? null : undefined) : undefined;
   const reviewable = channelHold ? Boolean(payload && !("error" in payload) && payload.matchesHeldDigest) : Boolean(full.data);
-  const title = channelHold ? `Post to ${channelHold.label ?? "a channel"}` : `${approval.app} · ${approval.operation.title}`;
+  const title = channelHold ? actionTitle(channelHold.action, channelHold.label ?? "a channel") : `${approval.app} · ${approval.operation.title}`;
   return <div className="company-box-approval" aria-label={channelHold ? title : `${approval.app}: ${approval.operation.title}`}>
     <div>
       <strong>{title}</strong>

@@ -8,11 +8,14 @@ import { AGENT_OPERATION, MARKETPLACE_MANIFEST } from "../contract.js";
 import { MarketplaceOperatorSessionManager } from "../operator-auth.js";
 import { SqliteMarketplaceStore } from "../store.js";
 import type { ConnectorCapability } from "../types.js";
+import { seededPin } from "./approval-test-support.js";
 import type { OwnerApprovalVerifier } from "./approvals.js";
+import { createBuzzProvider } from "./providers/buzz.js";
 import { createDiscordProvider } from "./providers/discord.js";
 import { createSlackProvider } from "./providers/slack.js";
+import { createTeamsProvider } from "./providers/teams.js";
 import { createTelegramProvider } from "./providers/telegram.js";
-import type { ChannelDestination, ChannelProvider, ChannelProviderId, OutboundMessage, SendResult } from "./providers/types.js";
+import type { ActionResult, ChannelDestination, ChannelProvider, ChannelProviderId, OutboundMessage, PersonQuery, SendResult } from "./providers/types.js";
 import { CHANNEL_AGENT_OPERATION } from "./routes.js";
 
 export const PORTAL = "https://portal.test";
@@ -29,13 +32,45 @@ export const GRANT_ALL = `tbag_${"d".repeat(43)}`;
 const AGENT_OPS = [...Object.values(CHANNEL_AGENT_OPERATION), AGENT_OPERATION.approvalsResolve, AGENT_OPERATION.consentsList, AGENT_OPERATION.toolsCall];
 
 export type FakeSend = { credential: string | null | undefined; destination: ChannelDestination; message: OutboundMessage };
+/** A recorded routes v2 adapter call (reaction, edit, delete, person lookup, DM open). */
+export type FakeAction =
+  | { kind: "react"; destination: ChannelDestination; messageId: string; emoji: string; remove: boolean }
+  | { kind: "edit"; destination: ChannelDestination; messageId: string; text: string }
+  | { kind: "remove"; destination: ChannelDestination; messageId: string }
+  | { kind: "findPerson"; query: PersonQuery }
+  | { kind: "openDirect"; userId: string };
 
-/** A provider with the real capability declaration whose send/discover/verify are recorded fakes. */
+/**
+ * A provider with the real capability declaration whose send/discover/verify are recorded fakes. The routes v2
+ * methods (react, edit, remove, findPerson, openDirect) are recorded fakes too, present only where the real
+ * adapter has them. `people` is the fake directory (`email` or `handle` → one person).
+ */
 export function fakeProvider(id: ChannelProviderId, token: string) {
-  const real: ChannelProvider = id === "telegram" ? createTelegramProvider() : id === "slack" ? createSlackProvider() : createDiscordProvider();
+  const real: ChannelProvider =
+    id === "telegram"
+      ? createTelegramProvider()
+      : id === "slack"
+        ? createSlackProvider()
+        : id === "teams"
+          ? createTeamsProvider({ graphEnabled: true })
+          : id === "buzz"
+            ? createBuzzProvider()
+            : createDiscordProvider();
   const sends: FakeSend[] = [];
+  const actions: FakeAction[] = [];
+  const actionReplies: ActionResult[] = [];
+  const people = new Map<string, { userId: string; displayName: string; emailVerified?: boolean } | "ambiguous">();
   const replies: Array<SendResult | (() => Promise<SendResult>)> = [];
-  const ids = id === "telegram" ? ["-1001234", "-1005678"] : id === "slack" ? ["C0ANNOUNCE", "C0SECOND0"] : ["5550001", "5550002"];
+  const ids =
+    id === "telegram"
+      ? ["-1001234", "-1005678"]
+      : id === "slack"
+        ? ["C0ANNOUNCE", "C0SECOND0"]
+        : id === "teams"
+          ? ["19:announce@thread.tacv2", "19:second@thread.tacv2"]
+          : id === "buzz"
+            ? ["8f9c2a3e-0000-4000-8000-000000000001", "8f9c2a3e-0000-4000-8000-000000000002"]
+            : ["5550001", "5550002"];
   let destinations: ChannelDestination[] = [
     { type: "channel", externalId: ids[0]!, title: `${id} test chat`, ...(id === "discord" ? { parentId: "777" } : {}) },
     { type: "channel", externalId: ids[1]!, title: `${id} second chat`, ...(id === "discord" ? { parentId: "777" } : {}) },
@@ -59,9 +94,49 @@ export function fakeProvider(id: ChannelProviderId, token: string) {
       return next ?? { status: "sent", resultIds: [`m${sends.length}`], resultUrls: [`https://t.me/c/1234/${sends.length}`] };
     },
   };
+  if (real.react) {
+    provider.react = async (_credential, destination, messageId, emoji, options) => {
+      actions.push({ kind: "react", destination, messageId, emoji, remove: options?.remove === true });
+      return actionReplies.shift() ?? { status: "sent" };
+    };
+  }
+  if (real.edit) {
+    provider.edit = async (_credential, destination, messageId, message) => {
+      actions.push({ kind: "edit", destination, messageId, text: message.text });
+      const reply = actionReplies.shift();
+      return reply ? { ...reply, resultIds: reply.status === "sent" ? [messageId] : [], resultUrls: [] } : { status: "sent", resultIds: [messageId], resultUrls: [] };
+    };
+  }
+  if (real.remove) {
+    provider.remove = async (_credential, destination, messageId) => {
+      actions.push({ kind: "remove", destination, messageId });
+      return actionReplies.shift() ?? { status: "sent" };
+    };
+  }
+  if (real.findPerson) {
+    provider.findPerson = async (_credential, query) => {
+      actions.push({ kind: "findPerson", query });
+      const found = people.get((query.email ?? query.handle ?? "").toLowerCase());
+      if (found === "ambiguous") return { ok: false, reason: "ambiguous", errorCode: "person_ambiguous", detail: "more than one person matches" };
+      return found
+        ? { ok: true, userId: found.userId, displayName: found.displayName, emailVerified: found.emailVerified ?? query.email !== undefined }
+        : { ok: false, reason: "not_found", errorCode: "person_not_found", detail: "no person matches" };
+    };
+  }
+  if (real.openDirect) {
+    provider.openDirect = async (_credential, userId) => {
+      actions.push({ kind: "openDirect", userId });
+      return { ok: true, destination: { type: "person", externalId: `dm-${userId}`, title: "Direct message", personId: userId } };
+    };
+  }
   return {
     provider,
     sends,
+    actions,
+    /** Queues the next reaction, edit or delete answers (default `sent`). */
+    actionReply: (...more: ActionResult[]) => void actionReplies.push(...more),
+    /** Adds a person to the fake directory under an email or handle (or marks the key ambiguous). */
+    addPerson: (key: string, person: { userId: string; displayName: string; emailVerified?: boolean } | "ambiguous") => void people.set(key.toLowerCase(), person),
     reply: (...more: Array<SendResult | (() => Promise<SendResult>)>) => void replies.push(...more),
     setDestinations: (next: ChannelDestination[]) => {
       destinations = next;
@@ -77,6 +152,8 @@ export async function channelFixture(input: {
   verifier?: OwnerApprovalVerifier;
   /** Portal's K1 `approvalTrusted` flag on every introspection answer (absent by default). */
   approvalTrusted?: boolean;
+  /** Pin the deployment owner (owner-1), so `ownerWrite` passes the strict owner gate. */
+  ownerPin?: boolean;
 } = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), "marketplace-channels-app-"));
   const store = new SqliteMarketplaceStore(path.join(root, "marketplace.sqlite"), { handoffEncryptionKey: "a".repeat(64) });
@@ -149,12 +226,13 @@ export async function channelFixture(input: {
     channelScheduler: false,
     channelClock: () => new Date(clock),
     ...(input.verifier ? { ownerApprovalVerifier: input.verifier } : {}),
+    ...(input.ownerPin ? { ownerPinSource: seededPin({ portalIssuer: PORTAL }) } : {}),
     ...input.options,
   });
   const runtime = channelRuntimeOf(app);
   await runtime.ready;
 
-  const owner = (method: "GET" | "POST" | "PATCH", url: string, payload?: unknown, headers: Record<string, string> = {}) =>
+  const owner = (method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE", url: string, payload?: unknown, headers: Record<string, string> = {}) =>
     app.inject({ method, url, ...(payload !== undefined ? { payload: payload as Record<string, unknown> } : {}), headers });
   let ownerKey = 0;
   const createChannel = async (create: {
@@ -189,6 +267,48 @@ export async function channelFixture(input: {
     return created.json().channel as { id: string; slug: string; connectionId: string; provider: string; revision: number };
   };
 
+  /** Strict owner writes: the pinned owner's own Portal launch session (cookie + CSRF), as the owner UI sends them. */
+  let ownerSessionCache: { cookie: string; csrf: string } | null = null;
+  let launchCounter = 0;
+  const ownerWrite = async (method: "POST" | "PUT" | "DELETE", url: string, payload?: unknown) => {
+    if (!ownerSessionCache) {
+      portalReplies.set("/api/deployment-browser/redeem", () =>
+        new Response(
+          JSON.stringify({
+            schema: 1,
+            authorized: true,
+            product: "marketplace",
+            deploymentId: "deployment-1",
+            workspaceId: TENANT,
+            orgId: "portal-org-1",
+            productTenantId: TENANT,
+            userId: "owner-1",
+            endpoint: "https://marketplace.fixture.invalid",
+            session: "s".repeat(43),
+            expiresAt: Date.now() + 3_600_000,
+          }),
+          { status: 200 },
+        ),
+      );
+      const launched = await app.inject({
+        method: "POST",
+        url: "/auth/launch",
+        headers: { origin: PORTAL, "content-type": "application/x-www-form-urlencoded" },
+        payload: `ticket=${String(++launchCounter).padStart(6, "0")}${"w".repeat(37)}`,
+      });
+      if (launched.statusCode !== 303) throw new Error(launched.body);
+      const cookie = String(launched.headers["set-cookie"]).split(";", 1)[0]!;
+      const current = await app.inject({ method: "GET", url: "/api/marketplace/auth/session", headers: { cookie } });
+      ownerSessionCache = { cookie, csrf: current.json().session.csrfToken as string };
+    }
+    return app.inject({
+      method,
+      url,
+      headers: { origin: "http://localhost:5173", cookie: ownerSessionCache.cookie, "x-csrf-token": ownerSessionCache.csrf },
+      ...(payload !== undefined ? { payload: payload as Record<string, unknown> } : {}),
+    });
+  };
+
   let consentCounter = 0;
   const consentFor = (agentId: string, channel: { slug: string; connectionId: string; provider: string }, grantClass: "outward" | "read" = "outward") => {
     consentCounter += 1;
@@ -216,7 +336,7 @@ export async function channelFixture(input: {
   };
 
   const agent = (
-    method: "GET" | "POST",
+    method: "GET" | "POST" | "PATCH" | "DELETE",
     url: string,
     input: { payload?: unknown; key?: string | null; token?: string; headers?: Record<string, string> } = {},
   ) =>
@@ -266,6 +386,7 @@ export async function channelFixture(input: {
     portalRequests,
     portalReplies,
     owner,
+    ownerWrite,
     agent,
     post,
     createChannel,

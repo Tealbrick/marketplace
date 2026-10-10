@@ -86,8 +86,26 @@ describe("capabilitySupports", () => {
 });
 
 describe("wired features (review of PR #43)", () => {
-  it("wires only what the routes really do: attachment kinds, forum topics, inbound delivery and reply to source", () => {
-    expect([...AGENT_WIRED_FEATURES].sort()).toEqual(["audio", "file", "image", "inbound", "thread.replies", "thread.topics", "video", "voice"]);
+  it("wires only what the routes really do: attachment kinds, forum topics, inbound, reply, and the routes v2 operations", () => {
+    expect([...AGENT_WIRED_FEATURES].sort()).toEqual([
+      "audio",
+      "delete",
+      "dm",
+      "edit",
+      "file",
+      "image",
+      "inbound",
+      "markup.markdown-v2",
+      "mentions.users",
+      "poll",
+      "reactions.add",
+      "reactions.custom",
+      "reactions.remove",
+      "thread.replies",
+      "thread.topics",
+      "video",
+      "voice",
+    ]);
   });
 
   it("exposes declaration ∩ wired for every feature", () => {
@@ -99,16 +117,18 @@ describe("wired features (review of PR #43)", () => {
     }
   });
 
-  it("hides a declared feature with no operation behind it (reactions, edit, dm, live) and keeps inbound", () => {
+  it("hides a declared feature with no operation behind it (live, canvas, presence) and shows the routes v2 ones", () => {
     const effective = wiredCapabilities(RICH);
-    expect(effective.reactions).toEqual({ add: false, remove: false, custom: false });
-    expect(effective.edit).toEqual({ own: false });
-    expect(effective.delete).toEqual({ own: false });
-    expect(effective.dm).toEqual({ open: false, maxMembers: 0 });
-    expect(effective.mentions).toEqual({ users: false, broadcast: "suppressed" });
+    expect(effective.reactions).toEqual(RICH.reactions);
+    expect(effective.edit).toEqual(RICH.edit);
+    expect(effective.delete).toEqual(RICH.delete);
+    expect(effective.dm).toEqual(RICH.dm);
+    expect(effective.mentions).toEqual({ users: RICH.mentions.users, broadcast: "suppressed" });
     expect(effective.live).toBe(false);
+    expect(effective.canvas).toBe(false);
+    expect(effective.presence).toEqual({ typing: false, status: false });
     expect(effective.inbound).toEqual(RICH.inbound);
-    expect(effective.poll).toBe(false);
+    expect(effective.poll).toEqual(RICH.poll);
     // Non-feature keys and wired features are kept as declared.
     expect(effective.text).toEqual(RICH.text);
     expect(effective.image).toEqual(RICH.image);
@@ -116,17 +136,21 @@ describe("wired features (review of PR #43)", () => {
     expect(effective.limits).toEqual(RICH.limits);
   });
 
-  it("keeps a feature once a later change wires it, and is idempotent", () => {
-    const wider = new Set([...AGENT_WIRED_FEATURES, "reactions.add", "edit"] as const);
-    const effective = wiredCapabilities(RICH, wider);
-    expect(effective.reactions).toEqual({ add: true, remove: false, custom: false });
-    expect(effective.edit).toEqual({ own: true, windowSeconds: 900 });
+  it("keeps a feature only while it is wired, and is idempotent", () => {
+    const narrower = new Set([...AGENT_WIRED_FEATURES].filter((feature) => feature !== "reactions.remove" && feature !== "edit"));
+    const effective = wiredCapabilities(RICH, narrower);
+    expect(effective.reactions).toEqual({ add: true, remove: false, custom: RICH.reactions.custom });
+    expect(effective.edit).toEqual({ own: false });
+    expect(wiredCapabilities(RICH).edit).toEqual({ own: true, windowSeconds: 900 });
     expect(wiredCapabilities(wiredCapabilities(RICH))).toEqual(wiredCapabilities(RICH));
   });
 
-  it("leaves out markupOptions, since no route lets a post choose another markup yet", () => {
-    expect(telegram.markupOptions?.length).toBeGreaterThan(0);
-    expect(wiredCapabilities(telegram)).not.toHaveProperty("markupOptions");
+  it("offers a markup option only while its markup feature is wired (the post body markup)", () => {
+    expect(telegram.markupOptions).toEqual(["markdown-v2"]);
+    expect(wiredCapabilities(telegram).markupOptions).toEqual(["markdown-v2"]);
+    const without = new Set([...AGENT_WIRED_FEATURES].filter((feature) => feature !== "markup.markdown-v2"));
+    expect(wiredCapabilities(telegram, without)).not.toHaveProperty("markupOptions");
+    expect(wiredCapabilities(discord)).not.toHaveProperty("markupOptions");
   });
 });
 

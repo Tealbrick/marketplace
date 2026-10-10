@@ -199,11 +199,13 @@ describe("Teams channel end to end", () => {
       kinds: ["chat"],
       capabilities: {
         markup: "teams-markdown",
-        mentions: { users: false },
+        // Routes v2: edit, delete and mentions are wired; DMs need the Graph flag (off here); Teams has no bot reactions.
+        mentions: { users: true },
         thread: { replies: true },
-        edit: { own: false },
-        delete: { own: false },
+        edit: { own: true },
+        delete: { own: true },
         dm: { open: false, maxMembers: 0 },
+        reactions: { add: false, remove: false },
       },
     });
     await activity(install);
