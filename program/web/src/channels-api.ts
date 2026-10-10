@@ -13,6 +13,10 @@ import type {
   ChannelPersonView,
   ChannelView,
   GrantTerms,
+  LiveGrantView,
+  LiveOverview,
+  LiveSessionView,
+  LiveTranscriptLine,
   PeoplePolicyMode,
   PeoplePolicyView,
   StandingGrantView,
@@ -120,3 +124,25 @@ export const listChannelPeople = (connectionId: string) =>
 
 export const revokeChannelPerson = (connectionId: string, personRef: string) =>
   api<{ ok: true; person: ChannelPersonView; replayed?: boolean }>(connectionRoute(connectionId, `/people/${encodeURIComponent(personRef)}/revoke`), { method: "POST", body: JSON.stringify({}) });
+
+// ----- Live sessions (P2 scope 2.3) -----
+const LIVE = `${ROOT}/live`;
+const liveGrantRoute = (grantId: string, verb: string) => `${LIVE}/grants/${encodeURIComponent(grantId)}/${verb}`;
+
+export const getLiveOverview = () => api<LiveOverview>(LIVE);
+
+/** Approves exactly the digest the owner was shown (strict owner gate on the server). */
+export const approveLiveGrant = (grantId: string, digest: string) =>
+  api<{ ok: true; grant: LiveGrantView }>(liveGrantRoute(grantId, "approve"), { method: "POST", body: JSON.stringify({ digest }) });
+
+export const liveGrantAction = (grantId: string, verb: "decline" | "revoke" | "pause" | "resume") =>
+  api<{ ok: true; grant: LiveGrantView }>(liveGrantRoute(grantId, verb), { method: "POST", body: JSON.stringify({}) });
+
+export const updateLiveControl = (patch: { paused?: boolean; commandChannel?: string | null }) =>
+  api<{ ok: true; control: LiveOverview["control"] }>(`${LIVE}/control`, { method: "PUT", body: JSON.stringify(patch) });
+
+export const stopLiveSession = (sessionId: string) =>
+  api<{ ok: true; session: LiveSessionView }>(`${LIVE}/sessions/${encodeURIComponent(sessionId)}/stop`, { method: "POST", body: JSON.stringify({}) });
+
+export const getLiveTranscript = (sessionId: string) =>
+  api<{ ok: true; session: LiveSessionView; lines: LiveTranscriptLine[] }>(`${LIVE}/sessions/${encodeURIComponent(sessionId)}/transcript`);

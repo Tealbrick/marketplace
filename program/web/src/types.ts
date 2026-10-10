@@ -903,3 +903,89 @@ export type ChannelPayloadView =
       action?: ChannelActionView | null;
     }
   | { error: string };
+
+// ----- Live sessions (Channels P2 scope 2.3): live-session grants and Buzz huddle sessions -----
+
+export type LiveGrantStatus = "proposed" | "active" | "paused" | "revoked" | "expired" | "declined" | "withdrawn";
+
+export type LiveGrantSummary = {
+  target: { channelId?: string; huddleId?: string; voiceChannelId?: string };
+  modes: { listen: boolean; speakApproved: boolean; speakLive: boolean };
+  maxSessionMinutes: number;
+  maxDayMinutes: number;
+  providerMinutesCap: number;
+  topic: string;
+  forbiddenTerms: string[];
+  consent: { disclosureNotice: boolean; perParticipantConsent: boolean };
+  caps: { perDay: number; perHour?: number; minIntervalSeconds?: number };
+  expires: string;
+};
+
+export type LiveGrantUsage = {
+  minutesToday: number;
+  maxDayMinutes: number | null;
+  minutesInSession: number;
+  maxSessionMinutes: number | null;
+  providerMinutes: number;
+  providerMinutesCap: number | null;
+  activeSessionId: string | null;
+};
+
+export type LiveGrantView = {
+  id: string;
+  channelId: string;
+  channelLabel?: string | null;
+  agentId: string;
+  status: LiveGrantStatus;
+  digest: string;
+  approvalText: string;
+  canonical: string;
+  summary: LiveGrantSummary | null;
+  proposedAt: string;
+  approvedAt: string | null;
+  approvalSource: "marketplace-ui" | "nostr" | "portal" | null;
+  approvalExpiresAt: string | null;
+  reason: string | null;
+  providerMinutesUsed: number;
+  usage?: LiveGrantUsage;
+};
+
+export type LiveSessionView = {
+  sessionId: string;
+  grantId: string;
+  channelId: string;
+  channelLabel?: string | null;
+  agentId: string;
+  huddleId: string;
+  modes: { listen?: true; speakApproved?: true; speakLive?: true };
+  status: "joining" | "joined" | "left" | "failed";
+  startedAt: string;
+  joinedAt: string | null;
+  leftAt: string | null;
+  endReason: string | null;
+  minutesListened: number;
+  minutesSpoken: number;
+  providerMinutes: number;
+  disclosureEventId: string | null;
+  peers: number | null;
+};
+
+export type LiveTranscriptLine = {
+  kind: "heard" | "said" | "notice";
+  framing: "untrusted-external-speech" | "agent-own";
+  speaker?: { pubkey: string; npub: string } | null;
+  text: string;
+  clipSha256?: string;
+  flaggedTerms?: string[];
+  startedAt: string;
+  endedAt: string;
+  purged: boolean;
+};
+
+export type LiveOverview = {
+  ok: true;
+  control: { paused: boolean; pausedAt: string | null; pausedBy: string | null; commandChannel: string | null; updatedAt: string | null };
+  buzzReady: boolean;
+  grants: LiveGrantView[];
+  sessions: LiveSessionView[];
+};
