@@ -155,8 +155,10 @@ describe("Discord gateway client", () => {
     first.receive(hello);
     first.receive(ready(7));
     t.clock.advance(20_000); // beat 1 (no ACK follows)
-    t.clock.advance(40_000); // beat 2 is due: no ACK since beat 1 → reconnect
+    t.clock.advance(40_000); // beat 2 is due: no ACK since beat 1 → reconnect after the backoff
     expect(first.closed).toBe(4000);
+    expect(t.net.sockets).toHaveLength(1);
+    t.clock.advance(1_000);
     const second = t.net.last();
     expect(second).not.toBe(first);
     expect(second.url).toBe("wss://gateway-us-east1-b.discord.gg/?v=10&encoding=json");
@@ -173,6 +175,7 @@ describe("Discord gateway client", () => {
     first.receive(hello);
     first.receive(ready(3));
     first.receive({ op: 7, d: null });
+    t.clock.advance(1_000);
     const second = t.net.last();
     second.receive(hello);
     expect(second.sent[0]).toMatchObject({ op: 6 });
@@ -193,9 +196,9 @@ describe("Discord gateway client", () => {
     first.receive(ready());
     first.serverClose(1006);
     expect(t.gateway.status).toBe("backoff");
-    t.clock.advance(749);
+    t.clock.advance(999);
     expect(t.net.sockets).toHaveLength(1);
-    t.clock.advance(1); // 1000 × (0.5 + 0.5 × 0.5) = 750 ms
+    t.clock.advance(1); // backoff 750 ms, raised to the 1 s minimum
     const second = t.net.last();
     expect(second).not.toBe(first);
     second.receive(hello);
@@ -246,6 +249,46 @@ describe("Discord gateway client", () => {
     t.gateway.stop();
     expect(t.gateway.status).toBe("stopped");
     expect(t.clock.pending()).toBe(0);
+  });
+
+  it("never RESUMEs to a host outside discord.gg: fixed gateway URL and a fresh IDENTIFY (M2/F5)", () => {
+    const t = setup();
+    t.gateway.start();
+    t.net.last().receive(hello);
+    t.net.last().receive({ op: 0, t: "READY", s: 4, d: { session_id: "sess-1", resume_gateway_url: "wss://evil.example.com", user: { id: "4242" } } });
+    t.net.last().receive({ op: 7, d: null });
+    t.clock.advance(1_000);
+    expect(t.net.last().url).toBe(DISCORD_GATEWAY_URL);
+    t.net.last().receive(hello);
+    expect(t.net.last().sent[0]).toMatchObject({ op: 2 });
+    expect(JSON.stringify(t.net.sockets.map((socket) => socket.url))).not.toContain("evil");
+    // A look-alike host is refused too.
+    t.net.last().receive({ op: 0, t: "READY", s: 1, d: { session_id: "s2", resume_gateway_url: "wss://gateway.discord.gg.evil.example", user: { id: "4242" } } });
+    t.net.last().receive({ op: 7, d: null });
+    t.clock.advance(1_000);
+    expect(t.net.last().url).toBe(DISCORD_GATEWAY_URL);
+  });
+
+  it("repeated RECONNECT requests back off with growing delays instead of a tight loop (F5)", () => {
+    const t = setup();
+    t.gateway.start();
+    t.net.last().receive(hello);
+    t.net.last().receive(ready());
+    const delays: number[] = [];
+    for (let round = 0; round < 4; round += 1) {
+      const before = t.net.sockets.length;
+      t.net.last().receive({ op: 7, d: null });
+      let waited = 0;
+      while (t.net.sockets.length === before) {
+        t.clock.advance(100);
+        waited += 100;
+      }
+      delays.push(waited);
+      t.net.last().receive(hello);
+    }
+    expect(delays[0]).toBeGreaterThanOrEqual(1_000);
+    expect(delays).toEqual([...delays].sort((a, b) => a - b));
+    expect(delays[3]!).toBeGreaterThan(delays[0]!);
   });
 
   it("never puts the token in a status or detail", () => {

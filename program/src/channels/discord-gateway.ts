@@ -10,8 +10,9 @@ import type { InboundMessage } from "./providers/types.js";
  *   when the owner turns it on (it must also be enabled for the bot in the Discord developer portal; without it
  *   Discord sends empty content except in DMs and messages that mention the bot).
  * - Heartbeat at the HELLO interval (first beat jittered); a missing ACK is a zombie connection: reconnect and
- *   RESUME. RECONNECT (op 7) resumes; INVALID SESSION (op 9) resumes when Discord says it can, else identifies
- *   again after 1–5 s.
+ *   RESUME, after a backoff delay (at least 1 s, growing with each attempt). RECONNECT (op 7) resumes the same
+ *   way; INVALID SESSION (op 9) resumes when Discord says it can, else identifies again after 1–5 s. RESUME goes
+ *   only to a `*.discord.gg` resume URL; any other host means the fixed gateway URL and a fresh IDENTIFY.
  * - Close codes 4004 (authentication failed) and 4010–4014 (shard, version, intents) stop the client with a
  *   fixed reason: retrying cannot help. Other closes reconnect with capped exponential backoff and jitter.
  * - One connection per bot token: the client holds a consumer lease (Phase 1 spec §8) and renews it; when the
@@ -22,6 +23,11 @@ import type { InboundMessage } from "./providers/types.js";
  */
 
 export const DISCORD_GATEWAY_URL = "wss://gateway.discord.gg/?v=10&encoding=json";
+
+/** A READY `resume_gateway_url` is used only on a Discord gateway host (review M2/F5); else the fixed URL + IDENTIFY. */
+const DISCORD_RESUME_URL = /^wss:\/\/([a-z0-9-]+\.)*discord\.gg(:443)?\/?$/u;
+/** Every reconnect waits at least this long (no tight loop on repeated RECONNECT or zombie connections). */
+export const DISCORD_MIN_RECONNECT_MS = 1000;
 
 export const DISCORD_INTENTS = Object.freeze({
   GUILDS: 1 << 0,
@@ -163,7 +169,7 @@ export function createDiscordGateway(deps: DiscordGatewayDeps) {
   const scheduleReconnect = (delayMs?: number) => {
     if (!running || !holdingLease) return;
     clear(reconnectTimer);
-    const backoff = delayMs ?? Math.min(maxBackoffMs, 1000 * 2 ** attempts) * (0.5 + random() * 0.5);
+    const backoff = Math.max(DISCORD_MIN_RECONNECT_MS, delayMs ?? Math.min(maxBackoffMs, 1000 * 2 ** attempts) * (0.5 + random() * 0.5));
     attempts += 1;
     setStatus("backoff");
     reconnectTimer = timers.setTimeout(() => {
@@ -172,10 +178,10 @@ export function createDiscordGateway(deps: DiscordGatewayDeps) {
     }, Math.round(backoff));
   };
 
-  /** Reconnect now and resume the session (zombie connection, op 7). */
+  /** Reconnect (zombie connection, op 7) and resume the session, after the backoff delay (attempts count up). */
   const resumeNow = () => {
     dropSocket(4000);
-    connect();
+    scheduleReconnect();
   };
 
   const heartbeat = (intervalMs: number) => {
@@ -198,7 +204,7 @@ export function createDiscordGateway(deps: DiscordGatewayDeps) {
         acked = true;
         clear(heartbeatTimer);
         heartbeatTimer = timers.setTimeout(() => heartbeat(intervalMs), Math.round(intervalMs * random()));
-        if (sessionId && seq !== null) {
+        if (sessionId && resumeUrl && seq !== null) {
           send({ op: 6, d: { token: deps.token, session_id: sessionId, seq } });
         } else {
           send({
@@ -244,7 +250,7 @@ export function createDiscordGateway(deps: DiscordGatewayDeps) {
     const data = payload.d as Record<string, unknown> | null;
     if (payload.t === "READY" && data) {
       sessionId = typeof data.session_id === "string" ? data.session_id : null;
-      resumeUrl = typeof data.resume_gateway_url === "string" && /^wss:\/\/[A-Za-z0-9.-]+(:[0-9]+)?\/?$/u.test(data.resume_gateway_url) ? data.resume_gateway_url : null;
+      resumeUrl = typeof data.resume_gateway_url === "string" && DISCORD_RESUME_URL.test(data.resume_gateway_url.toLowerCase()) ? data.resume_gateway_url.toLowerCase() : null;
       const user = data.user as { id?: unknown } | undefined;
       botUserId = typeof user?.id === "string" ? user.id : botUserId;
       attempts = 0;
