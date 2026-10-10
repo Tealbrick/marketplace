@@ -458,10 +458,11 @@ export function createChannelService(deps: ChannelServiceDeps) {
   /**
    * Routes v2 checks that read current state, at hold time and again at send time (definitive refusals):
    * review R3, a reaction, edit or delete acts only on a message Marketplace posted to THIS channel destination
-   * (a kept receipt lists its id), not yet deleted, and inside the provider's edit or delete window (Telegram: 48 h);
+   * (a kept receipt lists its id) for the same agent (spec 2.1: the agent's own message; another agent's post or the
+   * owner test is not a target), not yet deleted, and inside the provider's edit or delete window (Telegram: 48 h);
    * review R5, a direct message only to a person the connection's people policy still allows.
    */
-  const actionRefusal = (channel: ChannelRecord, payload: ChannelPayload): ChannelRefusal | null => {
+  const actionRefusal = (channel: ChannelRecord, payload: ChannelPayload, agentId: string): ChannelRefusal | null => {
     const action = payload.action;
     if (!action) return null;
     if (action.op === "dm") {
@@ -471,7 +472,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
       return refused ? { status: refused.status, error: refused.error } : null;
     }
     const own = channels.actions.ownMessage({ workspaceSlug: org, channelId: channel.id, destinationKey: destinationKey(channel.destination), messageId: action.targetMessageId });
-    if (!own) return { status: 404, error: "channel_message_not_ours" };
+    if (!own || own.agentId !== agentId) return { status: 404, error: "channel_message_not_ours" };
     if (own.removedAt) return { status: 409, error: "channel_message_removed" };
     const caps = capabilitiesFor(channel.provider);
     const windowSeconds = action.op === "delete" ? caps?.delete.windowSeconds : action.op === "edit" ? caps?.edit.windowSeconds : undefined;
@@ -827,7 +828,8 @@ export function createChannelService(deps: ChannelServiceDeps) {
       actorId: input.actor.id,
       governance: {
         actor: input.actor,
-        risk: { write: true, outward: true, destructive: false },
+        // A delete removes a message from the destination: destructive for Rules (owner mode reads `outward`).
+        risk: { write: true, outward: true, destructive: op === "delete" },
         payload: {
           phase: "execute",
           agentId: input.agentId,
@@ -1053,7 +1055,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
         return answer(refusalReply({ status: 409, error: fresh?.status === "paused" ? "channel_paused" : "channel_not_active" }, traceId));
       }
       // Routes v2: own message (R3), provider window, people policy (R5). Nothing is held or consumed before this.
-      const actionRefused = actionRefusal(channel, payload);
+      const actionRefused = actionRefusal(channel, payload, consent.agentId);
       if (actionRefused) return answer(refusalReply(actionRefused, traceId));
       const facts = {
         mode,
@@ -1173,7 +1175,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
     if (notSendable) return { ok: false, refusal: notSendable, final: !TRANSIENT_REFUSALS.has(notSendable.error) };
     const refused = await contentRefusal(channel, built.payload, post.mode, true);
     if (refused) return { ok: false, refusal: refused, final: !TRANSIENT_REFUSALS.has(refused.error) };
-    const actionRefused = actionRefusal(channel, built.payload);
+    const actionRefused = actionRefusal(channel, built.payload, post.agentId);
     if (actionRefused) return { ok: false, refusal: actionRefused, final: true };
     return { ok: true, payload: built.payload };
   };

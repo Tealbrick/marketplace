@@ -999,10 +999,11 @@ approval.
 Own messages only (review R3): a reaction, edit or delete names a message id
 that Marketplace itself posted to THIS channel's current destination: the id is
 in the sent-message ledger (`channel_sent_message`, written as soon as the
-provider call returns) for that channel and destination, and the post's kept
-receipt (`sent` or `uncertain`) lists it. Anything else, a purged receipt or a
-destination changed since, is `404 channel_message_not_ours`, before any hold or
-provider call; a deleted message is `409 channel_message_removed`. A provider
+provider call returns) for that channel and destination, the post's kept
+receipt (`sent` or `uncertain`) lists it, and the post is the calling agent's
+own (spec 2.1; another agent's post or the owner test is not a target).
+Anything else, a purged receipt or a destination changed since, is `404
+channel_message_not_ours`, before any hold or provider call; a deleted message is `409 channel_message_removed`. A provider
 window is respected at request time and again when an approved operation runs
 (Telegram deletes: 48 h, refused 60 s early: `422
 channel_delete_window_passed`; an approved hold past the window is skipped).

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { DISCORD_TOKEN, TELEGRAM_TOKEN, TENANT, channelFixture, fakeProvider, type ChannelFixture } from "./channels/app-fixture.js";
+import { DISCORD_TOKEN, GRANT_B, TELEGRAM_TOKEN, TENANT, channelFixture, fakeProvider, type ChannelFixture } from "./channels/app-fixture.js";
 import { encodeTeamsCredential } from "./channels/providers/teams.js";
 import type { ChannelProviderId } from "./channels/providers/types.js";
 
@@ -131,6 +131,11 @@ describe("routes v2: reactions, edits and deletes (R1, R3)", () => {
     const conflict = await t.react(channel.id, messageId, { emoji: "eyes" }, "react-replay-0001");
     expect(conflict.statusCode).toBe(409);
     expect(conflict.json()).toMatchObject({ error: "channel_idempotency_conflict" });
+    // A refused call stores nothing that blocks a corrected retry with the same key.
+    const refusedFirst = await t.f.post(channel.id, { text: "hi", markup: "html" }, "post-corrected-0001");
+    expect(refusedFirst.json()).toMatchObject({ error: "channel_capability_unavailable" });
+    const corrected = await t.f.post(channel.id, { text: "hi" }, "post-corrected-0001");
+    expect(corrected.statusCode, corrected.body).toBe(200);
     // The internal key is per operation: the same agent key on a post is its own row.
     const plain = await t.f.post(channel.id, { text: "Separate post" }, "react-replay-0001");
     expect(plain.statusCode, plain.body).toBe(200);
@@ -155,8 +160,16 @@ describe("routes v2: reactions, edits and deletes (R1, R3)", () => {
     }
     expect(t.fakes.slack.actions).toHaveLength(0);
     expect(t.f.store.channels.listPosts(TENANT, { status: "held", limit: 10 })).toHaveLength(0);
-    // A purged receipt ends the right to change the message.
+    // Another agent on the same channel cannot change this agent's message (the agent's own message only).
     const inA = await t.posted(a.id);
+    t.f.consentFor("agent-2", a);
+    const foreign = await t.f.agent("PATCH", `/api/marketplace/v1/agent/channels/${a.id}/messages/${encodeURIComponent(inA)}`, { token: GRANT_B, key: key("edit"), payload: { text: "hijack" } });
+    expect(foreign.statusCode).toBe(404);
+    expect(foreign.json()).toMatchObject({ error: "channel_message_not_ours" });
+    // Nor can an agent change the owner's test message.
+    const test = await t.f.owner("POST", `/api/marketplace/channels/${a.id}/test`, {}, { "idempotency-key": "owner-test-v2-0001" });
+    expect((await t.remove(a.id, test.json().receipt.resultIds[0])).json()).toMatchObject({ error: "channel_message_not_ours" });
+    // A purged receipt ends the right to change the message.
     t.f.advance(91 * 86_400_000);
     t.f.store.channels.purgeReceipts(TENANT, new Date(t.f.now - 90 * 86_400_000));
     expect((await t.edit(a.id, inA, "late")).json()).toMatchObject({ error: "channel_message_not_ours" });

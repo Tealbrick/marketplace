@@ -135,6 +135,8 @@ export type PersonRecord = {
 
 export type SentMessageRecord = {
   postId: string;
+  /** The agent whose post created the message (`owner:<id>` for the owner test). */
+  agentId: string;
   messageId: string;
   sentAt: string;
   removedAt: string | null;
@@ -185,13 +187,22 @@ export class ActionsStore {
   // ----- post ops -------------------------------------------------------------
 
   /**
-   * Records (or confirms) the routes v2 part of one post, keyed like the post. A different spec for the same key is a
-   * conflict. A key that already belongs to a post stored without a spec (an older post) counts as the empty spec,
-   * so nothing is written that would change that post's rebuilt payload.
+   * Records (or confirms) the routes v2 part of one post, keyed like the post. Once a post row exists for the key, a
+   * different spec is a conflict (the post's digest is bound to the stored spec). A key that already belongs to a post
+   * stored without a spec (an older post) counts as the empty spec, so nothing is written that would change that post's
+   * rebuilt payload. While no post exists for the key (the earlier call was refused before anything was held or sent),
+   * a corrected retry replaces the spec.
    */
   putPostOp(input: { workspaceSlug: string; agentId: string; idempotencyKey: string; spec: PostOpSpec; existingPost: boolean; now: Date }): "created" | "same" | "conflict" {
     const existing = this.getPostOp(input.workspaceSlug, input.agentId, input.idempotencyKey);
-    if (existing) return sameSpec(existing, input.spec) ? "same" : "conflict";
+    if (existing) {
+      if (sameSpec(existing, input.spec)) return "same";
+      if (input.existingPost) return "conflict";
+      this.db
+        .prepare("UPDATE channel_post_op SET op = ?, spec_json = ?, created_at = ? WHERE workspace_slug = ? AND agent_id = ? AND idempotency_key = ?")
+        .run(input.spec.action?.op ?? (input.spec.poll ? "poll" : "post"), canonicalSpec(input.spec), input.now.toISOString(), input.workspaceSlug, input.agentId, input.idempotencyKey);
+      return "created";
+    }
     if (input.existingPost) return sameSpec({}, input.spec) ? "same" : "conflict";
     this.db
       .prepare("INSERT OR IGNORE INTO channel_post_op (workspace_slug, agent_id, idempotency_key, op, spec_json, created_at) VALUES (?, ?, ?, ?, ?, ?)")
@@ -235,7 +246,7 @@ export class ActionsStore {
   ownMessage(input: { workspaceSlug: string; channelId: string; destinationKey: string; messageId: string }): SentMessageRecord | null {
     const row = this.db
       .prepare(
-        `SELECT m.post_id, m.message_id, m.sent_at, m.removed_at, r.text, r.sent_at AS receipt_sent_at
+        `SELECT m.post_id, m.message_id, m.sent_at, m.removed_at, r.text, r.sent_at AS receipt_sent_at, r.agent_id
          FROM channel_sent_message m
          JOIN channel_receipt r ON r.post_id = m.post_id AND r.workspace_slug = m.workspace_slug AND r.channel_id = m.channel_id
          WHERE m.workspace_slug = ? AND m.channel_id = ? AND m.destination_key = ? AND m.message_id = ?
@@ -246,6 +257,7 @@ export class ActionsStore {
     if (!row) return null;
     return {
       postId: String(row.post_id),
+      agentId: String(row.agent_id),
       messageId: String(row.message_id),
       sentAt: String(row.receipt_sent_at ?? row.sent_at),
       removedAt: row.removed_at === null || row.removed_at === undefined ? null : String(row.removed_at),
