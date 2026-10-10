@@ -62,6 +62,7 @@ describe("forbidden-term confusables", () => {
       ["ΙΝVEST now", "invest"], ["ΗΙDDEΝ fee", "hidden"], ["ΝΙCE", "nice"], ["ΗΙRE", "hire"], ["ΥΙELD", "yield"],
       ["ΗЦnt", "hunt"], ["баd", "bad"], ["ｉｎｖｅｓｔ", "invest"], ["ínvést", "invest"], ["in\u034Fvest", "invest"],
       ["in\u200Dvest", "invest"], ["i\u00ADnvest", "invest"], ["pr0ject", "project"], ["ΡR0JΕСТ", "project"],
+      ["buß", "bus"], ["ßun", "sun"], ["moы", "mob"], ["æon", "eon"], ["pæ", "pa"],
     ];
     for (const [text, term] of cases) expect(forbiddenTermsIn(text, [term]), `${text} vs ${term}`).toEqual([term]);
     expect(forbiddenTermsIn("nothing to see here", ["invest", "hidden", "hire"])).toEqual([]);

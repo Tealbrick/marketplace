@@ -177,6 +177,7 @@ export function forbiddenTermsIn(text: string, terms: readonly string[]): string
       }
       return next;
     };
+    let matched = false;
     for (const readings of lattice) {
       const acc = new Uint32Array(words);
       for (const reading of readings) {
@@ -185,15 +186,16 @@ export function forbiddenTermsIn(text: string, terms: readonly string[]): string
           continue;
         }
         let t: Uint32Array = state;
-        let first = true;
+        // A match may start and end inside a multi-character reading (ß → ss, æ → ae): inject the start bit on every
+        // step and test for a full match after every step. Over-matching is accepted.
         for (const ch of reading) {
-          t = step(t, ch, first);
-          first = false;
+          t = step(t, ch, true);
+          if ((t[lastWord]! & lastBit) !== 0) matched = true;
         }
         for (let word = 0; word < words; word += 1) acc[word]! |= t[word]!;
       }
       state = acc;
-      if ((state[lastWord]! & lastBit) !== 0) {
+      if (matched || (state[lastWord]! & lastBit) !== 0) {
         found.add(needle.term);
         break;
       }
