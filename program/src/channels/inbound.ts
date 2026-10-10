@@ -10,8 +10,10 @@ import type { ChannelRecord, ChannelStore } from "./store.js";
  *   route: the Marketplace channel for (platform, channel id[, thread]) with an ENABLED owner route?
  *          no → ignore (nothing stored: unrouted channels are never recorded)
  *   dedupe: insert keyed by (platform, channel id, message id); a duplicate stops here
- *   loop breaker: ≤ 4 agent-bound events per thread and ≤ 8 per peer (sender) in 15 minutes, plus a short
- *          per-sender token bucket → `loop-limited` / `rate-limited` (kept for the owner, not delivered)
+ *   loop breaker: ≤ 4 agent-bound events per thread (replies in a thread) and ≤ 8 per peer (sender) in 15
+ *          minutes, a higher cap for top-level messages per channel (60 in 15 minutes: one sender cannot
+ *          block a channel), plus a short per-sender token bucket → `loop-limited` / `rate-limited`
+ *          (kept for the owner, not delivered)
  *   consent: the routed agent still holds an active consent for the channel → else `consent-inactive`
  *   deliver: `InboundSink.deliver(event, route)`; the default `NullSink` only records (`pending-bridge`);
  *          the Buzz bridge sink plugs in here later.
@@ -37,16 +39,28 @@ export const NULL_INBOUND_SINK: InboundSink = Object.freeze({
   },
 });
 
-/** The kit's loop-breaker numbers (P2 scope 2.2 item 3) and the per-sender burst bucket. */
+/**
+ * The kit's loop-breaker numbers (P2 scope 2.2 item 3) and the per-sender burst bucket. `perThread` applies only to
+ * replies in a thread; top-level messages (no thread id) share the higher `perChannelTopLevel` cap per channel,
+ * so the per-sender limits are what stops one noisy sender (review F1).
+ */
 export const INBOUND_LIMITS = Object.freeze({
   windowMs: 15 * 60_000,
   perThread: 4,
+  perChannelTopLevel: 60,
   perPeer: 8,
   senderBurst: 5,
   senderRefillPerSecond: 1 / 12,
 });
 
-export type InboundLimits = { windowMs: number; perThread: number; perPeer: number; senderBurst: number; senderRefillPerSecond: number };
+export type InboundLimits = {
+  windowMs: number;
+  perThread: number;
+  perChannelTopLevel: number;
+  perPeer: number;
+  senderBurst: number;
+  senderRefillPerSecond: number;
+};
 
 export type IngestOutcome =
   | { outcome: "own" | "unrouted" | "duplicate"; eventId?: string }
@@ -167,8 +181,10 @@ export function createInboundPipeline(deps: InboundPipelineDeps) {
       excludeId: event.id,
     });
     const peer = deps.store.countAgentBoundFromSender({ workspaceSlug: org, platform: message.platform, senderUserId: message.senderUserId, since, excludeId: event.id });
-    if (thread >= limits.perThread || peer >= limits.perPeer) {
-      const detail = thread >= limits.perThread ? "thread_limit" : "peer_limit";
+    // `thread` counts the same thread, or the channel's top-level messages when there is no thread id.
+    const threadCap = message.threadId ? limits.perThread : limits.perChannelTopLevel;
+    if (thread >= threadCap || peer >= limits.perPeer) {
+      const detail = thread >= threadCap ? (message.threadId ? "thread_limit" : "channel_limit") : "peer_limit";
       deps.store.setEventStatus(org, event.id, { status: "loop-limited", detail, now });
       audit(event, "loop-limited", { detail });
       return { outcome: "loop-limited", eventId: event.id };

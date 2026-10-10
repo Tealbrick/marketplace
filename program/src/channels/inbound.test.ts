@@ -132,6 +132,23 @@ describe("inbound pipeline", () => {
     expect(t.pipeline.ingest(slackMessage({ threadId: "1700000000.000001" })).outcome).toBe("delivered");
   });
 
+  it("top-level messages from different senders are not one thread: one noisy sender is limited by the per-sender limits only (F1)", () => {
+    const t = setup();
+    t.route(t.create("announce", "slack", "C0ANNOUNCE"));
+    const distinct = Array.from({ length: 6 }, (_value, index) => t.pipeline.ingest(slackMessage({ senderUserId: `UDISTINCT${index}` })).outcome);
+    expect(distinct).toEqual(["delivered", "delivered", "delivered", "delivered", "delivered", "delivered"]);
+    // One sender spams top-level messages: its burst bucket (5) stops it, and everyone else still gets through.
+    const spam = Array.from({ length: 7 }, () => t.pipeline.ingest(slackMessage({ senderUserId: "USPAMMER1" })).outcome);
+    expect(spam).toEqual(["delivered", "delivered", "delivered", "delivered", "delivered", "rate-limited", "rate-limited"]);
+    expect(t.pipeline.ingest(slackMessage({ senderUserId: "ULEGIT001" })).outcome).toBe("delivered");
+    // The per-channel top-level cap is higher and separate.
+    const u = setup({ limits: { ...INBOUND_LIMITS, perChannelTopLevel: 3 } });
+    u.route(u.create("announce", "slack", "C0ANNOUNCE"));
+    const capped = Array.from({ length: 4 }, (_value, index) => u.pipeline.ingest(slackMessage({ senderUserId: `UCAP00${index}` })).outcome);
+    expect(capped).toEqual(["delivered", "delivered", "delivered", "loop-limited"]);
+    expect(u.inbound.listEvents(WS, { limit: 10 }).find((event) => event.bridgeStatus === "loop-limited")!.bridgeDetail).toBe("channel_limit");
+  });
+
   it("loop breaker: at most 8 agent-bound events per peer across threads; plus a per-sender burst bucket", () => {
     const t = setup({ limits: { ...INBOUND_LIMITS, senderBurst: 100 } });
     t.route(t.create("announce", "slack", "C0ANNOUNCE"));
