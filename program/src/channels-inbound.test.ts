@@ -269,6 +269,12 @@ describe("Telegram webhook receiver", () => {
     expect((await deliver(message, { secret: "wrong-secret" })).json()).toEqual({ error: "telegram_secret_invalid", reason: "mismatch" });
     expect((await deliver(message, { path: "A".repeat(43) })).statusCode).toBe(404);
     expect((await deliver(message, { path: "short" })).statusCode).toBe(404);
+    // Path and secret are verified before the body is parsed (F8): a malformed body never reaches the parser.
+    const raw = (path: string, token: string) =>
+      f.app.inject({ method: "POST", url: `${TELEGRAM_WEBHOOK_PREFIX}${path}`, headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": token }, payload: "{ not json" });
+    expect((await raw(segment, "wrong-secret")).statusCode).toBe(401);
+    expect((await raw("B".repeat(43), secret)).statusCode).toBe(404);
+    expect((await raw(segment, secret)).statusCode).toBe(400);
     expect((await deliver(message)).statusCode).toBe(200);
     // A retry of the same update and an edit of the same message are not delivered again.
     expect((await deliver(message)).statusCode).toBe(200);

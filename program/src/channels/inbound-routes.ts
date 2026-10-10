@@ -142,22 +142,28 @@ export function registerInboundRoutes(deps: InboundRoutesDeps): void {
           await reply.code(401).send({ error: "telegram_secret_invalid", reason: "header_missing" });
           return reply;
         }
+        // Both digests are checked here, before the body is read or parsed (review F8).
+        if (!deps.configured) {
+          await reply.code(404).send({ error: "not_found" });
+          return reply;
+        }
+        await deps.ready;
+        const webhook = deps.inbound.activeWebhook(deps.organizationId, "telegram");
+        const segment = pathname.slice(TELEGRAM_WEBHOOK_PREFIX.length);
+        // An unknown or old path, or a webhook set for another bot token (stale, review S1), looks like no route at all.
+        const currentKey = deps.telegramConsumerKey();
+        if (!webhook || !currentKey || webhook.consumerKey !== currentKey || !matchesDigest(segment, webhook.pathSha256)) {
+          await reply.code(404).send({ error: "not_found" });
+          return reply;
+        }
+        if (!matchesDigest(header, webhook.headerSha256)) {
+          await reply.code(401).send({ error: "telegram_secret_invalid", reason: "mismatch" });
+          return reply;
+        }
         return undefined;
       },
     },
     async (request, reply) => {
-      if (!deps.configured) return reply.code(404).send({ error: "not_found" });
-      await deps.ready;
-      const webhook = deps.inbound.activeWebhook(deps.organizationId, "telegram");
-      const { segment } = request.params as { segment: string };
-      // An unknown or old path, or a webhook set for another bot token (stale, review S1), looks like no route at all.
-      const currentKey = deps.telegramConsumerKey();
-      if (!webhook || !currentKey || webhook.consumerKey !== currentKey || !matchesDigest(segment, webhook.pathSha256)) {
-        return reply.code(404).send({ error: "not_found" });
-      }
-      if (!matchesDigest(headerValue(request, "x-telegram-bot-api-secret-token") ?? "", webhook.headerSha256)) {
-        return reply.code(401).send({ error: "telegram_secret_invalid", reason: "mismatch" });
-      }
       const update = request.body;
       const now = deps.now();
       const seen = telegramChatsFromUpdate(update);
