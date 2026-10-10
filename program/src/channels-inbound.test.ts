@@ -385,6 +385,57 @@ describe("Telegram channel-post self-loop (review F4)", () => {
   });
 });
 
+describe("Telegram channel-post echo race (routes v2 review R8)", () => {
+  it("drops the echo of our own post that arrives before sendMessage returns", async () => {
+    const api = fakeTelegramApi();
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // sendMessage answers only after the echo was delivered (the webhook outruns the API reply).
+    const delayed = {
+      ...api,
+      fetchImpl: (async (input: string | URL | Request, init?: RequestInit) => {
+        if (String(input).endsWith("/sendMessage")) await gate;
+        return api.fetchImpl(input, init);
+      }) as typeof fetch,
+    };
+    const { f, telegramApi, enable } = await setup({ withTelegram: delayed });
+    const channel = await f.createChannel({ provider: "telegram", slug: "community", externalId: "-1001234" });
+    f.consentFor("agent-1", channel);
+    await f.proposeAndApprove(channel.id);
+    expect((await enable(channel.id)).statusCode).toBe(200);
+    const set = telegramApi.calls.find((call) => call.method === "setWebhook")!;
+    const chat = { id: -1001234, type: "channel", title: "Community" };
+    const sending = f.post(channel.id, { text: "Our announcement" }, "own-race-0001");
+    // Let the send reach the gated API call, then deliver the echo while it is in flight.
+    for (let index = 0; index < 20 && !telegramApi.calls.some((call) => call.method === "sendMessage"); index += 1) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    const echo = f.app.inject({
+      method: "POST",
+      url: `${TELEGRAM_WEBHOOK_PREFIX}${String(set.body.url).split("/").pop()}`,
+      headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": String(set.body.secret_token) },
+      payload: { update_id: 70, channel_post: { message_id: 99, chat, sender_chat: chat, text: "Our announcement" } },
+    });
+    // Without the in-flight wait the echo would be judged now (unknown id) and handed to the agent.
+    let echoDone = false;
+    void echo.then(() => {
+      echoDone = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(echoDone).toBe(false);
+    release();
+    const [sent, delivered] = await Promise.all([sending, echo]);
+    expect(sent.json().receipt.resultIds).toEqual(["99"]);
+    expect(delivered.statusCode).toBe(200);
+    await f.runtime.inbound.pipeline.settled();
+    expect(f.store.channels.inbound.listEvents(TENANT, { limit: 10 })).toHaveLength(0);
+    // The ledger has the id from the moment the call returned.
+    expect(f.store.channels.actions.ownMessage({ workspaceSlug: TENANT, channelId: channel.id, destinationKey: "-1001234|", messageId: "99" })).toMatchObject({ messageId: "99" });
+  });
+});
+
 describe("Telegram webhook lifecycle (review F3, S1)", () => {
   it("serializes concurrent enables: one setWebhook for two channels", async () => {
     const { f, telegramApi, enable } = await setup();
