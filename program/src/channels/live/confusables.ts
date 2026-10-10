@@ -1,13 +1,14 @@
 /**
- * Forbidden-term skeleton data (UTS #39 style; review of PR #53, M4).
+ * Forbidden-term skeleton data (review of PR #53, M4).
  *
- * Source: a curated subset of the Unicode confusables data (`confusables.txt`, UTS #39 "Unicode Security Mechanisms",
- * Unicode 16.0), limited to lookalikes of Latin letters and digits from Latin extensions and small capitals, Greek,
- * Cyrillic and Cherokee, written as source -> Latin skeleton. It is vendored data, not generated at build time and not a
- * dependency; it maps AFTER NFKC and lowercasing (so only forms that survive those steps are listed; Cherokee capitals
- * are added in both cases below because `toLowerCase` maps them to the U+AB70 block). Extend it when a bypass is found.
- * Matching over-folds on purpose (a forbidden-term refusal may be a false positive, never a silent bypass).
+ * The base is generated from Unicode's UTS #39 `confusables.txt` (see confusables-data.ts for version and sha256;
+ * regenerate with `pnpm exec tsx scripts/generate-confusables.ts <confusables.txt>`). The small tables below were
+ * written by hand (not generated) and only ADD lookalikes that UTS #39 does not list, mainly small capitals and a few
+ * Latin, Greek, Cyrillic and Cherokee letters; where UTS #39 has an entry, it wins. Lookups run AFTER NFKC,
+ * lowercasing and mark removal (Cherokee capitals are listed in both cases because `toLowerCase` maps them to the
+ * U+AB70 block). Matching over-folds on purpose: a forbidden-term refusal may be a false positive, never a bypass.
  */
+import { UTS39_SKELETON } from "./confusables-data.js";
 
 const LATIN_EXTENSIONS: Record<string, string> = {
   // Small capitals (U+1D00 block and IPA extensions).
@@ -51,7 +52,18 @@ function cherokee(): Record<string, string> {
   return out;
 }
 
-export const CONFUSABLE_SKELETON: Readonly<Record<string, string>> = Object.freeze({ ...LATIN_EXTENSIONS, ...GREEK, ...CYRILLIC, ...cherokee() });
+/**
+ * Skeleton map for forbidden-term matching: Unicode UTS #39 confusables (generated, confusables-data.ts) win;
+ * the hand tables above add only lookalikes UTS #39 does not list (small capitals, some Latin, Greek, Cyrillic and
+ * Cherokee letters). Over-matching is accepted for forbidden terms; a hand entry never overrides UTS #39.
+ */
+export const CONFUSABLE_SKELETON: Readonly<Record<string, string>> = Object.freeze({
+  ...LATIN_EXTENSIONS,
+  ...GREEK,
+  ...CYRILLIC,
+  ...cherokee(),
+  ...UTS39_SKELETON,
+});
 
 /** Characters that render as nothing but are letters (Lo), so Cf/Mn removal misses them: Hangul fillers, braille blank. */
 export const INVISIBLE_LETTERS = /[ᅟᅠㅤﾠ⠀]/gu;
