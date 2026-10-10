@@ -520,7 +520,7 @@ export interface OwnerKeyResponse {
 
 // ----- Channels (spec docs/channels-spec.md v0.2, owner audience) -----------
 
-export type ChannelProviderId = "telegram" | "discord";
+export type ChannelProviderId = "telegram" | "discord" | "slack";
 export type ChannelReadiness = "available" | "credential_missing" | "credential_invalid" | "paused" | "unavailable";
 export type ChannelStatus = "draft" | "active" | "paused" | "archived";
 export type GrantPhase = "announce" | "reminder" | "recap" | "update";

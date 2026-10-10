@@ -236,6 +236,25 @@ describe("channels model", () => {
 });
 
 describe("Channels page", () => {
+  it("shows the Slack card with setup steps only when the server lists Slack", async () => {
+    const withSlack = browse({ readiness: { telegram: "available", discord: "credential_missing", slack: "credential_missing" } });
+    withSlack.providers = [...withSlack.providers, { id: "slack", readiness: "credential_missing" }];
+    mockApi({ "GET /api/marketplace/channels": () => withSlack });
+    renderPage();
+    const slack = await screen.findByLabelText("Slack readiness");
+    expect(within(slack).getByText("Credential missing")).toBeTruthy();
+    expect(within(slack).getByText("Set up the Slack app")).toBeTruthy();
+    expect(within(slack).getByText(/channels-slack-app-manifest\.json/u)).toBeTruthy();
+    expect(within(slack).getByText(/xoxb-/u)).toBeTruthy();
+    expect(within(screen.getByLabelText("Telegram readiness")).queryByText("Set up the Slack app")).toBeNull();
+    cleanup();
+    mockApi({ "GET /api/marketplace/channels": () => browse() });
+    renderPage();
+    await screen.findByLabelText("Telegram readiness");
+    expect(screen.queryByLabelText("Slack readiness")).toBeNull();
+    cleanup();
+  });
+
   it("shows provider readiness and never asks for or echoes a bot token", async () => {
     mockApi({ "GET /api/marketplace/channels": () => browse({ readiness: { telegram: "available", discord: "credential_invalid" } }) });
     renderPage();

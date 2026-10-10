@@ -55,6 +55,7 @@ const AGENT_PREFIX = "/api/marketplace/v1/agent/channels";
 const PROVIDER_KINDS: Readonly<Record<ChannelProviderId, readonly (typeof CHANNEL_KINDS)[number][]>> = {
   telegram: ["chat"],
   discord: ["chat"],
+  slack: ["chat"],
 };
 const POST_STATUSES: readonly ChannelPostStatus[] = ["held", "scheduled", "sending", "sent", "failed", "uncertain", "skipped", "cancelled", "expired"];
 const OWNER_PREFIX = "/api/marketplace/channels";
@@ -706,7 +707,7 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
     const key = header(request, "idempotency-key");
     if (!key || !AGENT_IDEMPOTENCY.test(key)) return fail(reply, 400, "idempotency_key_required");
     return idempotent(reply, { scope: `channel-create:${principal.id}`, key, request: input }, () => {
-      // U4: the kind must be one the provider serves (Telegram and Discord are chat providers in P1).
+      // U4: the kind must be one the provider serves (Telegram, Discord and Slack are chat providers).
       const kind = input.kind ?? "chat";
       if (!PROVIDER_KINDS[input.provider].includes(kind)) {
         return { status: 422, body: { ok: false, schema: 1, error: "channel_kind_unsupported", supported: PROVIDER_KINDS[input.provider] } };

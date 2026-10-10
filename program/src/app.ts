@@ -77,6 +77,7 @@ import { currentOwnerKeyView, registerOwnerKeyRoutes } from "./channels/owner-ke
 import { NO_OWNER_PIN, readAttestedOwnerNostrPubkey, readOwnerPin, type OwnerKeyAttestation, type OwnerPinSource } from "./channels/owner-pin.js";
 import { CHANNEL_AGENT_OPERATION, registerChannelRoutes } from "./channels/routes.js";
 import {
+  CHANNEL_SLACK_SIGNING_SECRET_ENV,
   CHANNEL_TOKEN_ENV,
   MARKETPLACE_PORTAL_CLASS_CONTRACT_VERSION,
   channelClassSelection,
@@ -630,7 +631,7 @@ export type BuildMarketplaceAppOptions = {
   companyBoxCatalog?: CompanyBoxCatalog;
   /** Outbound fetch for Company Box REST apps (tests inject a fake); defaults to mcpFetch. */
   companyBoxFetch?: typeof fetch;
-  /** Channel provider adapters (tests inject fakes); default: Telegram and Discord on `fetch`. */
+  /** Channel provider adapters (tests inject fakes); default: Telegram, Discord and Slack on `fetch`. */
   channelProviders?: ChannelProviderRegistry;
   /** The in-process channel scheduler (30 s ticker). `false` disables it; tests drive `tick(now)` directly. */
   channelScheduler?: boolean;
@@ -873,7 +874,7 @@ function agentGuidance() {
     "",
     "## Channels",
     "",
-    "Channels are owner-registered destinations (a Telegram chat, a Discord channel) that you may post to under a",
+    "Channels are owner-registered destinations (a Telegram chat, a Discord or Slack channel) that you may post to under a",
     "Portal consent for that channel.",
     "",
     "1. `GET /api/marketplace/v1/agent/channels` (marketplace.channels.list): your channels with their effective",
@@ -2919,6 +2920,8 @@ export async function buildMarketplaceApp(
         "composio.apiKey": { set: providerSettings.activeApiKey() !== null },
         "channels.telegram.botToken": { set: Boolean(environment[CHANNEL_TOKEN_ENV.telegram]?.trim()) },
         "channels.discord.botToken": { set: Boolean(environment[CHANNEL_TOKEN_ENV.discord]?.trim()) },
+        "channels.slack.botToken": { set: Boolean(environment[CHANNEL_TOKEN_ENV.slack]?.trim()) },
+        "channels.slack.signingSecret": { set: Boolean(environment[CHANNEL_SLACK_SIGNING_SECRET_ENV]?.trim()) },
       },
     };
   };

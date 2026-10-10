@@ -14,8 +14,8 @@ import type {
 // Pure helpers for the Channels owner UI. The server validates everything
 // again; these only keep the forms honest and explain refusals early.
 
-export const CHANNEL_PROVIDERS: readonly ChannelProviderId[] = ["telegram", "discord"];
-export const PROVIDER_LABEL: Record<ChannelProviderId, string> = { telegram: "Telegram", discord: "Discord" };
+export const CHANNEL_PROVIDERS: readonly ChannelProviderId[] = ["telegram", "discord", "slack"];
+export const PROVIDER_LABEL: Record<ChannelProviderId, string> = { telegram: "Telegram", discord: "Discord", slack: "Slack" };
 export const GRANT_PHASES: readonly GrantPhase[] = ["announce", "reminder", "recap", "update"];
 export const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 export const MIB = 1024 * 1024;

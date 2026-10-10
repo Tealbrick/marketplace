@@ -20,6 +20,7 @@ import {
   isChannelProviderId,
   redactSecrets,
   resolveChannelCredential,
+  resolveSlackSigningSecret,
   toProviderDestination,
   type ChannelCredential,
   type ChannelPayload,
@@ -231,8 +232,10 @@ export function createChannelService(deps: ChannelServiceDeps) {
       }),
   });
 
+  /** Inbound-only secrets (the Slack signing secret), read at start; redacted like the bot tokens. */
+  const inboundSecrets: string[] = [];
   /** Every credential value this instance holds, for redaction before anything is written or answered. */
-  const secrets = () => [...credentials.values()].map((credential) => credential.value);
+  const secrets = () => [...[...credentials.values()].map((credential) => credential.value), ...inboundSecrets];
   const redact = (text: string) => redactSecrets(text, secrets());
 
   const audit = (eventType: string, post: Pick<ChannelPostRecord, "id" | "channelId" | "agentId" | "digest" | "authority">, provider: string, metadata: Record<string, unknown> = {}) =>
@@ -260,6 +263,17 @@ export function createChannelService(deps: ChannelServiceDeps) {
 
   /** Verify each provider credential once at start; upsert the connection row (bot identity only). */
   const boot = async () => {
+    const signingSecret = resolveSlackSigningSecret({
+      environment: deps.environment,
+      readSecretValue: (pluginId, name) => {
+        try {
+          return store.readConnectorSecretValues({ workspaceSlug: org, pluginId })[name] ?? null;
+        } catch {
+          return null;
+        }
+      },
+    });
+    inboundSecrets.splice(0, inboundSecrets.length, ...(signingSecret ? [signingSecret] : []));
     for (const provider of CHANNEL_PROVIDER_IDS) {
       const adapter = deps.providers[provider];
       if (!adapter) continue;
@@ -288,6 +302,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
           metadata: {
             botId: verified.botId,
             botUsername: verified.botUsername,
+            ...(verified.teamId ? { teamId: verified.teamId } : {}),
             verifiedAt: deps.now().toISOString(),
             credentialRef: credential.ref,
           },

@@ -75,7 +75,9 @@
         "RULES_INTERNAL_AUTH_TOKEN",
         "RULES_COMPANY_ID",
         "MARKETPLACE_CHANNELS_TELEGRAM_BOT_TOKEN",
-        "MARKETPLACE_CHANNELS_DISCORD_BOT_TOKEN"
+        "MARKETPLACE_CHANNELS_DISCORD_BOT_TOKEN",
+        "MARKETPLACE_CHANNELS_SLACK_BOT_TOKEN",
+        "MARKETPLACE_CHANNELS_SLACK_SIGNING_SECRET"
       ]
     },
     "providers": [
@@ -798,6 +800,28 @@
             "source": "account",
             "destination": "provider-env",
             "env": "MARKETPLACE_CHANNELS_DISCORD_BOT_TOKEN",
+            "rotation": "update-credentials"
+          },
+          {
+            "key": "channels.slack.botToken",
+            "label": "Slack bot token",
+            "description": "Bot token (xoxb-) of the internal Slack app that agents post through. Create the app in your workspace from the Marketplace manifest, install it, then copy the Bot User OAuth Token. Delivered to this service as an environment variable.",
+            "type": "secret",
+            "maxLength": 256,
+            "source": "account",
+            "destination": "provider-env",
+            "env": "MARKETPLACE_CHANNELS_SLACK_BOT_TOKEN",
+            "rotation": "update-credentials"
+          },
+          {
+            "key": "channels.slack.signingSecret",
+            "label": "Slack signing secret",
+            "description": "Optional. Signing secret of the same Slack app (Basic Information), used to verify messages that Slack sends to Marketplace. Not needed to post.",
+            "type": "secret",
+            "maxLength": 128,
+            "source": "account",
+            "destination": "provider-env",
+            "env": "MARKETPLACE_CHANNELS_SLACK_SIGNING_SECRET",
             "rotation": "update-credentials"
           }
         ]

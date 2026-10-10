@@ -9,7 +9,7 @@ import type {
   SendStatus,
 } from "./types.js";
 
-// Shared HTTP, scrubbing and validation helpers for the Telegram and Discord adapters.
+// Shared HTTP, scrubbing and validation helpers for the Telegram, Discord and Slack adapters.
 
 export const DEFAULT_TIMEOUT_MS = 15_000;
 export const MAX_TITLE_CHARS = 128;
@@ -97,6 +97,9 @@ const GENERIC_SECRET_PATTERNS: RegExp[] = [
   /\d{6,}:[A-Za-z0-9_-]{30,}/gu,
   /Bot\s+[A-Za-z0-9._-]{20,}/gu,
   /[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{20,}/gu,
+  // Slack bot, user, refresh and app-level tokens.
+  /xox[abeoprs]-[A-Za-z0-9-]{8,}/gu,
+  /xapp-[A-Za-z0-9-]{8,}/gu,
 ];
 
 /** Removes every secret form (raw, URL-encoded, `bot<token>`, generic token shapes) from text. */
@@ -285,4 +288,44 @@ export function validateOutbound(input: {
     return refuse("channel_too_many_files", `${images} images; this provider allows ${caps.image.albumMax} in one post`);
   }
   return undefined;
+}
+
+/** Remembers inbound event ids for a while, so a replayed or retried event is processed at most once. */
+export type ReplayGuard = {
+  /** True the first time `id` is seen inside the TTL (and records it); false for a replay. */
+  firstSeen(id: string): boolean;
+  readonly size: number;
+};
+
+/**
+ * Bounded in-memory replay store (inbound helpers, P2 scope 2.2). Each id is kept for `ttlMs` after it was first
+ * seen. At most `maxEntries` ids are kept: when full, the oldest id is dropped first (insertion order equals
+ * expiry order because the TTL is fixed). Choose `ttlMs` to cover the provider's retry schedule and the window
+ * in which a captured request still authenticates.
+ */
+export function createReplayGuard(options: { ttlMs: number; maxEntries: number; now?: () => number }): ReplayGuard {
+  const now = options.now ?? Date.now;
+  const seen = new Map<string, number>();
+  const purge = (at: number) => {
+    for (const [id, expiresAt] of seen) {
+      if (expiresAt > at) break;
+      seen.delete(id);
+    }
+  };
+  return {
+    firstSeen(id: string) {
+      const at = now();
+      purge(at);
+      if (seen.has(id)) return false;
+      seen.set(id, at + options.ttlMs);
+      while (seen.size > options.maxEntries) {
+        const oldest = seen.keys().next().value as string;
+        seen.delete(oldest);
+      }
+      return true;
+    },
+    get size() {
+      return seen.size;
+    },
+  };
 }
