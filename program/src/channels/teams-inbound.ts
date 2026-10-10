@@ -1,6 +1,8 @@
+import type { BlockList } from "node:net";
+
 import type { FastifyInstance } from "fastify";
 
-import { createSourceBudget, sourceOf } from "./inbound-http.js";
+import { createSourceBudget, createSourceResolver } from "./inbound-http.js";
 import { asRecord, createReplayGuard } from "./providers/common.js";
 import { JWT_CLOCK_SKEW_SECONDS, isAllowedServiceUrl, type BotFrameworkVerifier } from "./providers/teams-auth.js";
 import { parseTeamsActivity } from "./providers/teams.js";
@@ -28,7 +30,7 @@ const BEARER_JWT = /^Bearer [A-Za-z0-9_-]{8,4096}\.[A-Za-z0-9_-]{8,8192}\.[A-Za-
 
 /**
  * Per-source request budget for the public route. Bot Connector traffic for one tenant arrives from a few
- * Microsoft egress addresses (and, behind the hosting proxy, the source is the proxy-appended address), so the
+ * Microsoft egress addresses (behind a configured trusted proxy, the client address it forwarded), so the
  * default allows normal message volume while it caps floods: a burst of 60, then 2 per second (120 per minute).
  */
 export const TEAMS_INBOUND_RATE = Object.freeze({ capacity: 60, refillPerSecond: 2 });
@@ -55,6 +57,8 @@ export type TeamsInboundDeps = {
   rate?: { capacity: number; refillPerSecond: number };
   /** Milliseconds clock for the request budget. */
   clock?: () => number;
+  /** Trusted reverse proxies (`MARKETPLACE_TRUSTED_PROXIES`, parsed); null: the socket address is the source. */
+  trustedProxies?: BlockList | null;
   /** The inbound pipeline: a parsed message activity (untrusted). Absent: messages are parsed and dropped. */
   onMessage?: (message: InboundMessage) => void;
 };
@@ -68,6 +72,7 @@ export function registerTeamsInboundRoute(deps: TeamsInboundDeps): void {
     now: clock,
   });
   const budget = createSourceBudget(deps.rate ?? TEAMS_INBOUND_RATE, deps.clock);
+  const sourceOf = createSourceResolver(deps.trustedProxies ?? null);
   const take = (source: string) => budget.take(source);
 
   deps.app.post(

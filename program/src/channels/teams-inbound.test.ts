@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { BotFrameworkVerifier } from "./providers/teams-auth.js";
 import type { TeamsConversationRef } from "./providers/teams.js";
+import { parseTrustedProxies } from "./inbound-http.js";
 import { TEAMS_MESSAGES_PATH, registerTeamsInboundRoute } from "./teams-inbound.js";
 import { TEAMS_CONVERSATION_DDL, TeamsConversationStore } from "./teams-store.js";
 
@@ -24,7 +25,7 @@ afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()));
 });
 
-async function route(input: { rate?: { capacity: number; refillPerSecond: number }; ready?: Promise<void> } = {}) {
+async function route(input: { rate?: { capacity: number; refillPerSecond: number }; ready?: Promise<void>; trustedProxies?: string } = {}) {
   const app = Fastify({ logger: false });
   apps.push(app);
   let verified = 0;
@@ -45,6 +46,7 @@ async function route(input: { rate?: { capacity: number; refillPerSecond: number
     now: () => new Date(now),
     audit: () => undefined,
     ...(input.rate ? { rate: input.rate } : {}),
+    trustedProxies: parseTrustedProxies(input.trustedProxies),
     clock: () => now,
   });
   await app.ready();
@@ -82,8 +84,18 @@ describe("Teams messaging endpoint pre-auth", () => {
     expect(ok.statusCode).toBe(200);
   });
 
-  it("answers 429 when one source exceeds its request budget, per source", async () => {
-    const { app, advance } = await route({ rate: { capacity: 3, refillPerSecond: 0.5 } });
+  it("ignores X-Forwarded-For unless the socket is a trusted proxy: rotating the header does not buy a new budget (F2)", async () => {
+    const { app } = await route({ rate: { capacity: 2, refillPerSecond: 0 } });
+    const codes = [];
+    for (let index = 0; index < 4; index += 1) {
+      codes.push((await app.inject({ method: "POST", url: TEAMS_MESSAGES_PATH, headers: { authorization: GOOD, "x-forwarded-for": `10.0.0.${index}` }, payload: activity })).statusCode);
+    }
+    expect(codes).toEqual([200, 200, 429, 429]);
+  });
+
+  it("answers 429 when one source exceeds its request budget, per source (behind a trusted proxy)", async () => {
+    // inject() connects from 127.0.0.1; configured as the trusted proxy, its forwarded client address is the source.
+    const { app, advance } = await route({ rate: { capacity: 3, refillPerSecond: 0.5 }, trustedProxies: "127.0.0.1" });
     const send = (source: string) =>
       app.inject({ method: "POST", url: TEAMS_MESSAGES_PATH, headers: { authorization: GOOD, "x-forwarded-for": source }, payload: activity });
     for (let index = 0; index < 3; index += 1) expect((await send("203.0.113.7")).statusCode).toBe(200);

@@ -81,6 +81,7 @@ import { createBotFrameworkVerifier, type BotFrameworkVerifier } from "./channel
 import { TEAMS_MESSAGES_PATH, registerTeamsInboundRoute } from "./channels/teams-inbound.js";
 import { createInboundPipeline, type InboundSink } from "./channels/inbound.js";
 import { isInboundPublicPath, registerInboundRoutes } from "./channels/inbound-routes.js";
+import { TRUSTED_PROXIES_ENV, parseTrustedProxies } from "./channels/inbound-http.js";
 import { createInboundWorker, type InboundWorker } from "./channels/inbound-worker.js";
 import type { GatewaySocketFactory, Timers as GatewayTimers } from "./channels/discord-gateway.js";
 import type { InboundPipeline } from "./channels/inbound.js";
@@ -8329,9 +8330,12 @@ export async function buildMarketplaceApp(
   app.addHook("onClose", async () => {
     inboundWorker.stop();
   });
+  // Channels-local trusted proxies for the public inbound routes' per-source budgets (Fastify trustProxy unchanged).
+  const channelTrustedProxies = parseTrustedProxies(environment[TRUSTED_PROXIES_ENV]);
   registerInboundRoutes({
     app,
     organizationId,
+    trustedProxies: channelTrustedProxies,
     configured: channelService.configured,
     ready: channelsReady,
     now: channelClock,
@@ -8387,6 +8391,7 @@ export async function buildMarketplaceApp(
       }
     },
     onMessage: inboundIngest,
+    trustedProxies: channelTrustedProxies,
   });
 
   app.route({

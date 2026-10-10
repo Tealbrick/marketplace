@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
 
-import { createSourceBudget, headerValue, matchesDigest, sourceOf, type SourceRate } from "./inbound-http.js";
+import type { BlockList } from "node:net";
+
+import { createSourceBudget, createSourceResolver, headerValue, matchesDigest, type SourceRate } from "./inbound-http.js";
 import type { InboundStore } from "./inbound-store.js";
 import { SLACK_SIGNATURE_MAX_SKEW_SECONDS, parseSlackEvent, verifySlackSignature } from "./providers/slack.js";
 import { parseTelegramUpdate, telegramChatsFromUpdate } from "./providers/telegram.js";
@@ -49,10 +51,15 @@ export type InboundRoutesDeps = {
   ingest: (message: InboundMessage) => void;
   rate?: SourceRate;
   clock?: () => number;
+  /** Trusted reverse proxies (`MARKETPLACE_TRUSTED_PROXIES`, parsed); null: the socket address is the source. */
+  trustedProxies?: BlockList | null;
 };
 
 export function registerInboundRoutes(deps: InboundRoutesDeps): void {
-  const budget = createSourceBudget(deps.rate ?? INBOUND_ROUTE_RATE, deps.clock);
+  // One budget per route: a flood on one provider's route never spends another's.
+  const slackBudget = createSourceBudget(deps.rate ?? INBOUND_ROUTE_RATE, deps.clock);
+  const telegramBudget = createSourceBudget(deps.rate ?? INBOUND_ROUTE_RATE, deps.clock);
+  const sourceOf = createSourceResolver(deps.trustedProxies ?? null);
   const nowMs = () => (deps.clock ?? (() => deps.now().getTime()))();
   const hand = (message: InboundMessage) => {
     try {
@@ -72,7 +79,7 @@ export function registerInboundRoutes(deps: InboundRoutesDeps): void {
         bodyLimit: MAX_BODY_BYTES,
         onRequest: async (request, reply) => {
           reply.header("cache-control", "no-store");
-          if (!budget.take(sourceOf(request))) {
+          if (!slackBudget.take(sourceOf(request))) {
             await reply.code(429).header("retry-after", "30").send({ error: "slack_rate_limited" });
             return reply;
           }
@@ -119,7 +126,7 @@ export function registerInboundRoutes(deps: InboundRoutesDeps): void {
       bodyLimit: MAX_BODY_BYTES,
       onRequest: async (request, reply) => {
         reply.header("cache-control", "no-store");
-        if (!budget.take(sourceOf(request))) {
+        if (!telegramBudget.take(sourceOf(request))) {
           await reply.code(429).header("retry-after", "30").send({ error: "telegram_rate_limited" });
           return reply;
         }
