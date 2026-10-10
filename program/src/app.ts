@@ -2970,6 +2970,10 @@ export async function buildMarketplaceApp(
       values: {
         "composio.baseUrl": view.values.composioBaseUrl,
         "composio.defaultUserId": view.values.composioDefaultUserId,
+        // Teams app id, tenant id and the Graph switch are plain provider env (not secrets): reported as values.
+        "channels.teams.appId": environment[TEAMS_CREDENTIAL_ENV.appId]?.trim() || null,
+        "channels.teams.tenantId": environment[TEAMS_CREDENTIAL_ENV.tenantId]?.trim() || null,
+        "channels.teams.graphEnabled": teamsGraphEnabled(environment),
       },
       secrets: {},
       // The Composio key is an account-level provider variable (COMPOSIO_API_KEY), reported as presence only.
@@ -2980,10 +2984,7 @@ export async function buildMarketplaceApp(
         "channels.discord.botToken": { set: Boolean(environment[CHANNEL_TOKEN_ENV.discord]?.trim()) },
         "channels.slack.botToken": { set: Boolean(environment[CHANNEL_TOKEN_ENV.slack]?.trim()) },
         "channels.slack.signingSecret": { set: Boolean(environment[CHANNEL_SLACK_SIGNING_SECRET_ENV]?.trim()) },
-        "channels.teams.appId": { set: Boolean(environment[TEAMS_CREDENTIAL_ENV.appId]?.trim()) },
         "channels.teams.appSecret": { set: Boolean(environment[TEAMS_CREDENTIAL_ENV.appSecret]?.trim()) },
-        "channels.teams.tenantId": { set: Boolean(environment[TEAMS_CREDENTIAL_ENV.tenantId]?.trim()) },
-        "channels.teams.graphEnabled": { set: Boolean(environment[TEAMS_CREDENTIAL_ENV.graphEnabled]?.trim()) },
       },
     };
   };

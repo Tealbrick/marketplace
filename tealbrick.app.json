@@ -1082,13 +1082,11 @@
           {
             "key": "channels.teams.appId",
             "label": "Microsoft Teams bot app ID",
-            "description": "Microsoft App ID of the single-tenant Azure Bot that agents post through (a GUID). Taken from the account connection and delivered to this service as an environment variable. Setup: docs/channels-teams-setup.md.",
-            "type": "secret",
+            "description": "Microsoft App ID of the single-tenant Azure Bot that agents post through (a GUID). Not a secret; delivered to this service as an environment variable. Setup: docs/channels-teams-setup.md.",
+            "type": "string",
             "maxLength": 64,
-            "source": "account",
             "destination": "provider-env",
-            "env": "MARKETPLACE_CHANNELS_TEAMS_APP_ID",
-            "rotation": "update-credentials"
+            "env": "MARKETPLACE_CHANNELS_TEAMS_APP_ID"
           },
           {
             "key": "channels.teams.appSecret",
@@ -1104,24 +1102,19 @@
           {
             "key": "channels.teams.tenantId",
             "label": "Microsoft Teams tenant ID",
-            "description": "Directory (tenant) ID of the Microsoft Entra tenant where the single-tenant bot is registered (a GUID).",
-            "type": "secret",
+            "description": "Directory (tenant) ID of the Microsoft Entra tenant where the single-tenant bot is registered (a GUID). Not a secret; delivered to this service as an environment variable.",
+            "type": "string",
             "maxLength": 64,
-            "source": "account",
             "destination": "provider-env",
-            "env": "MARKETPLACE_CHANNELS_TEAMS_TENANT_ID",
-            "rotation": "update-credentials"
+            "env": "MARKETPLACE_CHANNELS_TEAMS_TENANT_ID"
           },
           {
             "key": "channels.teams.graphEnabled",
             "label": "Microsoft Teams person lookup (optional)",
-            "description": "Reserved for a later version: agents cannot find people or start 1:1 chats yet. Leave it empty and do not grant User.Read.All for it now.",
-            "type": "secret",
-            "maxLength": 8,
-            "source": "account",
+            "description": "Optional. When on, agents can find people by email and start 1:1 chats (requires the Graph application permission User.Read.All, admin-consented, and the app installed for that person). Off by default.",
+            "type": "boolean",
             "destination": "provider-env",
-            "env": "MARKETPLACE_CHANNELS_TEAMS_GRAPH_ENABLED",
-            "rotation": "update-credentials"
+            "env": "MARKETPLACE_CHANNELS_TEAMS_GRAPH_ENABLED"
           }
         ]
       }
