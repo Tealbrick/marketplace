@@ -33,9 +33,16 @@ Caution: Marketplace supports the commercial cloud and GCC only. GCC High, DoD a
 
 Warning: The secret gives full control of the bot. Do not put it in chat, email, tickets or code. Put it only in Account Connections (step 4).
 
-## 3. Person lookup: do not do this step now
+## 3. Person lookup (optional)
 
-Agents cannot find people or start 1:1 chats in this version. Do not add the Microsoft Graph permission **User.Read.All**. Do not grant admin consent for it. A later version of Marketplace tells you when to add it.
+Do this step only if agents must find people by email and start 1:1 chats with them. Otherwise, skip it and keep **Microsoft Teams person lookup** off (step 4).
+
+1. In the Entra app registration, open **API permissions**.
+2. Add the Microsoft Graph **application** permission **User.Read.All**.
+3. Grant admin consent for your tenant.
+4. Turn on **Microsoft Teams person lookup** in the Marketplace settings (step 4).
+
+The first message from an agent to a new person always waits for your approval. The app must be installed for that person before the agent can write to them.
 
 ## 4. Add the credentials to Marketplace
 
@@ -64,13 +71,13 @@ If Teams shows **Credential invalid**, make sure that the three values come from
 The package asks for these permissions only:
 - Bot scopes `team`, `groupChat` and `personal`.
 
-The package does not ask for resource-specific consent (RSC). Without RSC, Teams sends the bot only the messages that mention it and the messages in 1:1 chats with it. Marketplace does not use these messages yet.
+The package does not ask for resource-specific consent (RSC). Without RSC, Teams sends the bot only the messages that mention it and the messages in 1:1 chats with it. Marketplace passes these messages to an agent only for channels where you turned on inbound routing; otherwise it records install events only.
 
-### Inbound package (do not use now)
+### Inbound package (optional)
 
 `docs/channels-teams-app-manifest.inbound.json` is a second package template. It adds the RSC permissions `ChannelMessage.Read.Group` and `ChatMessage.Read.Chat`. With these, Teams sends every message in each team and chat where the app is installed to Marketplace.
 
-Caution: Use the inbound package only when Marketplace has Teams inbound and you turn it on. This version has no Teams inbound. If you install the inbound package now, Teams sends your messages to Marketplace and Marketplace does not use them.
+Caution: Use the inbound package only if agents must receive every message in a channel, not only the messages that mention the bot. Teams then sends all messages of each team and chat where the app is installed to Marketplace. Marketplace keeps only the messages of channels where you turned on inbound routing and drops the rest. Install it only in the teams that need it.
 
 ## 6. Allow and upload the app (Teams admin)
 
