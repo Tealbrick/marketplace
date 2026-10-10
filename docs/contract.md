@@ -622,12 +622,20 @@ Framework JWT (a missing or non-JWT bearer is refused before the body is
 parsed; body limit 128 KB; a per-source budget of 60 requests burst, 2/s,
 answers 429): RS256 with a key from
 `login.botframework.com/v1/.well-known/openidconfiguration` (keys cached 24 h;
-at most one fetch per 5 min whatever the outcome, stale keys stay usable while
-a refresh fails; `jwks_uri` pinned to `login.botframework.com`), `iss`
+an unknown `kid` refreshes them at most once per `kid` per 5 min and at most 6
+times per 5 min in all, and only after `iss`, `aud`, `exp`/`nbf` and
+`serviceurl` passed, so a forged random `kid` never uses up the slot a real key
+rotation needs; keys older than 15 min refresh on any unknown `kid` regardless
+of those limits; two fetch attempts are at least 30 s apart; stale keys stay
+usable while a refresh fails; `jwks_uri` pinned to `login.botframework.com`), `iss`
 `https://api.botframework.com`, `aud` = app id, `exp`/`nbf` with 5 min skew,
 the `serviceurl` claim (lowercase, `serviceUrl` accepted as a fallback) =
 activity `serviceUrl`,
-key endorsed for `msteams`. The `serviceUrl` must be https on
+key endorsed for `msteams`. The body is read as bytes and parsed only after
+`iss`, `aud` and `exp`/`nbf` passed, so every failure before the signature is
+verified (no or bad token, wrong claims, `serviceUrl` mismatch, a body that is
+not JSON) is the same `401 teams_auth_invalid`; `400 activity_invalid` follows
+only a validly signed token, then `403` for an unendorsed key. The `serviceUrl` must be https on
 `smba.trafficmanager.net` or `smba.infra.gcc.teams.microsoft.com` (GCC High,
 DoD and 21Vianet are not supported). `installationUpdate` /
 `conversationUpdate` (bot added or removed, team or channel deleted) store or
@@ -972,6 +980,27 @@ them) go after the same retention, at most 500 rows (oldest out). The purge
 runs in every scheduler tick and, bounded, at start and on each owner browse,
 so it also runs with the scheduler off or in inert mode (audit
 `marketplace.channels.inbound.purged` with counts only).
+
+#### Trusted proxies (`MARKETPLACE_TRUSTED_PROXIES`)
+
+The pre-auth per-source budget of the Slack, Telegram and Teams receivers keys
+on the socket address. Behind a reverse proxy (Railway's edge) every request
+arrives from the proxy, so with the variable unset all senders share one
+bucket per route and an anonymous flood can starve real deliveries. Set
+`MARKETPLACE_TRUSTED_PROXIES` to the comma-separated IPs or CIDRs of the
+proxies in front of Marketplace. On Railway set it to `100.64.0.0/10`, the
+Railway default (the release recipe sets it);
+the source is then the right-most `X-Forwarded-For` entry that is not a
+trusted proxy. Entries may carry a port (`ip:port`, `[v6]:port`); the port is
+dropped. An entry that is still not an IP stops the walk and the socket
+address is the source (everything left of it is client-controlled). The header
+is ignored when the socket is not a trusted proxy. The variable is on the
+manifest's `runtime.env.allow` list (the manifest has no place for env
+descriptions, so this section is its description). When a receiver is
+configured (Slack signing secret, an active Telegram webhook, or a Teams
+credential) and the variable is unset or has no valid entry, start-up logs one
+structured warning `marketplace.channels.inbound_trusted_proxies_unset` that
+names the receivers and the variable, never a secret.
 
 ### Routes v2 (Channels P2)
 

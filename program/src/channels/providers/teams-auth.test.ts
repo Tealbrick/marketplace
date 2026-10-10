@@ -81,10 +81,10 @@ describe("Bot Framework JWT verification", () => {
     // The lowercase claim wins: a matching camel-case claim does not rescue a wrong lowercase one.
     expect(await verifier.verify({ authorization: token({ ...claims, serviceurl: "https://smba.trafficmanager.net/emea/", serviceUrl: SERVICE_URL }), appId: APP_ID, activity })).toEqual({
       ok: false,
-      status: 403,
+      status: 401,
       reason: "token_service_url",
     });
-    expect(await verifier.verify({ authorization: token(rest), appId: APP_ID, activity })).toEqual({ ok: false, status: 403, reason: "token_service_url" });
+    expect(await verifier.verify({ authorization: token(rest), appId: APP_ID, activity })).toEqual({ ok: false, status: 401, reason: "token_service_url" });
   });
 
   it("rejects missing, malformed, wrong-algorithm, wrong-issuer, wrong-audience and expired tokens", async () => {
@@ -111,13 +111,35 @@ describe("Bot Framework JWT verification", () => {
     expect((await verifier.verify({ authorization: token({ ...claims, exp: nowSeconds - 200 }), appId: APP_ID, activity })).ok).toBe(true);
   });
 
-  it("rejects a serviceUrl claim that differs from the activity (403)", async () => {
+  it("rejects a serviceUrl claim that differs from the activity (401, before the signature is checked)", async () => {
     const { verifier, claims, activity } = setup();
     expect(await verifier.verify({ authorization: token(claims), appId: APP_ID, activity: { ...activity, serviceUrl: "https://smba.trafficmanager.net/emea/" } })).toEqual({
       ok: false,
-      status: 403,
+      status: 401,
       reason: "token_service_url",
     });
+  });
+
+  it("reads the activity lazily, only after issuer, audience and validity pass, and answers 400 only for a validly signed token", async () => {
+    const { verifier, claims, requests } = setup();
+    let reads = 0;
+    const unreadable = () => {
+      reads += 1;
+      return undefined;
+    };
+    // Claim failures never read the body.
+    expect(await verifier.verify({ authorization: token({ ...claims, iss: "x" }), appId: APP_ID, activity: unreadable })).toEqual({ ok: false, status: 401, reason: "token_issuer" });
+    expect(reads).toBe(0);
+    // An unreadable activity with a forged signature, an unknown kid or cold keys: 401, and no key refresh.
+    expect(await verifier.verify({ authorization: token(claims, { key: stranger.privateKey }), appId: APP_ID, activity: unreadable })).toEqual({ ok: false, status: 401, reason: "token_key_unknown" });
+    expect(requests).toEqual([]);
+    expect(await verifier.verify({ authorization: token(claims), appId: APP_ID, activity: { serviceUrl: SERVICE_URL, channelId: "msteams" } })).toMatchObject({ ok: true });
+    expect(await verifier.verify({ authorization: token(claims, { key: stranger.privateKey }), appId: APP_ID, activity: unreadable })).toEqual({ ok: false, status: 401, reason: "token_signature" });
+    expect(await verifier.verify({ authorization: token(claims, { kid: "key-9" }), appId: APP_ID, activity: unreadable })).toEqual({ ok: false, status: 401, reason: "token_key_unknown" });
+    expect(requests).toHaveLength(2);
+    // A valid token with an unreadable activity is the only 400.
+    expect(await verifier.verify({ authorization: token(claims), appId: APP_ID, activity: unreadable })).toEqual({ ok: false, status: 400, reason: "activity_invalid" });
+    expect(reads).toBe(4);
   });
 
   it("rejects a forged signature and an unknown key", async () => {
@@ -129,15 +151,90 @@ describe("Bot Framework JWT verification", () => {
     expect(await verifier.verify({ authorization: token(claims, { kid: "key-9" }), appId: APP_ID, activity })).toEqual({ ok: false, status: 401, reason: "token_key_unknown" });
   });
 
-  it("refreshes the keys for an unknown kid at most once per five minutes", async () => {
+  it("refreshes the keys for an unknown kid at most once per kid per five minutes", async () => {
     const { verifier, claims, activity, requests, clock } = setup();
     await verifier.verify({ authorization: token(claims), appId: APP_ID, activity });
     clock.advance(60_000);
     await verifier.verify({ authorization: token(claims, { kid: "key-9" }), appId: APP_ID, activity });
-    expect(requests).toHaveLength(2);
-    clock.advance(5 * 60_000);
+    expect(requests).toHaveLength(4);
+    clock.advance(60_000);
     await verifier.verify({ authorization: token(claims, { kid: "key-9" }), appId: APP_ID, activity });
     expect(requests).toHaveLength(4);
+    clock.advance(5 * 60_000);
+    await verifier.verify({ authorization: token(claims, { kid: "key-9" }), appId: APP_ID, activity });
+    expect(requests).toHaveLength(6);
+  });
+
+  it("does not let forged random-kid tokens block a real key rotation", async () => {
+    const rotated = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    let keys = [jwk(signer.publicKey, "key-1")];
+    const clock = createFakeClock(1_800_000_000_000);
+    let fetches = 0;
+    const fetchImpl = (async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url === BOT_FRAMEWORK_OPENID_URL) return jsonResponse(200, { jwks_uri: JWKS_URL });
+      fetches += 1;
+      return jsonResponse(200, { keys });
+    }) as typeof fetch;
+    const verifier = createBotFrameworkVerifier(resolveRuntime({ fetchImpl, now: clock.now, sleep: clock.sleep }));
+    const nowSeconds = Math.floor(clock.now() / 1000);
+    const claims = { iss: "https://api.botframework.com", aud: APP_ID, serviceurl: SERVICE_URL, nbf: nowSeconds - 10, exp: nowSeconds + 3600 };
+    const activity = { serviceUrl: SERVICE_URL, channelId: "msteams" };
+    expect((await verifier.verify({ authorization: token(claims), appId: APP_ID, activity })).ok).toBe(true);
+    // The same forged kid, repeated: one refresh only.
+    clock.advance(40_000);
+    for (let index = 0; index < 10; index += 1) {
+      expect(await verifier.verify({ authorization: token(claims, { kid: "random-0", key: stranger.privateKey }), appId: APP_ID, activity })).toEqual({ ok: false, status: 401, reason: "token_key_unknown" });
+    }
+    expect(fetches).toBe(2);
+    // Many different forged kids: capped, and the real rotation right after still gets its refresh.
+    for (let index = 1; index < 4; index += 1) {
+      clock.advance(31_000);
+      await verifier.verify({ authorization: token(claims, { kid: `random-${index}`, key: stranger.privateKey }), appId: APP_ID, activity });
+    }
+    keys = [jwk(signer.publicKey, "key-1"), jwk(rotated.publicKey, "key-2")];
+    clock.advance(31_000);
+    const real = await verifier.verify({ authorization: token(claims, { kid: "key-2", key: rotated.privateKey }), appId: APP_ID, activity });
+    expect(real.ok).toBe(true);
+  });
+
+  it("caps unknown-kid refreshes per five minutes across all kids", async () => {
+    const { verifier, claims, activity, requests, clock } = setup();
+    await verifier.verify({ authorization: token(claims), appId: APP_ID, activity });
+    clock.advance(31_000);
+    const before = requests.length;
+    for (let index = 0; index < 20; index += 1) {
+      await verifier.verify({ authorization: token(claims, { kid: `random-${index}`, key: stranger.privateKey }), appId: APP_ID, activity });
+      clock.advance(1000);
+    }
+    // 20 kids in 20 s, 30 s apart at most: bounded by the attempt spacing and the global cap (6 per window).
+    expect((requests.length - before) / 2).toBeLessThanOrEqual(6);
+    expect(requests.length - before).toBeGreaterThan(0);
+  });
+
+  it("refreshes keys older than 15 minutes on an unknown kid even when the per-kid and global limits are spent", async () => {
+    const rotated = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    let keys = [jwk(signer.publicKey, "key-1")];
+    const clock = createFakeClock(1_800_000_000_000);
+    const fetchImpl = (async (input: string | URL | Request) =>
+      String(input) === BOT_FRAMEWORK_OPENID_URL ? jsonResponse(200, { jwks_uri: JWKS_URL }) : jsonResponse(200, { keys })) as typeof fetch;
+    const verifier = createBotFrameworkVerifier(resolveRuntime({ fetchImpl, now: clock.now, sleep: clock.sleep }));
+    const nowSeconds = Math.floor(clock.now() / 1000);
+    const claims = { iss: "https://api.botframework.com", aud: APP_ID, serviceurl: SERVICE_URL, nbf: nowSeconds - 10, exp: nowSeconds + 4 * 3600 };
+    const activity = { serviceUrl: SERVICE_URL, channelId: "msteams" };
+    await verifier.verify({ authorization: token(claims), appId: APP_ID, activity });
+    // Spend the global cap and the per-kid slot of the future real kid inside one five-minute window.
+    for (let index = 0; index < 8; index += 1) {
+      clock.advance(31_000);
+      await verifier.verify({ authorization: token(claims, { kid: index === 7 ? "key-2" : `random-${index}`, key: stranger.privateKey }), appId: APP_ID, activity });
+    }
+    keys = [jwk(signer.publicKey, "key-1"), jwk(rotated.publicKey, "key-2")];
+    clock.advance(10_000);
+    expect(await verifier.verify({ authorization: token(claims, { kid: "key-2", key: rotated.privateKey }), appId: APP_ID, activity })).toEqual({ ok: false, status: 401, reason: "token_key_unknown" });
+    clock.advance(16 * 60_000);
+    const fresh = Math.floor(clock.now() / 1000);
+    const later = { ...claims, nbf: fresh - 10, exp: fresh + 3600 };
+    expect((await verifier.verify({ authorization: token(later, { kid: "key-2", key: rotated.privateKey }), appId: APP_ID, activity })).ok).toBe(true);
   });
 
   it("fetches keys at most once per five minutes while the metadata fetch fails", async () => {
@@ -200,6 +297,23 @@ describe("Bot Framework JWT verification", () => {
       status: 403,
       reason: "token_endorsement",
     });
+  });
+
+  it("answers 401, with no JWKS fetch, for forged public claims and an unreadable activity; 400 only for a valid token", async () => {
+    const { verifier, claims, requests } = setup();
+    const garbage = () => undefined;
+    // Cold cache: a forged token (public claims, unknown signer) is a 401 and fetches nothing.
+    expect(await verifier.verify({ authorization: token(claims, { key: stranger.privateKey }), appId: APP_ID, activity: garbage })).toEqual({ ok: false, status: 401, reason: "token_key_unknown" });
+    expect(await verifier.verify({ authorization: token(claims, { kid: "random-kid", key: stranger.privateKey }), appId: APP_ID, activity: garbage })).toEqual({ ok: false, status: 401, reason: "token_key_unknown" });
+    expect(requests).toEqual([]);
+    // Warm cache: forged signature on a cached kid is 401 token_signature, an unknown kid is 401, no refresh.
+    await verifier.verify({ authorization: token(claims), appId: APP_ID, activity: { serviceUrl: SERVICE_URL, channelId: "msteams" } });
+    const warm = requests.length;
+    expect(await verifier.verify({ authorization: token(claims, { key: stranger.privateKey }), appId: APP_ID, activity: garbage })).toEqual({ ok: false, status: 401, reason: "token_signature" });
+    expect(await verifier.verify({ authorization: token(claims, { kid: "random-kid", key: stranger.privateKey }), appId: APP_ID, activity: garbage })).toEqual({ ok: false, status: 401, reason: "token_key_unknown" });
+    expect(requests).toHaveLength(warm);
+    // A validly signed token with the same unreadable activity: 400.
+    expect(await verifier.verify({ authorization: token(claims), appId: APP_ID, activity: garbage })).toEqual({ ok: false, status: 400, reason: "activity_invalid" });
   });
 
   it("never follows a jwks_uri off login.botframework.com and answers 503 without keys", async () => {

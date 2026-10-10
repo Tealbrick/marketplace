@@ -86,7 +86,7 @@ import { createBuzzProvider, type BuzzProvider } from "./channels/providers/buzz
 import { buzzPrivateRelayAllowed, guardedRelaySocketFactory, type RelayLookup } from "./channels/buzz-relay-guard.js";
 import { parsePubkey, npubEncode } from "./channels/providers/nostr.js";
 import { isInboundPublicPath, registerInboundRoutes } from "./channels/inbound-routes.js";
-import { TRUSTED_PROXIES_ENV, inboundConsumerKey, parseTrustedProxies } from "./channels/inbound-http.js";
+import { TRUSTED_PROXIES_ENV, inboundConsumerKey, parseTrustedProxies, trustedProxiesWarning } from "./channels/inbound-http.js";
 import { createInboundWorker, type InboundWorker } from "./channels/inbound-worker.js";
 import type { GatewaySocketFactory, Timers as GatewayTimers } from "./channels/discord-gateway.js";
 import type { InboundPipeline } from "./channels/inbound.js";
@@ -8466,6 +8466,17 @@ export async function buildMarketplaceApp(
   });
   // Channels-local trusted proxies for the public inbound routes' per-source budgets (Fastify trustProxy unchanged).
   const channelTrustedProxies = parseTrustedProxies(environment[TRUSTED_PROXIES_ENV]);
+  if (channelService.configured) {
+    // One startup warning: unset proxies put every sender behind the proxy's address into one shared budget.
+    void channelsReady.then(() => {
+      const warning = trustedProxiesWarning(channelTrustedProxies, {
+        slack: slackSigningSecret() !== null,
+        telegram: options.store.channels.inbound.activeWebhook(organizationId, "telegram") !== null,
+        teams: channelService.teamsIdentity() !== null,
+      });
+      if (warning) console.warn(JSON.stringify(warning));
+    });
+  }
   registerInboundRoutes({
     app,
     organizationId,

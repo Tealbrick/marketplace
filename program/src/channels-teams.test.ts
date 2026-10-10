@@ -31,7 +31,8 @@ const GOOD = "Bearer eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJmYWtlIn0.c2lnbmF0dXJlLWZha2
 const fakeVerifier: BotFrameworkVerifier = {
   async verify({ authorization, appId, activity }) {
     if (authorization !== GOOD || appId !== APP_ID) return { ok: false, status: 401, reason: "token_signature" };
-    return { ok: true, claims: { iss: "https://api.botframework.com", aud: appId, serviceUrl: String(activity.serviceUrl), exp: 0 } };
+    const facts = typeof activity === "function" ? activity() : activity;
+    return { ok: true, claims: { iss: "https://api.botframework.com", aud: appId, serviceUrl: String(facts?.serviceUrl), exp: 0 } };
   },
 };
 
@@ -322,7 +323,7 @@ describe("Teams endpoint end to end with the real Bot Framework verifier", () =>
     const refusals: Array<[string, number, string]> = [
       [botFrameworkJwt(validClaims({ aud: "99999999-2222-4333-8444-555555555555" })), 401, "token_audience"],
       [botFrameworkJwt(validClaims({ iss: "https://evil.example" })), 401, "token_issuer"],
-      [botFrameworkJwt(validClaims({ serviceurl: "https://smba.trafficmanager.net/emea/" })), 403, "token_service_url"],
+      [botFrameworkJwt(validClaims({ serviceurl: "https://smba.trafficmanager.net/emea/" })), 401, "token_service_url"],
       [botFrameworkJwt(validClaims({ exp: Math.floor(Date.now() / 1000) - 3600 })), 401, "token_expired"],
       [botFrameworkJwt(validClaims(), other), 401, "token_signature"],
     ];
@@ -332,5 +333,22 @@ describe("Teams endpoint end to end with the real Bot Framework verifier", () =>
       expect(response.json()).toMatchObject({ reason });
     }
     expect(f.store.channels.teams.listActive(TENANT).map((ref) => ref.conversationId)).toEqual([CHANNEL_ID]);
+  });
+
+  it("answers 401 for a malformed body before the token is verified and 400 only for a validly signed token", async () => {
+    const { f, requests } = await setup({ realVerifier: true });
+    const other = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey;
+    const post = (authorization: string, payload: string) =>
+      f.app.inject({ method: "POST", url: TEAMS_MESSAGES_PATH, headers: { authorization, "content-type": "application/json" }, payload });
+    for (const authorization of [botFrameworkJwt(validClaims(), other), botFrameworkJwt(validClaims({ aud: "99999999-2222-4333-8444-555555555555" })), botFrameworkJwt(validClaims({ exp: 1 }))]) {
+      for (const payload of ["{ this is not json", "[1]"]) expect((await post(authorization, payload)).statusCode).toBe(401);
+    }
+    // Nothing was fetched on behalf of a token that could not have been verified from the body.
+    expect(requests.filter((request) => request.url === JWKS_URL)).toEqual([]);
+    expect((await post(botFrameworkJwt(validClaims()), "{ this is not json")).statusCode).toBe(401);
+    expect((await f.app.inject({ method: "POST", url: TEAMS_MESSAGES_PATH, headers: { authorization: botFrameworkJwt(validClaims()), "content-type": "application/json" }, payload: { ...install, id: "f:warm" } })).statusCode).toBe(200);
+    const valid = await post(botFrameworkJwt(validClaims()), "{ this is not json");
+    expect(valid.statusCode).toBe(400);
+    expect(valid.json()).toEqual({ error: "activity_invalid" });
   });
 });
