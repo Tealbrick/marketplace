@@ -139,14 +139,43 @@ export function guardedRelayAgent(options: { allowPrivate: boolean; lookup?: Rel
   return new Agent({ connect: { lookup: guardedLookup(options) as never } });
 }
 
+/**
+ * Node does no DNS lookup for an IP-literal host, so the guarded lookup never sees it: check literals here,
+ * at every connect, in addition to the check when the owner sets the relay.
+ */
+export function relayLiteralBlocked(target: string | URL | Request, allowPrivate: boolean): boolean {
+  if (allowPrivate) return false;
+  let hostname: string;
+  try {
+    hostname = new URL(typeof target === "string" || target instanceof URL ? target : target.url).hostname;
+  } catch {
+    return true;
+  }
+  const bare = hostname.replace(/^\[|\]$/gu, "");
+  return isIP(bare) !== 0 && isBlockedRelayAddress(bare);
+}
+
+export class RelayAddressBlockedError extends Error {
+  readonly code = "relay_address_blocked";
+  constructor() {
+    super("relay_address_blocked");
+  }
+}
+
 /** The adapter's default fetch: undici through the guarded agent; redirects are refused by the caller. */
 export function guardedRelayFetch(options: { allowPrivate: boolean; lookup?: RelayLookup }): typeof fetch {
   const dispatcher = guardedRelayAgent(options);
-  return ((input: string | URL | Request, init?: RequestInit) => undiciFetch(input as never, { ...((init ?? {}) as object), dispatcher } as never) as unknown as Promise<Response>) as typeof fetch;
+  return ((input: string | URL | Request, init?: RequestInit) => {
+    if (relayLiteralBlocked(input, options.allowPrivate)) return Promise.reject(new RelayAddressBlockedError());
+    return undiciFetch(input as never, { ...((init ?? {}) as object), dispatcher } as never) as unknown as Promise<Response>;
+  }) as typeof fetch;
 }
 
 /** The relay socket's default factory: undici's WebSocket through the guarded agent. */
 export function guardedRelaySocketFactory(options: { allowPrivate: boolean; lookup?: RelayLookup }): GatewaySocketFactory {
   const dispatcher = guardedRelayAgent(options);
-  return (url) => new UndiciWebSocket(url, { dispatcher }) as unknown as GatewaySocket;
+  return (url) => {
+    if (relayLiteralBlocked(url, options.allowPrivate)) throw new RelayAddressBlockedError();
+    return new UndiciWebSocket(url, { dispatcher }) as unknown as GatewaySocket;
+  };
 }
