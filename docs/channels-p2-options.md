@@ -1,6 +1,6 @@
 # Channels Phase 2: options for Martin
 
-Status: options, 2026-10-09. Author: Lead · Channels. Decision: Martin.
+Status: superseded by channels-p2-scope.md (2026-10-10). Author: Lead · Channels. Decision: Martin.
 This document is in ASD-STE100 Simplified Technical English. It is a design only. There is no code.
 It uses the Phase 1 rules: one execution path, the capability declaration (spec §3.1), owner approval of the exact payload, standing grants, receipts.
 
