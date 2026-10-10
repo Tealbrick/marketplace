@@ -1235,21 +1235,26 @@ export function createChannelService(deps: ChannelServiceDeps) {
       limit: CHANNEL_ATTACHMENT_CLEANUP_BATCH,
     });
 
-  const purgeInbound = (now: Date) => {
+  /**
+   * Inbound retention. Runs in every scheduler tick, and also bounded at start and on each owner browse, so it
+   * runs when the scheduler is off or Channels went inert (review F7).
+   */
+  const purgeInbound = (now: Date, limit?: number) => {
     const settings = channels.inbound.getSettings(org);
     const purged = channels.inbound.purge({
       workspaceSlug: org,
       textBefore: new Date(now.getTime() - settings.textRetentionDays * 86_400_000),
       rowsBefore: new Date(now.getTime() - INBOUND_METADATA_RETENTION_MS),
       now,
+      ...(limit !== undefined ? { limit } : {}),
     });
-    if (purged.textPurged > 0 || purged.deleted > 0) {
+    if (purged.textPurged > 0 || purged.deleted > 0 || purged.chatsPurged > 0) {
       store.recordAudit({
         workspaceSlug: org,
         pluginId: null,
         eventType: "marketplace.channels.inbound.purged",
         actorId: "marketplace:retention",
-        metadata: { textPurged: purged.textPurged, deleted: purged.deleted, textRetentionDays: settings.textRetentionDays },
+        metadata: { textPurged: purged.textPurged, deleted: purged.deleted, chatsPurged: purged.chatsPurged, textRetentionDays: settings.textRetentionDays },
       });
     }
     return purged;

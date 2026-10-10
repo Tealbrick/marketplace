@@ -230,13 +230,27 @@ describe("inbound store", () => {
     const fresh = t.pipeline.ingest(slackMessage({ text: "fresh text", threadId: "1700000009.000001" }));
     const now = new Date(t.now);
     const result = t.inbound.purge({ workspaceSlug: WS, textBefore: new Date(now.getTime() - 30 * 86_400_000), rowsBefore: new Date(now.getTime() - 90 * 86_400_000), now });
-    expect(result).toEqual({ textPurged: 1, deleted: 0 });
+    expect(result).toEqual({ textPurged: 1, deleted: 0, chatsPurged: 0 });
     expect(t.inbound.getEvent(WS, old.eventId!)).toMatchObject({ text: "", senderDisplay: "", attachments: [], purgedAt: now.toISOString(), messageId: expect.any(String), routedTo: "agent-1" });
     expect(t.inbound.getEvent(WS, fresh.eventId!)!.text).toBe("fresh text");
     t.advance(60 * 86_400_000);
     const later = new Date(t.now);
-    expect(t.inbound.purge({ workspaceSlug: WS, textBefore: new Date(later.getTime() - 30 * 86_400_000), rowsBefore: new Date(later.getTime() - 90 * 86_400_000), now: later })).toEqual({ textPurged: 1, deleted: 1 });
+    expect(t.inbound.purge({ workspaceSlug: WS, textBefore: new Date(later.getTime() - 30 * 86_400_000), rowsBefore: new Date(later.getTime() - 90 * 86_400_000), now: later })).toEqual({ textPurged: 1, deleted: 1, chatsPurged: 0 });
     expect(t.inbound.getEvent(WS, old.eventId!)).toBeNull();
+  });
+
+  it("expires Telegram chats seen with the text retention and keeps at most 500 (S2)", () => {
+    const t = setup();
+    const at = (ms: number) => new Date(T0 + ms);
+    t.inbound.recordTelegramDestinations(WS, [{ type: "group", externalId: "-100old", title: "Old chat" }], at(0));
+    t.inbound.recordTelegramDestinations(WS, [{ type: "group", externalId: "-100new", title: "New chat" }], at(20 * 86_400_000));
+    const now = at(31 * 86_400_000);
+    expect(t.inbound.purge({ workspaceSlug: WS, textBefore: new Date(now.getTime() - 30 * 86_400_000), rowsBefore: new Date(0), now }).chatsPurged).toBe(1);
+    expect(t.inbound.listTelegramDestinations(WS).map((entry) => entry.externalId)).toEqual(["-100new"]);
+    for (let index = 0; index < 510; index += 1) t.inbound.recordTelegramDestinations(WS, [{ type: "group", externalId: `-200${index}`, title: `c${index}` }], at(40 * 86_400_000 + index));
+    const listed = t.inbound.listTelegramDestinations(WS);
+    expect(listed).toHaveLength(500);
+    expect(listed.some((entry) => entry.externalId === "-100new")).toBe(false);
   });
 
   it("holds one consumer lease per key: free, held by another until expiry, renewable by the holder", () => {

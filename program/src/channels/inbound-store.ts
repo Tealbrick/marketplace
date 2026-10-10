@@ -143,8 +143,8 @@ export const INBOUND_TEXT_RETENTION_DAYS = 30;
 export const INBOUND_TEXT_RETENTION_BOUNDS = Object.freeze({ min: 1, max: 365 });
 /** Metadata rows are deleted after this (the receipt retention). */
 export const INBOUND_METADATA_RETENTION_MS = 90 * 86_400_000;
-/** Most chats-seen rows kept per workspace (discovery reads at most this many). */
-export const TELEGRAM_CHATS_SEEN_LIMIT = 1000;
+/** Most chats-seen rows kept per workspace (discovery reads at most this many; oldest out). Review S2. */
+export const TELEGRAM_CHATS_SEEN_LIMIT = 500;
 
 /**
  * `queued` (routed, handed to the sink), `pending-bridge` (recorded by the null sink; the Buzz bridge picks it
@@ -434,7 +434,7 @@ export class InboundStore {
    * Retention: text, sender display and attachment names of events received before `textBefore` are cleared
    * (the row keeps ids, times and statuses); rows received before `rowsBefore` are deleted. Bounded per call.
    */
-  purge(input: { workspaceSlug: string; textBefore: Date; rowsBefore: Date; now: Date; limit?: number }): { textPurged: number; deleted: number } {
+  purge(input: { workspaceSlug: string; textBefore: Date; rowsBefore: Date; now: Date; limit?: number }): { textPurged: number; deleted: number; chatsPurged: number } {
     const limit = input.limit ?? 1000;
     const deleted = Number(
       this.db
@@ -459,7 +459,17 @@ export class InboundStore {
     this.db
       .prepare("DELETE FROM channel_inbound_reply WHERE workspace_slug = ? AND created_at < ?")
       .run(input.workspaceSlug, input.rowsBefore.toISOString());
-    return { textPurged, deleted };
+    // Chats seen by the Telegram webhook (titles are untrusted text): gone after the same text retention (review S2).
+    const chatsPurged = Number(
+      this.db
+        .prepare(
+          `DELETE FROM channel_telegram_chat WHERE rowid IN (
+             SELECT rowid FROM channel_telegram_chat WHERE workspace_slug = ? AND last_seen_at < ? LIMIT ?
+           )`,
+        )
+        .run(input.workspaceSlug, input.textBefore.toISOString(), limit).changes,
+    );
+    return { textPurged, deleted, chatsPurged };
   }
 
   /**

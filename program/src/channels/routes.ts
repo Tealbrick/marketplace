@@ -730,6 +730,12 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
   app.get(OWNER_PREFIX, async (request, reply) => {
     const principal = await owner(request, reply, true);
     if (!principal) return ownerDenied(request);
+    // Bounded inbound retention on each browse, inert mode included (review F7).
+    try {
+      service.purgeInbound(deps.now(), 200);
+    } catch {
+      // Retention never breaks the owner view; the scheduler tick retries.
+    }
     const readiness = service.readinessView();
     if (!deps.configured) {
       return { ok: true, schema: 1, configured: false, providers: Object.entries(readiness).map(([id, state]) => ({ id, readiness: state })) };

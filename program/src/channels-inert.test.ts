@@ -119,6 +119,24 @@ describe("channels inert mode (no credentials)", () => {
     expect(f.store.getConnection(TENANT, "channels-telegram")).toBeNull();
   });
 
+  it("still applies inbound retention (bounded, on the owner browse) after Channels went inert (F7)", async () => {
+    const f = await inert();
+    const channel = f.store.channels.createChannel({
+      workspaceSlug: TENANT, slug: "old-slack", label: "Old", kind: "chat", provider: "slack", connectionId: "conn-slack",
+      destination: { type: "channel", externalId: "C0OLD0001", title: "old" }, status: "active", now: new Date(f.now - 40 * 86_400_000),
+    });
+    const { event } = f.store.channels.inbound.insertEvent({
+      workspaceSlug: TENANT,
+      routeChannelId: channel.id,
+      now: new Date(f.now - 40 * 86_400_000),
+      message: { platform: "slack", channelId: "C0OLD0001", messageId: "1.000001", senderUserId: "U1", senderDisplay: "Ada", text: "old text", attachments: [] },
+    });
+    f.store.channels.inbound.recordTelegramDestinations(TENANT, [{ type: "group", externalId: "-100old", title: "Old chat" }], new Date(f.now - 40 * 86_400_000));
+    expect((await f.owner("GET", "/api/marketplace/channels")).statusCode).toBe(200);
+    expect(f.store.channels.inbound.getEvent(TENANT, event.id)).toMatchObject({ text: "", senderDisplay: "", purgedAt: expect.any(String) });
+    expect(f.store.channels.inbound.listTelegramDestinations(TENANT)).toEqual([]);
+  });
+
   it("starts no inbound receiver: the public inbound routes refuse after their cheap checks and nothing is stored", async () => {
     const f = await inert({ environment: { MARKETPLACE_CHANNELS_SLACK_SIGNING_SECRET: "slack-signing-secret-0000" } });
     expect(f.runtime.inbound.worker.discordGateway).toBeNull();

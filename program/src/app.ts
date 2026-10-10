@@ -8318,6 +8318,10 @@ export async function buildMarketplaceApp(
     ...(options.discordGatewaySocketFactory ? { socketFactory: options.discordGatewaySocketFactory } : {}),
     ...(options.discordGatewayTimers ? { timers: options.discordGatewayTimers } : {}),
   });
+  // Bounded inbound retention at start, also when the scheduler is off or Channels is inert (review F7).
+  void channelsReady
+    .then(() => channelService.purgeInbound(channelClock(), 1000))
+    .catch(() => undefined);
   if (channelService.configured) {
     void channelsReady
       .then(() => inboundWorker.reconcile())

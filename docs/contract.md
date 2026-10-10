@@ -753,7 +753,11 @@ check above).
 
 Retention: received text, sender display names and attachment names are
 cleared after `textRetentionDays` (owner setting, default 30, 1–365) and the
-metadata row is deleted after 90 days, in the scheduler tick (audit
+metadata row is deleted after 90 days. Chats seen by the Telegram webhook
+(chat id and untrusted title, also of chats without a channel: discovery needs
+them) go after the same retention, at most 500 rows (oldest out). The purge
+runs in every scheduler tick and, bounded, at start and on each owner browse,
+so it also runs with the scheduler off or in inert mode (audit
 `marketplace.channels.inbound.purged` with counts only).
 
 ### Inert mode
