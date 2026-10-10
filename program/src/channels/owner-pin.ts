@@ -1,4 +1,4 @@
-import { isIssuerJwksUri, isPortalIssuer, USER_PRINCIPAL_PREFIX } from "@tealbrick/contract";
+import { isIssuerJwksUri, isOwnerSubject, isPortalIssuer, type ClaimBinding } from "@tealbrick/contract";
 
 import { parseOwnerNostrPubkey } from "./owner-key.js";
 
@@ -11,10 +11,9 @@ import { parseOwnerNostrPubkey } from "./owner-key.js";
  * particular the Portal launch credential's `ownerSubject` names the deployment owner and is never used to
  * authorize the caller or to re-pin.
  *
- * TODO(manifest-claim PR, Lead · Miniapps): Marketplace still answers the LEGACY claim path, so no binding
- * exists and `NO_OWNER_PIN` is the default source (resolve answers `approval_owner_unbound` for `portal`
- * proofs). When the manifest-claim handler lands, pass its `claim.store` as `ownerPinSource`; nothing else
- * changes here. This module never touches the claim code.
+ * The source is the manifest-claim handler's `claim.store` (`createManifestClaim(...).store`, the binding file
+ * beside the claim identity); the app passes it as `ownerPinSource`. Without a claim identity directory there
+ * is no binding and `NO_OWNER_PIN` applies (resolve answers `approval_owner_unbound` for `portal` proofs).
  *
  * TODO(Portal v2, Lead · Portal): Portal attests the owner's Buzz key through a Buzz-signed challenge and
  * emits `ownerNostrPubkey` in the claim. `readAttestedOwnerNostrPubkey` returns it once the binding carries
@@ -22,15 +21,15 @@ import { parseOwnerNostrPubkey } from "./owner-key.js";
  * unreadable store or a malformed value is `error`, which also refuses.
  */
 
-/** The claim binding fields Marketplace reads (alpha.7 `ClaimBinding` plus the Portal v2 key). */
-export type OwnerClaimBinding = {
-  readonly portalIssuer: string;
-  readonly instanceId: string;
-  readonly jwksUri?: string;
-  readonly grantKids?: readonly string[];
-  /** alpha.7: `tealbrick-user:<owner userId>` from the Core-signed claim. */
-  readonly ownerSubject?: string | null;
-  readonly ownerPinnedAt?: number | null;
+/**
+ * The claim binding fields Marketplace reads: the alpha.7 contract `ClaimBinding` (`ownerSubject`,
+ * `ownerPinnedAt`) plus the Portal v2 key. A cleared pin has no `ownerSubject`; `null` is read the same way.
+ */
+export type OwnerClaimBinding = Pick<ClaimBinding, "portalIssuer" | "instanceId" | "jwksUri" | "grantKids"> & {
+  /** `tealbrick-user:<owner id>` from the newest Core-signed claim (`OWNER_SUBJECT_PATTERN`). */
+  readonly ownerSubject?: ClaimBinding["ownerSubject"] | null;
+  /** High-water mark of the pin (`claimIssuedAt` of the newest accepted claim, ms). */
+  readonly ownerPinnedAt?: ClaimBinding["ownerPinnedAt"] | null;
   /** Portal v2: the owner's Buzz key attested by Portal (64 hex). */
   readonly ownerNostrPubkey?: string | null;
 };
@@ -40,10 +39,9 @@ export type OwnerPinSource = {
   read(): OwnerClaimBinding | null | undefined | Promise<OwnerClaimBinding | null | undefined>;
 };
 
-/** Today's source: the legacy claim path stores no binding, so nothing is pinned. */
+/** No claim binding (no claim identity directory): nothing is pinned. */
 export const NO_OWNER_PIN: OwnerPinSource = Object.freeze({ read: () => null });
 
-const SUBJECT = /^tealbrick-user:[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$/u;
 const HEX_KEY = /^[0-9a-f]{64}$/u;
 const KID = /^[A-Za-z0-9._:-]{1,128}$/u;
 
@@ -72,7 +70,8 @@ export async function readOwnerPin(source: OwnerPinSource): Promise<OwnerPin | n
   const binding = await readBinding(source);
   if (!binding || !isPortalIssuer(binding.portalIssuer)) return null;
   if (typeof binding.instanceId !== "string" || !binding.instanceId) return null;
-  if (typeof binding.ownerSubject !== "string" || !SUBJECT.test(binding.ownerSubject)) return null;
+  // The contract's own pattern (`OWNER_SUBJECT_PATTERN`): the pin is passed to the verifier as is.
+  if (!isOwnerSubject(binding.ownerSubject)) return null;
   const jwksUri = typeof binding.jwksUri === "string" && isIssuerJwksUri(binding.portalIssuer, binding.jwksUri) ? binding.jwksUri : null;
   const grantKids = Array.isArray(binding.grantKids) ? binding.grantKids.filter((kid): kid is string => typeof kid === "string" && KID.test(kid)) : [];
   return {
@@ -80,18 +79,9 @@ export async function readOwnerPin(source: OwnerPinSource): Promise<OwnerPin | n
     instanceId: binding.instanceId,
     jwksUri,
     grantKids,
-    ownerSubject: binding.ownerSubject,
-    ownerPinnedAt: typeof binding.ownerPinnedAt === "number" && Number.isFinite(binding.ownerPinnedAt) ? binding.ownerPinnedAt : null,
+    ownerSubject: binding.ownerSubject as string,
+    ownerPinnedAt: typeof binding.ownerPinnedAt === "number" && Number.isSafeInteger(binding.ownerPinnedAt) ? binding.ownerPinnedAt : null,
   };
-}
-
-/**
- * alpha.6 adapter: `verifyOwnerApprovalAssertion` takes `ownerUserId` and checks `sub =
- * tealbrick-user:<ownerUserId>`, which is exactly `ownerSubject`. TODO(contract alpha.7): pass
- * `ownerSubject: pin.ownerSubject` (and only that) to the verifier and drop this adapter.
- */
-export function ownerUserIdFromSubject(subject: string): string | null {
-  return SUBJECT.test(subject) ? subject.slice(USER_PRINCIPAL_PREFIX.length) : null;
 }
 
 /**

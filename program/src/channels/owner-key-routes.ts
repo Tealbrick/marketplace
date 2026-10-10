@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { USER_PRINCIPAL_PREFIX } from "@tealbrick/contract";
 import { z } from "zod";
 
 import type { MarketplacePrincipal } from "../operator-auth.js";
@@ -103,14 +104,15 @@ export function registerOwnerKeyRoutes(deps: OwnerKeyRouteDeps): void {
       reply.code(403);
       return false;
     }
-    // Review M1: only the PINNED deployment owner may change the key. Without a pin (today's legacy claim
-    // path) nobody can: any Portal-launched member would otherwise qualify. Same fail-closed rule as portal proofs.
+    // Review M1: only the PINNED deployment owner (claim binding `ownerSubject`, alpha.7) may change the key.
+    // Without a pin (no claim yet, or a cleared one) nobody can: any Portal-launched member would otherwise
+    // qualify. Same fail-closed rule as portal proofs.
     const pin = await readOwnerPin(deps.pinSource);
     if (!pin) {
       reply.code(409);
       return "approval_owner_unbound";
     }
-    if (pin.ownerSubject !== `tealbrick-user:${owner.id}`) {
+    if (pin.ownerSubject !== `${USER_PRINCIPAL_PREFIX}${owner.id}`) {
       reply.code(403);
       return false;
     }

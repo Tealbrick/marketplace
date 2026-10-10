@@ -1,12 +1,12 @@
 # Teal Brick miniapp contract
 
 Marketplace follows the Teal Brick miniapp contract (`tealbrick.miniapp/v1`,
-kit `@tealbrick/contract` pinned at `0.1.0-alpha.6`). The manifest is
+kit `@tealbrick/contract` pinned at `0.1.0-alpha.7`). The manifest is
 `tealbrick.app.json` at the repository root. It is validated at start-up and
 served at `/.well-known/tealbrick/manifest`. Validate it in CI with:
 
 ```sh
-npx -y @tealbrick/contract@0.1.0-alpha.6 validate tealbrick.app.json
+npx -y @tealbrick/contract@0.1.0-alpha.7 validate tealbrick.app.json
 ```
 
 The Portal launch hand-off, the runtime lease receiver, connector secret
@@ -84,11 +84,14 @@ claim handler (`createContractHandler` with `identity`, `claim` and
 `claimPaths: ["/.well-known/tealbrick/claim"]`), mounted only for that path
 (`program/src/manifest-claim.ts`):
 
-* `GET` → `{instanceId, publicJwk}`.
-* `POST {portalIssuer, nonce, companyId, jwksUri?, grantKids?}` → `{proof}`, an
-  EdDSA `tealbrick-app-claim` v1 JWT with exactly `typ`, `version`, `aud`
-  (= `portalIssuer`), `nonce`, `instanceId`, `companyId`, `iat`, `exp`
-  (`exp - iat` = 300 s).
+* `GET` → `{instanceId, publicJwk}`, with the answer header
+  `x-tealbrick-contract: 0.1.0-alpha.7` (the kit version). Portal Core sends
+  `ownerSubject` only when this header says alpha.7 or newer.
+* `POST {portalIssuer, nonce, companyId, jwksUri?, grantKids?, ownerSubject?,
+  claimIssuedAt?}` → `{proof}`, an EdDSA `tealbrick-app-claim` v1 JWT with
+  exactly `typ`, `version`, `aud` (= `portalIssuer`), `nonce`, `instanceId`,
+  `companyId`, `iat`, `exp` (`exp - iat` = 300 s), plus `ownerSubject` and
+  `claimIssuedAt` only when the claim had them.
 * Credential: a custom kit `CredentialVerifier` that applies the legacy claim
   rule (internal token or `TEALBRICK_INSTANCE_TOKEN` as Bearer or
   `x-knowledge-instance-token`, or the Portal instance proof in
@@ -98,14 +101,15 @@ claim handler (`createContractHandler` with `identity`, `claim` and
   workspace binding); the issuer must equal the configured Portal issuer
   (`claim.issuers`).
 * The claim key and instance id are the ones in
-  `instance-claim-identity.json`, shared with the legacy route. The binding and
-  the grant trust anchors are kept in `instance-claim-binding.json` (the kit's
-  `ClaimStore`), ready for `l2GrantOptionsFromClaim`.
-
-Contract alpha.7 adds the `x-tealbrick-contract` answer header on `GET` and
-`ownerSubject` in the `POST` body. Kit alpha.6 refuses a body with
-`ownerSubject` (`400 invalid_claim_request`), so Marketplace needs the kit bump
-before Portal Core sends it.
+  `instance-claim-identity.json`, shared with the legacy route. The binding, the
+  grant trust anchors and the owner pin (`ownerSubject`, `ownerPinnedAt`) are
+  kept in `instance-claim-binding.json` (the kit's `ClaimStore`), ready for
+  `l2GrantOptionsFromClaim` and the owner approval check.
+* Owner pin (contract alpha.7): `ownerSubject` (`tealbrick-user:<owner id>`)
+  needs `claimIssuedAt`. The kit orders claims by `claimIssuedAt`: an older
+  claim is `409 stale_claim` and writes nothing, a newer claim replaces the
+  owner, and a newer claim without `ownerSubject` clears it. `ownerPinnedAt`
+  keeps the high-water mark. The legacy route does not take `ownerSubject`.
 
 ## Control endpoints
 
@@ -291,10 +295,10 @@ approval_already_resolved` and never calls a provider; the same key after
 success replays the stored answer. A deny skips the post with no provider call.
 The owner Approvals view uses the same states.
 
-* `nostr`: first the local minimum: the reply must be `approve <32-character
-  code>` (the first 32+ hex of the digest; contract alpha.7 enforces ≥ 32,
-  alpha.6 only 12), else `409 approval_proof_prefix_too_short` before any
-  verifier runs. Then `verifyNostrApprovalProof` with the forwarded event and
+* `nostr`: the reply must be `approve <32-character code>` (the first 32+ hex
+  of the digest). Contract alpha.7 `verifyNostrApprovalProof` enforces the
+  32-hex minimum itself (`NOSTR_MIN_DIGEST_PREFIX`); a shorter code is `409
+  approval_proof_prefix_too_short` and burns nothing. `verifyNostrApprovalProof` runs with the forwarded event and
   `channel` (the event's `h` tag must equal it), the held digest, age ≤ 15
   minutes, kind 9, recomputed NIP-01 id, BIP-340
   signature, and the owner key **pinned on the hold at creation**. That key
@@ -332,11 +336,11 @@ Owner pin. The owner comes only from the contract claim binding (alpha.7:
 `ownerSubject`, `ownerPinnedAt`; re-pinned only by a newer claim, cleared by
 a claim without it), read through `channels/owner-pin.ts`. The Portal launch
 credential's `ownerSubject` is never used to authorize a caller or to re-pin.
-Marketplace still answers the legacy claim path, so today nothing is pinned
-and `portal` proofs answer `503 approval_owner_unbound`; the pin starts
-working when the manifest-claim handler passes its `claim.store` as
-`ownerPinSource`. Installed contract alpha.6 takes `ownerUserId`; the adapter
-strips `tealbrick-user:` from `ownerSubject` (alpha.7: pass `ownerSubject`).
+The source is the manifest-claim handler's `claim.store` (read with `await
+claim.store.read()`). The pinned `ownerSubject` goes to
+`verifyOwnerApprovalAssertion` as is. With no pin (no claim yet, or a cleared
+pin), `portal` proofs answer `503 approval_owner_unbound` and owner key writes
+answer `409 approval_owner_unbound`.
 
 App authority. `channels.post` and `channels.schedule` declare
 `approvalAuthority: "app"` with `appHold: true`. Marketplace holds every call
