@@ -49,4 +49,11 @@ describe("forbidden-term confusables", () => {
     for (const text of ["Ꮤell done", "ꮤell done"]) expect(forbiddenTermsIn(text, ["well"]), text).toEqual(["well"]);
     expect(forbiddenTermsIn("pƖan", ["plan"])).toEqual(["plan"]);
   });
+
+  it("catches digit lookalikes (0 for o, 1 for l) and still matches terms that contain digits", () => {
+    expect(forbiddenTermsIn("the pr0ject plan", ["project"])).toEqual(["project"]);
+    expect(forbiddenTermsIn("a 1eak happened", ["leak"])).toEqual(["leak"]);
+    expect(forbiddenTermsIn("order 1001 shipped", ["1001"])).toEqual(["1001"]);
+    expect(forbiddenTermsIn("an ordinary sentence", ["project"])).toEqual([]);
+  });
 });

@@ -68,8 +68,16 @@ export const CONFUSABLE_SKELETON: Readonly<Record<string, string>> = Object.free
  * written and lowercased), so a letter whose UTS #39 prototype differs from how it is commonly read (lowercase
  * Greek mu reads as "u") cannot slip through either table. Over-matching is accepted.
  */
+/**
+ * Digit lookalikes from the UTS #39 prototype rules (0 → o, 1 → l), used only in the hand-first table so a term such
+ * as "project" also catches "pr0ject" and "leak" catches "1eak". The UTS #39-first table keeps digits as digits, so
+ * terms that contain digits still match literally. Over-matching is accepted.
+ */
+const DIGIT_LOOKALIKES: Record<string, string> = { "0": "o", "1": "l" };
+
 export const HAND_FIRST_SKELETON: Readonly<Record<string, string>> = Object.freeze({
   ...UTS39_SKELETON,
+  ...DIGIT_LOOKALIKES,
   ...LATIN_EXTENSIONS,
   ...GREEK,
   ...CYRILLIC,
