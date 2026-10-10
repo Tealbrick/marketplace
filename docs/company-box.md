@@ -314,7 +314,68 @@ error `openapi_upload_too_large`), and the execute routes accept request
 bodies sized for that cap. Outward calls held for approval store their
 arguments in full, so an outward upload over 32 KB is refused with
 `approval_args_too_large`. Upload media through a non-outward operation first
-(for example a media upload), then publish by reference.
+(for example a media upload), then publish by reference, or use a tool file.
+
+### Tool files (`marketplace.tools.call`, issue #59)
+
+`marketplace.tools.call` arguments are capped at 12 KB, so large files go as
+tool files. The agent writes `{"$file": "<relative path>"}` as the file
+argument; the kit shows `{path, sha256, bytes, contentType, filename}` in the
+approval digest and, after approval, uploads the bytes once and sends a
+reference instead:
+
+```json
+{ "fileRef": "tf_…", "sha256": "<hex>", "bytes": 52344, "contentType": "image/png", "filename": "logo.png" }
+```
+
+- **Upload** `marketplace.tool-files.upload` (harness only):
+  `POST /api/marketplace/v1/agent/tool-files?consentId=<id>&name=<filename>`,
+  raw body, real `Content-Type`, `Idempotency-Key` (8-200 of `A-Za-z0-9._-`;
+  the kit uses `upload.<tools.call key>.<sha256[:16]>`). Answers `201
+  {fileRef, sha256, bytes, contentType, filename, expiresAt}`; the same key
+  and file answer the same body with `replayed: true` and store nothing new,
+  another file under the key is `409 idempotency_conflict`.
+- **Binding**: the consent must be the caller's (same deployment, workspace and
+  agent), active, and its action must take a file (`x-file-upload`);
+  otherwise one uniform `404 consent_not_found`.
+- **Types**: `image/png`, `image/jpeg`, `image/webp`, `image/gif`,
+  `application/pdf`, `text/plain`, `text/markdown`, `text/csv`,
+  `application/zip` and OOXML (`.pptx`, `.docx`, `.xlsx`). The name's
+  extension must belong to the type and the bytes must match it (magic bytes;
+  OOXML is a zip with `[Content_Types].xml`; text is UTF-8 without NUL).
+  SVG, HTML, JavaScript and everything else: `415 tool_file_type_invalid`;
+  a mismatch: `422 tool_file_type_mismatch`.
+- **Limits**: one file up to `MARKETPLACE_COMPANY_BOX_MAX_UPLOAD_BYTES`
+  (25 MB, `413 tool_file_too_large`); per agent 20 live files and 200 MB
+  (`429 tool_file_quota_exceeded`, `limit: files|bytes`); a file expires 24 h
+  after upload.
+- **Use**: the reference is accepted only at a position where the action's
+  schema has an `x-file-upload` field, exactly with those five fields
+  (`400 tool_file_ref_invalid`; a reference is an opaque id, never a URL,
+  and Marketplace never fetches one). It resolves only for the same
+  deployment, agent and consent while unexpired and unused; a foreign,
+  unknown, expired or consumed reference is one uniform
+  `404 tool_file_not_found`. Any declared value that differs from the stored
+  file is `409 tool_file_mismatch`. A file is single use: it is consumed when
+  the call executes, the bytes are re-hashed first (refused on a mismatch) and
+  deleted after the provider call. An exact retry with the same
+  `Idempotency-Key` replays the first answer.
+- **Held calls** (owner approval): the held arguments keep the reference, not
+  the bytes, so the 32 KB held-argument cap no longer limits files. The file is
+  pinned until the decision or the approval's expiry (7 days, which overrides
+  the 24 h TTL), then deleted. The approval digest
+  (`sha256(stableJson({actionKey, args}))`) covers `{fileRef, sha256, bytes,
+  contentType, filename}`. The owner's Approvals panel shows each file's name,
+  type, size and sha256, with a preview (images) and download (images, PDF)
+  from `GET /api/marketplace/company-box/approvals/{approvalId}/files/{fileRef}`
+  (owner session only; re-hashed; `no-store`, `nosniff`, sandboxed CSP).
+  Approving re-hashes the stored bytes and fails the call on a mismatch.
+- **Audit / Activity**: `marketplace.tool_files.uploaded`, `.pinned`,
+  `.consumed`, `.expired`, `.released` and `.mismatch` carry the file
+  reference, consent, action, sha256 and size; never the bytes or the name.
+- **First actions**: Nextcloud `webdav-files-upload` (PUT, not held) and Postiz
+  `public-integrations-controller-upload-simple` (outward, held); the Postiz
+  create-post then references the returned media path.
 
 ## Request safety
 
