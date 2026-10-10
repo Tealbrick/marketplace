@@ -8,6 +8,16 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Raw bytes of an owner-only GET that needs the strict owner gate (launch session + CSRF header), e.g. a held live
+ * clip: the page plays it from a blob URL. Answers the bytes and the server's SHA-256 header.
+ */
+export async function apiBlob(route: string): Promise<{ blob: Blob; sha256: string | null }> {
+  const response = await fetch(route, { credentials: "include", headers: operatorCsrfToken ? { "x-csrf-token": operatorCsrfToken } : {} });
+  if (!response.ok) throw new ApiError(`Request failed (${response.status})`, response.status, null);
+  return { blob: await response.blob(), sha256: response.headers.get("x-content-sha256") };
+}
+
 export async function api<T>(route: string, init?: RequestInit): Promise<T> {
   const response = await fetch(route, {
     ...init,

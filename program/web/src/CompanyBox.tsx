@@ -4,7 +4,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { AlertTriangle, Boxes, Check, CircleSlash, Hourglass, KeyRound, LoaderCircle, PlugZap, Send, Settings2, Trash2, Undo2, X } from "lucide-react";
 import { Button, IconButton, Tag } from "@tealbrick/ui";
 
-import { ApiError, decideCompanyBoxApproval, getCompanyBox, getCompanyBoxApproval, getCompanyBoxApprovals, removeCompanyBoxEntry, setupCompanyBoxEntry, testCompanyBoxEntry } from "./api";
+import { ApiError, apiBlob, decideCompanyBoxApproval, getCompanyBox, getCompanyBoxApproval, getCompanyBoxApprovals, removeCompanyBoxEntry, setupCompanyBoxEntry, testCompanyBoxEntry } from "./api";
 import { getChannels } from "./channels-api";
 import { actionTitle, digestPrefix, formatBytes, providerLabel, transcriptsFromCanonical, typeName } from "./channels-model";
 import { BUZZ_CODE_CHARS, BUZZ_CODE_HINT, errorCopy } from "./copy";
@@ -236,7 +236,35 @@ function channelDecisionNotice(approval: CompanyBoxApproval, result: Awaited<Ret
   return `Approved, but "${what}" wasn't sent: ${failureCopy(code).title}.`;
 }
 
+/**
+ * A held huddle clip (live sessions, review H1): the owner plays the exact stored bytes (strict owner gate, fetched
+ * with the CSRF header, played from a blob URL) and reads the agent-stated transcript before approving one play.
+ */
+function LiveClipView({ approvalId, live, onHeard }: { approvalId: string; live: NonNullable<CompanyBoxApproval["live"]>; onHeard: () => void }) {
+  const clip = useQuery({
+    queryKey: ["live-clip", approvalId],
+    queryFn: async () => {
+      const { blob, sha256 } = await apiBlob(`/api/marketplace/channels/live/clips/${encodeURIComponent(approvalId)}`);
+      return { url: URL.createObjectURL(blob), sha256 };
+    },
+    retry: false,
+    staleTime: Infinity,
+  });
+  return <div className="live-clip" aria-label="Huddle clip to approve">
+    <p>Play in a live huddle, once: clip <code title={live.clipSha256}>{live.clipSha256.slice(0, 16)}</code> · session <code>{live.sessionId.slice(0, 12)}</code></p>
+    <p><strong>Transcript (stated by the agent, not verified):</strong> {live.transcript}</p>
+    {clip.error ? <InlineError error={clip.error as Error} /> : clip.data
+      ? <>
+        <audio controls src={clip.data.url} onPlay={onHeard} aria-label="Play the clip" />
+        {clip.data.sha256 !== live.clipSha256 && <p role="alert">The served clip does not match the held SHA-256. Do not approve.</p>}
+      </>
+      : <span className="muted-detail">Loading the clip…</span>}
+    <p className="muted-detail">Digest <code title={live.digest}>{live.digest.slice(0, 32)}</code>{live.played ? " · played" : ""}</p>
+  </div>;
+}
+
 function ApprovalRow({ approval, onDecided }: { approval: CompanyBoxApproval; onDecided: (notice: string) => void }) {
+  const [heard, setHeard] = useState(false);
   const pendingRow = approval.state === "pending";
   const channelHold = approval.channel;
   const full = useQuery({ queryKey: ["company-box-approval", approval.id], queryFn: () => getCompanyBoxApproval(approval.id), enabled: pendingRow, retry: false });
@@ -255,13 +283,14 @@ function ApprovalRow({ approval, onDecided }: { approval: CompanyBoxApproval; on
   });
   const pending = approval.state === "pending";
   const payload = channelHold ? (full.data ? full.data.payloadView ?? null : undefined) : undefined;
-  const reviewable = channelHold ? Boolean(payload && !("error" in payload) && payload.matchesHeldDigest) : Boolean(full.data);
+  const reviewable = approval.live ? heard : channelHold ? Boolean(payload && !("error" in payload) && payload.matchesHeldDigest) : Boolean(full.data);
   const title = channelHold ? actionTitle(channelHold.action, channelHold.label ?? "a channel") : `${approval.app} · ${approval.operation.title}`;
   return <div className="company-box-approval" aria-label={channelHold ? title : `${approval.app}: ${approval.operation.title}`}>
     <div>
       <strong>{title}</strong>
       {!channelHold && approval.operation.method && <code>{approval.operation.method} {approval.operation.path}</code>}
       <p>Requested by <strong>{approval.agentId}</strong> {formatWhen(approval.createdAt)}{pending ? ` · expires ${formatWhen(approval.expiresAt)}` : ""}</p>
+      {approval.live && pendingRow && <LiveClipView approvalId={approval.id} live={approval.live} onHeard={() => setHeard(true)} />}
       {channelHold
         ? pendingRow
           ? full.error ? <InlineError error={full.error} /> : <ChannelHoldView summary={channelHold} payload={payload} />
@@ -272,7 +301,7 @@ function ApprovalRow({ approval, onDecided }: { approval: CompanyBoxApproval; on
       {decide.error && <InlineError error={decide.error} />}
     </div>
     {pending ? <div className="dialog-actions">
-      <Button size="small" tone="primary" disabled={decide.isPending || !reviewable} title={reviewable ? undefined : channelHold ? "Review the post first" : "Review the arguments first"} onClick={() => decide.mutate("approve")}>{decide.isPending && decide.variables === "approve" ? <LoaderCircle className="spin" size={14} /> : <Check size={14} />}Approve</Button>
+      <Button size="small" tone="primary" disabled={decide.isPending || !reviewable} title={reviewable ? undefined : approval.live ? "Play the clip first" : channelHold ? "Review the post first" : "Review the arguments first"} onClick={() => decide.mutate("approve")}>{decide.isPending && decide.variables === "approve" ? <LoaderCircle className="spin" size={14} /> : <Check size={14} />}Approve</Button>
       <Button size="small" disabled={decide.isPending} onClick={() => decide.mutate("deny")}><CircleSlash size={14} />Deny</Button>
     </div> : <Tag tone={approval.state === "succeeded" ? "success" : approval.state === "failed" || approval.state === "denied" ? "danger" : "default"}>{APPROVAL_STATE_LABEL[approval.state]}</Tag>}
   </div>;

@@ -146,3 +146,7 @@ export const stopLiveSession = (sessionId: string) =>
 
 export const getLiveTranscript = (sessionId: string) =>
   api<{ ok: true; session: LiveSessionView; lines: LiveTranscriptLine[] }>(`${LIVE}/sessions/${encodeURIComponent(sessionId)}/transcript`);
+
+/** Owner narrowing (strict owner gate): every term restated; the owner may set the consent flags either way. */
+export const restrictLiveGrant = (grantId: string, terms: Record<string, unknown>) =>
+  api<{ ok: true; grant: LiveGrantView }>(liveGrantRoute(grantId, "narrow"), { method: "POST", body: JSON.stringify({ terms }) });

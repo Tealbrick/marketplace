@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, CircleSlash, LoaderCircle, Mic, Pause, Play, Square, XCircle } from "lucide-react";
 import { Button, Tag } from "@tealbrick/ui";
 
-import { approveLiveGrant, getLiveOverview, getLiveTranscript, liveGrantAction, stopLiveSession, updateLiveControl } from "./channels-api";
+import { approveLiveGrant, getLiveOverview, getLiveTranscript, liveGrantAction, restrictLiveGrant, stopLiveSession, updateLiveControl } from "./channels-api";
 import type { LiveGrantView, LiveSessionView } from "./types";
 import { formatWhen, InlineError } from "./ui";
 
@@ -24,6 +24,48 @@ const yesNo = (value: boolean) => (value ? "Yes" : "No");
 function modesText(modes: { listen?: boolean; speakApproved?: boolean; speakLive?: boolean }) {
   const parts = [modes.listen && "listen (speech-to-text)", modes.speakApproved && "speak approved clips", modes.speakLive && "speak live text (text-to-speech)"].filter(Boolean);
   return parts.join(", ") || "none";
+}
+
+/**
+ * The owner's consent decision (review M1): agents can only ask for stricter consent; turning the disclosure notice
+ * off (or per-participant consent on/off) happens only here, as a new digest the owner then approves.
+ */
+function ConsentEditor({ grant, onNotice }: { grant: LiveGrantView; onNotice: (notice: string) => void }) {
+  const queryClient = useQueryClient();
+  const summary = grant.summary;
+  const [disclosureNotice, setDisclosure] = useState(summary?.consent.disclosureNotice ?? true);
+  const [perParticipantConsent, setPerParticipant] = useState(summary?.consent.perParticipantConsent ?? false);
+  const save = useMutation({
+    mutationFn: () => {
+      const s = summary!;
+      const modes = Object.fromEntries(Object.entries(s.modes).filter(([, on]) => on).map(([mode]) => [mode, true]));
+      return restrictLiveGrant(grant.id, {
+        modes,
+        maxSessionMinutes: s.maxSessionMinutes,
+        maxDayMinutes: s.maxDayMinutes,
+        costCap: { providerMinutes: s.providerMinutesCap },
+        topic: s.topic,
+        forbiddenTerms: s.forbiddenTerms,
+        consent: { disclosureNotice, perParticipantConsent },
+        caps: s.caps,
+        expires: s.expires,
+      });
+    },
+    onSuccess: () => {
+      onNotice(`New consent values for ${grant.id}: approve the new digest to use it.`);
+      void queryClient.invalidateQueries({ queryKey: ["channel-live"] });
+    },
+  });
+  if (!summary || !["proposed", "active", "paused"].includes(grant.status)) return null;
+  const changed = disclosureNotice !== summary.consent.disclosureNotice || perParticipantConsent !== summary.consent.perParticipantConsent;
+  return <details>
+    <summary>Change the consent values (your decision)</summary>
+    <label className="confirm-check"><input type="checkbox" checked={disclosureNotice} onChange={(event) => setDisclosure(event.target.checked)} /> Post a disclosure notice in the channel and the huddle</label>
+    <label className="confirm-check"><input type="checkbox" checked={perParticipantConsent} onChange={(event) => setPerParticipant(event.target.checked)} /> Require per-participant consent (listening stays refused until Marketplace can ask each participant)</label>
+    {!disclosureNotice && <p role="note"><Tag tone="danger">No disclosure notice</Tag> Transcribing people without a notice can be unlawful where all parties must consent.</p>}
+    {save.error && <InlineError error={save.error} />}
+    <Button size="small" disabled={!changed || save.isPending} onClick={() => save.mutate()}>Save as a new digest</Button>
+  </details>;
 }
 
 /** The consent values first and prominent: the owner approves them as part of the digest. */
@@ -65,6 +107,7 @@ function GrantCard({ grant, onNotice }: { grant: LiveGrantView; onNotice: (notic
       <Tag tone={STATUS_TONE[grant.status]}>{grant.status}</Tag>
     </div>
     <ConsentBlock grant={grant} />
+    <ConsentEditor grant={grant} onNotice={onNotice} />
     {summary && <dl className="live-summary">
       <dt>Modes</dt><dd>{modesText(summary.modes)}</dd>
       <dt>Where</dt><dd>{summary.target.huddleId ? <>huddle <code>{summary.target.huddleId}</code></> : <>huddles of channel <code>{summary.target.channelId}</code></>}</dd>

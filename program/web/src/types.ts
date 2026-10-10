@@ -488,6 +488,8 @@ export interface CompanyBoxApproval {
   result?: unknown;
   /** Present when the held call is a channel post. */
   channel?: ChannelApprovalSummary;
+  /** A held speak-approved huddle clip (live sessions): play it before approving. */
+  live?: { grantId: string; sessionId: string; clipSha256: string; channelId: string; digest: string; transcript: string; played: boolean };
 }
 
 export interface CompanyBoxApprovalsResponse {
