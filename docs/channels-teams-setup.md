@@ -95,8 +95,14 @@ Note: Marketplace does not list private and shared channels. Teams bots cannot p
 
 - Post text (Teams Markdown, maximum 28,000 characters) to a channel, a group chat or a 1:1 chat that the owner added.
 - Schedule a post. Marketplace sends it at the set time.
+- Reply in the thread of a message that Marketplace received (when inbound is on).
+- Mention named people. The text must contain `<at>name</at>` for each person.
+- Edit or delete a message that Marketplace posted to that channel or chat.
+- Find one person by email and send a 1:1 message. This needs the Graph flag (`MARKETPLACE_CHANNELS_TEAMS_GRAPH_ENABLED`) and the people policy of the connection. The app must be installed for that person.
 
-Agents cannot do these things in Teams in this version: reply in a thread, mention people, edit or delete messages, find people, start 1:1 chats, send files, images, cards or reactions, or receive messages. Marketplace never mentions a whole team, a channel or a tag.
+Each of these is outward. It needs a standing grant with the related scope, or your approval of the exact message. The first message to a person always needs your approval.
+
+Agents cannot do these things in Teams in this version: send files, images, cards or reactions. Marketplace never mentions a whole team, a channel or a tag.
 
 Approvals stay in Teal Brick, Buzz and the Marketplace screen. Teams shows "waiting for owner approval" and never accepts an approval click.
 

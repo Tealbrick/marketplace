@@ -30,7 +30,7 @@ export const SLACK_DISCOVER_HINT = "In Slack, open the channel and type /invite 
 export const SLACK_SETUP_STEPS: readonly string[] = [
   "Open api.slack.com/apps, choose Create New App, then From a manifest, and select your workspace.",
   "Paste the Marketplace Slack app manifest (docs/channels-slack-app-manifest.json) and create the app. Keep it an internal app of your workspace; do not distribute it.",
-  "Choose Install to Workspace and allow the listed permissions.",
+  "Choose Install to Workspace and allow the listed permissions. The app asks for users:read.email, im:write and reactions:write so that agents can find a person by email, send direct messages and add reactions. If you installed an older manifest, update the app from the new manifest and install it again.",
   "Copy the Bot User OAuth Token (it starts with xoxb-) and add it under Account Connections in Teal Brick Portal. Optional: add the Signing Secret from Basic Information for incoming messages later.",
   "Restart Marketplace, invite the app to each channel with /invite, then press Discover.",
 ];
