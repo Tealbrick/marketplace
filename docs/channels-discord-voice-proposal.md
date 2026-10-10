@@ -71,3 +71,11 @@ Open questions for the Coordinator:
 5. Is Railway amd64-only (assumed from Dockerfile and CI label)? If arm64 appears, `linux-arm64-gnu` exists.
 6. Do we want the 1-day stage-channel spike, or skip E?
 7. Stable 0.19.2 now, or wait for `@discordjs/voice` 1.0 (Node >= 24.17, breaking)?
+
+## Decision (Coordinator, 2026-10-10)
+
+1. Option A behind `VoiceTransport`: approved. Conditions: exact pins, lockfile integrity, npm provenance check in CI, no install scripts, the WASM fallback tested in CI, the `ws` override; the Dockerfile `node_modules` stage is coordinated with Lead · Miniapps.
+2. Speak-only first. Listen only after discord.js#11653 is fixed and verified.
+3. Listen scope deferred with (2): before listen work starts, the Coordinator reads Discord's Developer Policy on voice data and brings Martin a one-paragraph summary for his decision.
+4. Railway is linux/amd64: build and test for linux-x64-gnu only; voice refuses to start with a clear error on other platforms.
+Order: after the Buzz huddle client.
