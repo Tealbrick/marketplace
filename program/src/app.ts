@@ -8387,15 +8387,15 @@ export async function buildMarketplaceApp(
   applyBuzzSink();
   /** After an owner change of the Buzz identity: re-verify, restart the relay socket, swap the sink. */
   const onBuzzIdentityChanged = async () => {
+    // Inert mode: nothing is verified, connected or posted until the next start.
+    if (!channelService.configured) return;
     await channelsReady;
     await channelService.refreshProvider("buzz");
     applyBuzzSink();
-    if (channelService.configured) {
-      try {
-        await inboundWorker.reconcile();
-      } catch (error) {
-        console.error(JSON.stringify({ event: "marketplace.channels.inbound_start_failed", name: error instanceof Error ? error.name : typeof error }));
-      }
+    try {
+      await inboundWorker.reconcile();
+    } catch (error) {
+      console.error(JSON.stringify({ event: "marketplace.channels.inbound_start_failed", name: error instanceof Error ? error.name : typeof error }));
     }
   };
   if (channelService.configured) {

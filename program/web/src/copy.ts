@@ -466,3 +466,26 @@ export function shortScope(scope: string) {
 export function knownVersion(version: string | null | undefined) {
   return Boolean(version && !/^[0._-]+$/u.test(version.trim()));
 }
+
+/**
+ * Buzz (Channels P2): Marketplace makes the agent key itself and keeps it only in its encrypted secret store.
+ * The owner signs a NIP-OA tag on their own device; the owner's own Buzz key never leaves that device.
+ */
+export const BUZZ_CUSTODY_COPY =
+  "Marketplace makes the Buzz agent key itself and keeps it only in its encrypted secret store. Nobody can see, copy or export it. If the store is lost, make a new key and sign a new tag.";
+
+export const BUZZ_SETUP_STEPS: readonly string[] = [
+  "Generate the agent key here. Marketplace shows only its npub.",
+  "Enter your relay address (wss://…). Marketplace never posts to any other relay.",
+  "On your own device, sign a NIP-OA tag for the agent key with your Buzz key. Use the text to sign below. The end date must be at most 90 days away.",
+  "Paste the tag here. Marketplace checks the signature, your pinned Buzz key and the end date.",
+  "Add the agent npub to the Buzz channels it may use, then press Discover.",
+];
+
+export const BUZZ_ROTATE_COPY =
+  "Rotate makes a new agent key and destroys the old one. The current tag stops working at once, because it names the old key. Sign a new tag for the new npub, and add the new npub to your Buzz channels.";
+
+export const BUZZ_REVOKE_COPY =
+  "Revoke removes the tag. Marketplace stops posting and receiving on Buzz at once. The old tag stays valid on the relay until its end date; to stop it there too, rotate the key.";
+
+export const BUZZ_DISCOVER_HINT = "Add the agent npub to a Buzz channel (or open a DM with it), then press Discover.";

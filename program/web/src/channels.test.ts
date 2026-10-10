@@ -4,9 +4,9 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ChannelsPage } from "./Channels";
-import { capabilityRows, formToPolicy, policyToForm, slugFromLabel, slugProblem, wideningFields } from "./channels-model";
+import { buzzTagSummary, capabilityRows, formToPolicy, looksLikeSecretKey, policyToForm, slugFromLabel, slugProblem, wideningFields } from "./channels-model";
 import { ApprovalsPanel } from "./CompanyBox";
-import type { ChannelProviderCapabilities, ChannelsBrowseResponse, ChannelView, CompanyBoxApproval, StandingGrantView } from "./types";
+import type { BuzzIdentityView, ChannelProviderCapabilities, ChannelsBrowseResponse, ChannelView, CompanyBoxApproval, StandingGrantView } from "./types";
 
 afterEach(() => {
   cleanup();
@@ -572,5 +572,75 @@ describe("Approvals panel: channel holds", () => {
     expect(screen.getByText(/Scheduled for/u)).toBeTruthy();
     expect(screen.getByText(/its transcript is part of the text above/u)).toBeTruthy();
     expect((screen.getByRole("button", { name: /Approve/u }) as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+const BUZZ_NPUB = "npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg";
+
+function buzzView(overrides: Partial<BuzzIdentityView> = {}): BuzzIdentityView {
+  return {
+    key: { present: true, npub: BUZZ_NPUB, pubkeyHex: "7e7e9c42a91bfef19fa929e5fda1b72e0ebc1a4c1141673e2794234d86addf4e", createdAt: "2026-10-10T00:00:00.000Z" },
+    relay: { url: "wss://relay.buzz.test", httpBase: "https://relay.buzz.test" },
+    authTag: {
+      status: "valid",
+      sha256: "ab".repeat(32),
+      ownerNpub: "npub1sn0wdenkukak0d9dfczzeacvhkrgz92ak56egt7vdgzn8pv2wfqqhrjdv9",
+      ownerFingerprint: "0123456789abcdef",
+      conditions: "created_at<1800000000",
+      expiresAt: "2027-01-15T08:00:00.000Z",
+      daysLeft: 9,
+      renewalDue: true,
+      setAt: "2026-10-10T00:00:00.000Z",
+    },
+    readiness: "available",
+    signing: { preimage: "nostr:agent-auth:7e7e9c42a91bfef19fa929e5fda1b72e0ebc1a4c1141673e2794234d86addf4e:created_at<1800000000", suggestedConditions: "created_at<1800000000", maxDays: 90, reminderDays: 14 },
+    pinnedOwner: { set: true, fingerprint: "0123456789abcdef" },
+    secretStore: "available",
+    ...overrides,
+  };
+}
+
+describe("Buzz identity", () => {
+  it("summarises the NIP-OA tag state and spots a pasted secret key", () => {
+    expect(buzzTagSummary(buzzView({ key: { present: false, npub: null, pubkeyHex: null, createdAt: null } }))).toEqual({ text: "No agent key yet", tone: "warning" });
+    expect(buzzTagSummary(buzzView()).tone).toBe("warning");
+    expect(buzzTagSummary(buzzView({ authTag: { ...buzzView().authTag, renewalDue: false, daysLeft: 60 } }))).toEqual({ text: "Valid for 60 more days", tone: "success" });
+    expect(buzzTagSummary(buzzView({ authTag: { ...buzzView().authTag, status: "invalid", reason: "auth_tag_wrong_owner" } })).text).toContain("pinned Buzz key");
+    expect(buzzTagSummary(buzzView({ authTag: { ...buzzView().authTag, status: "expired" } })).tone).toBe("danger");
+    expect(looksLikeSecretKey("nsec1vl029mgpspedva04g90vltkh6fvh240zqtv9k0t9af8935ke9laqsnlfe5")).toBe(true);
+    expect(looksLikeSecretKey('["auth","79be","created_at<1","sig"]')).toBe(false);
+  });
+
+  it("shows the npub and renewal reminder, refuses a pasted secret, saves the tag, and rotates only after an explanation", async () => {
+    const withBuzz = browse({ readiness: { telegram: "available", discord: "credential_missing", buzz: "available" }, buzz: buzzView() });
+    withBuzz.providers = [...withBuzz.providers, { id: "buzz", readiness: "available" }];
+    withBuzz.connections = { ...withBuzz.connections, buzz: { connectionId: "conn-buzz", state: "connected", botUsername: "npub10elfcs4…zvjptg", verifiedAt: "2026-10-10T00:00:00.000Z", credentialRef: "marketplace-secret:cs_1" } as never };
+    const calls: Array<{ method: string; body: unknown }> = [];
+    const answer = () => ({ ok: true, schema: 1, changed: true, buzz: buzzView() });
+    mockApi({
+      "GET /api/marketplace/channels": () => withBuzz,
+      "PUT /api/marketplace/channels/buzz/identity": (init) => (calls.push({ method: "PUT", body: JSON.parse(String(init?.body)) }), answer()),
+      "POST /api/marketplace/channels/buzz/identity/key": (init) => (calls.push({ method: "POST", body: JSON.parse(String(init?.body)) }), answer()),
+    });
+    renderPage();
+    const card = await screen.findByLabelText("Buzz readiness");
+    expect(within(card).getByText("Available")).toBeTruthy();
+    expect(within(card).getByText("npub10elfcs4…zvjptg")).toBeTruthy();
+    expect(screen.getByText(BUZZ_NPUB)).toBeTruthy();
+    expect(screen.getByText(/Sign a new tag before then/u)).toBeTruthy();
+    expect(document.querySelector('input[type="password"]')).toBeNull();
+    const tagField = screen.getByLabelText("NIP-OA tag") as HTMLTextAreaElement;
+    fireEvent.change(tagField, { target: { value: "nsec1vl029mgpspedva04g90vltkh6fvh240zqtv9k0t9af8935ke9laqsnlfe5" } });
+    expect(screen.getByText(/Never paste a secret key here/u)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Save tag" }) as HTMLButtonElement).disabled).toBe(true);
+    const tag = '["auth","79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798","created_at<1800000000","' + "a".repeat(128) + '"]';
+    fireEvent.change(tagField, { target: { value: tag } });
+    fireEvent.click(screen.getByRole("button", { name: "Save tag" }));
+    await waitFor(() => expect(calls).toEqual([{ method: "PUT", body: { authTag: tag } }]));
+    fireEvent.click(screen.getByRole("button", { name: /Rotate key/u }));
+    expect(screen.getByRole("alertdialog", { name: "Rotate the Buzz agent key" }).textContent).toContain("destroys the old one");
+    expect(calls).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Rotate now" }));
+    await waitFor(() => expect(calls.at(-1)).toEqual({ method: "POST", body: { rotate: true } }));
   });
 });

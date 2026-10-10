@@ -433,9 +433,10 @@ provider-env or account field.
 | `marketplace.channel-posts.cancel` | `POST /api/marketplace/channels/posts/{postId}/cancel` (scheduled posts, and held posts, immediate or scheduled; in one transaction with the post: denies a waiting approval, fails an approved one; refused once sending started) |
 | `marketplace.channel-posts.resolve` | `POST /api/marketplace/channels/posts/{postId}/resolve` `{status: sent|failed}` |
 | `marketplace.channel-receipts.export` / `.purge` | `GET /api/marketplace/channels/receipts/export`, `POST /api/marketplace/channels/receipts/purge` `{olderThanDays}` (default 90; finished posts only; answers `{purged, skipped}`) |
-| `marketplace.channel-inbound-routes.update` | `PUT /api/marketplace/channels/{channelId}/inbound` `{enabled, agentId?}` → `{route, receivers}` (see [Inbound](#inbound-channels-p2)) |
+| `marketplace.channel-inbound-routes.update` | `PUT /api/marketplace/channels/{channelId}/inbound` `{enabled, agentId?, agentBuzzPubkey?}` → `{route, receivers}` (see [Inbound](#inbound-channels-p2); `agentBuzzPubkey` for the [Buzz bridge](#buzz-channels-p2)) |
 | `marketplace.channel-inbound-events.list` | `GET /api/marketplace/channels/inbound/events?channelId=&limit=&before=` (metadata, route outcome, at most 500 characters of text per event, receiver status) |
 | `marketplace.channel-inbound-settings.update` | `PUT /api/marketplace/channels/inbound/settings` `{textRetentionDays?: 1-365, discordMessageContent?: bool}` |
+| `marketplace.channel-buzz-identity.get` / `.update`, `marketplace.channel-buzz-key.generate`, `marketplace.channel-buzz-auth-tag.revoke` | `GET|PUT /api/marketplace/channels/buzz/identity`, `POST .../identity/key`, `DELETE .../identity/auth-tag` (see [Buzz](#buzz-channels-p2)) |
 
 "Grant to agent" is `marketplace.consents.request` with the channel's class
 selection (each channel in `browse` carries it as `grantSelection`, with the
@@ -452,7 +453,9 @@ Bot tokens come from `MARKETPLACE_CHANNELS_TELEGRAM_BOT_TOKEN`,
 account-sourced provider env, read at start), or self-hosted from the encrypted
 `connector_secret` `botToken` under `channels-<provider>`. Each is verified once
 at start; the connection row keeps only `{botId, botUsername, verifiedAt,
-credentialRef}` (Slack adds `teamId`). Readiness per provider (`available | credential_missing |
+credentialRef}` (Slack adds `teamId`). Buzz has no token: its credential is the Marketplace-generated
+agent key (connector secret `agentSecretKey` under `channels-buzz`) with the
+owner's relay URL and NIP-OA tag (see [Buzz](#buzz-channels-p2)). Readiness per provider (`available | credential_missing |
 credential_invalid | unavailable`) is in `browse` and in
 `/api/portal/readiness` (`channels.providers`). Tokens are never in responses,
 receipts, rows, logs, audit or errors; provider text is redacted before it is
@@ -659,6 +662,128 @@ conversation 7/1 s, 8/2 s, 60/30 s, 1800/h and 50 requests/s per tenant
 once with jittered backoff; 502/504 are retried once only for idempotent calls
 (PUT, DELETE, create-conversation) and a send is never retried (`uncertain`).
 
+### Buzz (Channels P2)
+
+Adapter: `program/src/channels/providers/buzz.ts` over the relay's Nostr HTTP
+bridge (block/buzz `crates/buzz-relay/src/router.rs`): `POST /events` (submit
+a signed event; answer `{event_id, accepted, message}`), `POST /query` (NIP-01
+filters), `PUT /media/upload` (Blossom BUD-02) and `GET /` (NIP-11). Every
+call carries NIP-98 (`Authorization: Nostr <base64 kind 27235>` with `u` =
+the exact URL, `method`, a fresh `nonce` and `payload` = SHA-256 of the body)
+and the owner's NIP-OA tag in `x-auth-tag` (relay membership through the
+owner, NIP-AA). Every published event is signed by the connection's agent key
+and carries the NIP-OA `auth` tag. BIP-340 keys and signatures use
+`@noble/curves` 2.4.0 (the version `@tealbrick/contract` ships); event ids and
+signature checks use the contract helpers `nostrEventId` /
+`nostrSignatureValid`. There is no default relay: the owner-entered relay URL
+inside the identity is the only target, and no redirect is followed.
+
+Identity and custody (Coordinator, 2026-10-10). Marketplace generates one
+secp256k1 key per Buzz connection and writes the secret only to the encrypted
+`connector_secret` store (`channels-buzz` / `agentSecretKey`). It is never
+shown, exported, imported, logged, audited or returned; a database backup
+holds only its ciphertext, useless without the at-rest key (which is never in
+a backup); loss of the store means a new key and a new tag. Public state lives
+in the additive table `channel_buzz_identity` (agent public key, relay URL,
+tag JSON, its SHA-256, owner key, conditions, end date). Owner operations
+(audience owner; they work in inert mode, where a first identity takes effect
+after the next start and the answer says `appliesAfterRestart: true`):
+
+| Operation | Route | Effect |
+| --- | --- | --- |
+| `marketplace.channel-buzz-identity.get` | `GET /api/marketplace/channels/buzz/identity` | npub, relay URL, tag status (`missing`, `valid`, `invalid`, `expired`) with reason, end date, days left, `renewalDue` (< 14 days), tag SHA-256, pinned owner fingerprint, and `signing.preimage`: the exact NIP-OA text to sign for a 90-day tag. Also in the owner browse (`buzz`). |
+| `marketplace.channel-buzz-key.generate` | `POST /api/marketplace/channels/buzz/identity/key` `{rotate?}` | Generate the key (`409 buzz_key_exists` when one exists), or rotate it: the old secret is overwritten and the tag cleared (it named the old key). |
+| `marketplace.channel-buzz-identity.update` | `PUT /api/marketplace/channels/buzz/identity` `{relayUrl?, authTag?}` | Relay: `wss://host[:port]` only (`422 buzz_relay_url_invalid`). Tag: `["auth", ownerHex, conditions, sig]`, verified: BIP-340 by `ownerHex` over SHA-256 of `nostr:agent-auth:<agent hex>:<conditions>` (conditions verbatim), owner ≠ agent, the NIP-OA conditions grammar, `ownerHex` = the pinned owner Buzz key (`approvals.ownerNostrPubkey`) when one is set, a `created_at<T` end with now < T ≤ now + 90 days, at most one `kind=` value. Refusals `422 buzz_auth_tag_<reason>`; a pasted `nsec` is refused and never echoed. |
+| `marketplace.channel-buzz-auth-tag.revoke` | `DELETE /api/marketplace/channels/buzz/identity/auth-tag` | Clear the tag: Marketplace stops publishing and receiving at once. The tag stays valid on the relay until its end date; rotation ends it for good. |
+
+Readiness: `credential_missing` (no key, relay or tag), `credential_invalid`
+(a tag that ended, no longer names the pinned owner key or no longer
+verifies; re-checked on every readiness read), `available` after `verify`
+(NIP-11, then an authenticated `/query` for the agent's own profile).
+`connections.buzz.botUsername` is the short npub. Audit
+(`marketplace.channels.buzz.key_generated | key_rotated | relay_changed |
+auth_tag_set | auth_tag_revoked`) records npubs, the relay URL, the tag SHA-256,
+the owner fingerprint and the end date, never the key. A tag with a `kind=`
+clause authorises only that kind: other operations answer
+`buzz_auth_kind_not_allowed`.
+
+Capabilities (`channelCapabilities: 2`, truthful for this PR): text (20,000
+characters, 64 KiB as sent), `markup: "buzz-markdown"`, mentions of named
+members (p tags) with broadcast suppressed, `dm: {open: true, maxMembers: 1}`,
+images JPEG/PNG/GIF/WebP (50 MiB; GIF 10 MiB) and MP4 (50 MiB, the
+Marketplace upload cap) through Blossom, `file`, `audio` and `voice` `false`
+(PDF and text uploads are not verified on the deployed relay; the relay
+refuses audio, so there is no voice fallback), replies, reactions add/remove
+(no custom emoji), edit and delete own, `presence.typing`, `canvas: false`
+(read and propose-edit come later), no polls, no native schedule, `discover:
+"list"`, `inbound: {mode: "socket", dedupe: true}`, `perChatPerMinute: 100`.
+
+- Discover: `/query` kind 39002 with `#p` = the agent key (its channel
+  memberships), then kind 39000 for those ids: open channels `channel`,
+  private ones `group`, DMs (`hidden`) `person`; archived channels and the
+  bridge's own `tb-inbound-*` channels are left out (named in `notes`).
+- Send: kind 9 with `h` = channel UUID, `p` tags only for listed mentions
+  (npub or hex), `nostr:npub…` references of others lose the `nostr:` scheme,
+  `@everyone`, `@here`, `@channel`, `@all`, `@room` get a full-width at sign,
+  never a `broadcast` tag. Replies: the parent must be an event of the same
+  channel (else `channel_reply_invalid`, nothing posted); NIP-10 `e` tags with
+  `reply` (and `root` for a nested reply). Files: Blossom upload (kind 24242
+  auth: `t=upload`, `x` = SHA-256, `expiration`, `server`; base64url), then an
+  `imeta` tag (`url`, `m`, `x`, `size`, `dim`) and a Markdown image line.
+- Reactions: kind 7 (`e`, `h`); remove = kind 5 of the agent's own matching
+  reaction. Edit: kind 40003, delete: kind 5, both only for the agent's own
+  messages (checked first: `provider_forbidden`). Typing: kind 20002 (at most
+  one per 5 s per channel, never queued).
+- People: `findPerson` by npub or exact member name (display name or name)
+  among members of the agent's channels, never a list (`ambiguous` for two);
+  no email lookup. `openDirect`: Buzz DM open (kind 41010) with one member;
+  the relay answers the DM channel id (`message: "response:{channel_id}"`).
+- Failures: relay `accepted: false` is `failed / provider_rejected` with the
+  relay's reason (scrubbed); HTTP 401 `credential_invalid`, 403
+  `provider_forbidden`, 400/409 `provider_rejected`, 503 `failed`, 500/502/504,
+  timeouts and network errors `uncertain`, 429 retried once. A local bucket
+  (10 burst, 100 a minute) stays under the relay's default agent limit (120 a
+  minute).
+
+Inbound: one relay socket per agent key (`program/src/channels/buzz-relay-socket.ts`),
+only while a Buzz channel has an enabled route and the identity is available,
+under the consumer lease `buzz:<first 32 hex of sha256(credential)>`. On the
+relay's `["AUTH", challenge]` (at connect and mid-session) it answers kind
+22242 with `relay`, `challenge` and the NIP-OA tag; after `OK true` it sends
+`REQ tb-channels {kinds: [9], "#h": [routed channel ids ≤ 128], since}` and
+`REQ tb-membership {kinds: [44100, 44101], "#p": [agent key], since}`. Events
+are verified (id + BIP-340) and parsed (`threadId` = NIP-10 root, imeta
+attachments as metadata) before the pipeline; the agent's own events are
+ignored. Reconnect with capped backoff and `since` = last event − 30 s (the
+pipeline de-duplicates); `OK false` with a tag that no longer verifies stops
+the socket (`failed`, `auth_tag_invalid`), otherwise it backs off and retries.
+`receivers.buzz` reports the socket status.
+
+Bridge sink (`program/src/channels/buzz-bridge.ts`, Coordinator conditions):
+installed while a Buzz identity exists (`receivers.sink: "buzz-bridge"`).
+Each inbound route may carry the routed agent's Buzz key: `PUT
+.../{channelId}/inbound {…, agentBuzzPubkey}` (npub or hex; `422
+buzz_agent_key_invalid`, `409 buzz_relay_missing`), recorded in the additive
+table `channel_buzz_route` with the relay URL it was confirmed on. Delivery:
+no available identity → `pending-bridge / buzz_unavailable`; no agent key →
+`pending-bridge / buzz_agent_key_missing`; identity relay ≠ the route's
+confirmed relay → `bridge-failed / buzz_relay_changed` until the owner saves
+the route again (a new relay or agent key forgets the bridge channel). On
+first use the bridge creates ONE private channel per route on the configured
+relay (kind 9007 `visibility=private`, name `tb-inbound-<channel slug>`) and
+adds the agent key (kind 9000); each message is a kind 9 from the bridge
+identity with `p` = the routed agent only, a fixed provenance header
+(platform, source channel id and title, thread id, message id, sender display
+and id, the inbound event id for `marketplace.channels.reply`, attachment
+references, never re-uploaded) and the text between `-----BEGIN UNTRUSTED
+EXTERNAL MESSAGE-----` / `-----END …-----` (markers inside the text removed,
+mentions neutralised). Deliveries of one route are serialised. Retention: in
+the scheduler tick the bridge deletes its own bridged messages (kind 5) older
+than the inbound text retention and marks the rows of the additive table
+`channel_buzz_bridged` (`deleted`, or `skipped_relay_changed`: nothing is ever
+sent to a relay other than the configured one); audit
+`marketplace.channels.buzz.bridge_purged` with counts.
+
 ### Inbound (Channels P2)
 
 The inbound worker receives messages for agents (P2 scope 2.2). Code:
@@ -677,7 +802,7 @@ protections: exact path, a per-source budget and a cheap header check in
 | `POST /api/marketplace/channels/teams/messages` | The existing Teams messaging endpoint: message activities now go to the pipeline. |
 
 Capabilities (truthful, `channelCapabilities: 2`): Slack and Teams `inbound:
-{mode: "webhook", dedupe: true}`, Telegram `webhook`, Discord `socket`.
+{mode: "webhook", dedupe: true}`, Telegram `webhook`, Discord and Buzz `socket`.
 
 Owner switch (`PUT .../{channelId}/inbound`): the route `channelId → agentId`
 is off by default. Enabling needs an active channel, a provider that declares
@@ -706,11 +831,9 @@ id, message id) in `channel_inbound_event`; loop breaker: at most 4
 agent-bound events per thread and 8 per peer (sender) in 15 minutes, plus a
 per-sender burst bucket (5, then one per 12 s) → `loop-limited` /
 `rate-limited`; the routed agent's consent is re-checked (`consent-inactive`);
-then `InboundSink.deliver(event, route)`. The default sink only records
-(`bridge_status: pending-bridge`); the Buzz bridge sink (a private Buzz channel
-per route, a provenance header with source, channel, sender display name and
-message id, untrusted framing, only the owner-configured relay) plugs in
-behind the same interface. The audit event
+then `InboundSink.deliver(event, route)`. Without a Buzz identity the sink only
+records (`bridge_status: pending-bridge`); with one, the Buzz bridge sink
+delivers (see [Buzz](#buzz-channels-p2)). The audit event
 `marketplace.channels.inbound.received` carries metadata only (event id,
 platform, channel, outcome, routed agent), never text or sender names.
 
@@ -776,7 +899,10 @@ channels_not_configured`, the browse answers `{configured: false, providers:
 `channels` block. The channel tables are created (additive) and stay empty.
 No inbound receiver starts: no gateway connection, no webhook call; the Slack
 events route answers `503 channels_slack_inbound_not_configured` and the
-Telegram webhook route `404` after their cheap checks.
+Telegram webhook route `404` after their cheap checks. The Buzz identity
+operations still work (the identity is what turns Buzz on); a first identity
+takes effect after the next start, and no relay connection or post happens
+before.
 
 ### Send-time rules
 

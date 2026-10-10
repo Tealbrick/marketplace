@@ -588,3 +588,13 @@ code, .mono { font-family: var(--dg-font-mono); overflow-wrap: anywhere; }
 .waiting-post p { margin: 4px 0 0; color: var(--dg-text-muted); font-size: 12px; }
 .channel-inert { margin-top: 24px; }
 @media (max-width: 600px) { .waiting-post { grid-template-columns: minmax(0, 1fr); } }
+
+/* Buzz identity (Channels P2): agent npub, relay address, NIP-OA tag, rotate and revoke. */
+.buzz-identity { display: grid; min-width: 0; gap: 10px; border: 1px solid var(--dg-line); border-radius: var(--dg-radius-md); padding: 12px; background: var(--dg-canvas); }
+.buzz-identity code { overflow-wrap: anywhere; }
+.buzz-step { display: flex; min-width: 0; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.buzz-step label { display: grid; min-width: 0; flex: 1 1 260px; gap: 4px; font-size: 12px; }
+.buzz-step input, .buzz-step textarea { width: 100%; min-width: 0; border: 1px solid var(--dg-line); border-radius: var(--dg-radius-sm); padding: 9px 10px; background: var(--dg-canvas); color: var(--dg-text); font: inherit; font-size: 13px; }
+.buzz-danger [role="alertdialog"] { display: grid; gap: 8px; }
+.buzz-preimage { overflow-x: auto; margin: 0; border-radius: var(--dg-radius-sm); padding: 8px; background: var(--dg-warning-wash); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.inline-warning { margin: 0; color: var(--dg-warning); font-size: 13px; }

@@ -25,7 +25,7 @@ import {
   WEEKDAYS,
   type PolicyForm,
 } from "./channels-model";
-import { DISCORD_DISCOVER_HINT, SLACK_DISCOVER_HINT, TEAMS_DISCOVER_HINT, TELEGRAM_DISCOVER_HINT } from "./copy";
+import { BUZZ_DISCOVER_HINT, DISCORD_DISCOVER_HINT, SLACK_DISCOVER_HINT, TEAMS_DISCOVER_HINT, TELEGRAM_DISCOVER_HINT } from "./copy";
 import type { ChannelDestination, ChannelProviderCapabilities, ChannelProviderEntry, ChannelProviderId, ChannelsBrowseResponse, ChannelView, StandingGrantView } from "./types";
 import { InlineError } from "./ui";
 
@@ -237,7 +237,7 @@ export function CreateChannelPanel({ browse, onCreated, onCancel }: { browse: Ch
     if (!slugTouched) setSlug(slugFromLabel(value));
   };
   const hint =
-    provider === "telegram" ? TELEGRAM_DISCOVER_HINT : provider === "discord" ? DISCORD_DISCOVER_HINT : provider === "slack" ? SLACK_DISCOVER_HINT : provider === "teams" ? TEAMS_DISCOVER_HINT : null;
+    provider === "telegram" ? TELEGRAM_DISCOVER_HINT : provider === "discord" ? DISCORD_DISCOVER_HINT : provider === "slack" ? SLACK_DISCOVER_HINT : provider === "teams" ? TEAMS_DISCOVER_HINT : provider === "buzz" ? BUZZ_DISCOVER_HINT : null;
   const notes = discover.data?.provider === provider ? discover.data.notes ?? [] : [];
 
   return <section className="channel-create" aria-labelledby={`${id}-title`}>

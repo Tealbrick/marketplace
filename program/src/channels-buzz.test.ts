@@ -173,6 +173,7 @@ describe("Buzz identity owner ops", () => {
     expect((await call("GET", "/api/marketplace/channels/discover?provider=buzz")).json()).toMatchObject({ error: "channels_not_configured" });
     expect(relay.events.filter((event) => event.pubkey === agent)).toHaveLength(0);
     expect(relay.sockets).toHaveLength(0);
+    expect(relay.requests).toHaveLength(0);
   });
 });
 
