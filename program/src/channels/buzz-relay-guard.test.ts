@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buzzPrivateRelayAllowed, checkRelayHost, embeddedIpv4, guardedLookup, guardedRelayFetch, isBlockedRelayAddress, isBlockedRelayHostname, type RelayLookup } from "./buzz-relay-guard.js";
+import { RelayAddressBlockedError, buzzPrivateRelayAllowed, checkRelayHost, embeddedIpv4, guardedLookup, guardedRelayFetch, guardedRelaySocketFactory, isBlockedRelayAddress, relayLiteralBlocked, isBlockedRelayHostname, type RelayLookup } from "./buzz-relay-guard.js";
 import { normalizeRelayUrl } from "./providers/buzz.js";
 
 const PUBLIC_V4 = "104.16.132.229";
@@ -135,3 +135,16 @@ describe("buzz relay egress guard", () => {
     expect(await checkRelayHost("localhost", { allowPrivate: false, lookup })).toEqual({ ok: false, reason: "relay_host_blocked" });
   });
 });
+
+describe("IP-literal relays at connect time", () => {
+  it("refuses blocked IP literals before any connect (Node skips DNS for them)", async () => {
+    for (const url of ["wss://127.0.0.1/", "https://10.0.0.1/query", "wss://[::1]/", "wss://[::ffff:6440:1]/", "https://169.254.169.254/"]) {
+      expect(relayLiteralBlocked(url, false), url).toBe(true);
+      expect(relayLiteralBlocked(url, true), url).toBe(false);
+    }
+    expect(relayLiteralBlocked("wss://martinatrin.up.railway.app/", false)).toBe(false);
+    await expect(guardedRelayFetch({ allowPrivate: false })("https://127.0.0.1/query")).rejects.toBeInstanceOf(RelayAddressBlockedError);
+    expect(() => guardedRelaySocketFactory({ allowPrivate: false })("wss://127.0.0.1/")).toThrow(RelayAddressBlockedError);
+  });
+});
+
