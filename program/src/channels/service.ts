@@ -7,6 +7,7 @@ import type { GovernanceActor, GovernedActionRisk } from "../governance.js";
 import type { SqliteMarketplaceStore } from "../store.js";
 import type { CompanyBoxApproval, ConnectorCapability, ConnectorUsageLedgerEntry, MarketplaceAgentConsent } from "../types.js";
 import { NOSTR_MIN_PREFIX_HEX } from "./approvals.js";
+import type { BuzzIdentity } from "./buzz-identity.js";
 import { createGrantService, type GrantService } from "./grants.js";
 import { eventHostAllowed, eventListingStatus, grantCoversPost, maxPendingPerAgent, type PostCampaign } from "./policy.js";
 import { wiredCapabilities } from "./providers/capabilities.js";
@@ -211,6 +212,8 @@ export type ChannelServiceDeps = {
   now: () => Date;
   eventFetch?: typeof fetch;
   instanceId: string;
+  /** The Buzz connection identity (generated key in connector_secret, owner relay URL and NIP-OA tag). */
+  buzzIdentity?: BuzzIdentity;
 };
 
 export type ChannelService = ReturnType<typeof createChannelService>;
@@ -268,7 +271,60 @@ export function createChannelService(deps: ChannelServiceDeps) {
     }
   };
 
-  /** Verify each provider credential once at start; upsert the connection row (bot identity only). */
+  const buzzCredential = () => deps.buzzIdentity?.credential() ?? null;
+
+  /** Verify one provider credential; upsert the connection row (bot identity only). */
+  const bootProvider = async (provider: ChannelProviderId) => {
+    const adapter = deps.providers[provider];
+    if (!adapter) return;
+    const credential = resolveChannelCredential({ provider, environment: deps.environment, readSecret, buzz: buzzCredential });
+    if (!credential) {
+      credentials.delete(provider);
+      readiness.set(provider, "credential_missing");
+      return;
+    }
+    credentials.set(provider, credential);
+    let verified;
+    try {
+      verified = await adapter.verify(credential.value);
+    } catch {
+      verified = { ok: false as const, reason: "provider_unavailable" as const };
+    }
+    const existing = store.getConnection(org, channelPluginId(provider));
+    if (verified.ok) {
+      readiness.set(provider, "available");
+      store.upsertConnection({
+        workspaceSlug: org,
+        pluginId: channelPluginId(provider),
+        provider,
+        backend: "native",
+        state: "connected",
+        detail: `${provider} bot verified`,
+        metadata: {
+          botId: verified.botId,
+          botUsername: verified.botUsername,
+          ...(verified.teamId ? { teamId: verified.teamId } : {}),
+          verifiedAt: deps.now().toISOString(),
+          credentialRef: credential.ref,
+        },
+      });
+    } else {
+      readiness.set(provider, verified.reason === "provider_unavailable" ? "unavailable" : verified.reason);
+      if (existing && verified.reason !== "provider_unavailable") {
+        store.upsertConnection({
+          workspaceSlug: org,
+          pluginId: channelPluginId(provider),
+          provider,
+          backend: "native",
+          state: "blocked",
+          detail: `${provider} bot credential is ${verified.reason === "credential_invalid" ? "invalid" : "missing"}`,
+          metadata: { ...existing.metadata, credentialRef: credential.ref },
+        });
+      }
+    }
+  };
+
+  /** Verify each provider credential once at start. */
   const boot = async () => {
     const signingSecret = resolveSlackSigningSecret({
       environment: deps.environment,
@@ -281,54 +337,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
       },
     });
     inboundSecrets.splice(0, inboundSecrets.length, ...(signingSecret ? [signingSecret] : []));
-    for (const provider of CHANNEL_PROVIDER_IDS) {
-      const adapter = deps.providers[provider];
-      if (!adapter) continue;
-      const credential = resolveChannelCredential({ provider, environment: deps.environment, readSecret });
-      if (!credential) {
-        readiness.set(provider, "credential_missing");
-        continue;
-      }
-      credentials.set(provider, credential);
-      let verified;
-      try {
-        verified = await adapter.verify(credential.value);
-      } catch {
-        verified = { ok: false as const, reason: "provider_unavailable" as const };
-      }
-      const existing = store.getConnection(org, channelPluginId(provider));
-      if (verified.ok) {
-        readiness.set(provider, "available");
-        store.upsertConnection({
-          workspaceSlug: org,
-          pluginId: channelPluginId(provider),
-          provider,
-          backend: "native",
-          state: "connected",
-          detail: `${provider} bot verified`,
-          metadata: {
-            botId: verified.botId,
-            botUsername: verified.botUsername,
-            ...(verified.teamId ? { teamId: verified.teamId } : {}),
-            verifiedAt: deps.now().toISOString(),
-            credentialRef: credential.ref,
-          },
-        });
-      } else {
-        readiness.set(provider, verified.reason === "provider_unavailable" ? "unavailable" : verified.reason);
-        if (existing && verified.reason !== "provider_unavailable") {
-          store.upsertConnection({
-            workspaceSlug: org,
-            pluginId: channelPluginId(provider),
-            provider,
-            backend: "native",
-            state: "blocked",
-            detail: `${provider} bot credential is ${verified.reason === "credential_invalid" ? "invalid" : "missing"}`,
-            metadata: { ...existing.metadata, credentialRef: credential.ref },
-          });
-        }
-      }
-    }
+    for (const provider of CHANNEL_PROVIDER_IDS) await bootProvider(provider);
   };
 
   /**
@@ -336,13 +345,23 @@ export function createChannelService(deps: ChannelServiceDeps) {
    * connector_secret). Read once at start, like the credentials themselves; no DB writes.
    */
   const configured = CHANNEL_PROVIDER_IDS.some(
-    (provider) => Boolean(deps.providers[provider]) && resolveChannelCredential({ provider, environment: deps.environment, readSecret }) !== null,
+    (provider) =>
+      Boolean(deps.providers[provider]) && resolveChannelCredential({ provider, environment: deps.environment, readSecret, buzz: buzzCredential }) !== null,
   );
 
+  /**
+   * The provider readiness now. Buzz is re-checked against its stored identity on every read: a tag that expired,
+   * was revoked or no longer names the pinned owner key makes it `credential_invalid` / `credential_missing` at once.
+   */
+  const currentReadiness = (provider: ChannelProviderId): ChannelReadiness => {
+    const base = readiness.get(provider) ?? "credential_missing";
+    if (provider !== "buzz" || base !== "available" || !deps.buzzIdentity) return base;
+    const local = deps.buzzIdentity.readiness();
+    return local === "available" ? base : local;
+  };
+
   const readinessView = () =>
-    Object.fromEntries(
-      CHANNEL_PROVIDER_IDS.filter((provider) => deps.providers[provider]).map((provider) => [provider, readiness.get(provider) ?? "credential_missing"]),
-    );
+    Object.fromEntries(CHANNEL_PROVIDER_IDS.filter((provider) => deps.providers[provider]).map((provider) => [provider, currentReadiness(provider)]));
 
   const providerFor = (provider: string): ChannelProvider | null => (isChannelProviderId(provider) ? deps.providers[provider] ?? null : null);
   /** The effective declaration (adapter ∩ AGENT_WIRED_FEATURES): every agent-facing check and view reads this. */
@@ -361,7 +380,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
     if (!connection || connection.id !== channel.connectionId || connection.state !== "connected") {
       return { status: 409, error: "channel_connection_unavailable" };
     }
-    if (!isChannelProviderId(channel.provider) || !credentials.has(channel.provider) || readiness.get(channel.provider) !== "available") {
+    if (!isChannelProviderId(channel.provider) || !credentials.has(channel.provider) || currentReadiness(channel.provider) !== "available") {
       return { status: 503, error: "channel_credential_unavailable" };
     }
     return null;
@@ -1411,10 +1430,12 @@ export function createChannelService(deps: ChannelServiceDeps) {
 
   /** The credential value for the inbound worker (gateway, webhook calls), only while the provider is available. */
   const inboundCredential = (provider: ChannelProviderId): string | null =>
-    readiness.get(provider) === "available" ? credentials.get(provider)?.value ?? null : null;
+    currentReadiness(provider) === "available" ? credentials.get(provider)?.value ?? null : null;
 
   return {
     configured,
+    /** Re-reads and re-verifies one provider credential (Buzz identity changes at run time). */
+    refreshProvider: bootProvider,
     teamsIdentity,
     botIdFor,
     slackTeamId,

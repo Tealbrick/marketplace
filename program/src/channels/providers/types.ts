@@ -2,7 +2,7 @@
 // Adapters never throw for provider or network problems. They return a typed result.
 // A credential (bot token) is never part of any returned value.
 
-export type ChannelProviderId = "telegram" | "discord" | "slack" | "teams";
+export type ChannelProviderId = "telegram" | "discord" | "slack" | "teams" | "buzz";
 
 /**
  * Version of the closed capability vocabulary (spec 3.1; P2 scope 2.1). New keys need a contract minor bump.
@@ -45,7 +45,7 @@ export type LiveCapability = {
 
 export type InboundMode = "socket" | "webhook" | "poll" | "none";
 
-export type ChannelMarkup = "plain" | "markdown-v2" | "discord-markdown" | "mrkdwn" | "html" | "teams-markdown";
+export type ChannelMarkup = "plain" | "markdown-v2" | "discord-markdown" | "mrkdwn" | "html" | "teams-markdown" | "buzz-markdown";
 
 /** Poll limits of a provider (`poll` in the declaration is `false` when the adapter sends no polls). */
 export type PollCapability = {
@@ -280,6 +280,8 @@ export type ChannelProvider = {
     destination: ChannelDestination,
     input: ScheduleNativeInput,
   ): Promise<ScheduleNativeResult>;
+  /** Typing signal while the agent writes (needs `presence.typing`). Ephemeral; nothing is stored. */
+  typing?(credential: string | null | undefined, destination: ChannelDestination, options?: { replyTo?: string }): Promise<ActionResult>;
   /** Inbound webhook (inbound `mode: "webhook"` where the provider registers it by API): set, inspect, delete. */
   setWebhook?(credential: string | null | undefined, registration: WebhookRegistration): Promise<ActionResult>;
   webhookInfo?(credential: string | null | undefined): Promise<WebhookInfoResult>;

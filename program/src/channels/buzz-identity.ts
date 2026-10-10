@@ -1,0 +1,258 @@
+import type { SqliteMarketplaceStore } from "../store.js";
+import { ownerKeyFingerprint } from "./owner-key.js";
+import { encodeBuzzCredential, normalizeRelayUrl } from "./providers/buzz.js";
+import {
+  NIP_OA_MAX_LIFETIME_SECONDS,
+  NIP_OA_RENEWAL_REMINDER_SECONDS,
+  authPreimage,
+  generateSecretKey,
+  isBech32With,
+  npubEncode,
+  parseAuthTag,
+  publicKeyOf,
+  verifyAuthTag,
+  type AuthTagFailure,
+} from "./providers/nostr.js";
+import type { ChannelCredential, ChannelReadiness } from "./runtime.js";
+
+/**
+ * The Buzz connection identity (custody model approved by the Coordinator, 2026-10-10):
+ *
+ * - Marketplace GENERATES one secp256k1 agent keypair per Buzz connection. The secret key is written only to the
+ *   encrypted `connector_secret` store (`channels-buzz` / `agentSecretKey`); it is never shown, exported, logged,
+ *   audited or returned, and there is no import. The database backup holds only its ciphertext, useless without
+ *   the at-rest key (which is never in a backup). Loss of the store means a new key and a new tag.
+ * - The owner screen shows the npub. The owner enters the relay URL (wss://; no default) and pastes the NIP-OA tag
+ *   they signed on their own device for the agent key. The tag is verified (BIP-340 by its owner key over the
+ *   exact NIP-OA preimage), must name the pinned owner Buzz key when one is set (`approvals.ownerNostrPubkey`),
+ *   and must end (`created_at<T`) within 90 days. The tag and its SHA-256 are stored; audit records the npub and
+ *   the tag digest only.
+ * - Rotation generates a new key (the old one is overwritten and gone) and clears the tag (it named the old key).
+ *   Revoke clears the tag: Marketplace stops using the identity at once.
+ */
+
+export const BUZZ_PLUGIN_ID = "channels-buzz";
+export const BUZZ_SECRET_NAME = "agentSecretKey";
+
+export type BuzzTagStatus = "missing" | "valid" | "invalid" | "expired";
+
+export type BuzzIdentityView = {
+  key: { present: boolean; npub: string | null; pubkeyHex: string | null; createdAt: string | null };
+  relay: { url: string | null; httpBase: string | null };
+  authTag: {
+    status: BuzzTagStatus;
+    reason?: AuthTagFailure | "key_changed";
+    sha256: string | null;
+    ownerNpub: string | null;
+    ownerFingerprint: string | null;
+    conditions: string | null;
+    expiresAt: string | null;
+    daysLeft: number | null;
+    /** True when the tag ends within 14 days: the owner should sign a new one. */
+    renewalDue: boolean;
+    setAt: string | null;
+  };
+  /** From the stored identity alone (no network): what the provider readiness will at best be. */
+  readiness: Exclude<ChannelReadiness, "unavailable">;
+  /** What the owner signs on their own device: the exact NIP-OA preimage for a 90-day tag, and the bounds. */
+  signing: { preimage: string; suggestedConditions: string; maxDays: number; reminderDays: number } | null;
+  pinnedOwner: { set: boolean; fingerprint: string | null };
+  secretStore: "available" | "unavailable";
+};
+
+export type BuzzIdentityResult = { ok: true; view: BuzzIdentityView; changed: boolean } | { ok: false; status: number; error: string; detail?: string };
+
+export type BuzzIdentityDeps = {
+  store: SqliteMarketplaceStore;
+  organizationId: string;
+  now: () => Date;
+  /** Test seam: 32 random bytes for a new key (default: the curve library's CSPRNG). */
+  randomKey?: () => Uint8Array;
+};
+
+export type BuzzIdentity = ReturnType<typeof createBuzzIdentity>;
+
+export function createBuzzIdentity(deps: BuzzIdentityDeps) {
+  const { store, organizationId: org } = deps;
+  const buzz = store.channels.buzz;
+  const nowSeconds = () => Math.floor(deps.now().getTime() / 1000);
+
+  const audit = (eventType: string, actorId: string, metadata: Record<string, unknown>) =>
+    store.recordAudit({ workspaceSlug: org, pluginId: BUZZ_PLUGIN_ID, eventType, actorId, metadata: metadata as never });
+
+  const pinnedOwner = (): string | null => {
+    try {
+      return store.channels.getOwnerKey(org)?.pubkey ?? null;
+    } catch {
+      return null;
+    }
+  };
+
+  /** The decrypted agent secret key, server-side only; null when absent or unreadable. Never logged. */
+  const readSecretKey = (): { value: string; id: string } | null => {
+    try {
+      const value = store.readConnectorSecretValues({ workspaceSlug: org, pluginId: BUZZ_PLUGIN_ID })[BUZZ_SECRET_NAME];
+      if (!value) return null;
+      const id = store.listConnectorSecrets({ workspaceSlug: org, pluginId: BUZZ_PLUGIN_ID }).find((secret) => secret.name === BUZZ_SECRET_NAME)?.id;
+      return id ? { value, id } : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const tagState = () => {
+    const identity = buzz.getIdentity(org);
+    if (!identity?.agentPubkey || !identity.authTagJson) return { identity, status: "missing" as BuzzTagStatus };
+    const checked = verifyAuthTag({ tag: identity.authTagJson, agentPubkey: identity.agentPubkey, pinnedOwner: pinnedOwner(), nowSeconds: nowSeconds() });
+    if (checked.ok) return { identity, status: "valid" as BuzzTagStatus, checked: checked.value };
+    return { identity, status: (checked.reason === "auth_tag_expired" ? "expired" : "invalid") as BuzzTagStatus, reason: checked.reason };
+  };
+
+  const view = (): BuzzIdentityView => {
+    const state = tagState();
+    const identity = state.identity;
+    const pubkey = identity?.agentPubkey ?? null;
+    const endpoint = identity?.relayUrl ? normalizeRelayUrl(identity.relayUrl) : null;
+    const expiresAt = identity?.authExpiresAt ?? null;
+    const secondsLeft = expiresAt !== null ? expiresAt - nowSeconds() : null;
+    const suggested = `created_at<${nowSeconds() + NIP_OA_MAX_LIFETIME_SECONDS}`;
+    const pin = pinnedOwner();
+    const readiness: BuzzIdentityView["readiness"] =
+      !pubkey || !endpoint || state.status === "missing" ? "credential_missing" : state.status === "valid" ? "available" : "credential_invalid";
+    return {
+      key: { present: pubkey !== null, npub: pubkey ? npubEncode(pubkey) : null, pubkeyHex: pubkey, createdAt: identity?.keyCreatedAt ?? null },
+      relay: { url: endpoint?.relayUrl ?? null, httpBase: endpoint?.httpBase ?? null },
+      authTag: {
+        status: state.status,
+        ...("reason" in state && state.reason ? { reason: state.reason } : {}),
+        sha256: identity?.authTagSha256 ?? null,
+        ownerNpub: identity?.authOwnerPubkey ? npubEncode(identity.authOwnerPubkey) : null,
+        ownerFingerprint: identity?.authOwnerPubkey ? ownerKeyFingerprint(identity.authOwnerPubkey) : null,
+        conditions: identity?.authConditions ?? null,
+        expiresAt: expiresAt !== null ? new Date(expiresAt * 1000).toISOString() : null,
+        daysLeft: secondsLeft !== null ? Math.max(0, Math.floor(secondsLeft / 86_400)) : null,
+        renewalDue: secondsLeft !== null && secondsLeft < NIP_OA_RENEWAL_REMINDER_SECONDS,
+        setAt: identity?.authSetAt ?? null,
+      },
+      readiness,
+      signing: pubkey
+        ? { preimage: authPreimage(pubkey, suggested), suggestedConditions: suggested, maxDays: NIP_OA_MAX_LIFETIME_SECONDS / 86_400, reminderDays: NIP_OA_RENEWAL_REMINDER_SECONDS / 86_400 }
+        : null,
+      pinnedOwner: { set: pin !== null, fingerprint: pin ? ownerKeyFingerprint(pin) : null },
+      secretStore: store.connectorSecretStoreAvailable() ? "available" : "unavailable",
+    };
+  };
+
+  /** Generate the first key, or (with `rotate`) replace the key: the old secret is overwritten, the tag cleared. */
+  const generateKey = (input: { rotate: boolean; actor: string }): BuzzIdentityResult => {
+    if (!store.connectorSecretStoreAvailable()) return { ok: false, status: 503, error: "connector_secret_store_unavailable" };
+    const current = buzz.getIdentity(org);
+    const hadKey = Boolean(current?.agentPubkey && readSecretKey());
+    if (hadKey && !input.rotate) return { ok: false, status: 409, error: "buzz_key_exists", detail: "rotate the key to replace it" };
+    if (!hadKey && input.rotate) return { ok: false, status: 409, error: "buzz_key_missing" };
+    const secretKey = generateSecretKey(deps.randomKey);
+    const pubkey = publicKeyOf(secretKey);
+    if (!pubkey) return { ok: false, status: 500, error: "buzz_key_generation_failed" };
+    store.putConnectorSecret({ workspaceSlug: org, pluginId: BUZZ_PLUGIN_ID, name: BUZZ_SECRET_NAME, value: secretKey });
+    const previousTag = current?.authTagSha256 ?? null;
+    buzz.setAgentKey({ workspaceSlug: org, agentPubkey: pubkey, actor: input.actor, now: deps.now() });
+    audit(hadKey ? "marketplace.channels.buzz.key_rotated" : "marketplace.channels.buzz.key_generated", input.actor, {
+      npub: npubEncode(pubkey),
+      ...(hadKey && current?.agentPubkey ? { previousNpub: npubEncode(current.agentPubkey) } : {}),
+      ...(previousTag ? { clearedTagSha256: previousTag } : {}),
+    });
+    return { ok: true, view: view(), changed: true };
+  };
+
+  /** Owner settings: the relay URL (wss://, owner-entered) and/or the NIP-OA tag for the current agent key. */
+  const update = (input: { relayUrl?: string; authTag?: unknown; actor: string }): BuzzIdentityResult => {
+    let changed = false;
+    if (input.relayUrl !== undefined) {
+      const endpoint = normalizeRelayUrl(input.relayUrl);
+      if (!endpoint) return { ok: false, status: 422, error: "buzz_relay_url_invalid", detail: "enter the relay as wss://host (no path, query or user info)" };
+      const previous = buzz.getIdentity(org)?.relayUrl ?? null;
+      if (previous !== endpoint.relayUrl) {
+        buzz.setRelayUrl({ workspaceSlug: org, relayUrl: endpoint.relayUrl, actor: input.actor, now: deps.now() });
+        audit("marketplace.channels.buzz.relay_changed", input.actor, { relayUrl: endpoint.relayUrl, previousRelayUrl: previous });
+        changed = true;
+      }
+    }
+    if (input.authTag !== undefined) {
+      const identity = buzz.getIdentity(org);
+      if (!identity?.agentPubkey) return { ok: false, status: 409, error: "buzz_key_missing", detail: "generate the agent key first" };
+      if (typeof input.authTag === "string" && (isBech32With(input.authTag.trim(), "nsec") || /nsec1/iu.test(input.authTag))) {
+        // A secret key pasted by mistake is refused and never stored or echoed.
+        return { ok: false, status: 422, error: "buzz_auth_tag_malformed", detail: "paste the auth tag, never a secret key" };
+      }
+      if (!parseAuthTag(input.authTag)) return { ok: false, status: 422, error: "buzz_auth_tag_malformed", detail: 'paste the tag as ["auth", "<owner hex>", "<conditions>", "<signature hex>"]' };
+      const checked = verifyAuthTag({ tag: input.authTag, agentPubkey: identity.agentPubkey, pinnedOwner: pinnedOwner(), nowSeconds: nowSeconds() });
+      if (!checked.ok) return { ok: false, status: 422, error: `buzz_${checked.reason}` };
+      if (identity.authTagSha256 !== checked.value.sha256) {
+        buzz.setAuthTag({
+          workspaceSlug: org,
+          tagJson: checked.value.json,
+          sha256: checked.value.sha256,
+          ownerPubkey: checked.value.ownerPubkey,
+          conditions: checked.value.conditions,
+          expiresAt: checked.value.expiresAt,
+          actor: input.actor,
+          now: deps.now(),
+        });
+        audit("marketplace.channels.buzz.auth_tag_set", input.actor, {
+          npub: npubEncode(identity.agentPubkey),
+          tagSha256: checked.value.sha256,
+          ownerFingerprint: ownerKeyFingerprint(checked.value.ownerPubkey),
+          expiresAt: new Date(checked.value.expiresAt * 1000).toISOString(),
+        });
+        changed = true;
+      }
+    }
+    return { ok: true, view: view(), changed };
+  };
+
+  /** Revoke: clear the tag. Marketplace stops publishing and receiving with the identity at once. */
+  const revokeTag = (actor: string): BuzzIdentityResult => {
+    const identity = buzz.getIdentity(org);
+    if (!identity?.authTagSha256) return { ok: true, view: view(), changed: false };
+    buzz.clearAuthTag({ workspaceSlug: org, actor, now: deps.now() });
+    audit("marketplace.channels.buzz.auth_tag_revoked", actor, {
+      ...(identity.agentPubkey ? { npub: npubEncode(identity.agentPubkey) } : {}),
+      tagSha256: identity.authTagSha256,
+    });
+    return { ok: true, view: view(), changed: true };
+  };
+
+  /**
+   * The runtime credential: secret key + relay URL + tag, or null while any of them is missing (readiness
+   * `credential_missing`). A stored tag that no longer verifies is still passed (the adapter and `readiness()`
+   * answer `credential_invalid`). A secret that does not match the stored public key counts as missing.
+   */
+  const credential = (): ChannelCredential | null => {
+    const identity = buzz.getIdentity(org);
+    if (!identity?.agentPubkey || !identity.relayUrl || !identity.authTagJson) return null;
+    const secret = readSecretKey();
+    if (!secret || publicKeyOf(secret.value) !== identity.agentPubkey) return null;
+    const tag = parseAuthTag(identity.authTagJson);
+    if (!tag) return null;
+    return {
+      value: encodeBuzzCredential({ secretKey: secret.value, relayUrl: identity.relayUrl, authTag: tag }),
+      ref: `marketplace-secret:${secret.id}`,
+      secrets: [secret.value],
+    };
+  };
+
+  /** Local readiness (no network): missing parts, then the tag against the pinned owner key and the clock. */
+  const readiness = (): Exclude<ChannelReadiness, "unavailable"> => view().readiness;
+
+  return {
+    view,
+    generateKey,
+    update,
+    revokeTag,
+    credential,
+    readiness,
+    relayUrl: (): string | null => buzz.getIdentity(org)?.relayUrl ?? null,
+    agentPubkey: (): string | null => buzz.getIdentity(org)?.agentPubkey ?? null,
+    hasKey: (): boolean => Boolean(buzz.getIdentity(org)?.agentPubkey),
+  };
+}
