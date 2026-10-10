@@ -15,8 +15,7 @@ Effort is in worker-days (wd). One worker-day is one day of focused work, tests 
 
 | Phase | Scope | Effort | Calendar (2 workers) |
 |---|---|---|---|
-| **P2a** | Shared changes (capability model v2, inbound worker). **Buzz: all message features** (channels, DMs, threads, mentions, files, reactions, edits, deletes, canvas, inbound). **Slack.** Telegram and Discord additions (reactions, edits, replies, Discord native voice messages). | 26–35 wd | 3–4 weeks |
-| **P2b** | Live-session grant model with consent. **Buzz huddles** (listen with transcript, speak). Discord voice channels on the same model. | 20–30 wd | 2–3 weeks |
+| **P2** (Martin, 2026-10-10: one phase) | Shared changes (capability model v2, inbound worker, live-session grant with consent). **Buzz: all features** (channels, DMs, threads, mentions, files, reactions, edits, deletes, canvas, inbound, **huddles**). **Slack.** Telegram and Discord additions (reactions, edits, replies, Discord native voice messages, **Discord voice channels**). | 46–65 wd (less if the new kit covers Buzz huddles or voice, §13) | 5–7 weeks |
 | **P3** | Microsoft Teams (messages, cards, files). iMessage only if Martin accepts the business route (§8). WhatsApp Cloud API, LINE. | 20–35 wd | after P2 |
 | Not recommended | Teams live meetings (Windows/.NET media bots). iMessage through a Mac bridge inside Channels. Telegram voice chats (bots cannot join). | — | — |
 
@@ -81,31 +80,31 @@ Facts are from the Buzz source (`block/buzz`, desktop 0.5.25), the `buzz` CLI an
 
 | Capability | Buzz support | Channels plan | Phase |
 |---|---|---|---|
-| Text in channels | Yes (NIP-29, kind 9). Limit 65,536 characters. | Post, schedule, standing grants (as Phase 1) | P2a |
-| Channel types | Stream; forum (preview); ephemeral channels with idle time-out | Stream and forum post; ephemeral channels as a destination type | P2a |
-| DMs | Yes (Buzz DMs, 1–8 people) | Agent DMs to named people, owner-approved | P2a |
-| Threads and replies | Yes (NIP-10 reply tag) | `replyTo` in the post body | P2a |
-| Mentions | Yes (`p` tags). An agent wakes only on a `p` tag for it. | Mention named users; broadcast mentions suppressed | P2a |
-| Files and images | Yes (Blossom upload). Images and MP4 today. PDF, Markdown and text need an upstream fix (Tealbrick branch exists; status not verified). | Images and video in P2a; PDF/text when the upstream fix is in the deployed relay | P2a |
-| Voice notes | No. Buzz has no voice-note message. | Declared fallback: audio file (if the relay accepts it) plus transcript, or refuse | P2a |
-| Reactions | Yes (kind 7, custom emoji) | Add and remove reactions | P2a |
-| Edits and deletes | Yes (edit kind 40003, Buzz-only; delete kind 5, own messages) | Edit and delete own messages, owner-approved like a post | P2a |
-| Canvas | Yes (one shared document per channel, with history) | Read and propose edits; an edit is outward and needs approval | P2a |
+| Text in channels | Yes (NIP-29, kind 9). Limit 65,536 characters. | Post, schedule, standing grants (as Phase 1) | P2 |
+| Channel types | Stream; forum (preview); ephemeral channels with idle time-out | Stream and forum post; ephemeral channels as a destination type | P2 |
+| DMs | Yes (Buzz DMs, 1–8 people) | Agent DMs to named people, owner-approved | P2 |
+| Threads and replies | Yes (NIP-10 reply tag) | `replyTo` in the post body | P2 |
+| Mentions | Yes (`p` tags). An agent wakes only on a `p` tag for it. | Mention named users; broadcast mentions suppressed | P2 |
+| Files and images | Yes (Blossom upload). Images and MP4 today. PDF, Markdown and text need an upstream fix (Tealbrick branch exists; status not verified). | Images and video in P2a; PDF/text when the upstream fix is in the deployed relay | P2 |
+| Voice notes | No. Buzz has no voice-note message. | Declared fallback: audio file (if the relay accepts it) plus transcript, or refuse | P2 |
+| Reactions | Yes (kind 7, custom emoji) | Add and remove reactions | P2 |
+| Edits and deletes | Yes (edit kind 40003, Buzz-only; delete kind 5, own messages) | Edit and delete own messages, owner-approved like a post | P2 |
+| Canvas | Yes (one shared document per channel, with history) | Read and propose edits; an edit is outward and needs approval | P2 |
 | Pins, bookmarks, scheduled messages, reminders | Protocol kinds exist. No CLI. | Not in P2. Marketplace schedules posts itself. | — |
 | Polls | No | Refuse (`channel_capability_unavailable`) | — |
-| Typing and presence | Yes (ephemeral events) | Typing signal while the agent writes | P2a |
+| Typing and presence | Yes (ephemeral events) | Typing signal while the agent writes | P2 |
 | Read receipts | No (only the user's own read position) | — | — |
-| Search and history | Yes (search, history up to 500 per request) | `channels.read` for agents with read consent | P2a |
-| Inbound | Yes (relay socket subscriptions; HTTP query as polling) | Inbound worker (§2.2) | P2a |
-| Huddles: listen | Huddle audio is Opus over a Buzz WebSocket (not WebRTC). Speech-to-text runs on the Desktop client today. No bot SDK. | A Marketplace huddle client: join with the agent key, receive Opus, speech-to-text, transcript receipt, under a live-session grant (§2.3) | P2b |
-| Huddles: speak | The Desktop makes speech locally (Pocket TTS) and publishes it with the agent key. No server SDK. | `speak-approved` (approved clips) first, then `speak-live` (text-to-speech) | P2b |
-| Huddle recording | Not built in Buzz | Marketplace keeps transcripts only, never audio | P2b |
+| Search and history | Yes (search, history up to 500 per request) | `channels.read` for agents with read consent | P2 |
+| Inbound | Yes (relay socket subscriptions; HTTP query as polling) | Inbound worker (§2.2) | P2 |
+| Huddles: listen | Huddle audio is Opus over a Buzz WebSocket (not WebRTC). Speech-to-text runs on the Desktop client today. No bot SDK. | A Marketplace huddle client: join with the agent key, receive Opus, speech-to-text, transcript receipt, under a live-session grant (§2.3) | P2 |
+| Huddles: speak | The Desktop makes speech locally (Pocket TTS) and publishes it with the agent key. No server SDK. | `speak-approved` (approved clips) first, then `speak-live` (text-to-speech) | P2 |
+| Huddle recording | Not built in Buzz | Marketplace keeps transcripts only, never audio | P2 |
 | Screen share, video | No | — | — |
 | Workflows and workflow approvals | Experimental; approval gate not wired end to end | Not used. Owner approvals use the Tealbrick flow. | — |
 | Moderation | Yes (reports, ban, time-out) | Not for agents. Owner tools only. | — |
 | Approvals in channel | Owner approvals through Buzz already work (kit; contract alpha.7) | Unchanged | done |
-| Identity and auth | One Nostr key per agent identity. The owner signs a NIP-OA tag that limits what the key may publish. The relay must allow NIP-OA auth. | Marketplace holds one agent key per Buzz channel identity (encrypted, never shown). The owner signs its NIP-OA tag with limits (`kind=9`, end date). | P2a |
-| Rate limits | Relay limits: agent 120 messages/min (default); configurable | Channel caps (Phase 1) under the relay limits | P2a |
+| Identity and auth | One Nostr key per agent identity. The owner signs a NIP-OA tag that limits what the key may publish. The relay must allow NIP-OA auth. | Marketplace holds one agent key per Buzz channel identity (encrypted, never shown). The owner signs its NIP-OA tag with limits (`kind=9`, end date). | P2 |
+| Rate limits | Relay limits: agent 120 messages/min (default); configurable | Channel caps (Phase 1) under the relay limits | P2 |
 
 **Martin's setup for Buzz:**
 1. Confirm which Tealbrick relay is canonical (there are two Railway relays).
@@ -113,7 +112,7 @@ Facts are from the Buzz source (`block/buzz`, desktop 0.5.25), the `buzz` CLI an
 3. Sign the NIP-OA tag for the Marketplace agent key on your Mac (the key stays in Marketplace; your key stays on your Mac).
 4. Decide if the relay must be updated, because the deployed relay image (7 September) is older than the source we read.
 
-**Effort:** messages and inbound 6–8 wd (P2a). Huddle client (listen, speak-approved, speak-live) 8–12 wd (P2b), plus the shared live-session grant.
+**Effort:** messages and inbound 6–8 wd (P2). Huddle client (listen, speak-approved, speak-live) 8–12 wd (P2), plus the shared live-session grant.
 
 ## 4. Slack (priority 2)
 
@@ -186,14 +185,14 @@ Facts are from the Buzz source (`block/buzz`, desktop 0.5.25), the `buzz` CLI an
 | Edits and deletes | Yes (own messages) | Yes |
 | Scheduled events | Guild scheduled events (needs Create Events permission) | `events.create` |
 | Polls | Yes | Yes |
-| Live voice (voice channels) | Bots can join with DAVE end-to-end encryption (mandatory since 2 March 2026). Sending audio is documented. **Receiving audio is not documented by Discord** (libraries do it; no stability guarantee). Recording rules in the Developer Policy are not verified. | P2b on the live-session model: speak first; listen only after the policy check and with consent |
+| Live voice (voice channels) | Bots can join with DAVE end-to-end encryption (mandatory since 2 March 2026). Sending audio is documented. **Receiving audio is not documented by Discord** (libraries do it; no stability guarantee). Recording rules in the Developer Policy are not verified. | P2 on the live-session model: speak first; listen only after the policy check and with consent |
 | Inbound | Gateway connection | Inbound worker |
 | Approvals in channel | No (§2.4) | Show "waiting" |
 | Identity and auth | One bot token (Phase 1) | Unchanged; voice needs Connect and Speak permissions |
 | Rate limits | Per-route buckets | Unchanged |
 | Martin's setup | Add the voice permissions to the bot if you want voice | |
 
-**Effort:** messages 4–5 wd (P2a). Voice channels 6–10 wd (P2b), shared with the Buzz huddle audio work where possible.
+**Effort:** messages 4–5 wd (P2). Voice channels 6–10 wd (P2), shared with the Buzz huddle audio work where possible.
 
 ## 8. iMessage (priority 2, decision needed)
 
@@ -217,19 +216,20 @@ There is no official iMessage API for bots. There are three routes:
 
 | Item | Effort (wd) | Phase |
 |---|---|---|
-| Capability model v2 | 2–3 | P2a |
-| Inbound worker | 5–7 | P2a |
-| Buzz messages, DMs, threads, files, reactions, edits, canvas, inbound | 6–8 | P2a |
-| Slack | 3–4 | P2a |
-| Telegram additions | 3–4 | P2a |
-| Discord additions (incl. native voice messages) | 4–5 | P2a |
-| Owner screen updates for the new features | 3–4 | P2a |
-| **P2a total** | **26–35** | |
-| Live-session grant model (policy, consent, receipts, owner screen) | 4–6 | P2b |
-| Buzz huddle client (listen, speak-approved, speak-live) | 8–12 | P2b |
-| Discord voice channels | 6–10 | P2b |
-| Speech provider integration (speech-to-text, text-to-speech) | 2–3 | P2b |
-| **P2b total** | **20–30** (+ provider costs) | |
+| Capability model v2 | 2–3 | P2 |
+| Inbound worker | 5–7 | P2 |
+| Buzz messages, DMs, threads, files, reactions, edits, canvas, inbound | 6–8 | P2 |
+| Slack | 3–4 | P2 |
+| Telegram additions | 3–4 | P2 |
+| Discord additions (incl. native voice messages) | 4–5 | P2 |
+| Owner screen updates for the new features | 3–4 | P2 |
+| P2 part 1 subtotal | 26–35 | |
+| Live-session grant model (policy, consent, receipts, owner screen) | 4–6 | P2 |
+| Buzz huddle client (listen, speak-approved, speak-live) | 8–12 | P2 |
+| Discord voice channels | 6–10 | P2 |
+| Speech provider integration (speech-to-text, text-to-speech) | 2–3 | P2 |
+| P2 part 2 subtotal | 20–30 (+ provider costs) | |
+| **P2 total (one phase)** | **46–65** | |
 | Teams | 6–9 | P3 |
 | iMessage route A or C | 6–12 | P3 (if selected) |
 | WhatsApp Cloud API | 4–6 | P3 |
@@ -246,9 +246,13 @@ We verify each item before we build the related part.
 
 ## 12. Decisions for Martin
 
-1. Do you approve **P2a** (shared changes, Buzz messages, Slack, Telegram and Discord additions)?
-2. Do you approve **P2b** (live-session grant, Buzz huddles, Discord voice) now, or after P2a?
+1. Decided (2026-10-10): P2a and P2b are one phase (P2).
+2. Decided: live voice (Buzz huddles, Discord voice) is in P2.
 3. For live voice: do you accept the consent rule (every human accepts once per session before the agent stores their speech; no raw audio is stored)?
 4. **Teams:** P3 (recommended) or P2?
 5. **iMessage:** route A (Apple Messages for Business), route C (RCS), or not now? Do you agree that a Mac bridge stays outside Channels?
 6. **Buzz:** which relay is canonical, and may we update it to a newer Buzz version?
+
+## 13. Open item: the new kit
+
+Martin (2026-10-10): "that new kit should be ready already". Lead · Channels asked the Coordinator which kit release this is and what it covers (Buzz huddles, voice, inbound). If the kit already gives a Buzz huddle client, speech-to-text or text-to-speech, Channels uses it and the P2 effort goes down. This section is updated when the answer arrives.
