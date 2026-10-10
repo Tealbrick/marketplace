@@ -12,6 +12,7 @@ import {
   applyFallbacks,
   capabilitySupports,
   kindLimits,
+  wiredCapabilities,
 } from "./providers/capabilities.js";
 import { scrubSecrets, validateOutbound } from "./providers/common.js";
 import { createDiscordProvider } from "./providers/discord.js";
@@ -126,10 +127,13 @@ export function policyCapabilities(caps: ChannelCapabilities): ChannelProviderCa
 }
 
 /**
- * What an agent may use on this channel: the provider declaration narrowed by
- * the channel policy (C2). A media kind the policy leaves no type for is false.
+ * What an agent may use on this channel: the provider declaration narrowed to
+ * the wired features (AGENT_WIRED_FEATURES) and by the channel policy (C2).
+ * A media kind the policy leaves no type for is false.
  */
-export function effectiveCapabilities(caps: ChannelCapabilities, policy: ChannelPolicy) {
+export function effectiveCapabilities(declared: ChannelCapabilities, policy: ChannelPolicy) {
+  // Only features an agent operation can use today (idempotent when the caller already narrowed it).
+  const caps = wiredCapabilities(declared);
   const files = policy.content.files;
   const narrow = (spec: MediaCapability | false) => {
     if (spec === false || !files.allowed) return false;

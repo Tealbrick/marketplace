@@ -433,7 +433,7 @@ function listOf(parts: Array<[boolean | undefined, string]>): string | null {
   return names.length === 0 ? null : names.join(", ");
 }
 
-/** Capability model v2 rows (P2 scope 2.1). Only declared features are available; a missing key (a v1 answer) is not available. */
+/** Capability model v2 rows (P2 scope 2.1). The server answer is already declaration ∩ wired features, so a row is available only when an agent operation can use it; a missing key (a v1 answer) is not available. */
 function v2Rows(caps: ChannelEffectiveCapabilities): CapabilityRow[] {
   const thread = caps.thread === false ? null : listOf([[caps.thread.replies, "replies"], [caps.thread.topics, "forum topics"], [caps.thread.forum, "forum posts"]]);
   const reactions = typeof caps.reactions === "object" ? listOf([[caps.reactions.add, "add"], [caps.reactions.remove, "remove"], [caps.reactions.custom, "custom emoji"]]) : null;

@@ -9,6 +9,7 @@ import type { CompanyBoxApproval, ConnectorCapability, ConnectorUsageLedgerEntry
 import { NOSTR_MIN_PREFIX_HEX } from "./approvals.js";
 import { createGrantService, type GrantService } from "./grants.js";
 import { eventHostAllowed, eventListingStatus, grantCoversPost, maxPendingPerAgent, type PostCampaign } from "./policy.js";
+import { wiredCapabilities } from "./providers/capabilities.js";
 import type { ChannelCapabilities, ChannelProvider, ChannelProviderId, DiscoverResult, SendResult } from "./providers/types.js";
 import {
   CHANNEL_PROVIDER_IDS,
@@ -322,6 +323,11 @@ export function createChannelService(deps: ChannelServiceDeps) {
     );
 
   const providerFor = (provider: string): ChannelProvider | null => (isChannelProviderId(provider) ? deps.providers[provider] ?? null : null);
+  /** The effective declaration (adapter ∩ AGENT_WIRED_FEATURES): every agent-facing check and view reads this. */
+  const capabilitiesFor = (provider: string): ChannelCapabilities | null => {
+    const adapter = providerFor(provider);
+    return adapter ? wiredCapabilities(adapter.capabilities) : null;
+  };
 
   // ----- 3a ------------------------------------------------------------------
 
@@ -342,7 +348,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
   // ----- 3b (with the live confirmed-event check at send time) ---------------
 
   const contentRefusal = async (channel: ChannelRecord, payload: ChannelPayload, mode: "immediate" | "scheduled", live: boolean) => {
-    const caps = providerFor(channel.provider)!.capabilities;
+    const caps = capabilitiesFor(channel.provider)!;
     const refusal = checkChannelContent({ payload, policy: channel.policy, caps, mode, now: deps.now() });
     if (refusal) return refusal;
     if (live && channel.policy.content.requireConfirmedEvent) {
@@ -386,7 +392,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
       store: channels,
       attachmentsDir,
       channel,
-      caps: providerFor(channel.provider)!.capabilities,
+      caps: capabilitiesFor(channel.provider)!,
       agentId,
       op: mode === "scheduled" ? "schedule" : "post",
       body,
@@ -1082,7 +1088,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
     const notSendable = sendable(channel);
     if (notSendable) return answer(refusalReply(notSendable, input.traceId));
     const body: ChannelPostBody = { text: OWNER_TEST_TEXT, attachments: [], campaign: {}, sendAt: null };
-    const built = buildChannelPayload({ store: channels, attachmentsDir, channel, caps: providerFor(channel.provider)!.capabilities, agentId, op: "test", body });
+    const built = buildChannelPayload({ store: channels, attachmentsDir, channel, caps: capabilitiesFor(channel.provider)!, agentId, op: "test", body });
     if (!built.ok) return answer(refusalReply(built.refusal, input.traceId));
     const existing = channels.getPostByIdempotencyKey(org, agentId, input.idempotencyKey);
     if (existing) {
@@ -1318,7 +1324,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
     boot,
     readinessView,
     providerFor,
-    capabilitiesFor: (provider: string): ChannelCapabilities | null => providerFor(provider)?.capabilities ?? null,
+    capabilitiesFor,
     grants,
     execute,
     ownerTest,

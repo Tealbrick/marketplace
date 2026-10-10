@@ -236,3 +236,70 @@ export function featureRefusal(caps: ChannelCapabilities, feature: ChannelFeatur
     ? null
     : { errorCode: "channel_capability_unavailable", detail: `this provider does not declare "${feature}"` };
 }
+
+/**
+ * Closed set of features an agent operation can really use TODAY (review of PR #43). The P1 post and schedule
+ * routes send text plus the declared attachment kinds (a fallback voice included) to a discovered destination,
+ * and a Telegram forum topic is such a destination (`thread.topics`). Nothing else has a route yet: no reply in a
+ * thread, mention of a person, DM, reaction, edit, delete, poll, button, event, native schedule (P1 scheduling is
+ * Marketplace-side), presence, canvas, live voice or inbound delivery.
+ * Adapters keep declaring what they CAN do; a later change adds a feature here in the same change that ships its
+ * operation. Agents and the owner UI only ever see `declaration ∩ wired` (see `wiredCapabilities`).
+ */
+export const AGENT_WIRED_FEATURES: ReadonlySet<ChannelFeature> = new Set<ChannelFeature>([
+  "image",
+  "file",
+  "audio",
+  "voice",
+  "video",
+  "thread.topics",
+]);
+
+/**
+ * Pure: the effective capability answer, the provider declaration narrowed to the wired features. Every feature
+ * outside `wired` reads as not available (`false`, `none`, zero members); everything that is not a feature
+ * (text limits, markup, discover, limits, broadcast suppression) is kept. For every feature,
+ * `capabilitySupports(wiredCapabilities(caps), f) === capabilitySupports(caps, f) && wired.has(f)`.
+ */
+export function wiredCapabilities(
+  caps: ChannelCapabilities,
+  wired: ReadonlySet<ChannelFeature> = AGENT_WIRED_FEATURES,
+): ChannelCapabilities {
+  const on = (feature: ChannelFeature) => wired.has(feature) && capabilitySupports(caps, feature);
+  const live = caps.live;
+  const liveOn = live !== false && (["live.join", "live.listen", "live.speak", "live.transcript"] as const).some(on);
+  const dmOn = on("dm");
+  const editOn = on("edit");
+  return {
+    ...caps,
+    mentions: { ...caps.mentions, users: on("mentions.users") },
+    dm: { open: dmOn, maxMembers: dmOn ? caps.dm.maxMembers : 0 },
+    image: on("image") ? caps.image : false,
+    file: on("file") ? caps.file : false,
+    audio: on("audio") ? caps.audio : false,
+    voice: on("voice") ? caps.voice : false,
+    video: on("video") ? caps.video : false,
+    thread: { replies: on("thread.replies"), topics: on("thread.topics"), forum: on("thread.forum") },
+    reactions: { add: on("reactions.add"), remove: on("reactions.remove"), custom: on("reactions.custom") },
+    buttons: { url: on("buttons.url"), callback: on("buttons.callback") },
+    poll: on("poll"),
+    edit: editOn ? caps.edit : { own: false },
+    delete: { own: on("delete") },
+    canvas: on("canvas"),
+    presence: { typing: on("presence.typing"), status: on("presence.status") },
+    ephemeral: on("ephemeral"),
+    live:
+      live !== false && liveOn
+        ? {
+            join: on("live.join"),
+            listen: on("live.listen"),
+            speak: on("live.speak"),
+            transcript: on("live.transcript"),
+            maxSessionMinutes: live.maxSessionMinutes,
+          }
+        : false,
+    schedule: { native: on("schedule.native") },
+    events: { create: on("events.create") },
+    inbound: on("inbound") ? caps.inbound : { mode: "none", dedupe: false },
+  };
+}
