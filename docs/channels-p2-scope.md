@@ -252,9 +252,10 @@ We verify each item before we build the related part.
 5. Decided: iMessage delayed.
 6. Decided: relay `wss://martinatrin.up.railway.app`. Open: may we update that relay to a newer Buzz version if a feature needs it?
 
-## 13. Open item: the new kit
+## 13. Kit and contract support (resolved 2026-10-10)
 
-Martin (2026-10-10): "that new kit should be ready already". Lead · Channels asked the Coordinator which kit release this is and what it covers (Buzz huddles, voice, inbound). If the kit already gives a Buzz huddle client, speech-to-text or text-to-speech, Channels uses it and the P2 effort goes down. Candidates found on npm (2026-10-10):
-1. `@tealbrick/voice` 0.3.0-rc.16 (kit release train): Portal-authorized speech-to-text and text-to-speech with configurable endpoints, and a native Eve voice channel. Channels can use it for the speech part of huddles and voice channels (replaces "speech provider integration", 2–3 wd, and the credentials go through Portal).
-2. `@kybernesis/buzz` 0.10.2: puts an Eve agent in a Buzz workspace as a member (per-speaker verified identity, presence, typing, seen signals) with `nostr-tools`. It is a reference for the Buzz adapter's identity and inbound parts.
-Neither package has a Buzz huddle audio client. This section is updated when the Coordinator confirms which kit Martin means.
+1. There is no kit or Buzz build with a huddle bot client or speech support. Channels builds its own Buzz huddle client (Tealbrick code in the Marketplace miniapp).
+2. Speech-to-text and text-to-speech: `@tealbrick/voice` (kit release train) gives Portal-authorized speech endpoints. Channels uses it.
+3. Live-session grants use the same grant mechanism as the kit's owner-signed standing grants (rc.18), shared through **contract alpha.8** (`@tealbrick/contract/grants`): one canonical grant schema with a typed `scope` (`live-session` included), `grantDigest()`, `verifyGrantApproval()` for Buzz and TBD proofs, and signed revoke/pause/resume commands. The grant record lives in the Marketplace database, because Marketplace enforces server-side sessions. Owner approval is the same experience as post approvals.
+4. Inbound: there is no app-to-agent inbound contract. Marketplace **bridges** inbound channel messages into Buzz: a Marketplace bridge identity posts each message, with a provenance header (source, channel, sender display name, message id), into a per-route Buzz channel where the agent is a member. The agent's harness (buzz-acp) frames it as an external, untrusted message, with its loop breaker. Replies go back through the gated Channels operations.
+5. Only Tealbrick packages are used (Martin, 2026-10-10).
