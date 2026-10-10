@@ -9,11 +9,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import { buildMarketplaceApp, type BuildMarketplaceAppOptions } from "./app.js";
 import {
   AGENT_OPERATION,
+  assertManifestCompat,
   MARKETPLACE_MANIFEST,
   resolveLaunchRoute,
 } from "./contract.js";
 import { CHANNEL_AGENT_OPERATION } from "./channels/routes.js";
+import { OPENAPI_DEFAULT_MAX_UPLOAD_BYTES } from "./openapi-http.js";
 import { MarketplaceOperatorSessionManager } from "./operator-auth.js";
+import { TOOL_FILE_CONTENT_TYPES } from "./tool-files.js";
 import { SqliteMarketplaceStore } from "./store.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -351,6 +354,20 @@ describe("tealbrick.app.json", () => {
       "MARKETPLACE_CHANNELS_TEAMS_TENANT_ID",
       "MARKETPLACE_CHANNELS_TEAMS_GRAPH_ENABLED",
     ]));
+  });
+
+  it("declares tool files with the contract alpha.9 fields, matching the server-side checks (#59)", async () => {
+    const raw = JSON.parse(await readFile(path.join(repoRoot, "tealbrick.app.json"), "utf8")) as { operations: Array<Record<string, unknown>> };
+    const upload = raw.operations.find((operation) => operation.id === AGENT_OPERATION.toolFilesUpload)!;
+    expect(upload).toMatchObject({ method: "POST", audience: "harness", inputBinary: { maxBytes: OPENAPI_DEFAULT_MAX_UPLOAD_BYTES } });
+    expect(upload.input).toBeUndefined();
+    expect((upload.inputBinary as { contentTypes: string[] }).contentTypes).toEqual([...TOOL_FILE_CONTENT_TYPES]);
+    const tools = raw.operations.find((operation) => operation.id === AGENT_OPERATION.toolsCall)!;
+    expect(tools.inputFileRefs).toEqual({ uploadOperation: AGENT_OPERATION.toolFilesUpload });
+    // Until the pinned contract knows these fields, the served manifest validates without them; nothing else is dropped.
+    const served = MARKETPLACE_MANIFEST.operations.map((operation) => operation.id);
+    expect(served).toEqual(raw.operations.map((operation) => operation.id));
+    expect(() => assertManifestCompat({ ...raw, operations: [...raw.operations, { id: "bad" }] })).toThrow();
   });
 
   it("maps every operation to a real route of the app", async () => {
