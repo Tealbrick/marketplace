@@ -1398,6 +1398,12 @@ export function createChannelService(deps: ChannelServiceDeps) {
     return typeof botId === "string" && botId.length > 0 ? botId : null;
   };
 
+  /** The Slack workspace (auth.test team_id) of the verified connection, or null (review F6). */
+  const slackTeamId = (): string | null => {
+    const teamId = store.getConnection(org, channelPluginId("slack"))?.metadata.teamId;
+    return typeof teamId === "string" && teamId.length > 0 ? teamId : null;
+  };
+
   /** The credential value for the inbound worker (gateway, webhook calls), only while the provider is available. */
   const inboundCredential = (provider: ChannelProviderId): string | null =>
     readiness.get(provider) === "available" ? credentials.get(provider)?.value ?? null : null;
@@ -1406,6 +1412,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
     configured,
     teamsIdentity,
     botIdFor,
+    slackTeamId,
     inboundCredential,
     cleanupAttachments,
     boot,

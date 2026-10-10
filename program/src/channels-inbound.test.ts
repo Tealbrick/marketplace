@@ -221,6 +221,22 @@ describe("Slack Events API receiver", () => {
     expect(audit).not.toContain(SIGNING_SECRET);
   });
 
+  it("ignores (200, not routed) a signed event for another Slack team than the connection's (F6)", async () => {
+    const { f, slackEvent, enable } = await setup();
+    const channel = await f.createChannel({ provider: "slack", slug: "announce", externalId: "C0ANNOUNCE" });
+    f.consentFor("agent-1", channel);
+    expect((await enable(channel.id)).statusCode).toBe(200);
+    expect(f.store.getConnection(TENANT, "channels-slack")?.metadata.teamId).toBe("T0TEAM001");
+    const foreign = await slackEvent({ ...slackMessageEvent(), team_id: "TOTHER001" });
+    expect(foreign.statusCode).toBe(200);
+    const missing = slackMessageEvent() as Record<string, unknown>;
+    delete missing.team_id;
+    expect((await slackEvent(missing)).statusCode).toBe(200);
+    expect((await slackEvent(slackMessageEvent())).statusCode).toBe(200);
+    await f.runtime.inbound.pipeline.settled();
+    expect(f.store.channels.inbound.listEvents(TENANT, { limit: 10 })).toHaveLength(1);
+  });
+
   it("refuses to enable a Slack route without the signing secret or for an agent without a consent", async () => {
     const { f, enable } = await setup({ environment: { MARKETPLACE_CHANNELS_SLACK_SIGNING_SECRET: undefined } });
     const channel = await f.createChannel({ provider: "slack", slug: "announce", externalId: "C0ANNOUNCE" });

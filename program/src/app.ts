@@ -8339,6 +8339,7 @@ export async function buildMarketplaceApp(
     now: channelClock,
     inbound: options.store.channels.inbound,
     slackSigningSecret,
+    slackTeamId: () => channelService.slackTeamId(),
     telegramConsumerKey: () => {
       const credential = channelService.inboundCredential("telegram");
       return credential ? inboundConsumerKey("telegram", credential) : null;

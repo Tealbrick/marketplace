@@ -45,7 +45,9 @@ export function fakeProvider(id: ChannelProviderId, token: string) {
     capabilities: real.capabilities,
     async verify(credential) {
       if (!credential) return { ok: false, reason: "credential_missing" };
-      return credential === token ? { ok: true, botId: "4242", botUsername: `${id}_test_bot` } : { ok: false, reason: "credential_invalid" };
+      return credential === token
+        ? { ok: true, botId: "4242", botUsername: `${id}_test_bot`, ...(id === "slack" ? { teamId: "T0TEAM001" } : {}) }
+        : { ok: false, reason: "credential_invalid" };
     },
     async discover(credential) {
       return credential === token ? { ok: true, destinations } : { ok: false, reason: "credential_invalid" };

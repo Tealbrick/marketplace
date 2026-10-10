@@ -4,7 +4,7 @@ import type { BlockList } from "node:net";
 
 import { createSourceBudget, createSourceResolver, headerValue, matchesDigest, type SourceRate } from "./inbound-http.js";
 import type { InboundStore } from "./inbound-store.js";
-import { SLACK_SIGNATURE_MAX_SKEW_SECONDS, parseSlackEvent, verifySlackSignature } from "./providers/slack.js";
+import { SLACK_SIGNATURE_MAX_SKEW_SECONDS, acceptSlackEvent, createSlackEventDedupe } from "./providers/slack.js";
 import { parseTelegramUpdate, telegramChatsFromUpdate } from "./providers/telegram.js";
 import type { ChannelProviderId, InboundMessage } from "./providers/types.js";
 
@@ -15,8 +15,9 @@ import type { ChannelProviderId, InboundMessage } from "./providers/types.js";
  * not manifest operations (agents never call them) and need no operator session or Portal grant: each request
  * is authenticated by the provider's own proof. Received text is untrusted data.
  *
- * - Slack Events API: `X-Slack-Signature` v0 over the raw body (±5 minutes); `url_verification` answers the
- *   challenge; retries (`X-Slack-Retry-Num`) are de-duplicated by the pipeline (same channel + message ts).
+ * - Slack Events API: `acceptSlackEvent` (signature v0 over the raw body ±5 minutes, the connection's team, the
+ *   `event_id` replay store); `url_verification` answers the challenge; retries (`X-Slack-Retry-Num`) are dropped
+ *   by the replay store, and the pipeline also de-duplicates by channel + message ts.
  * - Telegram webhook: a random path segment and `X-Telegram-Bot-Api-Secret-Token`, both compared with the
  *   SHA-256 digests Marketplace stored when it called setWebhook. Every update feeds the chats-seen table
  *   (discovery while a webhook is set); messages go to the pipeline (edits are not delivered again).
@@ -47,6 +48,8 @@ export type InboundRoutesDeps = {
   now: () => Date;
   inbound: InboundStore;
   slackSigningSecret: () => string | null;
+  /** The connection's Slack team (auth.test); an event for another team is acknowledged and ignored (review F6). */
+  slackTeamId?: () => string | null;
   /** The consumer key of the current Telegram credential (null without one): a webhook set for another token is stale. */
   telegramConsumerKey: () => string | null;
   botIdFor: (provider: ChannelProviderId) => string | null;
@@ -63,6 +66,7 @@ export function registerInboundRoutes(deps: InboundRoutesDeps): void {
   const telegramBudget = createSourceBudget(deps.rate ?? INBOUND_ROUTE_RATE, deps.clock);
   const sourceOf = createSourceResolver(deps.trustedProxies ?? null);
   const nowMs = () => (deps.clock ?? (() => deps.now().getTime()))();
+  const slackDedupe = createSlackEventDedupe(() => nowMs());
   const hand = (message: InboundMessage) => {
     try {
       deps.ingest(message);
@@ -104,19 +108,22 @@ export function registerInboundRoutes(deps: InboundRoutesDeps): void {
         const secret = deps.slackSigningSecret();
         if (!secret) return reply.code(503).send({ error: "channels_slack_inbound_not_configured" });
         const raw = Buffer.isBuffer(request.body) ? request.body : Buffer.alloc(0);
-        const verified = verifySlackSignature({
+        // One implementation (the Slack adapter's): signature over the raw body, the connection's team, then the
+        // event_id replay store. The reason is a fixed code; the signature and the secret are never echoed or logged.
+        const botUserId = deps.botIdFor("slack");
+        const decision = acceptSlackEvent({
           signingSecret: secret,
           timestamp: headerValue(request, "x-slack-request-timestamp"),
           signature: headerValue(request, "x-slack-signature"),
           rawBody: raw,
+          self: { teamId: deps.slackTeamId?.() ?? "", ...(botUserId ? { botUserId } : {}) },
+          dedupe: slackDedupe,
           nowMs: nowMs(),
         });
-        // The reason is a fixed code; the signature and the secret are never echoed or logged.
-        if (!verified.ok) return reply.code(401).send({ error: "slack_signature_invalid", reason: verified.reason });
-        const botUserId = deps.botIdFor("slack");
-        const parsed = parseSlackEvent(raw.toString("utf8"), botUserId ? { botUserId } : {});
-        if (parsed.kind === "url_verification") return reply.code(200).send({ challenge: parsed.challenge });
-        if (parsed.kind === "message") hand(parsed.message);
+        if (decision.kind === "rejected") return reply.code(401).send({ error: "slack_signature_invalid", reason: decision.reason });
+        if (decision.kind === "url_verification") return reply.code(200).send({ challenge: decision.challenge });
+        // A message of another team (or with no team), a duplicate event_id and other events: acknowledged, not routed.
+        if (decision.kind === "message") hand(decision.message);
         return reply.code(200).send({});
       },
     );
