@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  DEFAULT_ACTION_CAPS,
   GRANT_SCOPE_FLAGS,
+  effectiveCaps,
   channelPayloadDigest,
   grantCoversPost,
   grantWithinCeiling,
@@ -161,5 +163,35 @@ describe("payload digest fields (R2)", () => {
     expect(channelPayloadDigest({ ...base, mentions: [{ userId: "U0ALICE" }, { userId: "U0BOB" }] })).toBe(one);
     expect(channelPayloadDigest({ ...base, mentions: [{ userId: "U0ALICE" }] })).not.toBe(one);
     expect(channelPayloadDigest({ ...base, mentions: [{ userId: "U0ALICE", name: "Alice" }, { userId: "U0BOB" }] })).not.toBe(one);
+  });
+});
+
+describe("action caps (reactions, edits, deletes: own caps, never the post caps)", () => {
+  it("fills defaults, lets the owner only tighten, and keeps old policies on the defaults", () => {
+    expect(ceiling.caps.actions).toEqual({ reactionsPerDay: 100, editsPerDay: 20, editMinIntervalSeconds: 30, deletesPerDay: 50 });
+    const tighter = validatePolicy({ caps: { actions: { deletesPerDay: 5, editMinIntervalSeconds: 120 } } });
+    expect(tighter.ok && tighter.policy.caps.actions).toEqual({ ...DEFAULT_ACTION_CAPS, deletesPerDay: 5, editMinIntervalSeconds: 120 });
+    const wider = validatePolicy({ caps: { actions: { deletesPerDay: 51, reactionsPerDay: 101, editsPerDay: 21, editMinIntervalSeconds: 10 } } });
+    expect(wider.ok ? [] : wider.errors.map((error) => error.field).sort()).toEqual([
+      "caps.actions.deletesPerDay",
+      "caps.actions.editMinIntervalSeconds",
+      "caps.actions.editsPerDay",
+      "caps.actions.reactionsPerDay",
+    ]);
+    expect(effectiveCaps(null, { perDay: 6, minIntervalSeconds: 600, onePerPhase: true }).actions).toEqual(DEFAULT_ACTION_CAPS);
+  });
+
+  it("checks grant action caps against the ceiling and treats them narrowing-aware", () => {
+    const withActions = (actions: Record<string, number>) => ({ ...terms(), caps: { ...terms().caps, actions } });
+    expect(grantWithinCeiling(withActions({ deletesPerDay: 10, editMinIntervalSeconds: 60 }), ceiling, { now: NOW })).toEqual({ ok: true });
+    expect(grantWithinCeiling(withActions({ deletesPerDay: 60, editMinIntervalSeconds: 5 }), ceiling, { now: NOW })).toMatchObject({
+      ok: false,
+      fields: ["caps.actions.deletesPerDay", "caps.actions.editMinIntervalSeconds"],
+    });
+    expect(isNarrowing(withActions({ deletesPerDay: 10 }), withActions({ deletesPerDay: 5 }))).toEqual({ ok: true });
+    expect(isNarrowing(withActions({ deletesPerDay: 10 }), withActions({ deletesPerDay: 20 }))).toMatchObject({ ok: false, fields: ["caps.actions.deletesPerDay"] });
+    expect(isNarrowing(withActions({ deletesPerDay: 10 }), terms())).toMatchObject({ ok: false, fields: ["caps.actions.deletesPerDay"] });
+    expect(isNarrowing(withActions({ editMinIntervalSeconds: 60 }), withActions({ editMinIntervalSeconds: 30 }))).toMatchObject({ ok: false, fields: ["caps.actions.editMinIntervalSeconds"] });
+    expect(effectiveCaps({ ...terms().caps, actions: { deletesPerDay: 3, editMinIntervalSeconds: 90 } }, ceiling.caps).actions).toEqual({ ...DEFAULT_ACTION_CAPS, deletesPerDay: 3, editMinIntervalSeconds: 90 });
   });
 });

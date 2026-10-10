@@ -49,13 +49,37 @@ export type ChannelFilePolicy = {
   maxCount: number;
 };
 
+/**
+ * Routes v2 action caps (Coordinator, 2026-10-10): reactions, edits and deletes are not posts, so they never count
+ * against the post caps (an agent must be able to delete a mistaken post at once). Each has its own daily cap;
+ * edits of the same message are spaced. Polls and direct messages are new outward content and stay on the post caps.
+ */
+export type ActionCaps = {
+  reactionsPerDay: number;
+  editsPerDay: number;
+  /** Minimum gap between two edits of the same message. */
+  editMinIntervalSeconds: number;
+  deletesPerDay: number;
+};
+
+/** Defaults and the widest values a channel ceiling may set (lower is tighter; a longer edit gap is tighter). */
+export const DEFAULT_ACTION_CAPS: Readonly<ActionCaps> = Object.freeze({ reactionsPerDay: 100, editsPerDay: 20, editMinIntervalSeconds: 30, deletesPerDay: 50 });
+export const ACTION_CAP_COUNTS = ["reactionsPerDay", "editsPerDay", "deletesPerDay"] as const;
+
 export type ChannelCaps = {
   /** Shared by every agent on the channel. */
   perDay: number;
   perHour?: number;
   minIntervalSeconds: number;
   onePerPhase: boolean;
+  /** Routes v2 action caps. Absent on policies stored before routes v2: the defaults apply. */
+  actions?: ActionCaps;
 };
+
+/** The action caps in force for a ceiling (the defaults when the policy predates routes v2). */
+export function ceilingActionCaps(caps: Pick<ChannelCaps, "actions">): ActionCaps {
+  return { ...DEFAULT_ACTION_CAPS, ...(caps.actions ?? {}) };
+}
 
 export type ChannelScheduleWindow = {
   /** IANA time zone, e.g. `Asia/Taipei`. */
@@ -101,7 +125,7 @@ export function maxPendingPerAgent(policy: ChannelPolicy): number {
 
 export type ChannelPolicyInput = {
   standingGrants?: ChannelPolicy["standingGrants"];
-  caps?: Partial<ChannelCaps>;
+  caps?: Partial<Omit<ChannelCaps, "actions">> & { actions?: Partial<ActionCaps> };
   content?: Partial<Omit<ChannelPolicy["content"], "files">> & {
     files?: Partial<ChannelFilePolicy>;
   };
@@ -124,6 +148,8 @@ export type GrantCaps = {
   perHour?: number;
   minIntervalSeconds: number;
   onePerPhase: boolean;
+  /** Routes v2: tighter action caps for this grant. An absent field inherits the ceiling (effective = min). */
+  actions?: Partial<ActionCaps>;
 };
 
 export type GrantFileScope =
@@ -209,7 +235,7 @@ export type PostFacts = {
 
 export const DEFAULT_CHANNEL_POLICY: ChannelPolicy = Object.freeze({
   standingGrants: "disabled",
-  caps: { perDay: 6, minIntervalSeconds: 600, onePerPhase: true },
+  caps: { perDay: 6, minIntervalSeconds: 600, onePerPhase: true, actions: { ...DEFAULT_ACTION_CAPS } },
   content: {
     files: {
       allowed: true,
@@ -303,6 +329,21 @@ export function validatePolicy(
   if (policy.caps.perHour !== undefined && policy.caps.perHour > policy.caps.perDay) {
     errors.push({ field: "caps.perHour", message: "Must not exceed caps.perDay." });
   }
+  const actions = caps.actions ?? {};
+  const actionCaps: ActionCaps = { ...DEFAULT_ACTION_CAPS };
+  for (const key of ACTION_CAP_COUNTS) {
+    const value = actions[key];
+    if (value === undefined) continue;
+    if (!isNonNegativeInt(value, DEFAULT_ACTION_CAPS[key])) {
+      errors.push({ field: `caps.actions.${key}`, message: `Must be an integer from 0 to ${DEFAULT_ACTION_CAPS[key]}.` });
+    } else actionCaps[key] = value;
+  }
+  if (actions.editMinIntervalSeconds !== undefined) {
+    if (!Number.isInteger(actions.editMinIntervalSeconds) || actions.editMinIntervalSeconds < DEFAULT_ACTION_CAPS.editMinIntervalSeconds || actions.editMinIntervalSeconds > 86_400) {
+      errors.push({ field: "caps.actions.editMinIntervalSeconds", message: `Must be an integer from ${DEFAULT_ACTION_CAPS.editMinIntervalSeconds} to 86400.` });
+    } else actionCaps.editMinIntervalSeconds = actions.editMinIntervalSeconds;
+  }
+  policy.caps.actions = actionCaps;
 
   const content = source.content ?? {};
   const providerMaxChars = provider?.["send.maxChars"];
@@ -518,6 +559,15 @@ export function grantWithinCeiling(
     fields.push("caps.minIntervalSeconds");
   }
   if (ceilingCaps.onePerPhase && caps.onePerPhase !== true) fields.push("caps.onePerPhase");
+  if (caps.actions !== undefined) {
+    const ceilingActions = ceilingActionCaps(ceilingCaps);
+    for (const key of ACTION_CAP_COUNTS) {
+      const value = caps.actions[key];
+      if (value !== undefined && (!isNonNegativeInt(value) || value > ceilingActions[key])) fields.push(`caps.actions.${key}`);
+    }
+    const gap = caps.actions.editMinIntervalSeconds;
+    if (gap !== undefined && (!isNonNegativeInt(gap) || gap < ceilingActions.editMinIntervalSeconds)) fields.push("caps.actions.editMinIntervalSeconds");
+  }
 
   if (scope.maxChars !== undefined) {
     if (!isPositiveInt(scope.maxChars) || (ceiling.content.maxChars !== undefined && scope.maxChars > ceiling.content.maxChars)) {
@@ -581,6 +631,15 @@ export function isNarrowing(
   if (a.perHour !== undefined && (b.perHour === undefined || b.perHour > a.perHour)) fields.push("caps.perHour");
   if (b.minIntervalSeconds < a.minIntervalSeconds) fields.push("caps.minIntervalSeconds");
   if (a.onePerPhase && !b.onePerPhase) fields.push("caps.onePerPhase");
+  // Action caps: an absent field inherits the ceiling, so dropping a set value is widening.
+  for (const key of ACTION_CAP_COUNTS) {
+    const was = a.actions?.[key];
+    const now = b.actions?.[key];
+    if (was !== undefined && (now === undefined || now > was)) fields.push(`caps.actions.${key}`);
+  }
+  const wasGap = a.actions?.editMinIntervalSeconds;
+  const nowGap = b.actions?.editMinIntervalSeconds;
+  if (wasGap !== undefined && (nowGap === undefined || nowGap < wasGap)) fields.push("caps.actions.editMinIntervalSeconds");
 
   const s = current.scope;
   const t = proposed.scope;
@@ -630,7 +689,15 @@ export function isNarrowing(
  * Without a grant the ceiling applies as is.
  */
 export function effectiveCaps(grant: GrantCaps | null | undefined, ceiling: ChannelCaps): ChannelCaps {
-  if (!grant) return { ...ceiling };
+  if (!grant) return { ...ceiling, actions: ceilingActionCaps(ceiling) };
+  const ceilingActions = ceilingActionCaps(ceiling);
+  const grantActions = grant.actions ?? {};
+  const actions: ActionCaps = {
+    reactionsPerDay: Math.min(grantActions.reactionsPerDay ?? Infinity, ceilingActions.reactionsPerDay),
+    editsPerDay: Math.min(grantActions.editsPerDay ?? Infinity, ceilingActions.editsPerDay),
+    deletesPerDay: Math.min(grantActions.deletesPerDay ?? Infinity, ceilingActions.deletesPerDay),
+    editMinIntervalSeconds: Math.max(grantActions.editMinIntervalSeconds ?? 0, ceilingActions.editMinIntervalSeconds),
+  };
   const perHour =
     grant.perHour === undefined
       ? ceiling.perHour
@@ -642,6 +709,7 @@ export function effectiveCaps(grant: GrantCaps | null | undefined, ceiling: Chan
     ...(perHour === undefined ? {} : { perHour }),
     minIntervalSeconds: Math.max(grant.minIntervalSeconds, ceiling.minIntervalSeconds),
     onePerPhase: grant.onePerPhase || ceiling.onePerPhase,
+    actions,
   };
 }
 

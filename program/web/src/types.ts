@@ -543,7 +543,14 @@ export interface ChannelScheduleWindow {
 
 export interface ChannelPolicy {
   standingGrants: "disabled" | "allowed";
-  caps: { perDay: number; perHour?: number; minIntervalSeconds: number; onePerPhase: boolean };
+  caps: {
+    perDay: number;
+    perHour?: number;
+    minIntervalSeconds: number;
+    onePerPhase: boolean;
+    /** Routes v2: reactions, edits and deletes have their own caps (never the post caps). */
+    actions?: { reactionsPerDay: number; editsPerDay: number; editMinIntervalSeconds: number; deletesPerDay: number };
+  };
   content: {
     maxChars?: number;
     files: { allowed: boolean; types: string[]; maxBytes: number; maxCount: number };

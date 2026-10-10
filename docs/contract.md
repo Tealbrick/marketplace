@@ -1024,8 +1024,21 @@ Standing grants (review R4): new scope flags `reactions`, `edits`, `deletes`,
 `polls`, `dms` (default false; `true` is wider, so `narrow` refuses adding one;
 each needs `immediate`). A grant covers an operation only with its flag. The
 grant digest includes a flag only when true, so grants approved before routes
-v2 keep their digests. Caps: every operation counts against the channel
-ceiling and the grant caps like a post (the owner can raise the ceiling).
+v2 keep their digests.
+
+Caps (Coordinator, 2026-10-10): reactions, edits and deletes never count against
+the post caps (per day, per hour, minimum gap, one per phase; nor `usageToday`),
+so an agent can delete a mistaken post at once. They have their own caps in the
+channel ceiling, `caps.actions` (defaults and widest values: `reactionsPerDay`
+100, `editsPerDay` 20, `deletesPerDay` 50, no gap; `editMinIntervalSeconds` 30,
+at least 30, between two edits of the same message), counted for all agents in
+the same reservation transaction, and optionally tighter in a grant's
+`caps.actions` (an absent field inherits the ceiling; narrowing-aware; part of
+the grant digest only when present). Refusals: `429
+channel_cap_reactions_per_day | channel_cap_edits_per_day |
+channel_cap_deletes_per_day | channel_edit_min_interval` with
+`retryAfterSeconds`. Polls and direct messages are new outward content and stay
+on the post caps.
 
 People (review R5). The owner sets a people policy per connection: `none`
 (default: no person can be found or messaged), `allowlist` (`people`: exact

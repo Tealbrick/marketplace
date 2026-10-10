@@ -83,6 +83,10 @@ function PolicySummary({ channel }: { channel: ChannelView }) {
     <dt>Posts per hour</dt><dd>{policy.caps.perHour ?? "No hourly limit"}</dd>
     <dt>Minimum gap</dt><dd>{formatSeconds(policy.caps.minIntervalSeconds)}</dd>
     <dt>One per phase</dt><dd>{policy.caps.onePerPhase ? "Yes" : "No"}</dd>
+    <dt>Reactions, edits, deletes</dt><dd>{(() => {
+      const actions = policy.caps.actions ?? { reactionsPerDay: 100, editsPerDay: 20, editMinIntervalSeconds: 30, deletesPerDay: 50 };
+      return `${actions.reactionsPerDay} / ${actions.editsPerDay} / ${actions.deletesPerDay} per day (not counted as posts; ${formatSeconds(actions.editMinIntervalSeconds)} between edits of one message)`;
+    })()}</dd>
     <dt>Standing grants</dt><dd>{policy.standingGrants === "allowed" ? "Allowed (you approve each one)" : "Off (every post waits for approval)"}</dd>
     <dt>Files</dt><dd>{files.allowed ? `${files.types.map(typeName).join(", ") || "No types"} · ${files.maxCount} per post` : "Not allowed"}</dd>
     <dt>Blocked words</dt><dd>{policy.content.denyPatterns.length ? policy.content.denyPatterns.length : "None"}</dd>

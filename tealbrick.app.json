@@ -2187,6 +2187,32 @@
             },
             "onePerPhase": {
               "type": "boolean"
+            },
+            "actions": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Own caps for reactions, edits and deletes (never the post caps); absent fields inherit the channel ceiling",
+              "properties": {
+                "reactionsPerDay": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "editsPerDay": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 20
+                },
+                "editMinIntervalSeconds": {
+                  "type": "integer",
+                  "minimum": 30
+                },
+                "deletesPerDay": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 50
+                }
+              }
             }
           }
         },
@@ -2302,6 +2328,32 @@
             },
             "onePerPhase": {
               "type": "boolean"
+            },
+            "actions": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Own caps for reactions, edits and deletes (never the post caps); absent fields inherit the channel ceiling",
+              "properties": {
+                "reactionsPerDay": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "editsPerDay": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 20
+                },
+                "editMinIntervalSeconds": {
+                  "type": "integer",
+                  "minimum": 30
+                },
+                "deletesPerDay": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 50
+                }
+              }
             }
           }
         },

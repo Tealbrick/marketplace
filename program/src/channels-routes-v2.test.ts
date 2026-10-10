@@ -209,6 +209,91 @@ describe("routes v2: reactions, edits and deletes (R1, R3)", () => {
   });
 });
 
+describe("routes v2: action caps (own caps, never the post caps)", () => {
+  async function tight(t: Awaited<ReturnType<typeof setup>>, actions: Record<string, number> = {}) {
+    // One post per day, ten minutes apart: the post caps are exhausted by the single post.
+    const channel = await t.f.createChannel({
+      provider: "slack",
+      slug: `tight-${++counter}`,
+      policy: { ...POLICY, caps: { perDay: 1, minIntervalSeconds: 600, onePerPhase: true, actions } },
+    });
+    t.f.consentFor("agent-1", channel);
+    await t.f.proposeAndApprove(channel.id, { caps: { perDay: 1, minIntervalSeconds: 600, onePerPhase: true }, scope: { files: false, immediate: true, scheduled: false, reactions: true, edits: true, deletes: true } });
+    return channel;
+  }
+
+  it("deletes a mistaken post immediately under scope.deletes, although the post caps are used up", async () => {
+    const t = await setup();
+    const channel = await tight(t);
+    const messageId = await t.posted(channel.id, "Wrong date!");
+    const another = await t.f.post(channel.id, { text: "Second post" }, key());
+    expect(another.statusCode).toBe(429);
+    const deleted = await t.remove(channel.id, messageId);
+    expect(deleted.statusCode, deleted.body).toBe(200);
+    expect(deleted.json().receipt).toMatchObject({ status: "sent", authority: expect.stringMatching(/^grant:/u) });
+    // Actions never count as posts: usage today still shows the one post.
+    const browse = await t.f.owner("GET", "/api/marketplace/channels");
+    expect(browse.json().channels.find((entry: { id: string }) => entry.id === channel.id).usageToday).toBe(1);
+  });
+
+  it("spaces edits of the same message (30 s by default) but not edits of different messages", async () => {
+    const t = await setup();
+    const channel = await t.channelFor("slack", "edit-gap");
+    await t.grant(channel.id, { edits: true });
+    const first = await t.posted(channel.id, "one");
+    const second = await t.posted(channel.id, "two");
+    expect((await t.edit(channel.id, first, "one, fixed")).statusCode).toBe(200);
+    const tooSoon = await t.edit(channel.id, first, "one, fixed again");
+    expect(tooSoon.statusCode).toBe(429);
+    expect(tooSoon.json()).toMatchObject({ error: "channel_edit_min_interval", retryAfterSeconds: 30 });
+    expect((await t.edit(channel.id, second, "two, fixed")).statusCode).toBe(200);
+    t.f.advance(30_000);
+    expect((await t.edit(channel.id, first, "one, fixed again")).statusCode).toBe(200);
+  });
+
+  it("caps each action kind on its own (reactions, edits, deletes)", async () => {
+    const t = await setup();
+    const channel = await tight(t, { reactionsPerDay: 2, editsPerDay: 1, deletesPerDay: 1 });
+    const a = await t.posted(channel.id, "a");
+    expect((await t.react(channel.id, a, { emoji: "tada" })).statusCode).toBe(200);
+    expect((await t.react(channel.id, a, { emoji: "eyes" })).statusCode).toBe(200);
+    const thirdReaction = await t.react(channel.id, a, { emoji: "rocket" });
+    expect(thirdReaction.statusCode).toBe(429);
+    expect(thirdReaction.json()).toMatchObject({ error: "channel_cap_reactions_per_day", retryAfterSeconds: expect.any(Number) });
+    expect((await t.edit(channel.id, a, "a!")).statusCode).toBe(200);
+    t.f.advance(60_000);
+    expect((await t.edit(channel.id, a, "a!!")).json()).toMatchObject({ error: "channel_cap_edits_per_day" });
+    expect((await t.remove(channel.id, a)).statusCode).toBe(200);
+    // Deletes: a channel with room for posts, one delete per day.
+    const roomy = await t.f.createChannel({ provider: "slack", slug: "delete-cap", externalId: "C0SECOND0", policy: { ...POLICY, caps: { ...CAPS, actions: { deletesPerDay: 1 } } } });
+    t.f.consentFor("agent-1", roomy);
+    await t.grant(roomy.id, { deletes: true });
+    const x = await t.posted(roomy.id, "x");
+    const y = await t.posted(roomy.id, "y");
+    expect((await t.remove(roomy.id, x)).statusCode).toBe(200);
+    const capped = await t.remove(roomy.id, y);
+    expect(capped.statusCode).toBe(429);
+    expect(capped.json()).toMatchObject({ error: "channel_cap_deletes_per_day" });
+    // Posts are not affected by the delete cap.
+    expect((await t.f.post(roomy.id, { text: "z" }, key())).statusCode).toBe(200);
+    // A grant's own action caps narrow further (deletesPerDay 0 here: no delete under that grant).
+    const strict = await t.f.createChannel({ provider: "slack", slug: "delete-grant-cap", externalId: "C0ANNOUNCE", policy: POLICY });
+    t.f.consentFor("agent-1", strict);
+    await t.f.proposeAndApprove(strict.id, { caps: { ...CAPS, actions: { deletesPerDay: 0 } }, scope: { files: false, immediate: true, scheduled: false, deletes: true } });
+    const s1 = await t.posted(strict.id, "s1");
+    expect((await t.remove(strict.id, s1)).json()).toMatchObject({ error: "channel_cap_deletes_per_day" });
+  });
+
+  it("keeps polls and DMs on the post caps", async () => {
+    const t = await setup();
+    const channel = await t.f.createChannel({ provider: "telegram", slug: "poll-caps", policy: { ...POLICY, caps: { perDay: 1, minIntervalSeconds: 0, onePerPhase: true } } });
+    t.f.consentFor("agent-1", channel);
+    await t.f.proposeAndApprove(channel.id, { caps: { perDay: 1, minIntervalSeconds: 0, onePerPhase: true }, scope: { files: false, immediate: true, scheduled: false, polls: true } });
+    expect((await t.f.post(channel.id, { text: "", poll: { question: "Day?", options: ["Fri", "Sat"] } }, key())).statusCode).toBe(200);
+    expect((await t.f.post(channel.id, { text: "", poll: { question: "Time?", options: ["6", "7"] } }, key())).json()).toMatchObject({ error: "channel_cap_per_day" });
+  });
+});
+
 describe("routes v2: authority and digests (R1, R2, R4)", () => {
   it("holds each operation without its grant flag; the owner sees the kind, excerpt or emoji and approves exactly once", async () => {
     const t = await setup();

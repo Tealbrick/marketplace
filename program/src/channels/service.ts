@@ -68,7 +68,7 @@ export const INBOUND_REPLY_KEY_PREFIX = "inbound-reply:";
  * Routes v2 internal idempotency key prefixes (the agent's key has no colon): a reaction, edit, delete or direct
  * message never shares a post row with a plain post or with each other.
  */
-export const ACTION_KEY_PREFIX = Object.freeze({ react: "msg-react:", edit: "msg-edit:", delete: "msg-delete:", dm: "person-dm:" } as const);
+export { ACTION_KEY_PREFIX } from "./store.js";
 /** A delete or edit inside a provider window is refused this long before the window ends (the send may take time). */
 const ACTION_WINDOW_MARGIN_MS = 60_000;
 /** The inbound self-loop check waits at most this long for a send to the same chat to return (review R8). */
@@ -774,7 +774,8 @@ export function createChannelService(deps: ChannelServiceDeps) {
     },
   };
 
-  const isCapError = (error: string) => error.startsWith("channel_cap_") || error === "channel_min_interval" || error === "channel_phase_duplicate";
+  const isCapError = (error: string) =>
+    error.startsWith("channel_cap_") || error === "channel_min_interval" || error === "channel_edit_min_interval" || error === "channel_phase_duplicate";
   const capsRefusal = (error: string, retryAfterSeconds?: number) => ({
     ok: false as const,
     statusCode: isCapError(error) ? 429 : error === "channel_not_found" ? 404 : 409,

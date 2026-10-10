@@ -9,6 +9,7 @@ import { BUZZ_TABLES, BuzzStore, migrateBuzzTables } from "./buzz-store.js";
 import { INBOUND_TABLES, InboundStore, migrateInboundTables } from "./inbound-store.js";
 import { TEAMS_CONVERSATION_DDL, TeamsConversationStore } from "./teams-store.js";
 import {
+  ceilingActionCaps,
   effectiveCaps,
   validatePolicy,
   type ChannelCaps,
@@ -366,6 +367,26 @@ export const COUNTED_POST_STATUSES = ["sending", "sent", "uncertain"] as const;
 const COUNTED_SQL = COUNTED_POST_STATUSES.map((status) => `'${status}'`).join(", ");
 
 /**
+ * Routes v2 internal idempotency key prefixes (the agent's own key has no colon, so it can never take one): a
+ * reaction, edit, delete or direct message never shares a post row with a plain post or with each other.
+ */
+export const ACTION_KEY_PREFIX = Object.freeze({ react: "msg-react:", edit: "msg-edit:", delete: "msg-delete:", dm: "person-dm:" } as const);
+
+/** Reactions, edits and deletes have their own caps and never count against the post caps (direct messages do). */
+export type CappedAction = "react" | "edit" | "delete";
+const CAPPED_ACTIONS: readonly CappedAction[] = ["react", "edit", "delete"];
+export function cappedActionOfKey(idempotencyKey: string): CappedAction | null {
+  return CAPPED_ACTIONS.find((action) => idempotencyKey.startsWith(ACTION_KEY_PREFIX[action])) ?? null;
+}
+const NOT_ACTION_SQL = CAPPED_ACTIONS.map((action) => `idempotency_key NOT LIKE '${ACTION_KEY_PREFIX[action]}%'`).join(" AND ");
+const ACTION_CAP_ERROR: Readonly<Record<CappedAction, ActionCapError>> = {
+  react: "channel_cap_reactions_per_day",
+  edit: "channel_cap_edits_per_day",
+  delete: "channel_cap_deletes_per_day",
+};
+const ACTION_CAP_FIELD = { react: "reactionsPerDay", edit: "editsPerDay", delete: "deletesPerDay" } as const;
+
+/**
  * Allowed `finishPost` transitions. Terminal states have no exit, and
  * nothing moves back to `scheduled` or `sending` (that would re-send).
  * `scheduled` → `sending` happens only through `reserveScheduledPost`, and
@@ -407,11 +428,14 @@ export function channelPostApprovalKey(postId: string): string {
 /** Default send lease for a `sending` row; after it, recovery marks it `uncertain`. */
 export const DEFAULT_SEND_LEASE_MS = 300_000;
 
+export type ActionCapError = "channel_cap_reactions_per_day" | "channel_cap_edits_per_day" | "channel_cap_deletes_per_day" | "channel_edit_min_interval";
+
 export type ChannelCapError =
   | "channel_cap_per_day"
   | "channel_cap_per_hour"
   | "channel_min_interval"
-  | "channel_phase_duplicate";
+  | "channel_phase_duplicate"
+  | ActionCapError;
 
 /** The owner's Buzz key setting (§6.3). `pubkey` is null after a clear. */
 export type OwnerKeyRecord = {
@@ -1404,6 +1428,8 @@ export class ChannelStore {
         campaign: input.campaign ?? null,
         now,
         excludePostId: null,
+        agentId: input.agentId,
+        idempotencyKey: input.idempotencyKey,
       });
       if (refusal) return refusal;
       const authority = input.authority ?? (input.grant ? (`grant:${input.grant.id}` as const) : null);
@@ -1437,6 +1463,8 @@ export class ChannelStore {
         campaign: post.campaign,
         now,
         excludePostId: post.id,
+        agentId: post.agentId,
+        idempotencyKey: post.idempotencyKey,
       });
       if (refusal) return refusal;
       this.db
@@ -1497,6 +1525,8 @@ export class ChannelStore {
         campaign: post.campaign,
         now,
         excludePostId: post.id,
+        agentId: post.agentId,
+        idempotencyKey: post.idempotencyKey,
       });
       if (refusal) return refusal;
       const result = this.db
@@ -1535,7 +1565,7 @@ export class ChannelStore {
     const row = this.db
       .prepare(
         `SELECT COUNT(*) AS count FROM channel_post WHERE workspace_slug = ? AND channel_id = ?
-          AND status IN (${COUNTED_SQL}) AND reserved_at > ? AND (? IS NULL OR authority = ?)`,
+          AND status IN (${COUNTED_SQL}) AND ${NOT_ACTION_SQL} AND reserved_at > ? AND (? IS NULL OR authority = ?)`,
       )
       .get(workspaceSlug, channelId, iso(since), authority ?? null, authority ?? null) as { count: number };
     return Number(row.count);
@@ -1635,16 +1665,20 @@ export class ChannelStore {
     campaign: PostCampaign | null;
     now: string;
     excludePostId: string | null;
+    agentId: string;
+    idempotencyKey: string;
   }): { ok: false; error: ChannelCapError; retryAfterSeconds?: number } | null {
     const nowMs = Date.parse(input.now);
     const exclude = input.excludePostId ?? "";
     const caps = effectiveCaps(input.grant?.caps ?? null, input.ceiling);
+    const action = cappedActionOfKey(input.idempotencyKey);
+    if (action) return this.checkActionCaps({ ...input, action, caps, nowMs, exclude });
 
     // (d) one post per (channel, campaign ref, phase); needs both ref and phase.
     if (caps.onePerPhase && input.campaign?.ref && input.campaign.phase) {
       const duplicate = this.db
         .prepare(
-          `SELECT 1 FROM channel_post WHERE workspace_slug = ? AND channel_id = ? AND status IN (${COUNTED_SQL})
+          `SELECT 1 FROM channel_post WHERE workspace_slug = ? AND channel_id = ? AND status IN (${COUNTED_SQL}) AND ${NOT_ACTION_SQL}
             AND campaign_ref = ? AND campaign_phase = ? AND id <> ? LIMIT 1`,
         )
         .get(input.workspaceSlug, input.channelId, input.campaign.ref, input.campaign.phase, exclude);
@@ -1673,7 +1707,7 @@ export class ChannelStore {
         const last = this.db
           .prepare(
             `SELECT MAX(reserved_at) AS last FROM channel_post
-            WHERE ${scope.where} AND status IN (${COUNTED_SQL}) AND id <> ?`,
+            WHERE ${scope.where} AND status IN (${COUNTED_SQL}) AND ${NOT_ACTION_SQL} AND id <> ?`,
           )
           .get(...scope.params, exclude) as { last: string | null } | undefined;
         if (last?.last) {
@@ -1687,23 +1721,78 @@ export class ChannelStore {
     return null;
   }
 
+  /**
+   * Routes v2 action caps (inside the reservation transaction, like the post caps): the daily cap of this action
+   * kind on the channel (all agents) and under the grant, and for an edit the minimum gap since the last counted edit
+   * of the same message. Never counts or is counted by posts.
+   */
+  private checkActionCaps(input: {
+    workspaceSlug: string;
+    channelId: string;
+    grant: ReservationGrant | null;
+    agentId: string;
+    idempotencyKey: string;
+    action: CappedAction;
+    ceiling: ChannelCaps;
+    caps: ChannelCaps;
+    nowMs: number;
+    exclude: string;
+  }): { ok: false; error: ChannelCapError; retryAfterSeconds?: number } | null {
+    const kind = `idempotency_key LIKE '${ACTION_KEY_PREFIX[input.action]}%'`;
+    // The channel ceiling is shared by all agents; a grant's (tighter) effective caps count its own actions.
+    const effective = ceilingActionCaps(input.caps);
+    const scopes: Array<{ where: string; params: string[]; kind: string; limit: number }> = [
+      { where: "workspace_slug = ? AND channel_id = ?", params: [input.workspaceSlug, input.channelId], kind, limit: ceilingActionCaps(input.ceiling)[ACTION_CAP_FIELD[input.action]] },
+    ];
+    if (input.grant) {
+      scopes.push({ where: "workspace_slug = ? AND channel_id = ? AND authority = ?", params: [input.workspaceSlug, input.channelId, `grant:${input.grant.id}`], kind, limit: effective[ACTION_CAP_FIELD[input.action]] });
+    }
+    for (const scope of scopes) {
+      const refusal = this.windowRefusal(scope, input.exclude, input.nowMs, DAY_MS, scope.limit, ACTION_CAP_ERROR[input.action]);
+      if (refusal) return refusal;
+    }
+    if (input.action === "edit") {
+      const target = this.db
+        .prepare("SELECT json_extract(spec_json, '$.action.targetMessageId') AS target FROM channel_post_op WHERE workspace_slug = ? AND agent_id = ? AND idempotency_key = ?")
+        .get(input.workspaceSlug, input.agentId, input.idempotencyKey) as { target: string | null } | undefined;
+      if (target?.target) {
+        const last = this.db
+          .prepare(
+            `SELECT MAX(p.reserved_at) AS last FROM channel_post p
+             JOIN channel_post_op o ON o.workspace_slug = p.workspace_slug AND o.agent_id = p.agent_id AND o.idempotency_key = p.idempotency_key
+             WHERE p.workspace_slug = ? AND p.channel_id = ? AND p.status IN (${COUNTED_SQL}) AND p.idempotency_key LIKE '${ACTION_KEY_PREFIX.edit}%'
+               AND json_extract(o.spec_json, '$.action.targetMessageId') = ? AND p.id <> ?`,
+          )
+          .get(input.workspaceSlug, input.channelId, target.target, input.exclude) as { last: string | null } | undefined;
+        const gapMs = effective.editMinIntervalSeconds * 1000;
+        if (last?.last) {
+          const waitMs = Date.parse(last.last) + gapMs - input.nowMs;
+          if (waitMs > 0) return { ok: false, error: "channel_edit_min_interval", retryAfterSeconds: Math.ceil(waitMs / 1000) };
+        }
+      }
+    }
+    return null;
+  }
+
   private windowRefusal(
-    scope: { where: string; params: string[] },
+    scope: { where: string; params: string[]; kind?: string },
     exclude: string,
     nowMs: number,
     windowMs: number,
     limit: number,
-    error: "channel_cap_per_day" | "channel_cap_per_hour",
+    error: "channel_cap_per_day" | "channel_cap_per_hour" | ActionCapError,
   ): { ok: false; error: ChannelCapError; retryAfterSeconds: number } | null {
     const since = new Date(nowMs - windowMs).toISOString();
     const rows = this.db
       .prepare(
         `SELECT reserved_at FROM channel_post
-        WHERE ${scope.where} AND status IN (${COUNTED_SQL}) AND reserved_at > ? AND id <> ?
+        WHERE ${scope.where} AND status IN (${COUNTED_SQL}) AND (${scope.kind ?? NOT_ACTION_SQL}) AND reserved_at > ? AND id <> ?
         ORDER BY reserved_at`,
       )
       .all(...scope.params, since, exclude) as Array<{ reserved_at: string }>;
     if (rows.length < limit) return null;
+    // A cap of zero (an action cap the owner or a grant turned off) never frees a slot.
+    if (limit <= 0) return { ok: false, error, retryAfterSeconds: Math.ceil(windowMs / 1000) };
     // The slot frees when enough of the oldest counted posts leave the window.
     const freeing = rows[rows.length - limit]!;
     const waitMs = Date.parse(freeing.reserved_at) + windowMs - nowMs;
