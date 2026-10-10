@@ -1,11 +1,11 @@
-# Marketplace standalone 0.1.19 image
+# Marketplace standalone 0.2.0 image
 
-This bundle is the public Marketplace 0.1.19 release line and supersedes
-0.1.18 with connector status per card and the use of existing Composio auth configs.
+This bundle is the public Marketplace 0.2.0 release line and supersedes
+0.1.19 with Channels (Telegram and Discord), owner approval proofs and the manifest instance claim.
 
-Source snapshot: `f6ff983f025e053651fa48b2a396fbaff55931b4`
-Source archive SHA256: `30c2a77e57f5131f8583eb7de7c4acce42ae3003c65045d04cf4cd4e28a33e94`
-Image: `ghcr.io/tealbrick/marketplace:0.1.19`
+Source snapshot: `14266b4ae544a98256125e555fe428b1307351a9`
+Source archive SHA256: `dc55da12f7af5076210ae9d3e4f4f2a8bf580794531afd3719447a6c609d1620`
+Image: `ghcr.io/tealbrick/marketplace:0.2.0`
 
 ## Runtime contract
 
@@ -23,13 +23,26 @@ Image: `ghcr.io/tealbrick/marketplace:0.1.19`
   into the image or returned to browser code.
 
 The source-backed Railway path uses the fixed public release branch
-`release-marketplace-v0.1.19` (slash-free so the Railway template editor
+`release-marketplace-v0.2.0` (slash-free so the Railway template editor
 accepts it); its exact tag target, branch ruleset, and image
 digest are recorded in the successor receipt. Set the service root directory
 to `release/railway`, keep the Dockerfile entrypoint, and use the relay
 contract in `deploy/railway/recipe.json` and `deploy/railway/railway-blueprint.json`.
 GHCR is optional for the source-build path; no template ID or publication is
 implied by these files.
+
+## v0.2.0 Channels and manifest claim
+
+This successor merges Tealbrick/marketplace#29 to #42:
+- Channels: a channel is a connection, a destination and a policy. Telegram and Discord adapters (text, photo, file, audio, voice, video; Discord voice as audio plus transcript); owner channel setup and discovery; agent posts, holds and scheduled posts through the existing consent, Rules or owner approval, usage ledger and audit path; standing grants that can only narrow the ceiling; send-time digest re-check; receipts with retention; per-agent attachment quota; a scheduler that never resends an uncertain or partial post;
+- Channels is inert until the owner adds a bot token through Portal Account Connections: no timer work, channel operations answer 409 `channels_not_configured`, and readiness is unchanged;
+- the instance claim at `/.well-known/tealbrick/claim` is the contract (tealbrick.miniapp/v1) claim: Portal pins `jwksUri` and `grantKids`; the instance identity and key are the same as on `/api/tealbrick/claim`, which stays unchanged in 0.2.x;
+- owner approval proofs for channel holds: Nostr proofs signed with the owner's Buzz key (32-hex digest code, refused when ambiguous or colliding, single use) and Portal proofs pinned to the claim binding; the owner key can be set only in a Portal-launched owner session once Portal has pinned the owner;
+- the instance claim sends `x-tealbrick-contract` and stores the Portal owner subject; Channels reads the owner pin only from the claim binding;
+- after a rollback to 0.1.19, a channel hold approved in the older Marketplace ends as skipped with a receipt and is never sent; the owner can cancel held posts;
+- contract 0.1.0-alpha.7, conformance 0.1.0-alpha.5; execution targets seam in the consented call path (no behaviour change for existing targets).
+
+New tables are added with CREATE TABLE IF NOT EXISTS only; a new file `instance-claim-binding.json` holds the claim anchors (no key). Upgrades keep the volume, variables, encrypted connector secrets and the instance claim identity. Rollback to 0.1.19 needs no data change: 0.1.19 ignores the new tables and files. During a rollback, do not approve channel holds in the older Marketplace.
 
 ## v0.1.19 connector status and Composio auth configs
 
