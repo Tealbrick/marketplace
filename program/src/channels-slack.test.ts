@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { DISCORD_TOKEN, PROOF, SERVICE, TELEGRAM_TOKEN, channelFixture, fakeProvider, type ChannelFixture } from "./channels/app-fixture.js";
+import { DISCORD_TOKEN, PROOF, SERVICE, TELEGRAM_TOKEN, TENANT, channelFixture, fakeProvider, type ChannelFixture } from "./channels/app-fixture.js";
 import { createSlackProvider } from "./channels/providers/slack.js";
 import { OWNER_TEST_TEXT } from "./channels/service.js";
 
@@ -69,12 +69,26 @@ describe("channels: Slack provider through the runtime", () => {
       connections: { slack: { state: "connected", botUsername: "marketplace", credentialRef: "provider-env:MARKETPLACE_CHANNELS_SLACK_BOT_TOKEN" } },
     });
     const slackEntry = (browse.json().providers as Array<{ id: string; kinds?: string[]; capabilities?: Record<string, unknown> }>).find((entry) => entry.id === "slack");
-    expect(slackEntry).toMatchObject({ kinds: ["chat"], capabilities: { markup: "mrkdwn", mentions: { users: true, broadcast: "suppressed" }, schedule: { native: true } } });
+    // Only wired features: the adapter declares DM, reactions, edit, delete, mentions and native schedule, but no
+    // agent operation performs them yet, so the answer shows them as not available.
+    const hidden = {
+      markup: "mrkdwn",
+      mentions: { users: false, broadcast: "suppressed" },
+      dm: { open: false, maxMembers: 0 },
+      reactions: { add: false, remove: false, custom: false },
+      edit: { own: false },
+      delete: { own: false },
+      thread: { replies: false, topics: false, forum: false },
+      schedule: { native: false },
+    };
+    expect(slackEntry).toMatchObject({ kinds: ["chat"], capabilities: hidden });
+    expect(f.store.getConnection(TENANT, "channels-slack")?.metadata).toMatchObject({ botId: "U0BOT1", teamId: "T0ACME" });
 
     const discovered = await f.owner("GET", "/api/marketplace/channels/discover?provider=slack");
     expect(discovered.json().destinations).toEqual([{ type: "channel", externalId: "C0ENG", title: "#engineering", url: "https://acme.slack.com/archives/C0ENG" }]);
 
     const channel = await f.createChannel({ provider: "slack", slug: "eng" });
+    expect((await f.owner("GET", "/api/marketplace/channels")).json().channels[0].capabilities).toMatchObject(hidden);
     const test = await f.owner("POST", `/api/marketplace/channels/${channel.id}/test`, {}, { "idempotency-key": "owner-test-slack1" });
     expect(test.statusCode, test.body).toBe(200);
     expect(test.json()).toMatchObject({
@@ -108,5 +122,22 @@ describe("channels: Slack provider through the runtime", () => {
     expect(shaped.json().readiness).toMatchObject({ slack: "credential_invalid" });
     expect(wrongShape.slack.calls).toHaveLength(0);
     expect(shaped.body).not.toContain("xoxp-user-token");
+  });
+});
+
+describe("channels: the Slack signing secret is redacted like a bot token", () => {
+  it("removes the signing secret from receipts and answers", async () => {
+    const signing = "5f1c0de5ec7e7a11c0ffee5ca1ab1e99";
+    const f = await channelFixture({ environment: { MARKETPLACE_CHANNELS_SLACK_SIGNING_SECRET: signing } });
+    fixtures.push(f);
+    const channel = await f.createChannel({ slug: "community" });
+    f.consentFor("agent-1", channel);
+    await f.proposeAndApprove(channel.id);
+    f.telegram.reply({ status: "failed", resultIds: [], resultUrls: [], errorCode: "provider_rejected", detail: `upstream echoed ${signing}` });
+    const sent = await f.post(channel.id, { text: "Meetup tonight" }, "agent-post-sign01");
+    expect(sent.body).not.toContain(signing);
+    const receipts = await f.agent("GET", "/api/marketplace/v1/agent/channels/receipts");
+    expect(receipts.body).not.toContain(signing);
+    expect(JSON.stringify(f.store.channels.listPosts(TENANT, { limit: 10 }))).not.toContain(signing);
   });
 });

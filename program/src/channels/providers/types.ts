@@ -147,7 +147,13 @@ export type SendResult = {
 export type VerifyFailureReason = "credential_missing" | "credential_invalid" | "provider_unavailable";
 
 export type VerifyResult =
-  | { ok: true; botId: string; botUsername: string }
+  | {
+      ok: true;
+      botId: string;
+      botUsername: string;
+      /** Slack: the installed workspace (`auth.test` `team_id`). Inbound events from any other team are ignored. */
+      teamId?: string;
+    }
   | { ok: false; reason: VerifyFailureReason };
 
 export type DiscoverFailureReason = VerifyFailureReason | "consumer_conflict";

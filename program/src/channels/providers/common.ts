@@ -289,3 +289,43 @@ export function validateOutbound(input: {
   }
   return undefined;
 }
+
+/** Remembers inbound event ids for a while, so a replayed or retried event is processed at most once. */
+export type ReplayGuard = {
+  /** True the first time `id` is seen inside the TTL (and records it); false for a replay. */
+  firstSeen(id: string): boolean;
+  readonly size: number;
+};
+
+/**
+ * Bounded in-memory replay store (inbound helpers, P2 scope 2.2). Each id is kept for `ttlMs` after it was first
+ * seen. At most `maxEntries` ids are kept: when full, the oldest id is dropped first (insertion order equals
+ * expiry order because the TTL is fixed). Choose `ttlMs` to cover the provider's retry schedule and the window
+ * in which a captured request still authenticates.
+ */
+export function createReplayGuard(options: { ttlMs: number; maxEntries: number; now?: () => number }): ReplayGuard {
+  const now = options.now ?? Date.now;
+  const seen = new Map<string, number>();
+  const purge = (at: number) => {
+    for (const [id, expiresAt] of seen) {
+      if (expiresAt > at) break;
+      seen.delete(id);
+    }
+  };
+  return {
+    firstSeen(id: string) {
+      const at = now();
+      purge(at);
+      if (seen.has(id)) return false;
+      seen.set(id, at + options.ttlMs);
+      while (seen.size > options.maxEntries) {
+        const oldest = seen.keys().next().value as string;
+        seen.delete(oldest);
+      }
+      return true;
+    },
+    get size() {
+      return seen.size;
+    },
+  };
+}

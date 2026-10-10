@@ -3,6 +3,7 @@ import { applyFallbacks, type SendError } from "./capabilities.js";
 import {
   asRecord,
   classifyFailure,
+  createReplayGuard,
   guard,
   httpRequest,
   isSuccess,
@@ -15,6 +16,7 @@ import {
   validateOutbound,
   type Failure,
   type HttpResult,
+  type ReplayGuard,
 } from "./common.js";
 import { SLACK_CHANNEL_RULE, SLACK_SCHEDULE_RULE, createRateLimiter, requestWithRetry } from "./rate.js";
 import {
@@ -63,6 +65,12 @@ export const SLACK_SCHEDULE_MAX_LEAD_MS = 120 * 86_400_000;
 export const SLACK_SCHEDULE_MIN_LEAD_MS = 60_000;
 /** Slack's signature check window (X-Slack-Request-Timestamp): five minutes either way. */
 export const SLACK_SIGNATURE_MAX_SKEW_SECONDS = 300;
+/**
+ * How long an `event_id` is remembered: Slack retries a delivery up to three times within about five minutes,
+ * and each signed request stays valid for ±300 s, so 15 minutes covers every retry and every replay window.
+ */
+export const SLACK_EVENT_DEDUPE_TTL_MS = 15 * 60_000;
+export const SLACK_EVENT_DEDUPE_MAX_ENTRIES = 10_000;
 const INBOUND_MAX_TEXT_CHARS = SLACK_MAX_TEXT_CHARS;
 const INBOUND_MAX_FILES = 10;
 
@@ -107,6 +115,7 @@ const TS_SHAPE = /^[0-9]{1,12}\.[0-9]{1,8}$/u;
 const FILE_ID = /^F[A-Z0-9]{2,30}$/u;
 const SCHEDULED_ID = /^Q[A-Z0-9]{2,40}$/u;
 const EVENT_ID = /^Ev[A-Za-z0-9]{2,40}$/u;
+const TEAM_ID = /^T[A-Z0-9]{2,30}$/u;
 const SLACK_ERROR = /^[a-z0-9_.-]{1,64}$/u;
 const EMAIL = /^[^\s@<>()",;:\\[\]]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,63}$/u;
 const HANDLE = /^[\p{L}\p{N}._'-]{1,80}$/u;
@@ -342,9 +351,12 @@ export function createSlackProvider(options: ChannelProviderOptions = {}): Chann
     const outcome = await api(checked.token, "auth.test");
     if (!outcome.ok) return { ok: false, reason: readReason(outcome.failure) };
     const userId = outcome.body.user_id;
+    const teamId = outcome.body.team_id;
     if (typeof userId !== "string" || !USER_ID.test(userId)) return { ok: false, reason: "provider_unavailable" };
+    // The installed workspace is required: inbound events are matched against it (signature alone does not bind a team).
+    if (typeof teamId !== "string" || !TEAM_ID.test(teamId)) return { ok: false, reason: "provider_unavailable" };
     // botId is the bot USER id (U…): the id that mentions use and that inbound parsing ignores as "own".
-    return { ok: true, botId: userId, botUsername: sanitizeText(outcome.body.user, 64) };
+    return { ok: true, botId: userId, botUsername: sanitizeText(outcome.body.user, 64), teamId };
   }
 
   async function discover(credential: string | null | undefined): Promise<DiscoverResult> {
@@ -737,8 +749,11 @@ export function verifySlackSignature(input: {
 
 export type SlackEventParse =
   | { kind: "url_verification"; challenge: string }
-  | { kind: "message"; eventId: string; teamId?: string; message: InboundMessage }
+  | { kind: "message"; eventId: string; teamId: string; message: InboundMessage }
   | { kind: "ignored"; reason: string };
+
+/** The installed workspace and bot, from `verify` (stored on the connection row). `teamId` is required. */
+export type SlackInboundSelf = { teamId: string; botUserId?: string; botId?: string };
 
 function inboundText(value: unknown): string {
   if (typeof value !== "string") return "";
@@ -749,12 +764,14 @@ function inboundText(value: unknown): string {
 
 /**
  * Parses a verified Events API body into the normalised inbound shape. Call it only after
- * `verifySlackSignature` passed. Ignores bot messages, the bot's own messages (`self.botUserId` from verify),
+ * `verifySlackSignature` passed. The envelope `team_id` must equal the installed workspace (`self.teamId`, from
+ * `auth.test` at verify): an event of any other team, or with no team, is ignored (`team_mismatch`), and so is
+ * every event when the installed team is unknown (`team_unknown`). Ignores bot messages, the bot's own messages (`self.botUserId` from verify),
  * edits, deletes and other subtypes. `messageId` is the message `ts`, so `channelId:messageId` de-duplicates
  * the `message` and `app_mention` events of one mention; `eventId` de-duplicates Slack's retries.
  * The text is untrusted data: entities are decoded, control characters removed, at most 40,000 characters.
  */
-export function parseSlackEvent(body: unknown, self: { botUserId?: string; botId?: string } = {}): SlackEventParse {
+export function parseSlackEvent(body: unknown, self: SlackInboundSelf): SlackEventParse {
   let envelope = body;
   if (typeof body === "string") {
     try {
@@ -772,6 +789,9 @@ export function parseSlackEvent(body: unknown, self: { botUserId?: string; botId
       : { kind: "ignored", reason: "malformed" };
   }
   if (record.type !== "event_callback") return { kind: "ignored", reason: "not_an_event" };
+  if (typeof self?.teamId !== "string" || !TEAM_ID.test(self.teamId)) return { kind: "ignored", reason: "team_unknown" };
+  if (record.team_id !== self.teamId) return { kind: "ignored", reason: "team_mismatch" };
+  const teamId = self.teamId;
   const eventId = record.event_id;
   const event = asRecord(record.event);
   if (typeof eventId !== "string" || !EVENT_ID.test(eventId) || !event) return { kind: "ignored", reason: "malformed" };
@@ -797,11 +817,10 @@ export function parseSlackEvent(body: unknown, self: { botUserId?: string; botId
       contentType: normalizeContentType(typeof file.mimetype === "string" ? file.mimetype : "") || "application/octet-stream",
       bytes: typeof file.size === "number" && Number.isSafeInteger(file.size) && file.size >= 0 ? file.size : 0,
     }));
-  const teamId = typeof record.team_id === "string" && /^T[A-Z0-9]{2,30}$/u.test(record.team_id) ? record.team_id : undefined;
   return {
     kind: "message",
     eventId,
-    ...(teamId ? { teamId } : {}),
+    teamId,
     message: {
       platform: "slack",
       channelId: channel,
@@ -813,4 +832,37 @@ export function parseSlackEvent(body: unknown, self: { botUserId?: string; botId
       attachments,
     },
   };
+}
+
+/** A replay store for Slack `event_id`s (15 minutes, at most 10,000 ids). One per process, shared by all requests. */
+export function createSlackEventDedupe(now?: () => number): ReplayGuard {
+  return createReplayGuard({ ttlMs: SLACK_EVENT_DEDUPE_TTL_MS, maxEntries: SLACK_EVENT_DEDUPE_MAX_ENTRIES, now });
+}
+
+export type SlackInboundDecision =
+  | { kind: "rejected"; reason: Exclude<SlackSignatureCheck, { ok: true }>["reason"] }
+  | Exclude<SlackEventParse, { kind: "ignored" }>
+  | { kind: "ignored"; reason: string };
+
+/**
+ * The whole inbound check for one Events API request, in order: signature over the raw body (`rejected` →
+ * answer 401 and do nothing), parse with the team match, then `event_id` de-duplication (`ignored` with reason
+ * `duplicate` for a Slack retry or a replay inside the window). Only a `message` decision may reach the worker.
+ * Pure apart from recording the event id in `dedupe`.
+ */
+export function acceptSlackEvent(input: {
+  signingSecret: string | null | undefined;
+  timestamp: string | null | undefined;
+  signature: string | null | undefined;
+  rawBody: string | Uint8Array;
+  self: SlackInboundSelf;
+  dedupe: ReplayGuard;
+  nowMs?: number;
+}): SlackInboundDecision {
+  const signed = verifySlackSignature(input);
+  if (!signed.ok) return { kind: "rejected", reason: signed.reason };
+  const raw = typeof input.rawBody === "string" ? input.rawBody : Buffer.from(input.rawBody).toString("utf8");
+  const parsed = parseSlackEvent(raw, input.self);
+  if (parsed.kind !== "message") return parsed;
+  return input.dedupe.firstSeen(parsed.eventId) ? parsed : { kind: "ignored", reason: "duplicate" };
 }

@@ -1,11 +1,14 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { capabilityForKind, capabilitySupports } from "./capabilities.js";
-import { scrubSecrets } from "./common.js";
+import { AGENT_WIRED_FEATURES, capabilityForKind, capabilitySupports, wiredCapabilities } from "./capabilities.js";
+import { createReplayGuard, scrubSecrets } from "./common.js";
 import { createDiscordProvider } from "./discord.js";
 import {
   SLACK_DIRECTORY_TTL_MS,
+  SLACK_EVENT_DEDUPE_TTL_MS,
   SLACK_MAX_TEXT_CHARS,
+  acceptSlackEvent,
+  createSlackEventDedupe,
   createSlackProvider,
   escapeSlackText,
   parseSlackEvent,
@@ -128,8 +131,8 @@ describe("slack capabilities", () => {
 
 describe("slack verify (auth.test)", () => {
   it("POSTs form-encoded with a Bearer header and never puts the token in the URL", async () => {
-    const { provider, fake } = make([ok({ url: "https://acme.slack.com/", team: "Acme", user: "marketplace", team_id: "T1", user_id: "U0BOT1", bot_id: "B0BOT1" })]);
-    await expect(provider.verify(` ${TOKEN} `)).resolves.toEqual({ ok: true, botId: "U0BOT1", botUsername: "marketplace" });
+    const { provider, fake } = make([ok({ url: "https://acme.slack.com/", team: "Acme", user: "marketplace", team_id: "T0ACME", user_id: "U0BOT1", bot_id: "B0BOT1" })]);
+    await expect(provider.verify(` ${TOKEN} `)).resolves.toEqual({ ok: true, botId: "U0BOT1", botUsername: "marketplace", teamId: "T0ACME" });
     const request = fake.requests[0]!;
     expect(request.method).toBe("POST");
     expect(request.url).toBe(`${API}/auth.test`);
@@ -137,6 +140,15 @@ describe("slack verify (auth.test)", () => {
     expect(request.headers.authorization === `Bearer ${TOKEN}`).toBe(true);
     expect(request.headers["content-type"]).toBe("application/x-www-form-urlencoded; charset=utf-8");
     expect(request.body).toBe("");
+  });
+
+  it("requires the installed team id (team_id) from auth.test", async () => {
+    const { provider } = make([
+      ok({ url: "https://acme.slack.com/", user: "marketplace", user_id: "U0BOT1" }),
+      ok({ url: "https://acme.slack.com/", user: "marketplace", user_id: "U0BOT1", team_id: "acme" }),
+    ]);
+    await expect(provider.verify(TOKEN)).resolves.toEqual({ ok: false, reason: "provider_unavailable" });
+    await expect(provider.verify(TOKEN)).resolves.toEqual({ ok: false, reason: "provider_unavailable" });
   });
 
   it("maps every failure without echoing the token", async () => {
@@ -699,10 +711,11 @@ describe("slack inbound helpers", () => {
     expect(verifySlackSignature({ signingSecret: "", timestamp: ts, signature: sign(ts, body), rawBody: body, nowMs })).toEqual({ ok: false, reason: "secret_missing" });
   });
 
+  const SELF = { teamId: "T0TEAM" };
   const envelope = (event: Record<string, unknown>) => ({ type: "event_callback", team_id: "T0TEAM", event_id: "Ev0ABC123", event });
 
   it("answers url_verification and normalises a message event", () => {
-    expect(parseSlackEvent({ type: "url_verification", challenge: "3eZbrw1aBm2rZgRNFdxV2595E9CY3gmdALWMmHkvFXO7tYXAYM8P" })).toEqual({
+    expect(parseSlackEvent({ type: "url_verification", challenge: "3eZbrw1aBm2rZgRNFdxV2595E9CY3gmdALWMmHkvFXO7tYXAYM8P" }, SELF)).toEqual({
       kind: "url_verification",
       challenge: "3eZbrw1aBm2rZgRNFdxV2595E9CY3gmdALWMmHkvFXO7tYXAYM8P",
     });
@@ -719,7 +732,7 @@ describe("slack inbound helpers", () => {
           files: [{ id: "F0AAA1", name: "../plan.pdf", mimetype: "application/pdf; x=1", size: 1234 }, { id: "bad" }],
         }),
       ),
-      { botUserId: "U0BOT1" },
+      { ...SELF, botUserId: "U0BOT1" },
     );
     expect(parsed).toEqual({
       kind: "message",
@@ -739,7 +752,7 @@ describe("slack inbound helpers", () => {
   });
 
   it("treats a thread root (thread_ts = ts) as top level and accepts app_mention", () => {
-    const parsed = parseSlackEvent(envelope({ type: "app_mention", channel: "C0123ABC", user: "U0ANNA", ts: "1800000000.000100", thread_ts: "1800000000.000100", text: "hey" }));
+    const parsed = parseSlackEvent(envelope({ type: "app_mention", channel: "C0123ABC", user: "U0ANNA", ts: "1800000000.000100", thread_ts: "1800000000.000100", text: "hey" }), SELF);
     expect(parsed.kind).toBe("message");
     if (parsed.kind === "message") {
       expect(parsed.message.threadId).toBeUndefined();
@@ -749,17 +762,83 @@ describe("slack inbound helpers", () => {
 
   it("ignores bots, its own messages, edits, deletes and malformed events", () => {
     const base = { type: "message", channel: "C0123ABC", user: "U0ANNA", ts: "1800000000.000100", text: "x" };
-    expect(parseSlackEvent(envelope({ ...base, subtype: "bot_message", bot_id: "B1" }))).toEqual({ kind: "ignored", reason: "bot_message" });
-    expect(parseSlackEvent(envelope({ ...base, bot_id: "B0BOT1" }))).toEqual({ kind: "ignored", reason: "bot_message" });
-    expect(parseSlackEvent(envelope({ ...base, user: "U0BOT1" }), { botUserId: "U0BOT1" })).toEqual({ kind: "ignored", reason: "own_message" });
-    expect(parseSlackEvent(envelope({ ...base, subtype: "message_changed" }))).toEqual({ kind: "ignored", reason: "unsupported_subtype" });
-    expect(parseSlackEvent(envelope({ ...base, subtype: "message_deleted" }))).toEqual({ kind: "ignored", reason: "unsupported_subtype" });
-    expect(parseSlackEvent(envelope({ ...base, subtype: "thread_broadcast" })).kind).toBe("message");
-    expect(parseSlackEvent(envelope({ ...base, type: "reaction_added" }))).toEqual({ kind: "ignored", reason: "unsupported_event" });
-    expect(parseSlackEvent(envelope({ ...base, channel: "general" }))).toEqual({ kind: "ignored", reason: "malformed" });
-    expect(parseSlackEvent({ type: "event_callback", event_id: "x", event: base })).toEqual({ kind: "ignored", reason: "malformed" });
-    expect(parseSlackEvent("{not json")).toEqual({ kind: "ignored", reason: "malformed" });
-    expect(parseSlackEvent({ type: "app_rate_limited" })).toEqual({ kind: "ignored", reason: "not_an_event" });
+    expect(parseSlackEvent(envelope({ ...base, subtype: "bot_message", bot_id: "B1" }), SELF)).toEqual({ kind: "ignored", reason: "bot_message" });
+    expect(parseSlackEvent(envelope({ ...base, bot_id: "B0BOT1" }), SELF)).toEqual({ kind: "ignored", reason: "bot_message" });
+    expect(parseSlackEvent(envelope({ ...base, user: "U0BOT1" }), { ...SELF, botUserId: "U0BOT1" })).toEqual({ kind: "ignored", reason: "own_message" });
+    expect(parseSlackEvent(envelope({ ...base, subtype: "message_changed" }), SELF)).toEqual({ kind: "ignored", reason: "unsupported_subtype" });
+    expect(parseSlackEvent(envelope({ ...base, subtype: "message_deleted" }), SELF)).toEqual({ kind: "ignored", reason: "unsupported_subtype" });
+    expect(parseSlackEvent(envelope({ ...base, subtype: "thread_broadcast" }), SELF).kind).toBe("message");
+    expect(parseSlackEvent(envelope({ ...base, type: "reaction_added" }), SELF)).toEqual({ kind: "ignored", reason: "unsupported_event" });
+    expect(parseSlackEvent(envelope({ ...base, channel: "general" }), SELF)).toEqual({ kind: "ignored", reason: "malformed" });
+    expect(parseSlackEvent({ type: "event_callback", team_id: "T0TEAM", event_id: "x", event: base }, SELF)).toEqual({ kind: "ignored", reason: "malformed" });
+    expect(parseSlackEvent("{not json", SELF)).toEqual({ kind: "ignored", reason: "malformed" });
+    expect(parseSlackEvent({ type: "app_rate_limited" }, SELF)).toEqual({ kind: "ignored", reason: "not_an_event" });
+  });
+});
+
+describe("slack inbound: team binding, event_id dedupe and the full check", () => {
+  const SECRET = "8f742231b10e8888abcd99yyyzzz85a5";
+  const nowMs = 1_800_000_000_000;
+  const ts = "1800000000";
+  const sign = (body: string) => `v0=${createHmac("sha256", SECRET).update(`v0:${ts}:${body}`).digest("hex")}`;
+  const event = (team: string | undefined, eventId = "Ev0ABC123") =>
+    JSON.stringify({
+      type: "event_callback",
+      ...(team ? { team_id: team } : {}),
+      event_id: eventId,
+      event: { type: "message", channel: "C0123ABC", user: "U0ANNA", ts: "1800000000.000100", text: "hi" },
+    });
+
+  it("ignores a signature-verified event of another team, without a team, or when the installed team is unknown", () => {
+    expect(parseSlackEvent(event("T0OTHER"), { teamId: "T0ACME" })).toEqual({ kind: "ignored", reason: "team_mismatch" });
+    expect(parseSlackEvent(event(undefined), { teamId: "T0ACME" })).toEqual({ kind: "ignored", reason: "team_mismatch" });
+    expect(parseSlackEvent(event("T0ACME"), { teamId: "" })).toEqual({ kind: "ignored", reason: "team_unknown" });
+    expect(parseSlackEvent(event("T0ACME"), {} as never)).toEqual({ kind: "ignored", reason: "team_unknown" });
+    expect(parseSlackEvent(event("T0ACME"), { teamId: "T0ACME" })).toMatchObject({ kind: "message", teamId: "T0ACME" });
+  });
+
+  it("remembers ids for the TTL, bounded, oldest first", () => {
+    let clock = 0;
+    const guard = createReplayGuard({ ttlMs: 1000, maxEntries: 3, now: () => clock });
+    expect(guard.firstSeen("a")).toBe(true);
+    expect(guard.firstSeen("a")).toBe(false);
+    clock = 999;
+    expect(guard.firstSeen("a")).toBe(false);
+    clock = 1000;
+    expect(guard.firstSeen("a")).toBe(true);
+    for (const id of ["b", "c", "d"]) expect(guard.firstSeen(id)).toBe(true);
+    expect(guard.size).toBe(3);
+    // "a" was the oldest and was dropped to stay inside the bound.
+    expect(guard.firstSeen("a")).toBe(true);
+    expect(SLACK_EVENT_DEDUPE_TTL_MS).toBeGreaterThanOrEqual(2 * 300_000);
+  });
+
+  it("acceptSlackEvent: signature first, then team, then event_id dedupe", () => {
+    const dedupe = createSlackEventDedupe(() => nowMs);
+    const self = { teamId: "T0ACME", botUserId: "U0BOT1" };
+    const body = event("T0ACME");
+    const check = (raw: string, signature = sign(raw)) =>
+      acceptSlackEvent({ signingSecret: SECRET, timestamp: ts, signature, rawBody: raw, self, dedupe, nowMs });
+    expect(check(body, sign("other"))).toEqual({ kind: "rejected", reason: "mismatch" });
+    expect(dedupe.size).toBe(0);
+    expect(check(body)).toMatchObject({ kind: "message", eventId: "Ev0ABC123", teamId: "T0ACME" });
+    // A Slack retry or a captured request replayed inside the window.
+    expect(check(body)).toEqual({ kind: "ignored", reason: "duplicate" });
+    expect(check(event("T0OTHER", "Ev0OTHER1"))).toEqual({ kind: "ignored", reason: "team_mismatch" });
+    expect(acceptSlackEvent({ signingSecret: SECRET, timestamp: ts, signature: sign(body), rawBody: new TextEncoder().encode(event("T0ACME", "Ev0NEXT1")), self, dedupe, nowMs }).kind).toBe("rejected");
+    const next = event("T0ACME", "Ev0NEXT1");
+    expect(acceptSlackEvent({ signingSecret: SECRET, timestamp: ts, signature: sign(next), rawBody: new TextEncoder().encode(next), self, dedupe, nowMs }).kind).toBe("message");
+  });
+});
+
+describe("slack capabilities exposed to agents (wired filter)", () => {
+  it("hides DM, reactions, edit, delete, mentions, replies and native schedule until their operations ship", () => {
+    const effective = wiredCapabilities(createSlackProvider().capabilities);
+    for (const feature of ["dm", "reactions.add", "reactions.remove", "reactions.custom", "edit", "delete", "mentions.users", "thread.replies", "schedule.native"]) {
+      expect(AGENT_WIRED_FEATURES.has(feature as never), feature).toBe(false);
+      expect(capabilitySupports(effective, feature), feature).toBe(false);
+    }
+    for (const feature of ["image", "file", "audio", "voice", "video"]) expect(capabilitySupports(effective, feature), feature).toBe(true);
   });
 });
 

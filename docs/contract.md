@@ -441,7 +441,7 @@ Bot tokens come from `MARKETPLACE_CHANNELS_TELEGRAM_BOT_TOKEN`,
 account-sourced provider env, read at start), or self-hosted from the encrypted
 `connector_secret` `botToken` under `channels-<provider>`. Each is verified once
 at start; the connection row keeps only `{botId, botUsername, verifiedAt,
-credentialRef}`. Readiness per provider (`available | credential_missing |
+credentialRef}` (Slack adds `teamId`). Readiness per provider (`available | credential_missing |
 credential_invalid | unavailable`) is in `browse` and in
 `/api/portal/readiness` (`channels.providers`). Tokens are never in responses,
 receipts, rows, logs, audit or errors; provider text is redacted before it is
@@ -456,17 +456,34 @@ Each customer creates an **internal** Slack app in its own workspace from
 From a manifest), installs it and adds the Bot User OAuth Token under Account
 Connections. Internal apps keep Slack's normal history-read limits; new
 non-Marketplace distributed apps are limited since 29 May 2025, so the app is
-never distributed. Bot scopes: `chat:write`, `channels:read`, `groups:read`,
-`im:write`, `users:read`, `users:read.email`, `reactions:write`, `files:write`
-and, for inbound later, `channels:history`, `groups:history`, `im:history`.
-There is no `chat:write.public`: the bot posts only where it is a member, and
-discovery (`conversations.list`, public and private, members only, archived
-excluded, at most 1000) lists only those channels. The optional signing secret
+never distributed. Least privilege: the manifest requests only the bot scopes
+of features that ship today: `chat:write` (post, the owner test), `files:write`
+(upload v2), `channels:read` and `groups:read` (discovery). There is no
+`chat:write.public`: the bot posts only where it is a member, and discovery
+(`conversations.list`, public and private, members only, archived excluded, at
+most 1000) lists only those channels. `verify` records the installed workspace
+(`auth.test` `team_id`, required) on the connection row as `teamId`; the inbound
+helpers ignore a signature-verified event whose envelope `team_id` is another
+team or missing. The optional signing secret
 (`MARKETPLACE_CHANNELS_SLACK_SIGNING_SECRET`, or connector secret
-`signingSecret` under `channels-slack`) is for inbound verification only and
-never affects readiness. `docs/channels-slack-app-manifest.inbound.json` adds
-the event subscriptions (request URL placeholder) for when the inbound route
-ships.
+`signingSecret` under `channels-slack`) is for inbound verification only, never
+affects readiness, and is redacted like the bot token.
+
+Scopes that later features add (each lands in the change that ships the
+feature, never earlier): replies in a thread, edit and delete of the agent's
+own message and native schedule need no new scope (`chat:write`); mention a
+named person and find a person by handle add `users:read`; find a person by
+email adds `users:read.email`; open a direct message with one person (owner
+approval on first contact) adds `im:write`; reactions add `reactions:write`;
+receiving messages (inbound) adds `channels:history`, `groups:history`,
+`im:history` and the event subscriptions `message.channels`,
+`message.groups`, `message.im` in a separate inbound manifest variant.
+
+Inbound helpers (pure, no route yet): `acceptSlackEvent` checks, in order, the
+`X-Slack-Signature` over the raw body (`rejected`: answer 401), the team, then
+the `event_id` in a bounded replay store (`createSlackEventDedupe`: 15 minutes,
+10,000 ids, which covers Slack's retries and the ±300 s signature window); a
+repeat is `ignored` with reason `duplicate`.
 
 Sending: `chat.postMessage` with `mrkdwn`, `parse: none`, `link_names: false`.
 User text is escaped (`&`, `<`, `>`), so it cannot form `<!channel>`, `<!here>`,
@@ -478,12 +495,15 @@ token, one `files.completeUploadExternal` with the text as `initial_comment`);
 a failure before the share step is `failed` (nothing is visible), a failure at
 or after it is `uncertain`. Slack returns file ids, not a message ts, for a
 file post, so those receipts carry `F…` ids. Voice is a declared fallback
-(audio file + transcript). Also: `react` (`reactions.add/remove`), `edit`
+(audio file + transcript). Adapter-level only, with no agent operation and
+not in the agent capability answer (wired filter) until a later change ships
+the route and its scope: `react` (`reactions.add/remove`), `edit`
 (`chat.update`), `remove` (`chat.delete`), `findPerson`
 (`users.lookupByEmail`, or a handle from a `users.list` cache of at most 10
-minutes that is never returned), `openDirect` (`conversations.open`) and the
-opt-in `scheduleNative` (`chat.scheduleMessage`, 1 minute to 120 days ahead, 30
-per 5 minutes per channel). Marketplace's own scheduler stays the default,
+minutes that is never returned), `openDirect` (`conversations.open`), replies
+and named mentions in `send`, and the opt-in `scheduleNative`
+(`chat.scheduleMessage`, 1 minute to 120 days ahead, 30 per 5 minutes per
+channel). Marketplace's own scheduler stays the default,
 because it re-checks authority and caps at send time. Limits: one message per
 second per channel; HTTP 429 `Retry-After` is honoured once (≤ 30 s).
 
