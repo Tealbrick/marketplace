@@ -17,6 +17,7 @@ import {
 import { scrubSecrets, validateOutbound } from "./providers/common.js";
 import { createDiscordProvider } from "./providers/discord.js";
 import { createSlackProvider } from "./providers/slack.js";
+import { createTeamsProvider, encodeTeamsCredential, type TeamsConversationSource } from "./providers/teams.js";
 import { createTelegramProvider } from "./providers/telegram.js";
 import type {
   AttachmentKind,
@@ -44,10 +45,13 @@ import {
  * no HTTP; the app wires these into `executeConsentedCall`.
  */
 
-export const CHANNEL_PROVIDER_IDS: readonly ChannelProviderId[] = ["telegram", "discord", "slack"];
+export const CHANNEL_PROVIDER_IDS: readonly ChannelProviderId[] = ["telegram", "discord", "slack", "teams"];
+
+/** Providers whose credential is one bot token. */
+export type ChannelTokenProviderId = Exclude<ChannelProviderId, "teams">;
 
 /** Hosted credentials: Account Connections deliver these as provider env (spec §8). */
-export const CHANNEL_TOKEN_ENV: Readonly<Record<ChannelProviderId, string>> = {
+export const CHANNEL_TOKEN_ENV: Readonly<Record<ChannelTokenProviderId, string>> = {
   telegram: "MARKETPLACE_CHANNELS_TELEGRAM_BOT_TOKEN",
   discord: "MARKETPLACE_CHANNELS_DISCORD_BOT_TOKEN",
   slack: "MARKETPLACE_CHANNELS_SLACK_BOT_TOKEN",
@@ -61,15 +65,47 @@ export const CHANNEL_TOKEN_ENV: Readonly<Record<ChannelProviderId, string>> = {
 export const CHANNEL_SLACK_SIGNING_SECRET_ENV = "MARKETPLACE_CHANNELS_SLACK_SIGNING_SECRET";
 export const CHANNEL_SLACK_SIGNING_SECRET_NAME = "signingSecret";
 
+/**
+ * Microsoft Teams (single-tenant Azure Bot): three values from Account Connections, composed into one opaque
+ * credential at start. `graphEnabled` ("true") turns on Graph user lookup (User.Read.All, application) for DMs.
+ */
+export const TEAMS_CREDENTIAL_ENV = Object.freeze({
+  appId: "MARKETPLACE_CHANNELS_TEAMS_APP_ID",
+  appSecret: "MARKETPLACE_CHANNELS_TEAMS_APP_SECRET",
+  tenantId: "MARKETPLACE_CHANNELS_TEAMS_TENANT_ID",
+  graphEnabled: "MARKETPLACE_CHANNELS_TEAMS_GRAPH_ENABLED",
+} as const);
+
+/** Every hosted credential env name of a provider (for presence reports; values are never read here). */
+export function channelCredentialEnvNames(provider: ChannelProviderId): string[] {
+  return provider === "teams"
+    ? [TEAMS_CREDENTIAL_ENV.appId, TEAMS_CREDENTIAL_ENV.appSecret, TEAMS_CREDENTIAL_ENV.tenantId]
+    : [CHANNEL_TOKEN_ENV[provider]];
+}
+
 /** Self-hosted credentials: the existing encrypted `connector_secret`, this name under `channels-<provider>`. */
 export const CHANNEL_SECRET_NAME = "botToken";
+/** Self-hosted Teams: these names under `channels-teams`. */
+export const TEAMS_SECRET_NAMES = Object.freeze({ appId: "appId", appSecret: "appSecret", tenantId: "tenantId" } as const);
 
 export type ChannelReadiness = "available" | "credential_missing" | "credential_invalid" | "unavailable";
 
 export type ChannelProviderRegistry = Readonly<Partial<Record<ChannelProviderId, ChannelProvider>>>;
 
-export function defaultChannelProviders(options: ChannelProviderOptions = {}): ChannelProviderRegistry {
-  return { telegram: createTelegramProvider(options), discord: createDiscordProvider(options), slack: createSlackProvider(options) };
+export function teamsGraphEnabled(environment: Record<string, string | undefined>): boolean {
+  return /^(true|1|yes)$/iu.test(environment[TEAMS_CREDENTIAL_ENV.graphEnabled]?.trim() ?? "");
+}
+
+export function defaultChannelProviders(
+  options: ChannelProviderOptions = {},
+  teams: { conversations?: TeamsConversationSource; graphEnabled?: boolean } = {},
+): ChannelProviderRegistry {
+  return {
+    telegram: createTelegramProvider(options),
+    discord: createDiscordProvider(options),
+    slack: createSlackProvider(options),
+    teams: createTeamsProvider({ ...options, ...teams }),
+  };
 }
 
 export function isChannelProviderId(value: unknown): value is ChannelProviderId {
@@ -85,21 +121,37 @@ export function providerFromPluginId(pluginId: string): ChannelProviderId | null
   return isChannelProviderId(provider) ? provider : null;
 }
 
-export type ChannelCredential = { value: string; ref: string };
+/** `secrets`: the sensitive parts of a composed credential (redacted on their own, not only as part of `value`). */
+export type ChannelCredential = { value: string; ref: string; secrets?: string[] };
 
 /**
  * Hosted: the provider env read at start (never persisted). Self-hosted: the
  * encrypted connector secret. The value never leaves server-side code.
+ * Teams needs all three values from one source; a partial set counts as missing.
  */
 export function resolveChannelCredential(input: {
   provider: ChannelProviderId;
   environment: Record<string, string | undefined>;
-  readSecret: (pluginId: string) => { value: string; id: string } | null;
+  readSecret: (pluginId: string, name: string) => { value: string; id: string } | null;
 }): ChannelCredential | null {
+  if (input.provider === "teams") {
+    const env = (name: string) => input.environment[name]?.trim() ?? "";
+    const hosted = { appId: env(TEAMS_CREDENTIAL_ENV.appId), appSecret: env(TEAMS_CREDENTIAL_ENV.appSecret), tenantId: env(TEAMS_CREDENTIAL_ENV.tenantId) };
+    if (hosted.appId && hosted.appSecret && hosted.tenantId) {
+      return { value: encodeTeamsCredential(hosted), ref: `provider-env:${TEAMS_CREDENTIAL_ENV.appSecret}`, secrets: [hosted.appSecret] };
+    }
+    const pluginId = channelPluginId("teams");
+    const appId = input.readSecret(pluginId, TEAMS_SECRET_NAMES.appId)?.value?.trim();
+    const secret = input.readSecret(pluginId, TEAMS_SECRET_NAMES.appSecret);
+    const tenantId = input.readSecret(pluginId, TEAMS_SECRET_NAMES.tenantId)?.value?.trim();
+    const appSecret = secret?.value?.trim();
+    if (!appId || !appSecret || !tenantId || !secret) return null;
+    return { value: encodeTeamsCredential({ appId, appSecret, tenantId }), ref: `marketplace-secret:${secret.id}`, secrets: [appSecret] };
+  }
   const envName = CHANNEL_TOKEN_ENV[input.provider];
   const hosted = input.environment[envName]?.trim();
   if (hosted) return { value: hosted, ref: `provider-env:${envName}` };
-  const secret = input.readSecret(channelPluginId(input.provider));
+  const secret = input.readSecret(channelPluginId(input.provider), CHANNEL_SECRET_NAME);
   return secret?.value ? { value: secret.value, ref: `marketplace-secret:${secret.id}` } : null;
 }
 

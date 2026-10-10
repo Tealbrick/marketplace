@@ -10,6 +10,7 @@ import { NOSTR_MIN_PREFIX_HEX } from "./approvals.js";
 import { createGrantService, type GrantService } from "./grants.js";
 import { eventHostAllowed, eventListingStatus, grantCoversPost, maxPendingPerAgent, type PostCampaign } from "./policy.js";
 import { wiredCapabilities } from "./providers/capabilities.js";
+import { parseTeamsCredential } from "./providers/teams.js";
 import type { ChannelCapabilities, ChannelProvider, ChannelProviderId, DiscoverResult, SendResult } from "./providers/types.js";
 import {
   CHANNEL_PROVIDER_IDS,
@@ -235,7 +236,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
   /** Inbound-only secrets (the Slack signing secret), read at start; redacted like the bot tokens. */
   const inboundSecrets: string[] = [];
   /** Every credential value this instance holds, for redaction before anything is written or answered. */
-  const secrets = () => [...[...credentials.values()].map((credential) => credential.value), ...inboundSecrets];
+  const secrets = () => [...[...credentials.values()].flatMap((credential) => [credential.value, ...(credential.secrets ?? [])]), ...inboundSecrets];
   const redact = (text: string) => redactSecrets(text, secrets());
 
   const audit = (eventType: string, post: Pick<ChannelPostRecord, "id" | "channelId" | "agentId" | "digest" | "authority">, provider: string, metadata: Record<string, unknown> = {}) =>
@@ -250,11 +251,11 @@ export function createChannelService(deps: ChannelServiceDeps) {
 
   // ----- connections and readiness (§4.1, §8) -------------------------------
 
-  const readSecret = (pluginId: string) => {
+  const readSecret = (pluginId: string, name: string = CHANNEL_SECRET_NAME) => {
     try {
-      const value = store.readConnectorSecretValues({ workspaceSlug: org, pluginId })[CHANNEL_SECRET_NAME];
+      const value = store.readConnectorSecretValues({ workspaceSlug: org, pluginId })[name];
       if (!value) return null;
-      const id = store.listConnectorSecrets({ workspaceSlug: org, pluginId }).find((secret) => secret.name === CHANNEL_SECRET_NAME)?.id;
+      const id = store.listConnectorSecrets({ workspaceSlug: org, pluginId }).find((secret) => secret.name === name)?.id;
       return id ? { value, id } : null;
     } catch {
       return null;
@@ -1333,8 +1334,17 @@ export function createChannelService(deps: ChannelServiceDeps) {
     return entry.destinations.find((destination) => destination.externalId === externalId && (parentId === undefined || destination.parentId === parentId)) ?? null;
   };
 
+  /** The Teams app id and tenant id (never the secret), for the messaging endpoint; null without a usable credential. */
+  const teamsIdentity = (): { appId: string; tenantId: string } | null => {
+    const credential = credentials.get("teams");
+    if (!credential) return null;
+    const parsed = parseTeamsCredential(credential.value);
+    return parsed.ok ? { appId: parsed.credential.appId, tenantId: parsed.credential.tenantId } : null;
+  };
+
   return {
     configured,
+    teamsIdentity,
     cleanupAttachments,
     boot,
     readinessView,

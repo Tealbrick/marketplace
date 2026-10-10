@@ -520,7 +520,7 @@ export interface OwnerKeyResponse {
 
 // ----- Channels (spec docs/channels-spec.md v0.2, owner audience) -----------
 
-export type ChannelProviderId = "telegram" | "discord" | "slack";
+export type ChannelProviderId = "telegram" | "discord" | "slack" | "teams";
 export type ChannelReadiness = "available" | "credential_missing" | "credential_invalid" | "paused" | "unavailable";
 export type ChannelStatus = "draft" | "active" | "paused" | "archived";
 export type GrantPhase = "announce" | "reminder" | "recap" | "update";
@@ -731,6 +731,8 @@ export interface ChannelDiscoverResponse {
   schema: 1;
   provider: ChannelProviderId;
   destinations: ChannelDestination[];
+  /** Owner-facing remarks written by Marketplace, e.g. Teams private channels left out. */
+  notes?: string[];
 }
 
 export type ChannelReceiptStatus = "sent" | "failed" | "uncertain" | "pending" | "skipped" | "cancelled" | "expired";

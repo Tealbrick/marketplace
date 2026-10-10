@@ -56,6 +56,7 @@ const PROVIDER_KINDS: Readonly<Record<ChannelProviderId, readonly (typeof CHANNE
   telegram: ["chat"],
   discord: ["chat"],
   slack: ["chat"],
+  teams: ["chat"],
 };
 const POST_STATUSES: readonly ChannelPostStatus[] = ["held", "scheduled", "sending", "sent", "failed", "uncertain", "skipped", "cancelled", "expired"];
 const OWNER_PREFIX = "/api/marketplace/channels";
@@ -87,9 +88,10 @@ const PostBodySchema = z.strictObject({
 
 const ScheduleBodySchema = PostBodySchema.extend({ sendAt: z.string().max(40) });
 
+// Teams conversation ids (`19:…@thread.tacv2`, personal `a:…`) are longer than Telegram and Discord ids.
 const DestinationPickSchema = z.strictObject({
-  externalId: z.string().min(1).max(64),
-  parentId: z.string().min(1).max(64).optional(),
+  externalId: z.string().min(1).max(256),
+  parentId: z.string().min(1).max(256).optional(),
 });
 
 const ChannelTextSchema = z.string().max(500);
@@ -690,7 +692,7 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
     if (!isChannelProviderId(provider)) return fail(reply, 400, "channel_provider_unknown");
     const result = await service.discover(provider);
     if (!result.ok) return fail(reply, result.reason === "credential_missing" ? 409 : 503, `channel_${result.reason}`);
-    return { ok: true, schema: 1, provider, destinations: result.destinations };
+    return { ok: true, schema: 1, provider, destinations: result.destinations, ...(result.notes?.length ? { notes: result.notes } : {}) };
   });
 
   const policyFor = (provider: string, input: Record<string, unknown> | undefined) => {
