@@ -475,6 +475,18 @@ describe("live sessions: stop within 5 s and caps", () => {
     expect(t.f.store.channels.live.getGrant(TENANT, grant.id)!.status).toBe("revoked");
   });
 
+  it("ends a session row left behind by a crashed instance (no heartbeat) so the grant can join again", async () => {
+    const t = await setup();
+    const grant = await t.active();
+    const orphan = t.f.store.channels.live.startSession({ workspaceSlug: TENANT, grantId: grant.id, grantDigest: grant.digest, channelId: t.channel.id, agentId: "agent-1", huddleId: randomUUID(), modes: { listen: true }, instanceId: "marketplace-crashed", now: new Date(t.f.now) });
+    expect(orphan.ok).toBe(true);
+    expect((await t.join(grant.id, t.huddle())).json().error).toBe("live_session_active");
+    t.f.advance(21_000);
+    const { sessionId } = await t.joined(grant.id);
+    expect(t.sessionRow(sessionId).status).toBe("joined");
+    expect(t.sessionRow((orphan as { session: { id: string } }).session.id)).toMatchObject({ status: "failed", endReason: "stale_session" });
+  });
+
   it("stops at the session limit, refuses joins at the day limit, and stops at the provider-minute cost cap", async () => {
     const t = await setup();
     const grant = await t.active({ maxSessionMinutes: 1, maxDayMinutes: 2, costCap: { providerMinutes: 5 } });

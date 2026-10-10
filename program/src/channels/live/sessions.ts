@@ -32,6 +32,8 @@ export const LIVE_TICK_MS = 250;
 const DAY_MS = 86_400_000;
 const HOUR_MS = 3_600_000;
 const HEARTBEAT_EVERY_TICKS = 8;
+/** A live session row whose owner process stopped writing heartbeats this long ago is ended (crash, restart). */
+export const LIVE_STALE_SESSION_MS = 20_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
 const HIDDEN = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu;
 
@@ -225,6 +227,19 @@ export function createLiveSessionManager(deps: LiveSessionManagerDeps) {
     }
   };
 
+  /**
+   * Ends live rows no process is running any more (no heartbeat for LIVE_STALE_SESSION_MS, not ours): a crash or a
+   * restart must not keep a grant "in session" or count its minutes forever.
+   */
+  const recoverStale = (filter: { grantId?: string } = {}) => {
+    const cutoff = deps.now().getTime() - LIVE_STALE_SESSION_MS;
+    for (const row of live.listSessions(org, { ...(filter.grantId ? { grantId: filter.grantId } : {}), live: true, limit: 500 })) {
+      if (running.has(row.id) || Date.parse(row.updatedAt) > cutoff) continue;
+      const ended = live.endSession(org, row.id, { status: "failed", reason: "stale_session", now: deps.now() });
+      if (ended) deps.audit("marketplace.channels.live_session.ended", "marketplace:live", { sessionId: row.id, grantId: row.grantId, reason: "stale_session" });
+    }
+  };
+
   /** Pushed by revoke / pause / narrow / withdraw (also caught by the next tick). */
   const onGrantChanged = (grantId: string, reason: string) => {
     for (const run of running.values()) if (run.grantId === grantId) void stopRun(run, reason);
@@ -299,6 +314,7 @@ export function createLiveSessionManager(deps: LiveSessionManagerDeps) {
     const caps = capsRefusal(usable.record, grant, nowMs);
     if (caps) return caps;
     const modes: LiveModes = Object.fromEntries(requested.map((mode) => [mode, true])) as LiveModes;
+    recoverStale({ grantId: record.id });
     const started = live.startSession({
       workspaceSlug: org,
       grantId: record.id,
@@ -535,9 +551,16 @@ export function createLiveSessionManager(deps: LiveSessionManagerDeps) {
     maybeStopTicker();
   };
 
+  try {
+    recoverStale();
+  } catch {
+    // A failed recovery is retried at the next join of each grant.
+  }
+
   return {
     join,
     leave,
+    recoverStale,
     stopByOwner,
     speakClip,
     speakText,
