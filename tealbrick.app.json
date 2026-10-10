@@ -114,7 +114,40 @@
       "idempotency": "required",
       "effects": "external-effects",
       "review": "allowed",
-      "summary": "Run one consented connector action for the calling agent; the consent must belong to the caller"
+      "summary": "Run one consented connector action for the calling agent; the consent must belong to the caller",
+      "inputFileRefs": {
+        "uploadOperation": "marketplace.tool-files.upload"
+      }
+    },
+    {
+      "id": "marketplace.tool-files.upload",
+      "crud": [
+        "create"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/v1/agent/tool-files",
+      "idempotency": "required",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Harness only: upload the raw bytes of a file argument (?consentId=&name=, real Content-Type) for the caller's consent whose action takes a file; returns {fileRef, sha256, bytes, contentType, filename, expiresAt} to use once in marketplace.tools.call",
+      "audience": "harness",
+      "inputBinary": {
+        "maxBytes": 26214400,
+        "contentTypes": [
+          "image/png",
+          "image/jpeg",
+          "image/webp",
+          "image/gif",
+          "application/pdf",
+          "text/plain",
+          "text/markdown",
+          "text/csv",
+          "application/zip",
+          "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ]
+      }
     },
     {
       "id": "marketplace.channels.list",
@@ -592,6 +625,19 @@
       "effects": "writes-app-state",
       "review": "none",
       "summary": "Deny a held connector call",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.approvals.file",
+      "crud": [
+        "read"
+      ],
+      "method": "GET",
+      "path": "/api/marketplace/company-box/approvals/{approvalId}/files/{fileRef}",
+      "idempotency": "none",
+      "effects": "read-only",
+      "review": "none",
+      "summary": "Preview or download an image or PDF a held connector call will upload",
       "audience": "owner"
     },
     {

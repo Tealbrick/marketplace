@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError, setupCompanyBoxEntry } from "./api";
-import { CompanyBoxSection, coverageLabel, exposureLabel } from "./CompanyBox";
+import { ApprovalFiles, CompanyBoxSection, coverageLabel, exposureLabel } from "./CompanyBox";
 import { errorCopy } from "./copy";
 import type { CompanyBoxEntry, CompanyBoxResponse } from "./types";
 
@@ -164,5 +164,32 @@ describe("Company Box approvals panel", () => {
     expect(await screen.findByText("Approved and ran Email a note to someone.")).toBeTruthy();
     expect(fetchMock.mock.calls.some(([route, init]) => String(route).endsWith("/approve") && init?.method === "POST")).toBe(true);
     expect(await screen.findByText("Nothing waiting.")).toBeTruthy();
+  });
+});
+
+describe("Company Box approvals panel: tool files (#59)", () => {
+  it("shows each held file's name, type, size and sha256 with an owner preview and download", () => {
+    const sha256 = "ab".repeat(32);
+    render(
+      createElement(ApprovalFiles, {
+        approvalId: "approval_9",
+        digest: "cd".repeat(32),
+        files: [
+          { field: "body.file", fileRef: `tf_${"a".repeat(32)}`, filename: "speaker.png", contentType: "image/png", bytes: 2048, sha256, state: "pinned", previewable: true },
+          { field: "body", fileRef: `tf_${"b".repeat(32)}`, filename: "pack.zip", contentType: "application/zip", bytes: 10, sha256, state: "pinned", previewable: false },
+        ],
+      }),
+    );
+    expect(screen.getByText("speaker.png")).toBeTruthy();
+    expect(screen.getByText("image/png · 2 KiB")).toBeTruthy();
+    expect(screen.getAllByText(`sha256 ${sha256}`)).toHaveLength(2);
+    const preview = screen.getByAltText("Preview of speaker.png") as HTMLImageElement;
+    expect(preview.getAttribute("src")).toBe(`/api/marketplace/company-box/approvals/approval_9/files/tf_${"a".repeat(32)}`);
+    const downloads = screen.getAllByText("Download") as HTMLAnchorElement[];
+    expect(downloads).toHaveLength(1);
+    expect(downloads[0]!.getAttribute("href")).toBe(`/api/marketplace/company-box/approvals/approval_9/files/tf_${"a".repeat(32)}?download=1`);
+    // Archives and text are listed but never previewed.
+    expect(screen.queryByAltText("Preview of pack.zip")).toBeNull();
+    expect(screen.getByText("cdcdcdcdcdcd")).toBeTruthy();
   });
 });

@@ -488,6 +488,22 @@ export interface CompanyBoxApproval {
   result?: unknown;
   /** Present when the held call is a channel post. */
   channel?: ChannelApprovalSummary;
+  /** Tool files (#59): files the held call uploads, as the approval digest covers them (never the bytes). */
+  files?: CompanyBoxApprovalFile[];
+  /** The approval digest (sha256 over the action and the held arguments, file references included). */
+  digest?: string;
+}
+
+/** One file of a held call: name, type, size and sha256; images and PDF can be previewed while pinned. */
+export interface CompanyBoxApprovalFile {
+  field: string;
+  fileRef: string;
+  filename: string;
+  contentType: string;
+  bytes: number;
+  sha256: string;
+  state: "live" | "pinned" | "consumed" | "expired" | "released" | "unavailable";
+  previewable: boolean;
 }
 
 export interface CompanyBoxApprovalsResponse {

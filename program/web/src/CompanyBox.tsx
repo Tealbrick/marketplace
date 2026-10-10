@@ -4,11 +4,11 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { AlertTriangle, Boxes, Check, CircleSlash, Hourglass, KeyRound, LoaderCircle, PlugZap, Send, Settings2, Trash2, Undo2, X } from "lucide-react";
 import { Button, IconButton, Tag } from "@tealbrick/ui";
 
-import { ApiError, decideCompanyBoxApproval, getCompanyBox, getCompanyBoxApproval, getCompanyBoxApprovals, removeCompanyBoxEntry, setupCompanyBoxEntry, testCompanyBoxEntry } from "./api";
+import { ApiError, companyBoxApprovalFileUrl, decideCompanyBoxApproval, getCompanyBox, getCompanyBoxApproval, getCompanyBoxApprovals, removeCompanyBoxEntry, setupCompanyBoxEntry, testCompanyBoxEntry } from "./api";
 import { getChannels } from "./channels-api";
 import { actionTitle, digestPrefix, formatBytes, providerLabel, transcriptsFromCanonical, typeName } from "./channels-model";
 import { BUZZ_CODE_CHARS, BUZZ_CODE_HINT, errorCopy } from "./copy";
-import type { ChannelActionView, ChannelApprovalSummary, ChannelPayloadView, CompanyBoxApproval, CompanyBoxCredentialKey, CompanyBoxEntry, CompanyBoxResult } from "./types";
+import type { ChannelActionView, ChannelApprovalSummary, ChannelPayloadView, CompanyBoxApproval, CompanyBoxApprovalFile, CompanyBoxCredentialKey, CompanyBoxEntry, CompanyBoxResult } from "./types";
 import { formatWhen, InlineError, StatePanel, statusLabel, statusTone } from "./ui";
 
 const SOURCE_LABEL: Record<CompanyBoxEntry["source"], string> = { openapi: "REST API", mcp: "MCP server" };
@@ -236,6 +236,24 @@ function channelDecisionNotice(approval: CompanyBoxApproval, result: Awaited<Ret
   return `Approved, but "${what}" wasn't sent: ${failureCopy(code).title}.`;
 }
 
+/** Tool files (#59): what a held call uploads. The digest covers each file's reference, sha256, size, type and name. */
+export function ApprovalFiles({ approvalId, files, digest }: { approvalId: string; files: CompanyBoxApprovalFile[]; digest?: string }) {
+  return <div className="company-box-approval__files" aria-label="Files">
+    {files.map((file) => <div key={file.fileRef} className="company-box-approval__file">
+      {file.previewable && file.contentType.startsWith("image/")
+        ? <a href={companyBoxApprovalFileUrl(approvalId, file.fileRef)} target="_blank" rel="noopener noreferrer"><img src={companyBoxApprovalFileUrl(approvalId, file.fileRef)} alt={`Preview of ${file.filename}`} loading="lazy" /></a>
+        : null}
+      <div>
+        <strong>{file.filename}</strong>
+        <p>{file.contentType} · {formatBytes(file.bytes)}{file.state !== "pinned" ? ` · ${file.state}` : ""}</p>
+        <code title={file.sha256}>sha256 {file.sha256}</code>
+        {file.previewable && <a href={companyBoxApprovalFileUrl(approvalId, file.fileRef, true)} download={file.filename}>Download</a>}
+      </div>
+    </div>)}
+    {digest && <p className="muted-detail">Digest <code title={digest}>{digestPrefix(digest)}</code></p>}
+  </div>;
+}
+
 function ApprovalRow({ approval, onDecided }: { approval: CompanyBoxApproval; onDecided: (notice: string) => void }) {
   const pendingRow = approval.state === "pending";
   const channelHold = approval.channel;
@@ -269,6 +287,7 @@ function ApprovalRow({ approval, onDecided }: { approval: CompanyBoxApproval; on
         : pendingRow
           ? <div className="company-box-approval__args" aria-label="Arguments">{full.data ? <ArgumentsView value={full.data.arguments} /> : full.error ? <InlineError error={full.error} /> : <span className="muted-detail">Loading arguments…</span>}</div>
           : <pre className="company-box-approval__args">{approval.argumentsPreview}</pre>}
+      {approval.files && approval.files.length > 0 && <ApprovalFiles approvalId={approval.id} files={approval.files} digest={approval.digest} />}
       {decide.error && <InlineError error={decide.error} />}
     </div>
     {pending ? <div className="dialog-actions">

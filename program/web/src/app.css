@@ -455,6 +455,11 @@ code, .mono { font-family: var(--dg-font-mono); overflow-wrap: anywhere; }
 .args-view dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .args-truncated { color: var(--dg-warning, #b7791f); font-size: 11px; }
 .nav-badge { margin-left: auto; min-width: 18px; border-radius: 9px; padding: 0 6px; background: var(--dg-warning, #b7791f); color: #fff; font-size: 11px; line-height: 18px; text-align: center; }
+.company-box-approval__files { display: grid; min-width: 0; gap: 6px; margin-top: 4px; }
+.company-box-approval__file { display: flex; min-width: 0; align-items: flex-start; gap: 8px; border-radius: var(--dg-radius-sm); padding: 6px 8px; background: var(--dg-canvas); }
+.company-box-approval__file > div { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.company-box-approval__file img { display: block; width: 64px; height: 64px; object-fit: contain; border-radius: var(--dg-radius-sm); background: var(--dg-panel); }
+.company-box-approval__file a { font-size: 12px; }
 @media (max-width: 640px) { .company-box-approval { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 600px) {
   .custom-connector > header { grid-template-columns: 34px minmax(0, 1fr); }
