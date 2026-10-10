@@ -130,6 +130,8 @@ export function createFakeBuzzRelay(options: { host?: string; members?: string[]
       case 5: {
         const targets = event.tags.filter((entry) => entry[0] === "e").map((entry) => entry[1]);
         if (targets.length === 0) return { accepted: false, message: "invalid: #e required" };
+        // Buzz deletes one target per event.
+        if (targets.length > 1) return { accepted: false, message: "invalid: deletion must target exactly one event" };
         for (const target of targets) {
           const existing = events.find((candidate) => candidate.id === target);
           if (existing && existing.pubkey !== event.pubkey) return { accepted: false, message: "restricted: can only delete own events" };
@@ -167,6 +169,24 @@ export function createFakeBuzzRelay(options: { host?: string; members?: string[]
         emitGroupState(group);
         store(event);
         store(relaySigned(44100, [["p", target], ["h", group.id]]));
+        return { accepted: true, message: "" };
+      }
+      case 9001: {
+        const group = groupId ? groups.get(groupId) : undefined;
+        const target = tag("p");
+        if (!group || !target) return { accepted: false, message: "invalid: unknown channel" };
+        if (group.owner !== event.pubkey && target !== event.pubkey) return { accepted: false, message: "restricted: owner or admin required" };
+        group.members.delete(target);
+        emitGroupState(group);
+        store(event);
+        return { accepted: true, message: "" };
+      }
+      case 9008: {
+        const group = groupId ? groups.get(groupId) : undefined;
+        if (!group) return { accepted: false, message: "invalid: unknown channel" };
+        if (group.owner !== event.pubkey) return { accepted: false, message: "restricted: owner only" };
+        groups.delete(group.id);
+        store(event);
         return { accepted: true, message: "" };
       }
       case 41010: {
@@ -386,8 +406,8 @@ export function createFakeBuzzRelay(options: { host?: string; members?: string[]
     addMember: (pubkey: string) => void members.add(pubkey),
     removeMember: (pubkey: string) => void members.delete(pubkey),
     /** A relay-side channel the given people are members of (the agent joins channels like any member). */
-    createGroup(input: { name: string; members: string[]; private?: boolean; hidden?: boolean; owner?: string }): string {
-      const id = randomUUID();
+    createGroup(input: { name: string; members: string[]; private?: boolean; hidden?: boolean; owner?: string; id?: string }): string {
+      const id = input.id ?? randomUUID();
       const group: Group = { id, name: input.name, private: input.private ?? false, hidden: input.hidden ?? false, owner: input.owner ?? input.members[0]!, members: new Set(input.members) };
       groups.set(id, group);
       emitGroupState(group);

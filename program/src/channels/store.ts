@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
 import { sha256Hex } from "./canonical-json.js";
-import { BUZZ_DDL, BUZZ_TABLES, BuzzStore } from "./buzz-store.js";
+import { BUZZ_TABLES, BuzzStore, migrateBuzzTables } from "./buzz-store.js";
 import { INBOUND_TABLES, InboundStore, migrateInboundTables } from "./inbound-store.js";
 import { TEAMS_CONVERSATION_DDL, TeamsConversationStore } from "./teams-store.js";
 import {
@@ -201,7 +201,7 @@ export function migrateChannelTables(db: DatabaseSync): void {
   // Inbound worker (P2 scope 2.2): routed inbound events, routes, reply links, settings, webhook, leases.
   migrateInboundTables(db);
   // Buzz (P2): public identity and owner settings (never the secret key), bridge routes, bridged messages.
-  db.exec(BUZZ_DDL);
+  migrateBuzzTables(db);
 }
 
 // ---------------------------------------------------------------------------

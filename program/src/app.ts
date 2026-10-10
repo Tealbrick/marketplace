@@ -82,7 +82,8 @@ import { TEAMS_MESSAGES_PATH, registerTeamsInboundRoute } from "./channels/teams
 import { createInboundPipeline, NULL_INBOUND_SINK, type InboundSink } from "./channels/inbound.js";
 import { createBuzzBridgeSink, type BuzzBridgeSink } from "./channels/buzz-bridge.js";
 import { createBuzzIdentity } from "./channels/buzz-identity.js";
-import type { BuzzProvider } from "./channels/providers/buzz.js";
+import { createBuzzProvider, type BuzzProvider } from "./channels/providers/buzz.js";
+import { buzzPrivateRelayAllowed, guardedRelaySocketFactory, type RelayLookup } from "./channels/buzz-relay-guard.js";
 import { parsePubkey, npubEncode } from "./channels/providers/nostr.js";
 import { isInboundPublicPath, registerInboundRoutes } from "./channels/inbound-routes.js";
 import { TRUSTED_PROXIES_ENV, inboundConsumerKey, parseTrustedProxies } from "./channels/inbound-http.js";
@@ -667,6 +668,8 @@ export type BuildMarketplaceAppOptions = {
   buzzSocketTimers?: GatewayTimers;
   /** Test seam: the 32 random bytes of a new Buzz agent key (default: the curve library's CSPRNG). */
   buzzKeyRandom?: () => Uint8Array;
+  /** Test seam: DNS for the Buzz relay host check (default: the system resolver). */
+  buzzRelayLookup?: RelayLookup;
   /**
    * Verifies owner-signed approval proofs for `marketplace.approvals.resolve`. Default: the contract
    * verifiers (`verifyNostrApprovalProof`, `verifyOwnerApprovalAssertion`); tests may inject another.
@@ -8136,16 +8139,22 @@ export async function buildMarketplaceApp(
   const channelInstanceId = `marketplace-${randomUUID().slice(0, 8)}`;
   const channelProviderRegistry =
     options.channelProviders ??
-    defaultChannelProviders({}, {
-      conversations: options.store.channels.teams.source(organizationId, () => channelClock()),
-      graphEnabled: teamsGraphEnabled(environment),
-    });
+    defaultChannelProviders(
+      {},
+      {
+        conversations: options.store.channels.teams.source(organizationId, () => channelClock()),
+        graphEnabled: teamsGraphEnabled(environment),
+      },
+      createBuzzProvider({ allowPrivateRelay: buzzPrivateRelayAllowed(environment) }),
+    );
   // Buzz: Marketplace generates the agent key (connector_secret only); the owner sets the relay URL and NIP-OA tag.
   const buzzIdentity = createBuzzIdentity({
     store: options.store,
     organizationId,
     now: channelClock,
+    allowPrivateRelay: buzzPrivateRelayAllowed(environment),
     ...(options.buzzKeyRandom ? { randomKey: options.buzzKeyRandom } : {}),
+    ...(options.buzzRelayLookup ? { relayLookup: options.buzzRelayLookup } : {}),
   });
   const channelService = createChannelService({
     store: options.store,
@@ -8316,6 +8325,11 @@ export async function buildMarketplaceApp(
         if (!selection || (selection.grantClass !== "outward" && selection.grantClass !== "read")) return false;
         return classSelectionsEqual(selection, channelClassSelection(channel, selection.grantClass));
       });
+  /** The Buzz keys of every enabled route's agent (their posts are never bridged back). */
+  const buzzAgentKeys = (): ReadonlySet<string> => {
+    const enabled = new Set(options.store.channels.inbound.listRoutes(organizationId).filter((route) => route.enabled).map((route) => route.channelId));
+    return new Set(options.store.channels.buzz.listRoutes(organizationId).filter((route) => enabled.has(route.channelId)).map((route) => route.agentPubkey));
+  };
   const inboundPipeline = createInboundPipeline({
     store: options.store.channels.inbound,
     channels: options.store.channels,
@@ -8325,6 +8339,13 @@ export async function buildMarketplaceApp(
     botIdFor: (provider) => channelService.botIdFor(provider),
     agentConsented: agentHasChannelConsent,
     audit: (eventType, metadata) => channelAudit(eventType, "marketplace:inbound", metadata),
+    ignoreMessage: (message) => {
+      if (message.platform !== "buzz") return null;
+      // Bridge channels are delivery-only; routed agents' own Buzz posts never come back to them (no echo).
+      if (options.store.channels.buzz.bridgeGroupIds(organizationId).has(message.channelId)) return "buzz_bridge_channel";
+      if (buzzAgentKeys().has(message.senderUserId)) return "buzz_routed_agent";
+      return null;
+    },
   });
   const inboundIngest = (message: Parameters<typeof inboundPipeline.ingest>[0]) => {
     if (!channelService.configured) return;
@@ -8348,17 +8369,34 @@ export async function buildMarketplaceApp(
     ...(options.discordGatewaySocketFactory ? { socketFactory: options.discordGatewaySocketFactory } : {}),
     ...(options.discordGatewayTimers ? { timers: options.discordGatewayTimers } : {}),
     channelById: (channelId) => options.store.channels.getChannel(organizationId, channelId),
-    setBuzzRoute: (input) => {
-      const agentPubkey = parsePubkey(input.agentPubkey);
-      if (!agentPubkey) return { ok: false, status: 422, error: "buzz_agent_key_invalid" };
-      const relayUrl = buzzIdentity.relayUrl();
-      if (!relayUrl) return { ok: false, status: 409, error: "buzz_relay_missing" };
-      if (agentPubkey === buzzIdentity.agentPubkey()) return { ok: false, status: 422, error: "buzz_agent_key_is_bridge" };
-      const route = options.store.channels.buzz.setRoute({ workspaceSlug: organizationId, channelId: input.channelId, agentPubkey, relayUrl, actor: input.actor, now: channelClock() });
-      channelAudit("marketplace.channels.buzz.bridge_route_set", input.actor, { channelId: input.channelId, agentNpub: npubEncode(agentPubkey), relayUrl });
-      return { ok: true, view: { channelId: route.channelId, agentNpub: npubEncode(route.agentPubkey), relayUrl: route.relayUrl, bridgeChannel: route.groupId } };
+    buzzRoute: {
+      validate: (input) => {
+        const agentPubkey = parsePubkey(input);
+        if (!agentPubkey) return { ok: false, status: 422, error: "buzz_agent_key_invalid" };
+        if (!buzzIdentity.relayUrl()) return { ok: false, status: 409, error: "buzz_relay_missing" };
+        if (agentPubkey === buzzIdentity.agentPubkey()) return { ok: false, status: 422, error: "buzz_agent_key_is_bridge" };
+        return { ok: true, agentPubkey };
+      },
+      record: (input) => {
+        const relayUrl = buzzIdentity.relayUrl()!;
+        const route = options.store.channels.buzz.setRoute({ workspaceSlug: organizationId, channelId: input.channelId, agentId: input.agentId, agentPubkey: input.agentPubkey, relayUrl, actor: input.actor, now: channelClock() });
+        channelAudit("marketplace.channels.buzz.bridge_route_set", input.actor, { channelId: input.channelId, agentId: input.agentId, agentNpub: npubEncode(input.agentPubkey), relayUrl });
+        return { channelId: route.channelId, agentId: route.agentId, agentNpub: npubEncode(route.agentPubkey), relayUrl: route.relayUrl, bridgeChannel: route.groupId };
+      },
+      current: (channelId) => options.store.channels.buzz.getRoute(organizationId, channelId),
+      drop: (channelId, actor) => {
+        const dropped = options.store.channels.buzz.deleteRoute(organizationId, channelId, channelClock());
+        if (dropped) channelAudit("marketplace.channels.buzz.bridge_route_dropped", actor, { channelId, previousAgentId: dropped.agentId, reason: "agent_rebound", retiredGroup: dropped.groupId });
+      },
     },
-    ...(options.buzzSocketFactory ? { buzzSocketFactory: options.buzzSocketFactory } : {}),
+    buzzFilter: {
+      bridgeGroups: () => options.store.channels.buzz.bridgeGroupIds(organizationId),
+      agentKeys: buzzAgentKeys,
+      selfPubkey: () => buzzIdentity.agentPubkey(),
+      pinnedOwner: () => options.store.channels.getOwnerKey(organizationId)?.pubkey ?? null,
+      authorized: () => channelService.inboundCredential("buzz") !== null,
+    },
+    buzzSocketFactory: options.buzzSocketFactory ?? guardedRelaySocketFactory({ allowPrivate: buzzPrivateRelayAllowed(environment) }),
     ...(options.buzzSocketTimers ? { buzzTimers: options.buzzSocketTimers } : {}),
   });
   // Bounded inbound retention at start, also when the scheduler is off or Channels is inert (review F7).
@@ -8375,6 +8413,7 @@ export async function buildMarketplaceApp(
       provider: buzzProvider,
       credential: () => channelService.inboundCredential("buzz"),
       relayUrl: () => buzzIdentity.relayUrl(),
+      selfPubkey: () => buzzIdentity.agentPubkey(),
       retentionDays: () => options.store.channels.inbound.getSettings(organizationId).textRetentionDays,
       now: channelClock,
       audit: (eventType, metadata) => channelAudit(eventType, "marketplace:buzz-bridge", metadata),
@@ -8462,6 +8501,7 @@ export async function buildMarketplaceApp(
           buzz: {
             identity: buzzIdentity,
             onChanged: onBuzzIdentityChanged,
+            beforeRotate: async () => (buzzBridge && channelService.configured ? { ...(await buzzBridge.purgeBeforeRotation(channelClock())) } : { skipped: true }),
             // Called per request (after the app is built), so the pin source declared below is initialised.
             ownerWriter: (request, reply) =>
               createOwnerWriterGate({
@@ -8932,6 +8972,8 @@ export async function buildMarketplaceApp(
     pinSource: ownerPinSource,
     requireOperator,
     ownerLaunchSession: (request) => operatorSessions.ownerLaunchSession(request.headers.cookie, request.headers["x-csrf-token"]),
+    // The Buzz identity depends on the pinned owner key: re-check readiness and the relay socket after a change.
+    onChanged: () => onBuzzIdentityChanged(),
   });
 
   app.post(

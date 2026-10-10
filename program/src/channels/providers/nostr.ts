@@ -107,6 +107,11 @@ function polymod(values: readonly number[]): number {
 
 /** NIP-19 `npub1…` for a 64-hex public key. */
 export function npubEncode(pubkeyHex: string): string {
+  return bech32KeyEncode("npub", pubkeyHex);
+}
+
+/** NIP-19 bech32 of 32 key bytes under `hrp` (`npub`; tests use it to scan for an `nsec` form). */
+export function bech32KeyEncode(hrp: string, pubkeyHex: string): string {
   if (!HEX64.test(pubkeyHex)) throw new Error("nostr_pubkey_invalid");
   const words: number[] = [];
   let accumulator = 0;
@@ -121,7 +126,6 @@ export function npubEncode(pubkeyHex: string): string {
     accumulator &= (1 << bits) - 1;
   }
   if (bits > 0) words.push((accumulator << (5 - bits)) & 31);
-  const hrp = "npub";
   const expanded = [...[...hrp].map((char) => char.charCodeAt(0) >>> 5), 0, ...[...hrp].map((char) => char.charCodeAt(0) & 31)];
   const checksum = polymod([...expanded, ...words, 0, 0, 0, 0, 0, 0]) ^ 1;
   const tail = Array.from({ length: 6 }, (_unused, index) => (checksum >>> (5 * (5 - index))) & 31);

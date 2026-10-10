@@ -261,6 +261,14 @@ describe("buzz reactions, edits, deletes, typing", () => {
     expect(lastEvent(t, 5).tags).toEqual([["e", reaction.id], ["h", t.channel], t.tag]);
     expect(t.relay.events.some((event) => event.id === reaction.id)).toBe(false);
     expect(await t.provider.react!(t.credential, t.destination, message.id, "🎉", { remove: true })).toEqual({ status: "sent", detail: "the reaction was not there" });
+    // Two matching reactions (e.g. sent twice): one single-target kind 5 each (Buzz rejects multi-target deletes).
+    await t.provider.react!(t.credential, t.destination, message.id, "👍");
+    await t.provider.react!(t.credential, t.destination, message.id, "👍");
+    const deletionsBefore = t.relay.eventsOfKind(5).length;
+    expect(await t.provider.react!(t.credential, t.destination, message.id, "👍", { remove: true })).toEqual({ status: "sent" });
+    const deletions = t.relay.eventsOfKind(5).slice(deletionsBefore);
+    expect(deletions).toHaveLength(2);
+    for (const deletion of deletions) expect(deletion.tags.filter((tag) => tag[0] === "e")).toHaveLength(1);
     expect(await t.provider.react!(t.credential, t.destination, message.id, ":custom:")).toMatchObject({ errorCode: "channel_reaction_invalid" });
     expect(await t.provider.react!(t.credential, t.destination, "nope", "👍")).toMatchObject({ errorCode: "channel_message_id_invalid" });
   });

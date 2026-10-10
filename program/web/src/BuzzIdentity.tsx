@@ -5,7 +5,7 @@ import { Button, Tag } from "@tealbrick/ui";
 
 import { generateBuzzKey, revokeBuzzTag, updateBuzzIdentity } from "./channels-api";
 import { buzzTagSummary, looksLikeSecretKey } from "./channels-model";
-import { BUZZ_CUSTODY_COPY, BUZZ_REVOKE_COPY, BUZZ_ROTATE_COPY, BUZZ_SETUP_STEPS } from "./copy";
+import { BUZZ_BACKUP_COPY, BUZZ_CUSTODY_COPY, BUZZ_RETENTION_COPY, BUZZ_REVOKE_COPY, BUZZ_ROTATE_COPY, BUZZ_SETUP_STEPS } from "./copy";
 import type { BuzzIdentityResponse, BuzzIdentityView } from "./types";
 import { formatWhen, InlineError } from "./ui";
 
@@ -41,7 +41,8 @@ export function BuzzIdentityPanel({ view, onChanged }: { view: BuzzIdentityView;
 
   return <section className="buzz-identity" aria-labelledby={`${id}-title`}>
     <div className="section-heading"><div><p className="eyebrow">Buzz identity</p><h3 id={`${id}-title`}>Marketplace agent key</h3></div><Tag tone={summary.tone}>{summary.text}</Tag></div>
-    <p className="muted-detail">{BUZZ_CUSTODY_COPY}</p>
+    <p className="muted-detail">{BUZZ_CUSTODY_COPY} {BUZZ_BACKUP_COPY}</p>
+    <p className="muted-detail">{BUZZ_RETENTION_COPY}</p>
     {view.secretStore === "unavailable" && <p className="inline-error" role="alert">The encrypted secret store is not configured, so Marketplace cannot make or keep a Buzz key.</p>}
     {restartNote && <p className="muted-detail" role="status">Channels are not on yet in this Marketplace. The Buzz identity takes effect after Marketplace restarts.</p>}
     {view.authTag.renewalDue && view.authTag.status === "valid" && <p className="inline-warning" role="alert">The NIP-OA tag ends {formatWhen(view.authTag.expiresAt)}. Sign a new tag before then, or Buzz stops working.</p>}
@@ -52,6 +53,7 @@ export function BuzzIdentityPanel({ view, onChanged }: { view: BuzzIdentityView;
       <dt>Relay</dt><dd>{view.relay.url ? <code>{view.relay.url}</code> : "Not set"}</dd>
       <dt>Tag owner</dt><dd>{view.authTag.ownerNpub ? <code>{view.authTag.ownerNpub}</code> : "—"}</dd>
       <dt>Tag ends</dt><dd>{formatWhen(view.authTag.expiresAt)}</dd>
+      <dt>Tag allows</dt><dd>{view.authTag.allowsKinds.length ? `kinds ${view.authTag.allowsKinds.join(", ")}` : "—"}</dd>
       <dt>Tag digest</dt><dd>{view.authTag.sha256 ? <code>{view.authTag.sha256.slice(0, 16)}…</code> : "—"}</dd>
       <dt>Pinned owner key</dt><dd>{view.pinnedOwner.set ? <code>{view.pinnedOwner.fingerprint}</code> : "Not set. Set your owner Buzz key under Approvals first: the tag must be signed by it."}</dd>
     </dl>
@@ -68,7 +70,7 @@ export function BuzzIdentityPanel({ view, onChanged }: { view: BuzzIdentityView;
 
     {view.signing && <details className="provider-setup" open={view.authTag.status !== "valid"}>
       <summary>Sign the NIP-OA tag on your own device</summary>
-      <p className="muted-detail">Sign this exact text with your Buzz key (BIP-340 over its SHA-256). It allows the agent key until the end date in the conditions; at most {view.signing.maxDays} days. Marketplace reminds you {view.signing.reminderDays} days before the end.</p>
+      <p className="muted-detail">Sign this exact text with your Buzz key (BIP-340 over its SHA-256). It allows the agent key until the end date in the conditions; at most {view.signing.maxDays} days. Do not add kind= conditions: the bridge publishes several kinds. Marketplace reminds you {view.signing.reminderDays} days before the end.</p>
       <pre className="buzz-preimage"><code>{view.signing.preimage}</code></pre>
       <p className="muted-detail">Conditions: <code>{view.signing.suggestedConditions}</code>. Then paste the tag as <code>["auth", "&lt;your key hex&gt;", "&lt;conditions&gt;", "&lt;signature hex&gt;"]</code>.</p>
     </details>}

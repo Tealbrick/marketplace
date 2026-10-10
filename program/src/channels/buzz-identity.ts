@@ -1,6 +1,7 @@
 import type { SqliteMarketplaceStore } from "../store.js";
 import { ownerKeyFingerprint } from "./owner-key.js";
-import { encodeBuzzCredential, normalizeRelayUrl } from "./providers/buzz.js";
+import { checkRelayHost, type RelayLookup } from "./buzz-relay-guard.js";
+import { BUZZ_PUBLISHED_KINDS, encodeBuzzCredential, normalizeRelayUrl } from "./providers/buzz.js";
 import {
   NIP_OA_MAX_LIFETIME_SECONDS,
   NIP_OA_RENEWAL_REMINDER_SECONDS,
@@ -52,6 +53,8 @@ export type BuzzIdentityView = {
     /** True when the tag ends within 14 days: the owner should sign a new one. */
     renewalDue: boolean;
     setAt: string | null;
+    /** Event kinds the stored tag lets Marketplace publish (all of them for a tag without kind clauses). */
+    allowsKinds: number[];
   };
   /** From the stored identity alone (no network): what the provider readiness will at best be. */
   readiness: Exclude<ChannelReadiness, "unavailable">;
@@ -69,6 +72,10 @@ export type BuzzIdentityDeps = {
   now: () => Date;
   /** Test seam: 32 random bytes for a new key (default: the curve library's CSPRNG). */
   randomKey?: () => Uint8Array;
+  /** Dev-only private relays (MARKETPLACE_CHANNELS_BUZZ_ALLOW_PRIVATE_RELAY, refused in production). */
+  allowPrivateRelay?: boolean;
+  /** Test seam: DNS for the relay host. */
+  relayLookup?: RelayLookup;
 };
 
 export type BuzzIdentity = ReturnType<typeof createBuzzIdentity>;
@@ -137,6 +144,7 @@ export function createBuzzIdentity(deps: BuzzIdentityDeps) {
         daysLeft: secondsLeft !== null ? Math.max(0, Math.floor(secondsLeft / 86_400)) : null,
         renewalDue: secondsLeft !== null && secondsLeft < NIP_OA_RENEWAL_REMINDER_SECONDS,
         setAt: identity?.authSetAt ?? null,
+        allowsKinds: state.status === "valid" && "checked" in state && state.checked ? BUZZ_PUBLISHED_KINDS.filter((kind) => state.checked!.parsed.kinds.every((allowed) => allowed === kind)) : [],
       },
       readiness,
       signing: pubkey
@@ -160,8 +168,11 @@ export function createBuzzIdentity(deps: BuzzIdentityDeps) {
     store.putConnectorSecret({ workspaceSlug: org, pluginId: BUZZ_PLUGIN_ID, name: BUZZ_SECRET_NAME, value: secretKey });
     const previousTag = current?.authTagSha256 ?? null;
     buzz.setAgentKey({ workspaceSlug: org, agentPubkey: pubkey, actor: input.actor, now: deps.now() });
+    // The new key is not a member of the old bridge channels: every route needs the owner's confirmation again.
+    const retired = hadKey ? buzz.unconfirmRoutes(org, input.actor, deps.now(), "key_rotated") : { routes: 0, retiredGroups: [] };
     audit(hadKey ? "marketplace.channels.buzz.key_rotated" : "marketplace.channels.buzz.key_generated", input.actor, {
       npub: npubEncode(pubkey),
+      ...(hadKey ? { pausedRoutes: retired.routes, retiredGroups: retired.retiredGroups } : {}),
       ...(hadKey && current?.agentPubkey ? { previousNpub: npubEncode(current.agentPubkey) } : {}),
       ...(previousTag ? { clearedTagSha256: previousTag } : {}),
     });
@@ -169,11 +180,14 @@ export function createBuzzIdentity(deps: BuzzIdentityDeps) {
   };
 
   /** Owner settings: the relay URL (wss://, owner-entered) and/or the NIP-OA tag for the current agent key. */
-  const update = (input: { relayUrl?: string; authTag?: unknown; actor: string }): BuzzIdentityResult => {
+  const update = async (input: { relayUrl?: string; authTag?: unknown; actor: string }): Promise<BuzzIdentityResult> => {
     let changed = false;
     if (input.relayUrl !== undefined) {
       const endpoint = normalizeRelayUrl(input.relayUrl);
       if (!endpoint) return { ok: false, status: 422, error: "buzz_relay_url_invalid", detail: "enter the relay as wss://host (no path, query or user info)" };
+      // Egress rules: every resolved address must be public (unless the dev-only flag is on); re-checked at connect.
+      const allowed = await checkRelayHost(endpoint.host.replace(/:\d+$/u, ""), { allowPrivate: deps.allowPrivateRelay ?? false, ...(deps.relayLookup ? { lookup: deps.relayLookup } : {}) });
+      if (!allowed.ok) return { ok: false, status: 422, error: `buzz_${allowed.reason}`, detail: "the relay must resolve only to public addresses" };
       const current = buzz.getIdentity(org);
       const previous = current?.relayUrl ?? null;
       if (previous !== endpoint.relayUrl) {
@@ -182,12 +196,13 @@ export function createBuzzIdentity(deps: BuzzIdentityDeps) {
         // pastes a tag again) and the bridge stays paused for every route until the owner saves it again.
         const clearedTag = previous !== null && current?.authTagSha256 ? current.authTagSha256 : null;
         if (clearedTag) buzz.clearAuthTag({ workspaceSlug: org, actor: input.actor, now: deps.now() });
-        const pausedRoutes = previous !== null ? buzz.unconfirmRoutes(org, input.actor, deps.now()) : 0;
+        const retired = previous !== null ? buzz.unconfirmRoutes(org, input.actor, deps.now(), "relay_changed") : { routes: 0, retiredGroups: [] };
         audit("marketplace.channels.buzz.relay_changed", input.actor, {
           oldRelayHost: previous ? normalizeRelayUrl(previous)?.host ?? null : null,
           newRelayHost: endpoint.host,
           actor: input.actor,
-          pausedRoutes,
+          pausedRoutes: retired.routes,
+          retiredGroups: retired.retiredGroups,
           ...(clearedTag ? { clearedTagSha256: clearedTag } : {}),
         });
         changed = true;
@@ -206,6 +221,10 @@ export function createBuzzIdentity(deps: BuzzIdentityDeps) {
       if (!pin) return { ok: false, status: 409, error: "buzz_owner_key_required", detail: "set the owner Buzz key (approvals.ownerNostrPubkey) first" };
       const checked = verifyAuthTag({ tag: input.authTag, agentPubkey: identity.agentPubkey, pinnedOwner: pin, nowSeconds: nowSeconds() });
       if (!checked.ok) return { ok: false, status: 422, error: `buzz_${checked.reason}` };
+      // NIP-OA kind clauses are conjunctive: a tag with any kind= clause cannot cover the kinds Marketplace publishes.
+      if (checked.value.parsed.kinds.length > 0) {
+        return { ok: false, status: 422, error: "buzz_auth_tag_kinds_too_narrow", detail: `the tag must not limit kinds; Marketplace publishes kinds ${BUZZ_PUBLISHED_KINDS.join(", ")}` };
+      }
       if (identity.authTagSha256 !== checked.value.sha256) {
         buzz.setAuthTag({
           workspaceSlug: org,

@@ -40,7 +40,7 @@ function fakeTimers(): Timers & { advance(ms: number): void; pending(): number }
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
-function setup(input: { conditions?: string; leaseFree?: () => boolean } = {}) {
+function setup(input: { conditions?: string; leaseFree?: () => boolean; ignore?: Set<string>; authorized?: () => boolean; pinnedOwner?: () => string | null; selfPubkey?: string } = {}) {
   let clock = START_MS;
   const relay = createFakeBuzzRelay({ members: [OWNER], now: () => clock });
   const secret = generateSecretKey();
@@ -67,6 +67,10 @@ function setup(input: { conditions?: string; leaseFree?: () => boolean } = {}) {
     timers,
     random: () => 0,
     now: () => clock,
+    ...(input.ignore ? { ignoreAuthors: () => input.ignore! } : {}),
+    ...(input.authorized ? { authorized: input.authorized } : {}),
+    ...(input.pinnedOwner ? { pinnedOwner: input.pinnedOwner } : {}),
+    ...(input.selfPubkey ? { selfPubkey: input.selfPubkey } : {}),
   });
   return {
     relay,
@@ -204,5 +208,39 @@ describe("buzz relay socket", () => {
     t.socket.stop();
     expect(t.socket.status).toBe("stopped");
     expect(t.releases).toBe(1);
+  });
+
+  it("I4/I5: drops routed agents' events, stops at the tag's end date, when the identity becomes unavailable, and refuses a tag for another pinned owner", async () => {
+    const agentSecret = generateSecretKey();
+    const agentKey = publicKeyOf(agentSecret)!;
+    const t = setup({ ignore: new Set([agentKey]) });
+    t.socket.start();
+    await flush();
+    t.relay.inject(agentSecret, { kind: 9, tags: [["h", t.general]], content: "agent echo" });
+    t.relay.inject(t.aliceSecret, { kind: 9, tags: [["h", t.general]], content: "alice" });
+    expect(t.messages.map((message) => message.text)).toEqual(["alice"]);
+
+    const expiring = setup({ conditions: `created_at<${START + 60}` });
+    expiring.socket.start();
+    await flush();
+    expect(expiring.socket.status).toBe("ready");
+    expiring.timers.advance(60_000);
+    expect(expiring.socket.status).toBe("failed");
+    expect(expiring.socket.detail).toBe("auth_tag_expired");
+
+    let available = true;
+    const revoked = setup({ authorized: () => available });
+    revoked.socket.start();
+    await flush();
+    available = false;
+    revoked.relay.inject(revoked.aliceSecret, { kind: 9, tags: [["h", revoked.general]], content: "after revoke" });
+    expect(revoked.messages).toEqual([]);
+    expect(revoked.socket.detail).toBe("identity_unavailable");
+
+    const otherOwner = setup({ pinnedOwner: () => publicKeyOf(generateSecretKey())! });
+    otherOwner.socket.start();
+    await flush();
+    expect(otherOwner.socket.status).toBe("failed");
+    expect(otherOwner.relay.sockets).toHaveLength(0);
   });
 });

@@ -33,6 +33,7 @@ import {
   type NostrEvent,
   type VerifiedAuthTag,
 } from "./nostr.js";
+import { guardedRelayFetch } from "../buzz-relay-guard.js";
 import { createRateLimiter, requestWithRetry, type RateRule } from "./rate.js";
 import {
   CHANNEL_CAPABILITIES_VERSION,
@@ -79,6 +80,12 @@ const BUZZ_TYPING_RULE: RateRule = { name: "buzz-typing", capacity: 1, refillPer
 const INBOUND_MAX_TEXT_CHARS = 20_000;
 const INBOUND_MAX_FILES = 10;
 
+/**
+ * Kinds Marketplace publishes with the owner's tag. NIP-OA `kind=` clauses are conjunctive, so a tag with any
+ * `kind=` clause cannot cover them: the owner's tag must carry no `kind=` clause (checked at paste).
+ */
+export const BUZZ_PUBLISHED_KINDS = Object.freeze([9, 9007, 9000, 9001, 9008, 5, 7, 40003, 41010, 20002] as const);
+
 export const BUZZ_KIND = Object.freeze({
   message: 9,
   reaction: 7,
@@ -88,6 +95,8 @@ export const BUZZ_KIND = Object.freeze({
   dmOpen: 41010,
   createGroup: 9007,
   putUser: 9000,
+  removeUser: 9001,
+  deleteGroup: 9008,
   groupMetadata: 39000,
   groupMembers: 39002,
   profile: 0,
@@ -172,7 +181,10 @@ export function normalizeRelayUrl(input: unknown): RelayEndpoint | null {
     return null;
   }
   if (url.protocol !== "wss:" || url.username || url.password || url.search || url.hash || (url.pathname !== "/" && url.pathname !== "")) return null;
-  if (!/^[a-z0-9.-]{1,253}$/u.test(url.hostname) || url.hostname.startsWith(".") || url.hostname.endsWith(".")) return null;
+  // A DNS name, or an IP literal (IPv6 in brackets). Address rules are checked after resolution (buzz-relay-guard).
+  const dnsName = /^[a-z0-9.-]{1,253}$/u.test(url.hostname) && !url.hostname.startsWith(".") && !url.hostname.endsWith(".");
+  const ipv6 = /^\[[0-9a-f:.]{2,45}\]$/u.test(url.hostname);
+  if (!dnsName && !ipv6) return null;
   const host = url.port ? `${url.hostname}:${url.port}` : url.hostname;
   return { relayUrl: `wss://${host}`, httpBase: `https://${host}`, host };
 }
@@ -188,8 +200,11 @@ export type BuzzCredentialCheck =
   | { ok: true; credential: ParsedCredential }
   | { ok: false; reason: "credential_missing" | "credential_invalid"; detail: string };
 
-/** Decodes and checks a credential: key shape, relay URL, and the NIP-OA tag (signature, end date ≤ 90 days, not expired). */
-export function checkBuzzCredential(value: string | null | undefined, nowSeconds: number): BuzzCredentialCheck {
+/**
+ * Decodes and checks a credential: key shape, relay URL, and the NIP-OA tag (signature, end date ≤ 90 days, not
+ * expired, and, when given, signed by the pinned owner Buzz key).
+ */
+export function checkBuzzCredential(value: string | null | undefined, nowSeconds: number, pinnedOwner?: string | null): BuzzCredentialCheck {
   const raw = value?.trim();
   if (!raw) return { ok: false, reason: "credential_missing", detail: "no Buzz identity is configured" };
   if (!raw.startsWith(BUZZ_CREDENTIAL_PREFIX)) return { ok: false, reason: "credential_invalid", detail: "the Buzz credential is not understood" };
@@ -206,7 +221,8 @@ export function checkBuzzCredential(value: string | null | undefined, nowSeconds
   const endpoint = normalizeRelayUrl(decoded.r);
   if (!endpoint) return { ok: false, reason: "credential_missing", detail: "no Buzz relay URL is configured" };
   if (decoded.t === null || decoded.t === undefined) return { ok: false, reason: "credential_missing", detail: "the owner has not added a NIP-OA tag for the agent key" };
-  const checked = verifyAuthTag({ tag: decoded.t, agentPubkey: pubkey, nowSeconds });
+  const checked = verifyAuthTag({ tag: decoded.t, agentPubkey: pubkey, nowSeconds, ...(pinnedOwner !== undefined ? { pinnedOwner } : {}) });
+  if (checked.ok && pinnedOwner === null) return { ok: false, reason: "credential_invalid", detail: "no owner Buzz key is pinned" };
   if (!checked.ok) return { ok: false, reason: "credential_invalid", detail: `the owner's NIP-OA tag is not valid (${checked.reason})` };
   return { ok: true, credential: { secretKey, pubkey, endpoint, auth: checked.value } };
 }
@@ -278,8 +294,15 @@ export type BuzzBridgeResult = { status: "sent" | "failed" | "uncertain"; eventI
 
 /** The extra calls the inbound bridge uses (Marketplace-authored events only, to the configured relay). */
 export type BuzzBridgeApi = {
-  createPrivateChannel(credential: string | null | undefined, input: { name: string; about: string }): Promise<BuzzBridgeResult>;
+  /** Creates the private channel with the given (deterministic) id; an existing id answers `exists`. */
+  createPrivateChannel(credential: string | null | undefined, input: { groupId: string; name: string; about: string }): Promise<BuzzBridgeResult>;
+  /** Whether a channel with this id exists on the relay and the identity is in its member list. */
+  channelState(credential: string | null | undefined, groupId: string): Promise<{ ok: true; exists: boolean; members: string[] } | { ok: false; errorCode: string }>;
   addMember(credential: string | null | undefined, groupId: string, pubkey: string): Promise<BuzzBridgeResult>;
+  /** Removes a member (kind 9001), e.g. the previous agent after a re-bind. */
+  removeMember(credential: string | null | undefined, groupId: string, pubkey: string): Promise<BuzzBridgeResult>;
+  /** Deletes the identity's own channel (kind 9008), before a key rotation. */
+  deleteChannel(credential: string | null | undefined, groupId: string): Promise<BuzzBridgeResult>;
   /** A kind-9 message with exactly the given `p` tags (the routed agent); content as given (the bridge frames it). */
   post(credential: string | null | undefined, groupId: string, input: { content: string; notify: readonly string[] }): Promise<BuzzBridgeResult>;
   /** Deletes one of the identity's own events (kind 5). */
@@ -303,8 +326,10 @@ function relayMessage(json: unknown): string | undefined {
   return typeof value === "string" ? `relay: ${value}` : undefined;
 }
 
-export function createBuzzProvider(options: ChannelProviderOptions = {}): BuzzProvider {
-  const runtime = resolveRuntime(options);
+export function createBuzzProvider(options: ChannelProviderOptions & { allowPrivateRelay?: boolean } = {}): BuzzProvider {
+  // Without an injected fetch (tests), every relay request goes through the egress guard (re-resolved and
+  // checked at each connect, pinned to the checked address).
+  const runtime = resolveRuntime({ ...options, fetchImpl: options.fetchImpl ?? guardedRelayFetch({ allowPrivate: options.allowPrivateRelay ?? false }) });
   const limiter = createRateLimiter({ now: runtime.now, sleep: runtime.sleep });
   // Typing signals are never queued: one that would wait is simply skipped.
   const typingLimiter = createRateLimiter({ now: runtime.now, sleep: runtime.sleep, maxWaitMs: 0 });
@@ -362,7 +387,7 @@ export function createBuzzProvider(options: ChannelProviderOptions = {}): BuzzPr
     cred: ParsedCredential,
     input: { kind: number; tags: string[][]; content: string },
     secrets: string[],
-  ): Promise<{ ok: true; event: NostrEvent; json: Record<string, unknown> } | { ok: false; failure: Failure }> {
+  ): Promise<{ ok: true; event: NostrEvent; json: Record<string, unknown> } | { ok: false; failure: Failure; event?: NostrEvent }> {
     const createdAt = nowSeconds();
     if (!authTagAllows(cred.auth.parsed, input.kind, createdAt)) {
       return {
@@ -376,10 +401,11 @@ export function createBuzzProvider(options: ChannelProviderOptions = {}): BuzzPr
     }
     const event = signEvent(cred.secretKey, { kind: input.kind, created_at: createdAt, tags: [...input.tags, [...cred.auth.tag]], content: input.content });
     const outcome = await bridgePost(cred, "/events", event, secrets);
-    if (!outcome.ok) return outcome;
+    // The signed event id is known even when delivery is uncertain (callers record it for a later delete).
+    if (!outcome.ok) return { ...outcome, event };
     const body = asRecord(outcome.json);
     if (!body || typeof body.accepted !== "boolean") {
-      return { ok: false, failure: { status: "uncertain", errorCode: "provider_bad_response", detail: "the relay answered success but the reply was not understood; delivery is unknown" } };
+      return { ok: false, event, failure: { status: "uncertain", errorCode: "provider_bad_response", detail: "the relay answered success but the reply was not understood; delivery is unknown" } };
     }
     if (!body.accepted) {
       return { ok: false, failure: { status: "failed", errorCode: "provider_rejected", detail: safeDetail(relayMessage(body) ?? "relay: not accepted", secrets) ?? "relay: not accepted" } };
@@ -583,8 +609,12 @@ export function createBuzzProvider(options: ChannelProviderOptions = {}): BuzzPr
     if (!own.ok) return actionOf({ ...own.failure, detail: own.failure.detail.replace(/; delivery is unknown$/u, "") });
     const targets = own.events.filter((event) => event.pubkey === cred.pubkey && event.content === emoji).map((event) => event.id);
     if (targets.length === 0) return { status: "sent", detail: "the reaction was not there" };
-    const published = await publish(cred, { kind: BUZZ_KIND.deletion, tags: [...targets.map((id) => ["e", id]), ["h", destination.externalId]], content: "" }, secrets);
-    return published.ok ? { status: "sent" } : actionOf(published.failure);
+    // Buzz accepts single-target deletions only: one kind 5 per reaction.
+    for (const target of targets) {
+      const published = await publish(cred, { kind: BUZZ_KIND.deletion, tags: [["e", target], ["h", destination.externalId]], content: "" }, secrets);
+      if (!published.ok) return actionOf(published.failure);
+    }
+    return { status: "sent" };
   }
 
   async function edit(credential: string | null | undefined, destination: ChannelDestination, messageId: string, input: { text: string; mentions?: readonly OutboundMention[] }): Promise<SendResult> {
@@ -739,7 +769,9 @@ export function createBuzzProvider(options: ChannelProviderOptions = {}): BuzzPr
     const slot = await limiter.acquire(`buzz:${checked.cred.pubkey}`, [BUZZ_IDENTITY_RULE]);
     if (!slot.ok) return { status: "failed", errorCode: "provider_rate_limited", detail: `local rate limit; next free slot in ${Math.ceil(slot.waitMs / 1000)}s` };
     const published = await publish(checked.cred, built, secretsOf(credential, checked.cred));
-    return published.ok ? { status: "sent", eventId: published.event.id, ...(built.groupId ? { groupId: built.groupId } : {}) } : bridgeResult(published.failure);
+    return published.ok
+      ? { status: "sent", eventId: published.event.id, ...(built.groupId ? { groupId: built.groupId } : {}) }
+      : { ...bridgeResult(published.failure), ...(published.event ? { eventId: published.event.id } : {}) };
   };
   const badGroup: Failure = { status: "failed", errorCode: "channel_destination_invalid", detail: "the Buzz channel id must be a UUID" };
 
@@ -748,7 +780,8 @@ export function createBuzzProvider(options: ChannelProviderOptions = {}): BuzzPr
       guard(
         () =>
           bridgeCall(credential, () => {
-            const groupId = randomUUID();
+            const groupId = input.groupId;
+            if (!UUID.test(groupId)) return badGroup;
             return {
               kind: BUZZ_KIND.createGroup,
               groupId,
@@ -780,6 +813,33 @@ export function createBuzzProvider(options: ChannelProviderOptions = {}): BuzzPr
             if (Buffer.byteLength(input.content, "utf8") > BUZZ_MAX_CONTENT_BYTES) return { status: "failed", errorCode: "channel_text_too_long", detail: "the bridged message is too long" };
             return { kind: BUZZ_KIND.message, content: input.content, tags: [["h", groupId], ...input.notify.map((pubkey) => ["p", pubkey])] };
           }),
+        { status: "uncertain", errorCode: "provider_internal_error", detail: "unexpected adapter error" },
+      ),
+    channelState: (credential, groupId) =>
+      guard(
+        async () => {
+          const checked = check(credential);
+          if (!checked.ok) return { ok: false as const, errorCode: checked.failure.errorCode };
+          if (!UUID.test(groupId)) return { ok: false as const, errorCode: "channel_destination_invalid" };
+          const found = await query(checked.cred, [{ kinds: [BUZZ_KIND.groupMembers], "#d": [groupId], limit: 1 }], secretsOf(credential, checked.cred));
+          if (!found.ok) return { ok: false as const, errorCode: found.failure.errorCode };
+          const state = found.events.find((event) => tagValue(event, "d") === groupId);
+          const members = state ? state.tags.filter((tag) => tag[0] === "p" && typeof tag[1] === "string" && HEX64.test(tag[1])).map((tag) => tag[1] as string) : [];
+          return { ok: true as const, exists: state !== undefined, members };
+        },
+        { ok: false, errorCode: "provider_internal_error" },
+      ),
+    removeMember: (credential, groupId, pubkey) =>
+      guard(
+        () =>
+          bridgeCall(credential, () =>
+            !UUID.test(groupId) || !HEX64.test(pubkey) ? badGroup : { kind: BUZZ_KIND.removeUser, content: "", tags: [["h", groupId], ["p", pubkey]] },
+          ),
+        { status: "uncertain", errorCode: "provider_internal_error", detail: "unexpected adapter error" },
+      ),
+    deleteChannel: (credential, groupId) =>
+      guard(
+        () => bridgeCall(credential, () => (!UUID.test(groupId) ? badGroup : { kind: BUZZ_KIND.deleteGroup, content: "", tags: [["h", groupId]] })),
         { status: "uncertain", errorCode: "provider_internal_error", detail: "unexpected adapter error" },
       ),
     deleteOwn: (credential, groupId, eventId) =>

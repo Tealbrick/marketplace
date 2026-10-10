@@ -703,6 +703,8 @@ export interface BuzzIdentityView {
     daysLeft: number | null;
     renewalDue: boolean;
     setAt: string | null;
+    /** Event kinds the tag lets Marketplace publish. */
+    allowsKinds: number[];
   };
   readiness: "available" | "credential_missing" | "credential_invalid";
   signing: { preimage: string; suggestedConditions: string; maxDays: number; reminderDays: number } | null;

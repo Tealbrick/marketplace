@@ -165,6 +165,7 @@ export type ChannelRouteDeps = {
     onChanged: () => Promise<void>;
     /** The strict owner gate (launch session + CSRF + pinned owner) for Buzz writes. */
     ownerWriter: (request: FastifyRequest, reply: FastifyReply) => Promise<OwnerWriterGateResult>;
+    beforeRotate?: () => Promise<Record<string, unknown>>;
   };
 };
 
@@ -766,6 +767,7 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
       ownerWriter: deps.buzz.ownerWriter,
       fail,
       onChanged: deps.buzz.onChanged,
+      ...(deps.buzz.beforeRotate ? { beforeRotate: deps.buzz.beforeRotate } : {}),
       configured: deps.configured,
     });
   }
@@ -877,6 +879,10 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
       // Destinations are picked from discovery, never typed (spec §4.2).
       const destination = service.discoveredDestination(input.provider, input.destination.externalId, input.destination.parentId);
       if (!destination) return { status: 409, body: { ok: false, schema: 1, error: "channel_destination_not_discovered" } };
+      // Buzz bridge channels are delivery-only, never a channel (or an inbound source).
+      if (input.provider === "buzz" && store.channels.buzz.bridgeGroupIds(org).has(destination.externalId)) {
+        return { status: 409, body: { ok: false, schema: 1, error: "channel_destination_is_bridge" } };
+      }
       const policy = policyFor(input.provider, input.policy);
       if (!policy.ok) return { status: 422, body: { ok: false, schema: 1, error: policy.error, errors: policy.errors } };
       try {
@@ -935,6 +941,7 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
         ? service.discoveredDestination(channel.provider, input.destination.externalId, input.destination.parentId)
         : null;
       if (!picked) return fail(reply, 409, "channel_destination_not_discovered");
+      if (channel.provider === "buzz" && store.channels.buzz.bridgeGroupIds(org).has(picked.externalId)) return fail(reply, 409, "channel_destination_is_bridge");
       destination = {
         type: picked.type,
         externalId: picked.externalId,
@@ -1143,7 +1150,11 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
     const parsed = InboundRouteSchema.safeParse(request.body);
     if (!parsed.success) return fail(reply, 400, "validation_failed");
     // The routed agent's Buzz key decides who receives bridged messages: the strict owner gate, like the identity.
-    if (parsed.data.agentBuzzPubkey !== undefined) {
+    // So does any change of the agent on a Buzz-bound route (a re-bind drops the binding; nothing carries over).
+    const currentRoute = inboundStore.getRoute(org, channel.id);
+    const buzzBound = store.channels.buzz.getRoute(org, channel.id) !== null;
+    const agentChange = parsed.data.agentId !== undefined && currentRoute !== null && parsed.data.agentId !== currentRoute.agentId;
+    if (parsed.data.agentBuzzPubkey !== undefined || (buzzBound && agentChange)) {
       if (!deps.buzz) return fail(reply, 409, "buzz_bridge_unavailable");
       const gate = await deps.buzz.ownerWriter(request, reply);
       if (!gate.ok) return { ok: false, schema: 1, error: gate.error === "marketplace_operator_required" ? "owner_session_required" : gate.error };

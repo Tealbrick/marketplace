@@ -39,6 +39,14 @@ export type BuzzRelaySocketDeps = {
   now?: () => number;
   leaseRenewMs?: number;
   maxBackoffMs?: number;
+  /** The identity's public key from the stored identity: own events stay filtered even if the credential stops parsing. */
+  selfPubkey?: string | null;
+  /** Authors whose events are dropped (routed agents' Buzz keys: no echo back to them). */
+  ignoreAuthors?: () => ReadonlySet<string>;
+  /** The pinned owner Buzz key: the tag must name it (null: no key pinned, nothing is accepted). */
+  pinnedOwner?: () => string | null;
+  /** False once the identity is no longer available (revoked, owner key changed): the socket stops. */
+  authorized?: () => boolean;
 };
 
 export type BuzzRelaySocket = ReturnType<typeof createBuzzRelaySocket>;
@@ -92,7 +100,8 @@ export function createBuzzRelaySocket(deps: BuzzRelaySocketDeps) {
       // A send on a closing socket is lost; the close handler reconnects.
     }
   };
-  const parsedCredential = () => checkBuzzCredential(deps.credential, nowSeconds());
+  const parsedCredential = () => checkBuzzCredential(deps.credential, nowSeconds(), deps.pinnedOwner ? deps.pinnedOwner() : undefined);
+  let expiryTimer: unknown = null;
 
   const detach = () => {
     const current = socket;
@@ -131,6 +140,8 @@ export function createBuzzRelaySocket(deps: BuzzRelaySocketDeps) {
     running = false;
     clear(reconnectTimer);
     reconnectTimer = null;
+    clear(expiryTimer);
+    expiryTimer = null;
     dropSocket(1000);
     releaseLease();
     setStatus("failed", why);
@@ -175,6 +186,14 @@ export function createBuzzRelaySocket(deps: BuzzRelaySocketDeps) {
         authenticated = true;
         attempts = 0;
         setStatus("ready");
+        // Stop at the tag's end date: an open connection never outlives the owner's authorisation.
+        const checked = parsedCredential();
+        if (checked.ok && expiryTimer === null) {
+          expiryTimer = timers.setTimeout(() => {
+            expiryTimer = null;
+            fail("auth_tag_expired");
+          }, Math.max(0, checked.credential.auth.expiresAt * 1000 - now()));
+        }
         if (first) subscribe();
       } else {
         // Relay refused the AUTH: a tag that no longer verifies cannot recover by retrying.
@@ -190,8 +209,12 @@ export function createBuzzRelaySocket(deps: BuzzRelaySocketDeps) {
       return;
     }
     if (type === "EVENT" && (frame[1] === "tb-channels" || frame[1] === "tb-membership")) {
+      if (deps.authorized && !deps.authorized()) {
+        fail("identity_unavailable");
+        return;
+      }
       const checked = parsedCredential();
-      const self = checked.ok ? checked.credential.pubkey : undefined;
+      const self = deps.selfPubkey ?? (checked.ok ? checked.credential.pubkey : undefined);
       const raw = frame[2] as { created_at?: unknown; kind?: unknown; tags?: unknown } | undefined;
       if (frame[1] === "tb-membership") {
         if (raw && (raw.kind === 44100 || raw.kind === 44101) && Array.isArray(raw.tags)) {
@@ -209,6 +232,7 @@ export function createBuzzRelaySocket(deps: BuzzRelaySocketDeps) {
       const parsed = parseBuzzEvent(frame[2], self ? { selfPubkey: self } : {});
       if (parsed.kind !== "message") return;
       if (!channelIds.includes(parsed.message.channelId)) return;
+      if (deps.ignoreAuthors?.().has(parsed.message.senderUserId)) return;
       lastEventAt = Math.max(lastEventAt ?? 0, Math.min(parsed.createdAt, nowSeconds()));
       try {
         deps.onMessage(parsed.message);
@@ -300,6 +324,8 @@ export function createBuzzRelaySocket(deps: BuzzRelaySocketDeps) {
       running = false;
       clear(reconnectTimer);
       reconnectTimer = null;
+      clear(expiryTimer);
+      expiryTimer = null;
       dropSocket(1000);
       releaseLease();
       setStatus("stopped");

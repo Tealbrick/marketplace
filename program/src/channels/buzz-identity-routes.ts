@@ -42,6 +42,8 @@ export type BuzzIdentityRouteDeps = {
   fail: (reply: FastifyReply, status: number, error: string, extra?: Record<string, unknown>) => Record<string, unknown>;
   /** Re-verify the provider, restart the relay socket and swap the bridge sink after a change. */
   onChanged: () => Promise<void>;
+  /** Bridge cleanup with the old key before a rotation (report for the answer). */
+  beforeRotate?: () => Promise<Record<string, unknown>>;
   /** False in inert mode: a first identity takes effect after the next start. */
   configured: boolean;
 };
@@ -52,10 +54,10 @@ export function registerBuzzIdentityRoutes(deps: BuzzIdentityRouteDeps): void {
     const gate = await deps.ownerWriter(request, reply);
     return gate.ok ? gate.actor : { ok: false, schema: 1, error: gate.error === "marketplace_operator_required" ? "owner_session_required" : gate.error };
   };
-  const answer = async (reply: FastifyReply, result: ReturnType<BuzzIdentity["update"]>) => {
+  const answer = async (reply: FastifyReply, result: Awaited<ReturnType<BuzzIdentity["update"]>>, extra: Record<string, unknown> = {}) => {
     if (!result.ok) return deps.fail(reply, result.status, result.error, result.detail ? { detail: result.detail } : {});
     if (result.changed) await deps.onChanged();
-    return { ok: true, schema: 1, changed: result.changed, buzz: identity.view(), ...(deps.configured ? {} : { appliesAfterRestart: true }) };
+    return { ok: true, schema: 1, changed: result.changed, buzz: identity.view(), ...extra, ...(deps.configured ? {} : { appliesAfterRestart: true }) };
   };
 
   app.get(BUZZ_IDENTITY_ROUTE, async (request, reply) => {
@@ -69,7 +71,10 @@ export function registerBuzzIdentityRoutes(deps: BuzzIdentityRouteDeps): void {
     if (typeof actor !== "string") return actor;
     const body = KeyBody.safeParse(request.body ?? {});
     if (!body.success) return deps.fail(reply, 400, "validation_failed");
-    return answer(reply, identity.generateKey({ rotate: body.data.rotate === true, actor }));
+    // Before a rotation, with the OLD key still in the store: delete the bridged messages and bridge channels
+    // (the new key could not: Buzz deletes are author-only). Rotation proceeds even if the relay is down.
+    const cleanup = body.data.rotate === true && identity.hasKey() && deps.beforeRotate ? await deps.beforeRotate() : null;
+    return answer(reply, identity.generateKey({ rotate: body.data.rotate === true, actor }), cleanup ? { bridgeCleanup: cleanup } : {});
   });
 
   app.put(BUZZ_IDENTITY_ROUTE, { bodyLimit: 8 * 1024 }, async (request, reply) => {
@@ -80,7 +85,7 @@ export function registerBuzzIdentityRoutes(deps: BuzzIdentityRouteDeps): void {
     if (!body.success || (body.data.relayUrl === undefined && body.data.authTag === undefined)) return deps.fail(reply, 400, "validation_failed");
     return answer(
       reply,
-      identity.update({
+      await identity.update({
         ...(body.data.relayUrl !== undefined ? { relayUrl: body.data.relayUrl } : {}),
         ...(body.data.authTag !== undefined ? { authTag: body.data.authTag } : {}),
         actor,

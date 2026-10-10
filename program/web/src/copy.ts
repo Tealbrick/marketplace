@@ -489,3 +489,11 @@ export const BUZZ_REVOKE_COPY =
   "Revoke removes the tag. Marketplace stops posting and receiving on Buzz at once. The old tag stays valid on the relay until its end date; to stop it there too, rotate the key.";
 
 export const BUZZ_DISCOVER_HINT = "Add the agent npub to a Buzz channel (or open a DM with it), then press Discover.";
+
+/** Bridge retention, said plainly (security review I3). */
+export const BUZZ_RETENTION_COPY =
+  "Bridged messages are deleted after the inbound retention. A Buzz delete is a soft delete: the relay keeps the message marked as deleted. Messages left on a relay you no longer use are not deleted there.";
+
+/** Custody wording (security review I6): the database backup holds only the encrypted key. */
+export const BUZZ_BACKUP_COPY =
+  "The key is never exported in plain text. A database backup holds only its encrypted form, which is useless without Marketplace's encryption key.";

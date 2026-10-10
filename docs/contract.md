@@ -681,9 +681,11 @@ inside the identity is the only target, and no redirect is followed.
 Identity and custody (Coordinator, 2026-10-10). Marketplace generates one
 secp256k1 key per Buzz connection and writes the secret only to the encrypted
 `connector_secret` store (`channels-buzz` / `agentSecretKey`). It is never
-shown, exported, imported, logged, audited or returned; a database backup
-holds only its ciphertext, useless without the at-rest key (which is never in
-a backup); loss of the store means a new key and a new tag. Public state lives
+shown, exported in plain text, imported, logged, audited or returned. The
+database backup does contain its encrypted ciphertext ("never backed up" in the
+custody rule means never exported in plain text): restoring a backup without
+Marketplace's encryption key is useless, and the key is never in a backup. Loss
+of the store means a new key and a new tag. Public state lives
 in the additive table `channel_buzz_identity` (agent public key, relay URL,
 tag JSON, its SHA-256, owner key, conditions, end date). Owner operations
 (audience owner; they work in inert mode, where a first identity takes effect
@@ -698,9 +700,24 @@ other operator can point the bridge at another relay or agent key.
 | Operation | Route | Effect |
 | --- | --- | --- |
 | `marketplace.channel-buzz-identity.get` | `GET /api/marketplace/channels/buzz/identity` | npub, relay URL, tag status (`missing`, `valid`, `invalid`, `expired`) with reason, end date, days left, `renewalDue` (< 14 days), tag SHA-256, pinned owner fingerprint, and `signing.preimage`: the exact NIP-OA text to sign for a 90-day tag. Also in the owner browse (`buzz`). |
-| `marketplace.channel-buzz-key.generate` | `POST /api/marketplace/channels/buzz/identity/key` `{rotate?}` | Generate the key (`409 buzz_key_exists` when one exists), or rotate it: the old secret is overwritten and the tag cleared (it named the old key). |
-| `marketplace.channel-buzz-identity.update` | `PUT /api/marketplace/channels/buzz/identity` `{relayUrl?, authTag?}` | Relay: `wss://host[:port]` only (`422 buzz_relay_url_invalid`). A change clears the tag (readiness `credential_missing` until the owner pastes a tag again) and unconfirms every bridge route (bridge paused, `buzz_relay_changed`, until the owner saves the route again); audit `relay_changed` `{oldRelayHost, newRelayHost, actor, pausedRoutes}`. Tag: `["auth", ownerHex, conditions, sig]`, verified: BIP-340 by `ownerHex` over SHA-256 of `nostr:agent-auth:<agent hex>:<conditions>` (conditions verbatim), owner ≠ agent, the NIP-OA conditions grammar, `ownerHex` = the pinned owner Buzz key (`approvals.ownerNostrPubkey`; none set → `409 buzz_owner_key_required`), a `created_at<T` end with now < T ≤ now + 90 days, at most one `kind=` value. Refusals `422 buzz_auth_tag_<reason>`; a pasted `nsec` is refused and never echoed. |
+| `marketplace.channel-buzz-key.generate` | `POST /api/marketplace/channels/buzz/identity/key` `{rotate?}` | Generate the key (`409 buzz_key_exists` when one exists), or rotate it. Before a rotation, with the OLD key still in the store, the bridge deletes every bridged message still on the relay (kind 5, one per event) and its bridge channels (kind 9008), since Buzz deletes are author-only; the answer carries `bridgeCleanup: {deleted, failed, channelsDeleted}` and rotation proceeds even if the relay is down. Then the old secret is overwritten, the tag cleared and every route unconfirmed (its channel retired). |
+| `marketplace.channel-buzz-identity.update` | `PUT /api/marketplace/channels/buzz/identity` `{relayUrl?, authTag?}` | Relay: `wss://host[:port]` only, a DNS name or an IP literal (`422 buzz_relay_url_invalid`), and egress rules (below; `422 buzz_relay_host_blocked`, `buzz_relay_address_blocked`, `buzz_relay_dns_failed`). A change clears the tag (readiness `credential_missing` until the owner pastes a tag again) and unconfirms every bridge route (bridge paused, `buzz_relay_changed`, until the owner saves the route again); audit `relay_changed` `{oldRelayHost, newRelayHost, actor, pausedRoutes}`. Tag: `["auth", ownerHex, conditions, sig]`, verified: BIP-340 by `ownerHex` over SHA-256 of `nostr:agent-auth:<agent hex>:<conditions>` (conditions verbatim), owner ≠ agent, the NIP-OA conditions grammar, `ownerHex` = the pinned owner Buzz key (`approvals.ownerNostrPubkey`; none set → `409 buzz_owner_key_required`), a `created_at<T` end with now < T ≤ now + 90 days, no `kind=` clause (NIP-OA kind clauses are conjunctive, so a limited tag cannot cover the kinds Marketplace publishes: 9, 9007, 9000, 9001, 9008, 5, 7, 40003, 41010, 20002; `422 buzz_auth_tag_kinds_too_narrow`; the view lists `authTag.allowsKinds`). Refusals `422 buzz_auth_tag_<reason>`; a pasted `nsec` is refused and never echoed. |
 | `marketplace.channel-buzz-auth-tag.revoke` | `DELETE /api/marketplace/channels/buzz/identity/auth-tag` | Clear the tag: Marketplace stops publishing and receiving at once. The tag stays valid on the relay until its end date; rotation ends it for good. |
+
+Relay egress (Coordinator rules; `program/src/channels/buzz-relay-guard.ts`):
+no fixed allowlist, `wss://` only, and in production every address the relay
+host resolves to (A and AAAA, every one) must be public: loopback, unspecified,
+RFC 1918, IPv6 ULA fc00::/7, link-local 169.254/16 and fe80::/10 (cloud
+metadata 169.254.169.254, fd00:ec2::254), CGNAT 100.64/10, multicast and
+reserved ranges, their IPv4-mapped and NAT64 forms, and local or metadata names
+(`localhost`, `*.local`, `*.internal`, `metadata.google.internal`, single-label)
+are refused; IP-literal hosts get the same checks. The check runs when the owner
+sets the relay and again at every connection: the adapter's HTTP client and the
+relay socket use an undici agent whose connect lookup resolves again, checks
+every answer and connects only to a checked address, so a DNS change cannot
+bypass it. `MARKETPLACE_CHANNELS_BUZZ_ALLOW_PRIVATE_RELAY=1` allows private
+relays for development only: env only (not a manifest setting, so Portal cannot
+set it), off by default, ignored when `NODE_ENV=production`.
 
 Readiness: `credential_missing` (no key, relay or tag), `credential_invalid`
 (a tag that ended, no longer names the pinned owner key, has no pinned owner
@@ -736,8 +753,8 @@ refuses audio, so there is no voice fallback), replies, reactions add/remove
   `reply` (and `root` for a nested reply). Files: Blossom upload (kind 24242
   auth: `t=upload`, `x` = SHA-256, `expiration`, `server`; base64url), then an
   `imeta` tag (`url`, `m`, `x`, `size`, `dim`) and a Markdown image line.
-- Reactions: kind 7 (`e`, `h`); remove = kind 5 of the agent's own matching
-  reaction. Edit: kind 40003, delete: kind 5, both only for the agent's own
+- Reactions: kind 7 (`e`, `h`); remove = one single-target kind 5 per matching
+  reaction of the agent (Buzz rejects multi-target deletions). Edit: kind 40003, delete: kind 5, both only for the agent's own
   messages (checked first: `provider_forbidden`). Typing: kind 20002 (at most
   one per 5 s per channel, never queued).
 - People: `findPerson` by npub or exact member name (display name or name)
@@ -753,7 +770,16 @@ refuses audio, so there is no voice fallback), replies, reactions add/remove
 
 Inbound: one relay socket per agent key (`program/src/channels/buzz-relay-socket.ts`),
 only while a Buzz channel has an enabled route and the identity is available,
-under the consumer lease `buzz:<first 32 hex of sha256(credential)>`. On the
+under the consumer lease `buzz:<first 32 hex of sha256(credential)>`. Bridge
+channels (current or retired) are delivery-only: never subscribed, never routed
+(`ignored / buzz_bridge_channel`) and never a Marketplace channel
+(`409 channel_destination_is_bridge`). Events authored by any enabled route's
+agent Buzz key are dropped in the socket and in the pipeline
+(`ignored / buzz_routed_agent`), so an agent's own post never comes back to it.
+The socket's own-key filter uses the stored public key, the tag is checked
+against the pinned owner key, the socket stops at the tag's end date, and it is
+stopped and reconciled after an owner-key change or when the identity stops
+being available. On the
 relay's `["AUTH", challenge]` (at connect and mid-session) it answers kind
 22242 with `relay`, `challenge` and the NIP-OA tag; after `OK true` it sends
 `REQ tb-channels {kinds: [9], "#h": [routed channel ids ≤ 128], since}` and
@@ -765,29 +791,51 @@ pipeline de-duplicates); `OK false` with a tag that no longer verifies stops
 the socket (`failed`, `auth_tag_invalid`), otherwise it backs off and retries.
 `receivers.buzz` reports the socket status.
 
-Bridge sink (`program/src/channels/buzz-bridge.ts`, Coordinator conditions):
+Bridge sink (`program/src/channels/buzz-bridge.ts`, Coordinator conditions and
+review M2/I1/I3):
 installed while a Buzz identity exists (`receivers.sink: "buzz-bridge"`).
 Each inbound route may carry the routed agent's Buzz key: `PUT
 .../{channelId}/inbound {…, agentBuzzPubkey}` (npub or hex; `422
 buzz_agent_key_invalid`, `409 buzz_relay_missing`), recorded in the additive
-table `channel_buzz_route` with the relay URL it was confirmed on. Delivery:
+table `channel_buzz_route` with the Marketplace agent id and the relay URL it
+was confirmed on. Any change of the agent on a Buzz-bound route needs the strict
+owner gate (like `agentBuzzPubkey`) and the new agent's consent, and drops the
+binding: nothing carries over (consent, bridge channel or key); until the owner
+confirms the new agent's key nothing is bridged (`pending-bridge /
+buzz_agent_key_missing`). A binding whose agent is not the routed agent is
+refused at delivery (`bridge-failed / buzz_agent_changed`). Inputs are validated
+before anything is written. Delivery:
 no available identity → `pending-bridge / buzz_unavailable`; no agent key →
 `pending-bridge / buzz_agent_key_missing`; identity relay ≠ the route's
 confirmed relay → `bridge-failed / buzz_relay_changed` until the owner saves
-the route again (a new relay or agent key forgets the bridge channel). On
-first use the bridge creates ONE private channel per route on the configured
-relay (kind 9007 `visibility=private`, name `tb-inbound-<channel slug>`) and
-adds the agent key (kind 9000); each message is a kind 9 from the bridge
-identity with `p` = the routed agent only, a fixed provenance header
-(platform, source channel id and title, thread id, message id, sender display
-and id, the inbound event id for `marketplace.channels.reply`, attachment
-references, never re-uploaded) and the text between `-----BEGIN UNTRUSTED
-EXTERNAL MESSAGE-----` / `-----END …-----` (markers inside the text removed,
-mentions neutralised). Deliveries of one route are serialised. Retention: in
-the scheduler tick the bridge deletes its own bridged messages (kind 5) older
-than the inbound text retention and marks the rows of the additive table
-`channel_buzz_bridged` (`deleted`, or `skipped_relay_changed`: nothing is ever
-sent to a relay other than the configured one); audit
+the route again (a new relay or agent key forgets the bridge channel). Each binding gets
+its bridge channel id when the owner confirms it; on first use the bridge checks
+the relay for that id (kind 39002) and creates ONE private channel only if it
+does not exist (kind 9007 `visibility=private`, name `tb-inbound-<channel
+slug>`), so an uncertain create is never repeated as a second channel; then it
+adds the agent key (kind 9000). Each message is a kind 9 from the bridge
+identity with `p` = the routed agent only, a fixed provenance header (platform,
+source channel id and title, thread id, message id, sender display and id, the
+inbound event id for `marketplace.channels.reply`, attachment references, never
+re-uploaded) and the text between `-----BEGIN UNTRUSTED EXTERNAL MESSAGE
+<nonce>-----` and `-----END UNTRUSTED EXTERNAL MESSAGE <nonce>-----` with a
+random per-message nonce. All normalisation (NFKC, control and zero-width
+characters removed, mentions neutralised) happens before framing, and every
+body line that normalises (NFKC, invisible characters removed, dash look-alikes
+folded, case-folded) to a marker-like or header-like prefix is escaped with
+`> `. Deliveries of one route are serialised. Retired bridge channels (re-bind,
+relay change, key rotation) are recorded in the additive table
+`channel_buzz_retired_group` and get the previous agent removed (kind 9001) on
+the configured relay.
+
+Retention: in the scheduler tick the bridge deletes its own bridged messages
+older than the inbound text retention (one kind 5 per event; posts whose outcome
+was uncertain are recorded too) and marks the rows of the additive table
+`channel_buzz_bridged`; rows go after 90 days. Limits, stated plainly: a Buzz
+kind 5 is a soft delete (the relay keeps the content with a deletion mark), and
+messages left on a relay the owner no longer uses are not deleted there (rows
+`skipped_relay_changed`: nothing is ever sent to a relay other than the
+configured one). The owner screen says the same. Audit
 `marketplace.channels.buzz.bridge_purged` with counts.
 
 ### Inbound (Channels P2)

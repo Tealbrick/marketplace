@@ -60,8 +60,24 @@ export type InboundWorkerDeps = {
   random?: () => number;
   /** The Marketplace channel record of a route (Buzz: its destination is the Buzz channel id). */
   channelById?: (channelId: string) => ChannelRecord | null;
-  /** Records the routed agent's Buzz key for the bridge (validated, on the configured relay). */
-  setBuzzRoute?: (input: { channelId: string; agentPubkey: string; actor: string }) => { ok: true; view: Record<string, unknown> } | { ok: false; status: number; error: string };
+  /**
+   * The Buzz bridge binding of a route: `validate` checks the routed agent's Buzz key (no write); `record` stores
+   * it for the agent on the configured relay; `drop` removes it (agent re-bind: nothing carries over).
+   */
+  buzzRoute?: {
+    validate: (agentPubkey: string) => { ok: true; agentPubkey: string } | { ok: false; status: number; error: string };
+    record: (input: { channelId: string; agentId: string; agentPubkey: string; actor: string }) => Record<string, unknown>;
+    current: (channelId: string) => { agentId: string } | null;
+    drop: (channelId: string, actor: string) => void;
+  };
+  /** Buzz inbound filters: bridge channels (delivery-only), routed agents' keys, the stored own key, the pin. */
+  buzzFilter?: {
+    bridgeGroups: () => ReadonlySet<string>;
+    agentKeys: () => ReadonlySet<string>;
+    selfPubkey: () => string | null;
+    pinnedOwner: () => string | null;
+    authorized: () => boolean;
+  };
   buzzSocketFactory?: GatewaySocketFactory;
   buzzTimers?: Timers;
 };
@@ -156,11 +172,14 @@ export function createInboundWorker(deps: InboundWorkerDeps) {
     buzzKey = null;
   };
 
-  const buzzChannelIds = () =>
-    deps.inbound
+  // Bridge channels are delivery-only: never subscribed as an inbound source.
+  const buzzChannelIds = () => {
+    const bridges = deps.buzzFilter?.bridgeGroups() ?? new Set<string>();
+    return deps.inbound
       .enabledRoutesFor(org, "buzz")
       .map((route) => deps.channelById?.(route.channelId)?.destination.externalId)
-      .filter((id): id is string => typeof id === "string");
+      .filter((id): id is string => typeof id === "string" && !bridges.has(id));
+  };
 
   const reconcileBuzz = () => {
     if (stopped) return;
@@ -186,6 +205,14 @@ export function createInboundWorker(deps: InboundWorkerDeps) {
         release: () => deps.inbound.releaseLease(key, deps.instanceId),
       },
       onMessage: deps.ingest,
+      ...(deps.buzzFilter
+        ? {
+            selfPubkey: deps.buzzFilter.selfPubkey(),
+            ignoreAuthors: deps.buzzFilter.agentKeys,
+            pinnedOwner: deps.buzzFilter.pinnedOwner,
+            authorized: deps.buzzFilter.authorized,
+          }
+        : {}),
       onStatus: (status, detail) => {
         const previous = buzzStatus.status;
         buzzStatus = { status, ...(detail ? { detail } : {}) };
@@ -307,17 +334,33 @@ export function createInboundWorker(deps: InboundWorkerDeps) {
     const { channel } = input;
     const provider = channel.provider as ChannelProviderId;
     const current = deps.inbound.getRoute(org, channel.id);
-    // The routed agent's Buzz key for the bridge: validated and recorded with the configured relay first.
-    let buzzBridge: Record<string, unknown> | undefined;
+    // The routed agent's Buzz key for the bridge: validated first (no write); recorded only after the route change
+    // itself succeeded.
+    let buzzKey: string | null = null;
     if (input.agentBuzzPubkey !== undefined) {
-      if (!deps.setBuzzRoute) return { ok: false, status: 409, error: "buzz_bridge_unavailable" };
-      const recorded = deps.setBuzzRoute({ channelId: channel.id, agentPubkey: input.agentBuzzPubkey, actor: input.actor });
-      if (!recorded.ok) return recorded;
-      buzzBridge = recorded.view;
+      if (!deps.buzzRoute) return { ok: false, status: 409, error: "buzz_bridge_unavailable" };
+      const checked = deps.buzzRoute.validate(input.agentBuzzPubkey);
+      if (!checked.ok) return checked;
+      buzzKey = checked.agentPubkey;
     }
+    let buzzBridge: Record<string, unknown> | undefined;
+    /** After a successful change: bind the key, or drop a binding whose agent is no longer the routed one. */
+    const settleBuzz = (agentId: string) => {
+      if (!deps.buzzRoute) return;
+      if (buzzKey) {
+        buzzBridge = deps.buzzRoute.record({ channelId: channel.id, agentId, agentPubkey: buzzKey, actor: input.actor });
+        return;
+      }
+      const binding = deps.buzzRoute.current(channel.id);
+      if (binding && binding.agentId !== agentId) {
+        deps.buzzRoute.drop(channel.id, input.actor);
+        buzzBridge = { dropped: true, reason: "agent_rebound" };
+      }
+    };
     if (!input.enabled) {
       if (!current) return { ok: false, status: 404, error: "channel_inbound_route_not_found" };
       const route = deps.inbound.setRoute({ workspaceSlug: org, channelId: channel.id, agentId: current.agentId, enabled: false, actor: input.actor, now: deps.now() });
+      settleBuzz(route.agentId);
       deps.audit("marketplace.channels.inbound.route_disabled", input.actor, { channelId: channel.id, agentId: route.agentId, provider });
       if (provider === "telegram") {
         const removed = await removeTelegramWebhookIfUnused();
@@ -343,6 +386,7 @@ export function createInboundWorker(deps: InboundWorkerDeps) {
     }
     const route = deps.inbound.setRoute({ workspaceSlug: org, channelId: channel.id, agentId, enabled: true, actor: input.actor, now: deps.now() });
     deps.audit("marketplace.channels.inbound.route_enabled", input.actor, { channelId: channel.id, agentId, provider });
+    settleBuzz(agentId);
     if (provider === "discord") reconcileDiscord();
     if (provider === "buzz") reconcileBuzz();
     return { ok: true, route, receiver: { ...receiverView(), ...(buzzBridge ? { buzzBridge } : {}) } };

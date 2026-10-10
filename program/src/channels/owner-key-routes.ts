@@ -38,6 +38,8 @@ export type OwnerKeyRouteDeps = {
   requireOperator: (request: FastifyRequest, reply: FastifyReply) => MarketplacePrincipal | null;
   /** The owner's Portal launch session with a valid CSRF token, or null (writes). */
   ownerLaunchSession: (request: FastifyRequest) => MarketplacePrincipal | null;
+  /** Called after a change (the Buzz identity re-checks its tag against the new key). */
+  onChanged?: () => Promise<void>;
 };
 
 /** The owner key state for the owner UI and the Approvals view (fingerprints only). */
@@ -84,6 +86,13 @@ export function registerOwnerKeyRoutes(deps: OwnerKeyRouteDeps): void {
           at: now.toISOString(),
         },
       });
+    }
+    if (result.changed && deps.onChanged) {
+      try {
+        await deps.onChanged();
+      } catch {
+        // Best effort: readiness is also re-checked on every read.
+      }
     }
     return {
       ok: true,
