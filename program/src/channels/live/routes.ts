@@ -5,6 +5,7 @@ import { parseApprovalResolveRequest } from "@tealbrick/contract";
 import { z } from "zod";
 
 import type { SqliteMarketplaceStore } from "../../store.js";
+import { MARKETPLACE_OPERATOR_SESSION_COOKIE } from "../../operator-auth.js";
 import type { CompanyBoxApproval, MarketplaceAgentConsent } from "../../types.js";
 import { NOSTR_MIN_PREFIX_HEX } from "../approvals.js";
 import { npubEncode } from "../providers/nostr.js";
@@ -60,6 +61,56 @@ export function liveClipDigest(grantDigest: string, sessionId: string, clipSha25
   return createHash("sha256").update(`${LIVE_CLIP_DIGEST_DOMAIN}${grantDigest}\n${sessionId}\n${clipSha256}`, "utf8").digest("hex");
 }
 export const liveClipApprovalKey = (sessionId: string, clipSha256: string) => `live-clip.${sessionId}.${clipSha256}`;
+
+/** The owner launch session a request belongs to: SHA-256 of the operator session cookie (never the cookie itself). */
+export function ownerSessionRef(cookieHeader: string | string[] | undefined): string | null {
+  const header = Array.isArray(cookieHeader) ? cookieHeader.join(";") : cookieHeader;
+  if (!header) return null;
+  for (const entry of header.split(";")) {
+    const separator = entry.indexOf("=");
+    if (separator < 0 || entry.slice(0, separator).trim() !== MARKETPLACE_OPERATOR_SESSION_COOKIE) continue;
+    const value = entry.slice(separator + 1).trim();
+    return value ? createHash("sha256").update(`tealbrick-live-owner-session/v1\n${value}`, "utf8").digest("hex") : null;
+  }
+  return null;
+}
+
+/**
+ * The extra checks before the owner approves a held clip (re-review of PR #53, H1), run BEFORE the hold is claimed so a
+ * refusal consumes nothing: the playback route served this hold's EXACT stored clip (full body) to THIS owner launch
+ * session after the hold was created and before it expires, and the page reports the SHA-256 of what it played.
+ * The strict owner gate itself is checked by the caller.
+ */
+export function liveClipApprovalRefusal(input: {
+  store: SqliteMarketplaceStore;
+  approval: CompanyBoxApproval;
+  cookieHeader: string | string[] | undefined;
+  playedSha256: unknown;
+  now: Date;
+}): { status: number; error: string } | null {
+  const { approval } = input;
+  const clipSha256 = String(approval.arguments.clipSha256 ?? "");
+  const bytes = Number(approval.arguments.bytes ?? -1);
+  if (typeof input.playedSha256 !== "string" || input.playedSha256 !== clipSha256) return { status: 409, error: "live_clip_sha_mismatch" };
+  const session = ownerSessionRef(input.cookieHeader);
+  const expires = new Date(Math.min(Date.parse(approval.expiresAt), input.now.getTime()));
+  if (
+    !session ||
+    !input.store.channels.live.clipPlayedTo({
+      workspaceSlug: approval.workspaceSlug,
+      approvalId: approval.id,
+      ownerSessionRef: session,
+      clipDigest: approval.fingerprint,
+      clipSha256,
+      bytes,
+      notBefore: new Date(approval.createdAt),
+      notAfter: expires,
+    })
+  ) {
+    return { status: 409, error: "live_clip_requires_playback" };
+  }
+  return null;
+}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
 const GRANT_ID = /^live-[0-9a-f]{16}$/u;
@@ -317,7 +368,7 @@ export function registerLiveRoutes(ctx: LiveRouteContext): void {
     // The session belongs to the grant digest it joined under; a narrowed and re-approved grant is a new digest.
     if (usable.record.digest !== session.grantDigest) return fail(reply, 409, "live_grant_not_active", { reason: "grant_changed" });
     if (!usable.grant.scope.modes.speakApproved || !session.modes.speakApproved) return fail(reply, 403, "live_mode_not_granted", { modes: ["speakApproved"] });
-    if (/\p{Cf}/u.test(data.transcript)) return fail(reply, 422, "live_text_hidden_characters");
+    if (/\p{Cf}/u.test(data.transcript) || /[\u115F\u1160\u3164\uFFA0\u2800]/u.test(data.transcript)) return fail(reply, 422, "live_text_hidden_characters");
     const transcript = data.transcript.replace(/[\p{Cc}\p{Zl}\p{Zp}]/gu, " ").trim();
     if (!transcript) return fail(reply, 400, "validation_failed");
     if (forbiddenTermsIn(transcript, usable.grant.scope.forbiddenTerms).length > 0) return fail(reply, 422, "live_forbidden_term");
@@ -548,6 +599,10 @@ export function registerLiveRoutes(ctx: LiveRouteContext): void {
     const { approvalId } = request.params as { approvalId: string };
     const approval = /^[A-Za-z0-9_-]{1,100}$/u.test(approvalId) ? store.getCompanyBoxApproval(approvalId) : null;
     if (!approval || approval.workspaceSlug !== org || approval.sourceKind !== "live-clip") return fail(reply, 404, "live_clip_not_found");
+    // Only whole-body playback counts as listened: partial (Range) requests are refused.
+    if (request.headers.range !== undefined) return fail(reply, 416, "live_clip_range_unsupported");
+    const session = ownerSessionRef(request.headers.cookie);
+    if (!session) return fail(reply, 403, "owner_session_required");
     const clipSha256 = String(approval.arguments.clipSha256 ?? "");
     let bytes: Buffer;
     try {
@@ -555,13 +610,16 @@ export function registerLiveRoutes(ctx: LiveRouteContext): void {
     } catch {
       return fail(reply, 410, "channel_attachment_gone");
     }
+    // Recorded server-side: this owner session was served these exact bytes for this hold digest, now.
+    live.recordClipPlay({ workspaceSlug: org, approvalId: approval.id, ownerSessionRef: session, clipDigest: approval.fingerprint, clipSha256, bytes: bytes.length, now: new Date() });
     reply
       .header("content-type", "audio/ogg")
       .header("content-disposition", "inline")
       .header("cache-control", "no-store")
       .header("x-content-type-options", "nosniff")
       .header("content-security-policy", "default-src 'none'; sandbox")
-      .header("x-content-sha256", clipSha256);
+      .header("x-content-sha256", clipSha256)
+      .header("accept-ranges", "none");
     return reply.send(bytes);
   });
 

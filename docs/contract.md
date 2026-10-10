@@ -1150,8 +1150,9 @@ identity, and room under the caps (joins per day/hour/interval, minutes in the r
 `consent.disclosureNotice` the notice (kind 9) is posted in the huddle's parent channel first; if it fails nothing
 joins; the notice is a fixed Marketplace template and the agent's topic follows on its own line, labelled
 `Topic (from the agent):`. The huddle must be an ephemeral huddle of the granted channel: before joining,
-Marketplace queries the relay for the creator-signed 48100 event and checks its signature, `h` = the channel and
-`ephemeral_channel_id` = the huddle (`live_huddle_not_in_channel` otherwise); the notice is posted in the parent
+Marketplace queries the relay for the 48100 event and the huddle channel's 9007 create event and checks the 48100
+signature, `h` = the channel, `ephemeral_channel_id` = the huddle and signer = the 9007 signer (the huddle's
+creator) (`live_huddle_not_in_channel` otherwise); the notice is posted in the parent
 channel and in the huddle itself. `listen` is refused while `perParticipantConsent` is true (no per-participant gate yet) and while no speech
 provider is wired. Every 250 ms the session re-reads the grant record, the owner switch, the consent and the channel;
 revoke, pause, expiry, narrowing, consent loss, channel pause, `maxSessionMinutes`, `maxDayMinutes` and the cost cap
@@ -1164,9 +1165,16 @@ terms and shown to the owner, who plays the exact stored bytes (`GET /api/market
 `marketplace.channel-live-clips.get`, pinned owner's launch session, `audio/ogg`, inline, no-store, `x-content-sha256`)
 before approving. The clip digest is `sha256("tealbrick-live-clip/v1\n" + grantDigest + "\n" + sessionId + "\n" +
 clipSha256)`: a narrowed and re-approved grant, another session or the 24 h hold expiry invalidate it, and an
-approved clip plays once (`live_clip_already_played`). Forbidden terms are matched on a skeleton of both sides (NFKC,
-lowercase, combining marks and format characters removed, Latin/Cyrillic/Greek lookalikes folded, letters and digits
-only); speak-live text with format characters (zero-width, soft hyphen) is refused (`live_text_hidden_characters`).
+approved clip plays once (`live_clip_already_played`). Approving a clip hold (re-review of PR #53) needs the pinned
+owner's own launch session (strict gate) AND a server-side record that the playback route served this hold's exact
+clip (whole body; `Range` requests are refused) to that same session after the hold was created and within its TTL,
+plus the page's SHA-256 of the played bytes (`{playedSha256}`); otherwise `409 live_clip_requires_playback` /
+`live_clip_sha_mismatch`. Buzz replies and TBD assertions cannot prove listening: `marketplace.approvals.resolve`
+refuses clip holds with `409 live_clip_requires_playback`. Forbidden terms are matched on a skeleton of both sides (NFKC,
+lowercase, combining marks, format characters and invisible letters (Hangul fillers) removed, a vendored UTS #39
+confusables subset folded (Latin extensions and small capitals, Greek, Cyrillic, Cherokee:
+`program/src/channels/live/confusables.ts`), letters and digits only); speak-live text and clip transcripts with
+format characters or invisible letters are refused (`live_text_hidden_characters`).
 The bound consent must stay active and `outward`.
 
 Receipts. `channel_live_transcript` keeps what the agent heard (other participants: `framing:

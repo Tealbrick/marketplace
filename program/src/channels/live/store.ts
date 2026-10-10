@@ -19,9 +19,12 @@ import type { DatabaseSync } from "node:sqlite";
  *   a signed owner command created at or before it is refused, so an older withheld command never undoes a later
  *   change.
  * - `channel_live_clip_use`: one row per approved speak-approved clip that was played (single use).
+ * - `channel_live_clip_play`: the owner playback route served the EXACT stored clip (full body) to one owner launch
+ *   session (`owner_session_ref` = SHA-256 of the session cookie, never the cookie) for one hold digest, and when.
+ *   Approving a clip hold needs such a row of the approving session.
  */
 
-export const LIVE_TABLES = ["channel_live_grant", "channel_live_session", "channel_live_transcript", "channel_live_control", "channel_live_clip_use"] as const;
+export const LIVE_TABLES = ["channel_live_grant", "channel_live_session", "channel_live_transcript", "channel_live_control", "channel_live_clip_use", "channel_live_clip_play"] as const;
 
 const LIVE_DDL = `
   CREATE TABLE IF NOT EXISTS channel_live_grant (
@@ -109,6 +112,19 @@ const LIVE_DDL = `
     changed_at INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS channel_live_clip_play (
+    id TEXT PRIMARY KEY,
+    workspace_slug TEXT NOT NULL,
+    approval_id TEXT NOT NULL,
+    owner_session_ref TEXT NOT NULL,
+    clip_digest TEXT NOT NULL,
+    clip_sha256 TEXT NOT NULL,
+    bytes INTEGER NOT NULL,
+    served_at TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_channel_live_clip_play ON channel_live_clip_play(workspace_slug, approval_id, owner_session_ref);
 
   CREATE TABLE IF NOT EXISTS channel_live_clip_use (
     approval_id TEXT PRIMARY KEY,
@@ -622,6 +638,27 @@ export class LiveStore {
       .prepare("INSERT INTO channel_live_clip_use (approval_id, workspace_slug, session_id, used_at) VALUES (?, ?, ?, ?) ON CONFLICT(approval_id) DO NOTHING")
       .run(approvalId, workspaceSlug, sessionId, iso(now));
     return Number(result.changes) === 1;
+  }
+
+  recordClipPlay(input: { workspaceSlug: string; approvalId: string; ownerSessionRef: string; clipDigest: string; clipSha256: string; bytes: number; now: Date }): void {
+    this.db
+      .prepare(
+        `INSERT INTO channel_live_clip_play (id, workspace_slug, approval_id, owner_session_ref, clip_digest, clip_sha256, bytes, served_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(`lvp_${randomUUID()}`, input.workspaceSlug, input.approvalId, input.ownerSessionRef, input.clipDigest, input.clipSha256, input.bytes, iso(input.now));
+  }
+
+  /** Was this hold's exact clip served to this owner session in [notBefore, notAfter]? */
+  clipPlayedTo(input: { workspaceSlug: string; approvalId: string; ownerSessionRef: string; clipDigest: string; clipSha256: string; bytes: number; notBefore: Date; notAfter: Date }): boolean {
+    return Boolean(
+      this.db
+        .prepare(
+          `SELECT 1 FROM channel_live_clip_play WHERE workspace_slug = ? AND approval_id = ? AND owner_session_ref = ? AND clip_digest = ?
+            AND clip_sha256 = ? AND bytes = ? AND served_at >= ? AND served_at <= ? LIMIT 1`,
+        )
+        .get(input.workspaceSlug, input.approvalId, input.ownerSessionRef, input.clipDigest, input.clipSha256, input.bytes, iso(input.notBefore), iso(input.notAfter)),
+    );
   }
 
   clipUsed(approvalId: string): boolean {

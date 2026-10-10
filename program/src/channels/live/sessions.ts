@@ -4,11 +4,13 @@ import type { BinarySocketFactory } from "../buzz-relay-guard.js";
 import type { Timers } from "../discord-gateway.js";
 import { HuddleError } from "../huddle/client.js";
 import { parseHuddleLifecycle } from "../huddle/events.js";
+import { verifyEvent, type NostrEvent } from "../providers/nostr.js";
 import type { TranscriptSegment } from "../huddle/listen.js";
 import { createHuddleSession, type HuddleSession } from "../huddle/session.js";
 import { SPEAK_TEXT_MAX_CHARS } from "../huddle/speak.js";
 import type { SpeechProvider } from "../huddle/speech.js";
 import type { ChannelRecord } from "../store.js";
+import { CONFUSABLE_SKELETON, INVISIBLE_LETTERS } from "./confusables.js";
 import { modesOf, type LiveGrant, type LiveGrantService } from "./grants.js";
 import type { LiveGrantRecord, LiveModes, LiveSessionRecord, LiveStore } from "./store.js";
 
@@ -57,10 +59,11 @@ export type LiveSessionManagerDeps = {
   /** Posts the disclosure notice (kind 9) in one Buzz conversation (the parent channel or the huddle itself). */
   postNotice: (channel: ChannelRecord, conversationId: string, text: string) => Promise<{ ok: true; eventId: string | null } | { ok: false; error: string }>;
   /**
-   * The huddle's creator-signed 48100 "started" events in the parent channel (relay query; review M3). Each is
-   * verified here (signature, kind, `h` = parent, content `ephemeral_channel_id` = the huddle).
+   * The huddle's link events (relay query; review M3): the 48100 "started" events in the parent channel and the 9007
+   * create event of the huddle channel. Untrusted; verified here: the 48100 signature, kind, `h` = parent, content
+   * `ephemeral_channel_id` = the huddle, and its signer = the signer of the huddle channel's 9007 (its creator).
    */
-  huddleStartedEvents: (parentChannelId: string) => Promise<{ ok: true; events: unknown[] } | { ok: false; error: string }>;
+  huddleLinkEvents: (parentChannelId: string, huddleId: string) => Promise<{ ok: true; events: unknown[] } | { ok: false; error: string }>;
   retentionDays: () => number;
   audit: (eventType: string, actorId: string, metadata: Record<string, unknown>) => void;
   socketFactory?: BinarySocketFactory;
@@ -89,28 +92,17 @@ export function sha256Hex(value: string | Uint8Array): string {
 }
 
 /**
- * Lookalikes that NFKC keeps apart from Latin (review of PR #53, M4): common Cyrillic and Greek letters that render
- * like Latin ones, plus `ß`. Applied after lowercasing, so only lowercase forms are listed.
- */
-const CONFUSABLES: Readonly<Record<string, string>> = {
-  а: "a", б: "b", в: "b", г: "r", д: "d", е: "e", ё: "e", з: "3", и: "u", й: "u", к: "k", л: "n", м: "m", н: "h", о: "o", п: "n",
-  р: "p", с: "c", т: "t", у: "y", ф: "f", х: "x", ц: "u", ч: "4", ш: "w", щ: "w", ы: "bi", ь: "b", ѕ: "s", і: "i", ї: "i", ј: "j",
-  ԁ: "d", ԛ: "q", ԝ: "w", ӏ: "l", һ: "h",
-  α: "a", β: "b", γ: "y", δ: "d", ε: "e", ζ: "z", η: "n", θ: "o", ι: "i", κ: "k", λ: "l", μ: "u", ν: "v", ξ: "e", ο: "o", π: "n",
-  ρ: "p", σ: "o", ς: "c", τ: "t", υ: "u", φ: "f", χ: "x", ψ: "w", ω: "w",
-  ß: "ss", ı: "i", ł: "l", ø: "o", đ: "d", ħ: "h", ŀ: "l",
-};
-
-/**
- * The comparison skeleton of a text or a forbidden term: NFKC (ligatures, full-width), lowercase (casefold; Turkish
- * `İ` becomes `i` + a combining dot), NFD and removal of combining marks (Mn) and format characters (Cf: zero-width,
- * soft hyphen), confusable folding, then letters and digits only (spaces and punctuation cannot split a term).
+ * The comparison skeleton of a text or a forbidden term (UTS #39 style): NFKC (ligatures, full-width), lowercase
+ * (casefold; Turkish `İ` becomes `i` + a combining dot), NFD and removal of combining marks (Mn), format characters
+ * (Cf: zero-width, soft hyphen) and invisible letters (Hangul fillers, braille blank), folding of the vendored
+ * confusables subset (`confusables.ts`: Latin extensions and small capitals, Greek, Cyrillic, Cherokee), then letters
+ * and digits only (spaces and punctuation cannot split a term).
  */
 export function forbiddenSkeleton(value: string): string {
-  const folded = value.normalize("NFKC").toLowerCase().normalize("NFD").replace(/[\p{Mn}\p{Cf}]/gu, "");
+  const folded = value.normalize("NFKC").toLowerCase().normalize("NFD").replace(/[\p{Mn}\p{Cf}]/gu, "").replace(INVISIBLE_LETTERS, "");
   let out = "";
-  for (const char of folded) out += CONFUSABLES[char] ?? char;
-  return out.replace(/[^\p{L}\p{N}]/gu, "");
+  for (const char of folded) out += CONFUSABLE_SKELETON[char] ?? char;
+  return out.normalize("NFD").replace(/\p{Mn}/gu, "").replace(/[^\p{L}\p{N}]/gu, "");
 }
 
 /** Forbidden terms (owner-approved) whose skeleton occurs in the skeleton of `text`. Over-matching is accepted. */
@@ -351,16 +343,22 @@ export function createLiveSessionManager(deps: LiveSessionManagerDeps) {
     const caps = capsRefusal(usable.record, grant, nowMs);
     if (caps) return caps;
     // Review M3: the huddle must be an ephemeral huddle of THIS channel, proven by its creator-signed 48100 link.
-    let started: Awaited<ReturnType<LiveSessionManagerDeps["huddleStartedEvents"]>>;
+    let started: Awaited<ReturnType<LiveSessionManagerDeps["huddleLinkEvents"]>>;
     try {
-      started = await deps.huddleStartedEvents(parent);
+      started = await deps.huddleLinkEvents(parent, input.huddleId);
     } catch {
       started = { ok: false, error: "provider_internal_error" };
     }
     if (!started.ok) return refuse(502, "live_huddle_check_failed", { detail: started.error });
+    // The huddle channel's creator: the signer of its verified 9007 create event (`h` = the huddle).
+    const creators = new Set(
+      started.events
+        .filter((event): event is NostrEvent => verifyEvent(event) && event.kind === 9007 && event.tags.some((tag) => tag[0] === "h" && tag[1] === input.huddleId))
+        .map((event) => event.pubkey),
+    );
     const linked = started.events.some((event) => {
       const lifecycle = parseHuddleLifecycle(event, "");
-      return lifecycle?.type === "started" && lifecycle.parentChannelId === parent && lifecycle.huddleChannelId === input.huddleId;
+      return lifecycle?.type === "started" && lifecycle.parentChannelId === parent && lifecycle.huddleChannelId === input.huddleId && creators.has(lifecycle.signer);
     });
     if (!linked) return refuse(403, "live_huddle_not_in_channel");
     const modes: LiveModes = Object.fromEntries(requested.map((mode) => [mode, true])) as LiveModes;
@@ -564,7 +562,7 @@ export function createLiveSessionManager(deps: LiveSessionManagerDeps) {
     if (!run.record.modes.speakLive) return refuse(403, "live_mode_not_granted", { modes: ["speakLive"] });
     if (!deps.ttsAvailable || !deps.speech) return refuse(409, "live_tts_unavailable", { detail: "text-to-speech in Ogg/Opus needs @tealbrick/voice rc.19 (format opus)" });
     // Hidden format characters (zero-width, soft hyphen, bidi controls) are refused, never silently cleaned (M4).
-    if (/\p{Cf}/u.test(input.text)) return refuse(422, "live_text_hidden_characters");
+    if (/\p{Cf}/u.test(input.text) || /[\u115F\u1160\u3164\uFFA0\u2800]/u.test(input.text)) return refuse(422, "live_text_hidden_characters");
     const text = input.text.replace(HIDDEN, " ").trim();
     if (!text || text.length > SPEAK_TEXT_MAX_CHARS) return refuse(422, "speak_text_invalid");
     const hits = forbiddenTermsIn(text, run.forbidden);

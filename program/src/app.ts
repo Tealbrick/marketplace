@@ -78,7 +78,7 @@ import { NO_OWNER_PIN, readAttestedOwnerNostrPubkey, readOwnerPin, type OwnerKey
 import { CHANNEL_AGENT_OPERATION, registerChannelRoutes } from "./channels/routes.js";
 import { createLiveGrantService, type LiveOwnerBinding } from "./channels/live/grants.js";
 import { createLiveSessionManager, sha256Hex as liveSha256 } from "./channels/live/sessions.js";
-import { LIVE_AGENT_OPERATION, LIVE_CLIP_ACTION, liveClipDigest } from "./channels/live/routes.js";
+import { LIVE_AGENT_OPERATION, LIVE_CLIP_ACTION, liveClipApprovalRefusal, liveClipDigest } from "./channels/live/routes.js";
 import type { SpeechProvider } from "./channels/huddle/speech.js";
 import type { BinarySocketFactory } from "./channels/buzz-relay-guard.js";
 import { resolveRuntime } from "./channels/providers/common.js";
@@ -5619,6 +5619,24 @@ export async function buildMarketplaceApp(
     const owned = ownedApproval(request, reply);
     if ("response" in owned) return owned.response;
     const { principal, approval } = owned;
+    // A held huddle clip (re-review of PR #53, H1): only the pinned owner's own launch session, and only after the
+    // playback route served this exact clip to that session (and the page reports the SHA-256 it played). Checked
+    // before the claim, so a refusal consumes nothing.
+    if (approval.sourceKind === "live-clip") {
+      const gate = await createOwnerWriterGate({
+        organizationId,
+        pinSource: ownerPinSource,
+        requireOperator,
+        ownerLaunchSession: (launch) => operatorSessions.ownerLaunchSession(launch.headers.cookie, launch.headers["x-csrf-token"]),
+      })(request, reply);
+      if (!gate.ok) return { ok: false, error: gate.error === "marketplace_operator_required" ? "owner_session_required" : gate.error };
+      const body = request.body && typeof request.body === "object" ? (request.body as Record<string, unknown>) : {};
+      const refusal = liveClipApprovalRefusal({ store: options.store, approval, cookieHeader: request.headers.cookie, playedSha256: body.playedSha256, now: new Date() });
+      if (refusal) {
+        reply.code(refusal.status);
+        return { ok: false, error: refusal.error };
+      }
+    }
     // Exactly once: only the request that moves it out of `pending` runs it.
     const claimed = options.store.decideCompanyBoxApproval({
       id: approval.id,
@@ -8611,10 +8629,13 @@ export async function buildMarketplaceApp(
       liveAudit("marketplace.channels.live_session.notice", "marketplace:live", { channelId: channel.id, conversationId, status: result.status, textSha256: liveSha256(text), ...(result.errorCode ? { errorCode: result.errorCode } : {}) });
       return result.status === "sent" ? { ok: true, eventId: result.resultIds[0] ?? null } : { ok: false, error: result.errorCode ?? result.status };
     },
-    huddleStartedEvents: async (parentChannelId) => {
+    huddleLinkEvents: async (parentChannelId, huddleId) => {
       const credential = buzzIdentity.credential()?.value ?? null;
       if (!credential || !buzzProvider) return { ok: false, error: "credential_missing" };
-      const found = await buzzProvider.queryEvents(credential, [{ kinds: [48100], "#h": [parentChannelId], limit: 200 }]);
+      const found = await buzzProvider.queryEvents(credential, [
+        { kinds: [48100], "#h": [parentChannelId], limit: 200 },
+        { kinds: [9007], "#h": [huddleId], limit: 10 },
+      ]);
       return found.ok ? { ok: true, events: found.events } : { ok: false, error: found.errorCode };
     },
     retentionDays: () => options.store.channels.inbound.getSettings(organizationId).textRetentionDays,
@@ -9000,6 +9021,12 @@ export async function buildMarketplaceApp(
     if (!approval || approval.workspaceSlug !== organizationId || approval.agentId !== caller.agentId) {
       reply.code(404);
       return { ok: false, schema: 1, traceId, error: "approval_not_found" };
+    }
+    // A held huddle clip needs the owner to have listened to it in Marketplace (re-review of PR #53, H1): a Buzz reply
+    // or a TBD assertion cannot prove that. Refused before any claim or proof check (nothing is consumed).
+    if (approval.sourceKind === "live-clip") {
+      reply.code(409);
+      return { ok: false, schema: 1, traceId, error: "live_clip_requires_playback" };
     }
     const operationScope = `approval-resolve:${approval.id}`;
     const previous = options.store.getMarketplaceRuntimeOperation({ consentId: operationScope, idempotencyKey: key });

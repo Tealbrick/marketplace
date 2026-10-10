@@ -1258,7 +1258,7 @@
       "idempotency": "none",
       "effects": "read-only",
       "review": "none",
-      "summary": "Play a held speak-approved clip: the exact stored Ogg/Opus bytes (audio/ogg, inline, no-store, SHA-256 in x-content-sha256); pinned owner's launch session",
+      "summary": "Play a held speak-approved clip: the exact stored Ogg/Opus bytes, whole body only (audio/ogg, inline, no-store, SHA-256 in x-content-sha256); recorded per owner session, and approving the hold requires that record; pinned owner's launch session",
       "audience": "owner"
     }
   ],

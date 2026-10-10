@@ -157,12 +157,26 @@ async function setup(input: { tts?: boolean; speechReply?: (index: number) => st
   const command = (content: string, channelId: string, secret = OWNER_SECRET, createdAt = nextCommandAt()) =>
     f.agent("POST", `${A}/live-grants/commands`, { payload: { event: signTestEvent(secret, { kind: 9, created_at: createdAt, tags: [["h", channelId]], content }) } });
   /** A huddle of the channel: the audio room, the creator-signed 48100 link in the parent, and its Buzz chat. */
-  const huddle = (parent = group) => {
+  const huddle = (parent = group, startedBy = CREATOR_SECRET) => {
     const huddleId = randomUUID();
     huddleRelay.addChannel(huddleId, { parentId: parent, parentMembers: [AGENT_KEY] });
-    relay.inject(CREATOR_SECRET, { kind: 48100, tags: [["h", parent]], content: JSON.stringify({ ephemeral_channel_id: huddleId }) });
     relay.createGroup({ id: huddleId, name: "huddle", members: [AGENT_KEY] });
+    // The huddle channel's creator signs its 9007 create event and the 48100 link in the parent.
+    relay.inject(CREATOR_SECRET, { kind: 9007, tags: [["h", huddleId]], content: "" });
+    relay.inject(startedBy, { kind: 48100, tags: [["h", parent]], content: JSON.stringify({ ephemeral_channel_id: huddleId }) });
     return huddleId;
+  };
+  /** A second launch session of the same pinned owner (another browser tab or device). */
+  const otherOwnerSession = async () => {
+    const again = await f.app.inject({
+      method: "POST",
+      url: "/auth/launch",
+      headers: { origin: PORTAL, "content-type": "application/x-www-form-urlencoded" },
+      payload: `ticket=${String(++ticket).padStart(6, "0")}${"m".repeat(37)}`,
+    });
+    const otherCookie = String(again.headers["set-cookie"]).split(";", 1)[0]!;
+    const otherCsrf = (await f.app.inject({ method: "GET", url: "/api/marketplace/auth/session", headers: { cookie: otherCookie } })).json().session.csrfToken as string;
+    return { origin: BROWSER, cookie: otherCookie, "x-csrf-token": otherCsrf };
   };
   const join = (grantId: string, huddleId: string, modes: Record<string, true> = { listen: true }, token?: string) =>
     f.agent("POST", `${A}/${channel.id}/live/sessions`, { key: key("join"), payload: { grantId, huddleId, modes }, ...(token ? { token } : {}) });
@@ -185,7 +199,7 @@ async function setup(input: { tts?: boolean; speechReply?: (index: number) => st
     return approved.json().grant as { id: string; digest: string; canonical: string; summary: Record<string, any> };
   };
   const audit = () => f.store.listAudit({ workspaceSlug: TENANT, limit: 1000 }) as Array<{ event_type: string; actor_id: string | null; metadata: string }>;
-  return { f, relay, huddleRelay, signer, speech, group, channel, strict, strictHeaders, ownerConsent, propose, proposed, approveUi, active, approveEvent, resolve, command, huddle, join, joined, sessionRow, audit, proposal };
+  return { f, relay, huddleRelay, signer, speech, group, channel, strict, strictHeaders, otherOwnerSession, ownerConsent, propose, proposed, approveUi, active, approveEvent, resolve, command, huddle, join, joined, sessionRow, audit, proposal };
 }
 
 /** Virtual peer speech: speech frames at -20 dBov carrying a marker, then DTX silence. */
@@ -662,7 +676,24 @@ describe("live sessions: speaking", () => {
     expect((await speak(first.sessionId)).json().approvalId).toBe(held.json().approvalId);
     // Owner playback: the exact stored bytes, strict owner gate only.
     const approvalId = held.json().approvalId as string;
+    const approveUrl = `/api/marketplace/company-box/approvals/${approvalId}/approve`;
+    const strictApprove = async (headers: Record<string, string>, playedSha256: string | undefined = sha) =>
+      t.f.app.inject({ method: "POST", url: approveUrl, headers, payload: playedSha256 ? { playedSha256 } : {} });
+    // Re-review MUST: no approval without the strict owner gate, and none before this owner session played the clip.
+    expect((await t.f.owner("POST", approveUrl, { playedSha256: sha })).statusCode).toBe(403);
+    const unheard = await strictApprove(await t.strictHeaders());
+    expect(unheard.statusCode).toBe(409);
+    expect(unheard.json().error).toBe("live_clip_requires_playback");
+    // A Buzz reply or a TBD assertion cannot prove listening.
+    const buzz = await t.f.agent("POST", `/api/marketplace/v1/agent/approvals/${approvalId}/resolve`, { key: `resolve.${approvalId}.approve`, payload: { approvalId, proof: { proof: "nostr", event: t.approveEvent(held.json().digest, { content: `approve ${String(held.json().digest).slice(0, 32)}` }), channel: t.group } } });
+    expect(buzz.statusCode).toBe(409);
+    expect(buzz.json().error).toBe("live_clip_requires_playback");
     expect((await t.f.owner("GET", `${O}/clips/${approvalId}`)).statusCode).toBe(403);
+    expect((await t.f.app.inject({ method: "GET", url: `${O}/clips/${approvalId}`, headers: { ...(await t.strictHeaders()), range: "bytes=0-10" } })).statusCode).toBe(416);
+    // Played to ANOTHER owner session: this session still has not listened.
+    const other = await t.otherOwnerSession();
+    expect((await t.f.app.inject({ method: "GET", url: `${O}/clips/${approvalId}`, headers: other })).statusCode).toBe(200);
+    expect((await strictApprove(await t.strictHeaders())).json().error).toBe("live_clip_requires_playback");
     const played = await t.f.app.inject({ method: "GET", url: `${O}/clips/${approvalId}`, headers: await t.strictHeaders() });
     expect(played.statusCode).toBe(200);
     expect(played.headers["content-type"]).toBe("audio/ogg");
@@ -672,7 +703,10 @@ describe("live sessions: speaking", () => {
     expect(Buffer.compare(played.rawPayload, clip)).toBe(0);
     const listed = await t.f.owner("GET", "/api/marketplace/company-box/approvals?state=pending");
     expect(listed.json().approvals.find((entry: { id: string }) => entry.id === approvalId).live).toMatchObject({ clipSha256: sha, sessionId: first.sessionId, transcript: "Welcome to the call", played: false });
-    const approved = await t.f.owner("POST", `/api/marketplace/company-box/approvals/${approvalId}/approve`, {});
+    // The page must report the SHA-256 of what it played.
+    expect((await strictApprove(await t.strictHeaders(), "0".repeat(64))).json().error).toBe("live_clip_sha_mismatch");
+    expect((await strictApprove(await t.strictHeaders(), "")).json().error).toBe("live_clip_sha_mismatch");
+    const approved = await strictApprove(await t.strictHeaders());
     expect(approved.statusCode, approved.body).toBe(200);
     expect(approved.json().approval.state).toBe("succeeded");
     const once = await speak(first.sessionId);
@@ -693,7 +727,9 @@ describe("live sessions: speaking", () => {
     // ... and a narrowed, re-approved grant invalidates a held clip of the old digest (its session stops).
     await t.ownerConsent(grant.id, { disclosureNotice: true, perParticipantConsent: true });
     await waitFor(() => t.sessionRow(second.sessionId).status === "left", 5000, "left");
-    const stale = await t.f.owner("POST", `/api/marketplace/company-box/approvals/${again.json().approvalId}/approve`, {});
+    const againId = again.json().approvalId as string;
+    expect((await t.f.app.inject({ method: "GET", url: `${O}/clips/${againId}`, headers: await t.strictHeaders() })).statusCode).toBe(200);
+    const stale = await t.f.app.inject({ method: "POST", url: `/api/marketplace/company-box/approvals/${againId}/approve`, headers: await t.strictHeaders(), payload: { playedSha256: sha } });
     expect(stale.json().approval).toMatchObject({ state: "failed" });
   });
 });
@@ -701,7 +737,16 @@ describe("live sessions: speaking", () => {
 describe("security review of PR #53", () => {
   it("M4: forbidden terms survive zero-width, soft hyphen, ligatures, full-width, Turkish İ, combining marks and Cyrillic lookalikes", async () => {
     const terms = ["secret-project", "confidential", "istanbul"];
-    const cases = ["the secret\u200b-project is live", "it is confi\u00addential", "it is con\ufb01dential", "\uff53\uff45\uff43\uff52\uff45\uff54-project", "\u0130STANBUL office", "confide\u0301ntial", "c\u043enfidential", "the SECRET project"];
+    const cases = [
+      // Re-review: small capitals, Cherokee lookalikes, Latin letters with strokes, Hangul fillers.
+      "it is \u1d04\u1d0f\u0274\uA730\u026a\u1d05\u1d07\u0274\u1d1b\u026a\u1d00\u029f",
+      "\u13dfonfidential",
+      "\u13df\u13a5\u13a0 is \u13dfonfi\u13a0ential",
+      "\uA7A9ecret-project",
+      "secret\u3164project",
+      "secret\u115Fproject",
+      "secret\uFFA0project",
+      "the secret\u200b-project is live", "it is confi\u00addential", "it is con\ufb01dential", "\uff53\uff45\uff43\uff52\uff45\uff54-project", "\u0130STANBUL office", "confide\u0301ntial", "c\u043enfidential", "the SECRET project"];
     for (const text of cases) expect(forbiddenTermsIn(text, terms), text).not.toEqual([]);
     expect(forbiddenTermsIn("a normal sentence", terms)).toEqual([]);
     // speak-live refuses hidden format characters outright.
@@ -758,6 +803,9 @@ describe("security review of PR #53", () => {
     // A huddle of another channel.
     const elsewhere = await t.join(grant.id, t.huddle(randomUUID()));
     expect(elsewhere.json().error).toBe("live_huddle_not_in_channel");
+    // Re-review: a 48100 link signed by someone other than the huddle channel's creator (its 9007 signer).
+    const forged = await t.join(grant.id, t.huddle(t.group, STRANGER_SECRET));
+    expect(forged.json().error).toBe("live_huddle_not_in_channel");
     expect(t.huddleRelay.upgrades).toHaveLength(0);
     const { huddleId } = await t.joined(grant.id);
     const notices = t.relay.eventsOfKind(9).filter((event) => event.pubkey === AGENT_KEY);
