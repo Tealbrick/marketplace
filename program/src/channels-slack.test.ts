@@ -78,7 +78,9 @@ describe("channels: Slack provider through the runtime", () => {
       reactions: { add: false, remove: false, custom: false },
       edit: { own: false },
       delete: { own: false },
-      thread: { replies: false, topics: false, forum: false },
+      // Reply to source (marketplace.channels.reply) and inbound are wired.
+      thread: { replies: true, topics: false, forum: false },
+      inbound: { mode: "webhook", dedupe: true },
       schedule: { native: false },
     };
     expect(slackEntry).toMatchObject({ kinds: ["chat"], capabilities: hidden });

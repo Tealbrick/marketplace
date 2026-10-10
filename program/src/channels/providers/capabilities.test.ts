@@ -38,13 +38,15 @@ describe("capability model v2", () => {
   it("declares only what the adapters do today", () => {
     const declared = (caps: ChannelCapabilities) =>
       CHANNEL_FEATURES.filter((feature) => !["image", "file", "audio", "voice", "video"].includes(feature) && capabilitySupports(caps, feature));
-    expect(declared(telegram)).toEqual(["thread.replies", "thread.topics", "reactions.add", "reactions.remove", "edit", "delete", "poll", "markup.markdown-v2"]);
-    expect(declared(discord)).toEqual(["dm", "thread.replies", "mentions.users", "reactions.add", "reactions.remove", "reactions.custom", "edit", "delete", "poll"]);
+    expect(declared(telegram)).toEqual(["thread.replies", "thread.topics", "reactions.add", "reactions.remove", "edit", "delete", "poll", "markup.markdown-v2", "inbound"]);
+    expect(declared(discord)).toEqual(["dm", "thread.replies", "mentions.users", "reactions.add", "reactions.remove", "reactions.custom", "edit", "delete", "poll", "inbound"]);
     for (const caps of [telegram, discord]) {
       expect(caps.live).toBe(false);
       expect(caps.events).toEqual({ create: false });
-      expect(caps.inbound).toEqual({ mode: "none", dedupe: false });
     }
+    // The inbound worker receives for every adapter: Telegram by webhook, Discord over the gateway socket.
+    expect(telegram.inbound).toEqual({ mode: "webhook", dedupe: true });
+    expect(discord.inbound).toEqual({ mode: "socket", dedupe: true });
     expect(telegram.thread).toEqual({ replies: true, topics: true, forum: false });
     expect(discord.thread).toEqual({ replies: true, topics: false, forum: false });
   });
@@ -84,8 +86,8 @@ describe("capabilitySupports", () => {
 });
 
 describe("wired features (review of PR #43)", () => {
-  it("wires only what P1 routes really do: the attachment kinds and forum topics as destinations", () => {
-    expect([...AGENT_WIRED_FEATURES].sort()).toEqual(["audio", "file", "image", "thread.topics", "video", "voice"]);
+  it("wires only what the routes really do: attachment kinds, forum topics, inbound delivery and reply to source", () => {
+    expect([...AGENT_WIRED_FEATURES].sort()).toEqual(["audio", "file", "image", "inbound", "thread.replies", "thread.topics", "video", "voice"]);
   });
 
   it("exposes declaration ∩ wired for every feature", () => {
@@ -97,7 +99,7 @@ describe("wired features (review of PR #43)", () => {
     }
   });
 
-  it("hides a declared feature with no operation behind it (reactions, edit, dm, live, inbound)", () => {
+  it("hides a declared feature with no operation behind it (reactions, edit, dm, live) and keeps inbound", () => {
     const effective = wiredCapabilities(RICH);
     expect(effective.reactions).toEqual({ add: false, remove: false, custom: false });
     expect(effective.edit).toEqual({ own: false });
@@ -105,7 +107,7 @@ describe("wired features (review of PR #43)", () => {
     expect(effective.dm).toEqual({ open: false, maxMembers: 0 });
     expect(effective.mentions).toEqual({ users: false, broadcast: "suppressed" });
     expect(effective.live).toBe(false);
-    expect(effective.inbound).toEqual({ mode: "none", dedupe: false });
+    expect(effective.inbound).toEqual(RICH.inbound);
     expect(effective.poll).toBe(false);
     // Non-feature keys and wired features are kept as declared.
     expect(effective.text).toEqual(RICH.text);

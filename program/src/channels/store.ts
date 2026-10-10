@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
 import { sha256Hex } from "./canonical-json.js";
+import { INBOUND_TABLES, InboundStore, migrateInboundTables } from "./inbound-store.js";
 import { TEAMS_CONVERSATION_DDL, TeamsConversationStore } from "./teams-store.js";
 import {
   effectiveCaps,
@@ -37,6 +38,7 @@ export const CHANNEL_TABLES = [
   "channel_owner_key",
   "channel_approval_owner",
   "channel_teams_conversation",
+  ...INBOUND_TABLES,
 ] as const;
 
 const HOUR_MS = 3_600_000;
@@ -194,6 +196,8 @@ export function migrateChannelTables(db: DatabaseSync): void {
   `);
   // Teams conversation references (P2): captured by the Teams messaging endpoint at install.
   db.exec(TEAMS_CONVERSATION_DDL);
+  // Inbound worker (P2 scope 2.2): routed inbound events, routes, reply links, settings, webhook, leases.
+  migrateInboundTables(db);
 }
 
 // ---------------------------------------------------------------------------
@@ -838,6 +842,13 @@ export class ChannelStore {
   constructor(private readonly db: DatabaseSync) {}
 
   private teamsStore: TeamsConversationStore | undefined;
+  private inboundStore: InboundStore | undefined;
+
+  /** Inbound worker state (P2), on the same connection. */
+  get inbound(): InboundStore {
+    this.inboundStore ??= new InboundStore(this.db);
+    return this.inboundStore;
+  }
 
   /** Teams conversation references (P2), on the same connection. */
   get teams(): TeamsConversationStore {

@@ -84,15 +84,15 @@ describe("slack capabilities", () => {
       schedule: { native: true },
       events: { create: false },
       discover: "list",
-      inbound: { mode: "none", dedupe: false },
+      inbound: { mode: "webhook", dedupe: true },
       audience: { count: false },
       limits: { perChatPerSecond: 1, retryAfter: "honoured" },
     });
     expect(capabilityForKind(provider.capabilities, "voice")).toBe("fallback");
-    for (const feature of ["dm", "thread.replies", "mentions.users", "reactions.add", "reactions.remove", "edit", "delete", "schedule.native"]) {
+    for (const feature of ["dm", "thread.replies", "mentions.users", "reactions.add", "reactions.remove", "edit", "delete", "schedule.native", "inbound"]) {
       expect(capabilitySupports(provider.capabilities, feature), feature).toBe(true);
     }
-    for (const feature of ["inbound", "live.join", "canvas", "ephemeral", "poll", "thread.topics"]) {
+    for (const feature of ["live.join", "canvas", "ephemeral", "poll", "thread.topics"]) {
       expect(capabilitySupports(provider.capabilities, feature), feature).toBe(false);
     }
   });
@@ -837,9 +837,10 @@ describe("slack inbound: team binding, event_id dedupe and the full check", () =
 });
 
 describe("slack capabilities exposed to agents (wired filter)", () => {
-  it("hides DM, reactions, edit, delete, mentions, replies and native schedule until their operations ship", () => {
+  it("hides DM, reactions, edit, delete, mentions and native schedule until their operations ship; inbound and replies are wired", () => {
     const effective = wiredCapabilities(createSlackProvider().capabilities);
-    for (const feature of ["dm", "reactions.add", "reactions.remove", "reactions.custom", "edit", "delete", "mentions.users", "thread.replies", "schedule.native"]) {
+    for (const feature of ["inbound", "thread.replies"]) expect(capabilitySupports(effective, feature), feature).toBe(true);
+    for (const feature of ["dm", "reactions.add", "reactions.remove", "reactions.custom", "edit", "delete", "mentions.users", "schedule.native"]) {
       expect(AGENT_WIRED_FEATURES.has(feature as never), feature).toBe(false);
       expect(capabilitySupports(effective, feature), feature).toBe(false);
     }

@@ -258,6 +258,10 @@ export const AGENT_WIRED_FEATURES: ReadonlySet<ChannelFeature> = new Set<Channel
   "voice",
   "video",
   "thread.topics",
+  // Channels P2 inbound worker: `marketplace.channels.inbound` delivers routed messages, and
+  // `marketplace.channels.reply` replies natively in the source thread (the only operation that sets `replyTo`).
+  "inbound",
+  "thread.replies",
 ]);
 
 /**

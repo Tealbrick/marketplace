@@ -39,8 +39,8 @@ import {
   type VerifyResult,
 } from "./types.js";
 
-// Discord REST v10 adapter. REST only, no gateway, no privileged intents (the inbound gateway comes with the
-// inbound worker; `parseDiscordMessageCreate` below is the pure part of it).
+// Discord REST v10 adapter. REST only here; the inbound gateway client is `channels/discord-gateway.ts`
+// (inbound `socket`), which uses `parseDiscordMessageCreate` below. No privileged intent unless the owner enables it.
 
 const API_BASE = "https://discord.com/api/v10";
 const USER_AGENT = "DiscordBot (https://tealbrick.com, 1)";
@@ -87,7 +87,7 @@ const CAPABILITIES: ChannelCapabilities = {
   schedule: { native: false },
   events: { create: false },
   discover: "list",
-  inbound: { mode: "none", dedupe: false },
+  inbound: { mode: "socket", dedupe: true },
   audience: { count: false },
   limits: { perChatPerSecond: 1, perChatPerMinute: 60, retryAfter: "honoured" },
 };
@@ -743,7 +743,7 @@ function personFailed(failure: Pick<Failure, "errorCode" | "detail"> | SendResul
   };
 }
 
-// ---------------------------------------------------------------- Inbound helpers (pure; no gateway yet)
+// ---------------------------------------------------------------- Inbound helpers (pure; used by the gateway client)
 
 export type DiscordMessageParse = { kind: "message"; guildId?: string; message: InboundMessage } | { kind: "ignored"; reason: string };
 

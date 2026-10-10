@@ -279,6 +279,18 @@ describe("effectiveCaps", () => {
 describe("grantCoversPost", () => {
   const active = { ...terms(), status: "active" };
 
+  it("covers a reply only with scope.replies: true; widening to replies is refused; replies need immediate (M1)", () => {
+    expect(grantCoversPost(active, post({ reply: true }), NOW)).toEqual({ ok: false, reasons: ["reply_not_covered"] });
+    const replies = { ...terms({ scope: { ...terms().scope, replies: true } }), status: "active" };
+    expect(grantCoversPost(replies, post({ reply: true }), NOW)).toEqual({ ok: true });
+    expect(isNarrowing(terms(), terms({ scope: { ...terms().scope, replies: true } }))).toEqual({ ok: false, error: "grant_widening_refused", fields: ["scope.replies"] });
+    expect(isNarrowing(terms({ scope: { ...terms().scope, replies: true } }), terms())).toEqual({ ok: true });
+    const ceiling = policy({ standingGrants: "allowed", caps: { perDay: 6, minIntervalSeconds: 600, onePerPhase: true }, content: { files: { types: ["png"] }, maxChars: 2000 } });
+    const scheduledOnly = terms({ scope: { ...terms().scope, immediate: false, replies: true } });
+    expect(grantWithinCeiling(scheduledOnly, ceiling, { now: NOW })).toMatchObject({ ok: false, fields: ["scope.replies"] });
+    expect(grantWithinCeiling(terms({ scope: { ...terms().scope, replies: true } }), ceiling, { now: NOW })).toEqual({ ok: true });
+  });
+
   it("covers a matching post", () => {
     expect(grantCoversPost(active, post(), NOW)).toEqual({ ok: true });
   });
@@ -466,6 +478,17 @@ describe("digests", () => {
     expect(channelPayloadDigest({ ...base, sendAt: "2026-10-09T20:00:00+08:00" })).toBe(channelPayloadDigest({ ...base, sendAt: NOW }));
     // No campaign and an empty campaign are the same payload.
     expect(channelPayloadDigest({ ...base, campaign: undefined })).toBe(channelPayloadDigest({ ...base, campaign: {} }));
+  });
+
+  it("replies are their own op and target; a grant's replies scope is in its digest only when true (M1)", () => {
+    const reply = { ...base, op: "reply", replyTo: "1700000000.000100" };
+    expect(channelPayloadDigest(reply)).not.toBe(channelPayloadDigest({ ...reply, op: "post" }));
+    expect(channelPayloadDigest(reply)).not.toBe(channelPayloadDigest({ ...reply, replyTo: "1700000000.000200" }));
+    // A plain post without replyTo keeps its digest.
+    expect(channelPayloadDigest({ ...base, replyTo: undefined })).toBe(channelPayloadDigest(base));
+    const input = { workspace: "org-1", channelId: "chn_1", agentId: "agent-1", consentId: "c1", purpose: "weekly", terms: terms() };
+    expect(standingGrantDigest({ ...input, terms: terms({ scope: { ...terms().scope, replies: false } }) })).toBe(standingGrantDigest(input));
+    expect(standingGrantDigest({ ...input, terms: terms({ scope: { ...terms().scope, replies: true } }) })).not.toBe(standingGrantDigest(input));
   });
 
   it("binds every grant term", () => {

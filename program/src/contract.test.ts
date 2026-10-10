@@ -314,7 +314,8 @@ describe("tealbrick.app.json", () => {
       "marketplace.channel-receipts.purge",
     ]));
     // + 3: the owner Buzz approval key (marketplace.approval-owner-key.get|update|clear, Channels §6.3).
-    expect(owner.length).toBe(16 + 16 + 3);
+    // + 3: Channels inbound (marketplace.channel-inbound-routes.update, -events.list, -settings.update; P2 scope 2.2).
+    expect(owner.length).toBe(16 + 16 + 3 + 3);
     // Channels: the account-sourced bot tokens (and the Slack signing secret) arrive as provider env, never stored by Portal.
     const channels = MARKETPLACE_MANIFEST.settings?.groups.find((group) => group.id === "channels");
     expect(channels?.fields.map((field) => [field.key, field.env])).toEqual([

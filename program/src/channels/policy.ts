@@ -139,6 +139,12 @@ export type GrantScope = {
   maxChars?: number;
   immediate: boolean;
   scheduled: boolean;
+  /**
+   * Replies to inbound messages (`marketplace.channels.reply`, review M1). Absent or false: the grant never covers a
+   * reply, so a reply to an outside sender always holds for the owner's approval of the exact payload. `true` is
+   * wider than false and needs `immediate`.
+   */
+  replies?: boolean;
 };
 
 /** The parts of a standing grant that define what it authorises. */
@@ -163,6 +169,8 @@ export type PostAttachmentFacts = {
 /** What the engine needs to know about a post. */
 export type PostFacts = {
   mode: "immediate" | "scheduled";
+  /** A reply to an inbound message: covered only by a grant with `scope.replies: true`. */
+  reply?: boolean;
   sendAt?: string | null;
   text: string;
   attachments: PostAttachmentFacts[];
@@ -504,6 +512,8 @@ export function grantWithinCeiling(
   }
   if (scope.phases !== undefined && !isSubset(scope.phases, GRANT_PHASES)) fields.push("scope.phases");
   if (!scope.immediate && !scope.scheduled) fields.push("scope.mode");
+  // Replies are immediate posts: a reply scope without immediate authorises nothing coherent.
+  if (scope.replies === true && !scope.immediate) fields.push("scope.replies");
 
   const expires = parseTime(grant.expires);
   const notBefore = parseTime(grant.notBefore);
@@ -564,6 +574,7 @@ export function isNarrowing(
   }
   if (t.immediate && !s.immediate) fields.push("scope.immediate");
   if (t.scheduled && !s.scheduled) fields.push("scope.scheduled");
+  if (t.replies === true && s.replies !== true) fields.push("scope.replies");
 
   const currentExpires = parseTime(current.expires);
   const proposedExpires = parseTime(proposed.expires);
@@ -640,6 +651,7 @@ export function grantCoversPost(
   const scope = grant.scope;
   if (post.mode === "immediate" && !scope.immediate) reasons.push("mode_immediate_not_covered");
   if (post.mode === "scheduled" && !scope.scheduled) reasons.push("mode_scheduled_not_covered");
+  if (post.reply === true && scope.replies !== true) reasons.push("reply_not_covered");
 
   const phase = post.campaign?.phase;
   if (scope.phases !== undefined && (!phase || !(scope.phases as readonly string[]).includes(phase))) {
@@ -878,6 +890,8 @@ export type ChannelPayloadDigestInput = {
   destinationParentId?: string;
   /** Operation, e.g. `post`, `schedule`, `test`. */
   op: string;
+  /** Provider message id a reply goes to (`marketplace.channels.reply`); absent on plain posts (digest unchanged). */
+  replyTo?: string;
   text: string;
   /**
    * `kind` and `transcript` (spec 3.1) are part of the payload when given: the
@@ -920,6 +934,7 @@ export function channelPayloadCanonical(input: ChannelPayloadDigestInput): strin
     destination: input.destination,
     destinationParentId: input.destinationParentId || undefined,
     op: input.op,
+    replyTo: input.replyTo || undefined,
     text: input.text,
     attachments: input.attachments.map((file) => ({
       sha256: file.sha256,
@@ -952,7 +967,8 @@ export function standingGrantDigest(input: {
       consentId: input.consentId,
       purpose: input.purpose,
       caps: input.terms.caps,
-      scope: input.terms.scope,
+      // `replies` is part of the digest only when true, so the digests of existing grants are unchanged.
+      scope: { ...input.terms.scope, replies: input.terms.scope.replies === true ? true : undefined },
       notBefore: input.terms.notBefore ? new Date(input.terms.notBefore).toISOString() : undefined,
       expires: new Date(input.terms.expires).toISOString(),
     }),

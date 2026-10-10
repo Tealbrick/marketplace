@@ -10,6 +10,7 @@ import { SqliteMarketplaceStore } from "../store.js";
 import type { ConnectorCapability } from "../types.js";
 import type { OwnerApprovalVerifier } from "./approvals.js";
 import { createDiscordProvider } from "./providers/discord.js";
+import { createSlackProvider } from "./providers/slack.js";
 import { createTelegramProvider } from "./providers/telegram.js";
 import type { ChannelDestination, ChannelProvider, ChannelProviderId, OutboundMessage, SendResult } from "./providers/types.js";
 import { CHANNEL_AGENT_OPERATION } from "./routes.js";
@@ -31,19 +32,22 @@ export type FakeSend = { credential: string | null | undefined; destination: Cha
 
 /** A provider with the real capability declaration whose send/discover/verify are recorded fakes. */
 export function fakeProvider(id: ChannelProviderId, token: string) {
-  const real: ChannelProvider = id === "telegram" ? createTelegramProvider() : createDiscordProvider();
+  const real: ChannelProvider = id === "telegram" ? createTelegramProvider() : id === "slack" ? createSlackProvider() : createDiscordProvider();
   const sends: FakeSend[] = [];
   const replies: Array<SendResult | (() => Promise<SendResult>)> = [];
+  const ids = id === "telegram" ? ["-1001234", "-1005678"] : id === "slack" ? ["C0ANNOUNCE", "C0SECOND0"] : ["5550001", "5550002"];
   let destinations: ChannelDestination[] = [
-    { type: "channel", externalId: id === "telegram" ? "-1001234" : "5550001", title: `${id} test chat`, ...(id === "discord" ? { parentId: "777" } : {}) },
-    { type: "channel", externalId: id === "telegram" ? "-1005678" : "5550002", title: `${id} second chat`, ...(id === "discord" ? { parentId: "777" } : {}) },
+    { type: "channel", externalId: ids[0]!, title: `${id} test chat`, ...(id === "discord" ? { parentId: "777" } : {}) },
+    { type: "channel", externalId: ids[1]!, title: `${id} second chat`, ...(id === "discord" ? { parentId: "777" } : {}) },
   ];
   const provider: ChannelProvider = {
     id,
     capabilities: real.capabilities,
     async verify(credential) {
       if (!credential) return { ok: false, reason: "credential_missing" };
-      return credential === token ? { ok: true, botId: "4242", botUsername: `${id}_test_bot` } : { ok: false, reason: "credential_invalid" };
+      return credential === token
+        ? { ok: true, botId: "4242", botUsername: `${id}_test_bot`, ...(id === "slack" ? { teamId: "T0TEAM001" } : {}) }
+        : { ok: false, reason: "credential_invalid" };
     },
     async discover(credential) {
       return credential === token ? { ok: true, destinations } : { ok: false, reason: "credential_invalid" };

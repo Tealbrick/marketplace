@@ -31,6 +31,7 @@ import {
   type ChannelRefusal,
   type ClassSelection,
 } from "./runtime.js";
+import { INBOUND_METADATA_RETENTION_MS } from "./inbound-store.js";
 import {
   CHANNEL_ATTACHMENTS_SUBDIR,
   channelPostApprovalKey,
@@ -53,6 +54,11 @@ import {
  */
 
 export const CHANNEL_SEND_LEASE_MS = 300_000;
+/**
+ * Internal idempotency key prefix of reply posts. The agent's key (header regex: no colon) is prefixed, so a reply
+ * and a plain post can never share a post row, and the reply target is looked up only for reply posts.
+ */
+export const INBOUND_REPLY_KEY_PREFIX = "inbound-reply:";
 /** Receipt retention (§7): 90 days by default. */
 export const CHANNEL_RECEIPT_RETENTION_MS = 90 * 86_400_000;
 /** Stored attachment bytes per (workspace, agent): 200 MiB (follow-up Q1). */
@@ -396,12 +402,17 @@ export function createChannelService(deps: ChannelServiceDeps) {
     },
   });
 
-  const bodyFromPost = (post: ChannelPostRecord): ChannelPostBody => ({
-    text: post.text,
-    attachments: post.attachments,
-    campaign: post.campaign,
-    sendAt: post.mode === "scheduled" ? post.sendAt : null,
-  });
+  /** A reply post (`marketplace.channels.reply`) carries its reply target in `channel_inbound_reply`, keyed like the post. */
+  const bodyFromPost = (post: ChannelPostRecord): ChannelPostBody => {
+    const link = post.idempotencyKey.startsWith(INBOUND_REPLY_KEY_PREFIX) ? channels.inbound.getReplyLink(org, post.agentId, post.idempotencyKey) : null;
+    return {
+      text: post.text,
+      attachments: post.attachments,
+      campaign: post.campaign,
+      sendAt: post.mode === "scheduled" ? post.sendAt : null,
+      ...(link ? { replyTo: link.replyTo } : {}),
+    };
+  };
 
   const payloadFor = (channel: ChannelRecord, agentId: string, mode: "immediate" | "scheduled", body: ChannelPostBody) =>
     buildChannelPayload({
@@ -497,6 +508,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
       result = await provider.send(credential?.value ?? null, toProviderDestination(channel), {
         text: payload.text,
         attachments: payload.attachments,
+        ...(payload.replyTo !== undefined ? { replyTo: payload.replyTo } : {}),
       });
     } catch {
       // Adapters never throw; if one does after the request left, delivery is unknown.
@@ -836,6 +848,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
       }
       const facts = {
         mode,
+        reply: input.body.replyTo !== undefined,
         sendAt: payload.sendAt,
         text: payload.text,
         attachments: payload.files.map((file) => ({ contentType: file.contentType, bytes: file.bytes, sha256: file.sha256, name: file.name })),
@@ -1222,6 +1235,31 @@ export function createChannelService(deps: ChannelServiceDeps) {
       limit: CHANNEL_ATTACHMENT_CLEANUP_BATCH,
     });
 
+  /**
+   * Inbound retention. Runs in every scheduler tick, and also bounded at start and on each owner browse, so it
+   * runs when the scheduler is off or Channels went inert (review F7).
+   */
+  const purgeInbound = (now: Date, limit?: number) => {
+    const settings = channels.inbound.getSettings(org);
+    const purged = channels.inbound.purge({
+      workspaceSlug: org,
+      textBefore: new Date(now.getTime() - settings.textRetentionDays * 86_400_000),
+      rowsBefore: new Date(now.getTime() - INBOUND_METADATA_RETENTION_MS),
+      now,
+      ...(limit !== undefined ? { limit } : {}),
+    });
+    if (purged.textPurged > 0 || purged.deleted > 0 || purged.chatsPurged > 0) {
+      store.recordAudit({
+        workspaceSlug: org,
+        pluginId: null,
+        eventType: "marketplace.channels.inbound.purged",
+        actorId: "marketplace:retention",
+        metadata: { textPurged: purged.textPurged, deleted: purged.deleted, chatsPurged: purged.chatsPurged, textRetentionDays: settings.textRetentionDays },
+      });
+    }
+    return purged;
+  };
+
   // ----- scheduler tick (1g) --------------------------------------------------
 
   /**
@@ -1239,6 +1277,8 @@ export function createChannelService(deps: ChannelServiceDeps) {
     const report = { recovered: 0, expired: 0, sent: 0, skipped: 0, claimed: 0 };
     // §7 retention: receipts of finished posts older than the retention go; open posts keep theirs (Q2).
     channels.purgeReceipts(org, new Date(input.now.getTime() - CHANNEL_RECEIPT_RETENTION_MS));
+    // Inbound retention: received text after the owner's retention (default 30 days), metadata rows after 90 days.
+    purgeInbound(input.now);
     // Q1: unreferenced attachments after 24 h, finished posts' attachments after purge or retention (bounded).
     cleanupAttachments(input.now);
     for (const post of channels.recoverStaleSending({ now: input.now })) {
@@ -1323,7 +1363,21 @@ export function createChannelService(deps: ChannelServiceDeps) {
     const credential = credentials.get(provider);
     if (!adapter) return { ok: false, reason: "provider_unavailable" };
     if (!credential) return { ok: false, reason: "credential_missing" };
-    const result = await adapter.discover(credential.value);
+    // Telegram with the inbound webhook set: getUpdates answers 409, so discovery reads the chats the webhook saw.
+    const chatsSeen = (): DiscoverResult => ({
+      ok: true,
+      destinations: channels.inbound.listTelegramDestinations(org),
+      notes: ["Inbound is on: these are the chats where the bot saw a message or was added since. Write a message in a new chat to list it."],
+    });
+    let result: DiscoverResult;
+    if (provider === "telegram" && channels.inbound.activeWebhook(org, "telegram")) {
+      result = chatsSeen();
+    } else {
+      result = await adapter.discover(credential.value);
+      if (!result.ok && result.reason === "consumer_conflict" && provider === "telegram" && channels.inbound.listTelegramDestinations(org).length > 0) {
+        result = chatsSeen();
+      }
+    }
     if (result.ok) discovered.set(provider, { at: Date.now(), destinations: result.destinations });
     return result;
   };
@@ -1342,9 +1396,29 @@ export function createChannelService(deps: ChannelServiceDeps) {
     return parsed.ok ? { appId: parsed.credential.appId, tenantId: parsed.credential.tenantId } : null;
   };
 
+  /** The bot's own platform user id from the verified connection (inbound ignores its own messages). */
+  const botIdFor = (provider: ChannelProviderId): string | null => {
+    const connection = store.getConnection(org, channelPluginId(provider));
+    const botId = connection?.metadata.botId;
+    return typeof botId === "string" && botId.length > 0 ? botId : null;
+  };
+
+  /** The Slack workspace (auth.test team_id) of the verified connection, or null (review F6). */
+  const slackTeamId = (): string | null => {
+    const teamId = store.getConnection(org, channelPluginId("slack"))?.metadata.teamId;
+    return typeof teamId === "string" && teamId.length > 0 ? teamId : null;
+  };
+
+  /** The credential value for the inbound worker (gateway, webhook calls), only while the provider is available. */
+  const inboundCredential = (provider: ChannelProviderId): string | null =>
+    readiness.get(provider) === "available" ? credentials.get(provider)?.value ?? null : null;
+
   return {
     configured,
     teamsIdentity,
+    botIdFor,
+    slackTeamId,
+    inboundCredential,
     cleanupAttachments,
     boot,
     readinessView,
@@ -1373,6 +1447,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
     },
     resolveUncertain,
     tick,
+    purgeInbound,
     discover,
     discoveredDestination,
     endPost,
