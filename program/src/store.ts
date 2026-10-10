@@ -39,6 +39,7 @@ import {
   ChannelStore,
   migrateChannelTables,
 } from "./channels/store.js";
+import { migrateToolFileTables, TOOL_FILE_TABLES, ToolFileStore } from "./tool-files.js";
 
 export const MARKETPLACE_TABLES = [
   "marketplace_listing",
@@ -64,6 +65,7 @@ export const MARKETPLACE_TABLES = [
   "audit_event",
   "company_box_approval",
   ...CHANNEL_TABLES,
+  ...TOOL_FILE_TABLES,
 ] as const;
 
 type JsonRecord = Record<string, unknown>;
@@ -517,6 +519,7 @@ export class SqliteMarketplaceStore {
   private readonly debug: boolean;
   private readonly handoffEncryptionKey: Buffer | null;
   private channelStore: ChannelStore | null = null;
+  private toolFileStore: ToolFileStore | null = null;
 
   constructor(
     readonly dbPath: string,
@@ -912,7 +915,15 @@ export class SqliteMarketplaceStore {
     );
     // Channels (0.2.0): additive tables only; older builds ignore them.
     migrateChannelTables(this.db);
+    // Tool files (#59): additive table; older builds ignore it.
+    migrateToolFileTables(this.db);
     this.migratePortalHandoffSessions();
+  }
+
+  /** Tool files (#59): uploaded file arguments for `marketplace.tools.call`, on the same connection. */
+  get toolFiles(): ToolFileStore {
+    this.toolFileStore ??= new ToolFileStore(this.db);
+    return this.toolFileStore;
   }
 
   /** Channels records (spec §4) on the same database connection. */
