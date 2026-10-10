@@ -568,3 +568,17 @@ export function fromLocalInput(value: string) {
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
+
+const DESTINATION_TYPE_LABEL: Readonly<Record<string, string>> = {
+  channel: "Channel",
+  group: "Group chat",
+  person: "Direct chat",
+  chat: "Chat",
+  topic: "Forum topic",
+  thread: "Thread",
+};
+
+/** The destination kind shown next to the untrusted title in the picker (a chat name cannot pass for a channel). */
+export function destinationTypeLabel(type: string): string {
+  return DESTINATION_TYPE_LABEL[type] ?? "Destination";
+}

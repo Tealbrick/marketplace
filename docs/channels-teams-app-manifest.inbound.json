@@ -30,5 +30,17 @@
       "isNotificationOnly": false
     }
   ],
-  "validDomains": []
+  "validDomains": [],
+  "webApplicationInfo": {
+    "id": "<MICROSOFT-APP-ID>",
+    "resource": "https://RscBasedStoreApp"
+  },
+  "authorization": {
+    "permissions": {
+      "resourceSpecific": [
+        { "name": "ChannelMessage.Read.Group", "type": "Application" },
+        { "name": "ChatMessage.Read.Chat", "type": "Application" }
+      ]
+    }
+  }
 }

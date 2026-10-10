@@ -864,7 +864,7 @@
           {
             "key": "channels.teams.graphEnabled",
             "label": "Microsoft Teams person lookup (optional)",
-            "description": "Set to true only after an admin grants the app the Microsoft Graph application permission User.Read.All. Turns on finding a person by email and starting a 1:1 chat.",
+            "description": "Reserved for a later version: agents cannot find people or start 1:1 chats yet. Leave it empty and do not grant User.Read.All for it now.",
             "type": "secret",
             "maxLength": 8,
             "source": "account",

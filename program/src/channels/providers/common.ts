@@ -292,32 +292,39 @@ export function validateOutbound(input: {
 
 /** Remembers inbound event ids for a while, so a replayed or retried event is processed at most once. */
 export type ReplayGuard = {
-  /** True the first time `id` is seen inside the TTL (and records it); false for a replay. */
-  firstSeen(id: string): boolean;
+  /**
+   * True the first time `id` is seen inside its TTL (and records it); false for a replay. `ttlMs` overrides the
+   * default TTL for this id (for example up to the expiry of the token that carried it), capped at `maxTtlMs`.
+   */
+  firstSeen(id: string, ttlMs?: number): boolean;
   readonly size: number;
 };
 
 /**
- * Bounded in-memory replay store (inbound helpers, P2 scope 2.2). Each id is kept for `ttlMs` after it was first
- * seen. At most `maxEntries` ids are kept: when full, the oldest id is dropped first (insertion order equals
- * expiry order because the TTL is fixed). Choose `ttlMs` to cover the provider's retry schedule and the window
- * in which a captured request still authenticates.
+ * Bounded in-memory replay store (inbound helpers, P2 scope 2.2). Each id is kept for its TTL after it was first
+ * seen. At most `maxEntries` ids are kept: when full, the oldest id is dropped first. Choose the TTL to cover the
+ * provider's retry schedule and the window in which a captured request still authenticates.
  */
-export function createReplayGuard(options: { ttlMs: number; maxEntries: number; now?: () => number }): ReplayGuard {
+export function createReplayGuard(options: { ttlMs: number; maxEntries: number; maxTtlMs?: number; now?: () => number }): ReplayGuard {
   const now = options.now ?? Date.now;
+  const maxTtl = options.maxTtlMs ?? options.ttlMs;
   const seen = new Map<string, number>();
   const purge = (at: number) => {
+    // Insertion order is close to expiry order; stop at the first live entry (a later sweep gets the rest).
     for (const [id, expiresAt] of seen) {
       if (expiresAt > at) break;
       seen.delete(id);
     }
   };
   return {
-    firstSeen(id: string) {
+    firstSeen(id: string, ttlMs?: number) {
       const at = now();
       purge(at);
-      if (seen.has(id)) return false;
-      seen.set(id, at + options.ttlMs);
+      const expiresAt = seen.get(id);
+      if (expiresAt !== undefined && expiresAt > at) return false;
+      const ttl = Math.min(maxTtl, Math.max(0, ttlMs ?? options.ttlMs));
+      seen.delete(id);
+      seen.set(id, at + ttl);
       while (seen.size > options.maxEntries) {
         const oldest = seen.keys().next().value as string;
         seen.delete(oldest);

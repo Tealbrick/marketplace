@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { capabilitySupports } from "./capabilities.js";
+import { capabilitySupports, wiredCapabilities } from "./capabilities.js";
 import { attachment, createFakeClock, jsonResponse } from "./test-support.js";
 import {
   TEAMS_MAX_TEXT_CHARS,
@@ -230,7 +230,7 @@ describe("teams discover", () => {
       destinations: [
         { type: "channel", externalId: TEAM_ID, title: "Ops / #General", parentId: TEAM_ID },
         { type: "channel", externalId: CHANNEL_ID, title: "Ops / #announcements", parentId: TEAM_ID },
-        { type: "group", externalId: GROUP_ID, title: "Launch crew" },
+        { type: "group", externalId: GROUP_ID, title: "Group chat: Launch crew" },
         { type: "person", externalId: PERSONAL_ID, title: "Direct chat: Ana" },
       ],
       notes: ["2 private or shared channel(s) not listed: Teams bots cannot post there."],
@@ -641,7 +641,33 @@ describe("teams inbound activity parsing", () => {
     expect(parseTeamsActivity({ ...message, serviceUrl: "https://evil.example/teams/" }, identity)).toEqual({ kind: "ignored", reason: "service_url" });
     expect(parseTeamsActivity({ ...message, serviceUrl: "http://smba.trafficmanager.net/amer/" }, identity)).toEqual({ kind: "ignored", reason: "service_url" });
     expect(parseTeamsActivity({ ...message, from: { id: `28:${APP_ID}` } }, identity)).toEqual({ kind: "ignored", reason: "own_message" });
+    // Other bots never reach a bridge: role "bot", or any other Bot Framework (28:) id.
+    expect(parseTeamsActivity({ ...message, from: { id: "28:other-bot", role: "bot" } }, identity)).toEqual({ kind: "ignored", reason: "bot_message" });
+    expect(parseTeamsActivity({ ...message, from: { id: "28:other-bot" } }, identity)).toEqual({ kind: "ignored", reason: "bot_message" });
+    expect(parseTeamsActivity({ ...message, from: { id: "29:someone", role: "bot" } }, identity)).toEqual({ kind: "ignored", reason: "bot_message" });
     expect(parseTeamsActivity({ ...message, type: "typing" }, identity)).toEqual({ kind: "ignored", reason: "activity_type" });
     expect(parseTeamsActivity("nope", identity)).toEqual({ kind: "ignored", reason: "not_an_activity" });
+  });
+});
+
+describe("teams discovery titles and the wired filter", () => {
+  it("prefixes chat titles with their kind, so a chat name cannot pass for a team channel", async () => {
+    const imitation: TeamsConversationRef = { ...groupRef, title: "Ops / #announcements" };
+    const { provider } = make(() => jsonResponse(404, {}), { refs: [imitation, { ...personalRef, title: "Direct chat" }] });
+    const result = await provider.discover(CREDENTIAL);
+    expect(result).toMatchObject({
+      ok: true,
+      destinations: [
+        { type: "group", externalId: GROUP_ID, title: "Group chat: Ops / #announcements" },
+        { type: "person", externalId: PERSONAL_ID, title: "Direct chat" },
+      ],
+    });
+  });
+
+  it("exposes no edit, delete, mentions, replies or DM to agents until their operations ship", () => {
+    const effective = wiredCapabilities(createTeamsProvider({ graphEnabled: true }).capabilities);
+    for (const feature of ["edit", "delete", "mentions.users", "thread.replies", "dm"]) expect(capabilitySupports(effective, feature), feature).toBe(false);
+    expect(effective.edit).toEqual({ own: false });
+    expect(effective.dm).toEqual({ open: false, maxMembers: 0 });
   });
 });

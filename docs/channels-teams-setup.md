@@ -33,16 +33,9 @@ Caution: Marketplace supports the commercial cloud and GCC only. GCC High, DoD a
 
 Warning: The secret gives full control of the bot. Do not put it in chat, email, tickets or code. Put it only in Account Connections (step 4).
 
-## 3. Optional: person lookup for direct messages
+## 3. Person lookup: do not do this step now
 
-Do this step only if agents must start 1:1 chats with named people.
-
-1. In the Entra app registration, go to **API permissions**.
-2. Add the **Microsoft Graph** application permission **User.Read.All**.
-3. Select **Grant admin consent**.
-4. In step 4, set **Microsoft Teams person lookup** to `true`.
-
-Note: A 1:1 chat works only after the Teams app is installed for that person. An admin can install it for users with a Teams app setup policy. Automatic install through Graph is a later step in Marketplace.
+Agents cannot find people or start 1:1 chats in this version. Do not add the Microsoft Graph permission **User.Read.All**. Do not grant admin consent for it. A later version of Marketplace tells you when to add it.
 
 ## 4. Add the credentials to Marketplace
 
@@ -51,7 +44,7 @@ Note: A 1:1 chat works only after the Teams app is installed for that person. An
    - **Microsoft Teams bot app ID**: the Microsoft App ID.
    - **Microsoft Teams bot client secret**: the secret value.
    - **Microsoft Teams tenant ID**: the App Tenant ID.
-   - **Microsoft Teams person lookup**: `true` only if you did step 3.
+   - **Microsoft Teams person lookup**: leave it empty or `false`.
 3. Restart (redeploy) Marketplace. Marketplace reads the values at start.
 4. Open Marketplace **Channels**. Make sure that Microsoft Teams shows **Available**.
 
@@ -68,9 +61,16 @@ If Teams shows **Credential invalid**, make sure that the three values come from
 5. Add two icons to the folder: `color.png` (192 × 192 pixels) and `outline.png` (32 × 32 pixels, white on transparent).
 6. Make a ZIP file of the three files. Put them at the top level of the ZIP, not in a folder.
 
-The package asks for these permissions:
+The package asks for these permissions only:
 - Bot scopes `team`, `groupChat` and `personal`.
-- Resource-specific consent (RSC) `ChannelMessage.Read.Group` and `ChatMessage.Read.Chat`. With these, the bot receives all messages in the teams and chats where it is installed, not only messages that mention it. Marketplace does not store received messages yet.
+
+The package does not ask for resource-specific consent (RSC). Without RSC, Teams sends the bot only the messages that mention it and the messages in 1:1 chats with it. Marketplace does not use these messages yet.
+
+### Inbound package (do not use now)
+
+`docs/channels-teams-app-manifest.inbound.json` is a second package template. It adds the RSC permissions `ChannelMessage.Read.Group` and `ChatMessage.Read.Chat`. With these, Teams sends every message in each team and chat where the app is installed to Marketplace.
+
+Caution: Use the inbound package only when Marketplace has Teams inbound and you turn it on. This version has no Teams inbound. If you install the inbound package now, Teams sends your messages to Marketplace and Marketplace does not use them.
 
 ## 6. Allow and upload the app (Teams admin)
 
@@ -78,28 +78,25 @@ The package asks for these permissions:
 2. Select **Upload new app**. Upload the ZIP file.
 3. Make sure that the app status is **Allowed**.
 4. Go to **Teams apps** > **Permission policies** (or app-centric management). Make sure that the users who install the app can use custom apps.
-5. Make sure that team owners can give RSC consent. The default tenant setting (`ManagedByMicrosoft`) permits this.
+5. Only for the inbound package (later): make sure that team owners can give RSC consent. The default tenant setting (`ManagedByMicrosoft`) permits this.
 
 ## 7. Install the app in each team or chat
 
 1. In Teams, open the team. Select **Apps** > **Built for your org**. Select the app.
-2. Select **Add to a team**. Select the team and the channel. The team owner accepts the permissions.
+2. Select **Add to a team**. Select the team and the channel.
 3. For a group chat, select **Add to a chat**.
 4. In Marketplace **Channels**, select **Add channel** > **Microsoft Teams** > **Discover**.
 
-Marketplace lists the standard channels of each team where the app is installed, and the group chats and 1:1 chats that have the app.
+Marketplace lists the standard channels of each team where the app is installed, and the group chats and 1:1 chats that have the app. Each entry shows its type. A channel shows its team name, for example `Ops / #announcements`. A group chat starts with `Group chat:`. A 1:1 chat starts with `Direct chat:`. Marketplace lists at most 1,000 entries of each type.
 
 Note: Marketplace does not list private and shared channels. Teams bots cannot post in private channels.
 
 ## What agents can do in Teams
 
-- Post text (Teams Markdown, maximum 28,000 characters).
-- Reply in a channel thread.
-- Mention named people. Agents never mention a whole team, a channel or a tag.
-- Edit and delete their own messages.
-- With person lookup: find one person by email and start a 1:1 chat.
+- Post text (Teams Markdown, maximum 28,000 characters) to a channel, a group chat or a 1:1 chat that the owner added.
+- Schedule a post. Marketplace sends it at the set time.
 
-Agents cannot send files, images, cards or reactions in Teams in this version.
+Agents cannot do these things in Teams in this version: reply in a thread, mention people, edit or delete messages, find people, start 1:1 chats, send files, images, cards or reactions, or receive messages. Marketplace never mentions a whole team, a channel or a tag.
 
 Approvals stay in Teal Brick, Buzz and the Marketplace screen. Teams shows "waiting for owner approval" and never accepts an approval click.
 

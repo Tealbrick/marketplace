@@ -188,6 +188,12 @@ export function teamsCapabilities(graphEnabled: boolean): ChannelCapabilities {
 
 // ---------------------------------------------------------------- Pure helpers
 
+/** `Group chat: <name>` (or the bare kind), never a double prefix. */
+function kindTitle(kind: "Group chat" | "Direct chat", title: string): string {
+  const name = title.startsWith(`${kind}: `) ? title.slice(kind.length + 2) : title === kind ? "" : title;
+  return sanitizeText(name ? `${kind}: ${name}` : kind);
+}
+
 function teamsMessage(json: unknown): unknown {
   const record = asRecord(json);
   if (!record) return undefined;
@@ -345,6 +351,8 @@ export function parseTeamsActivity(activity: unknown, input: { appId: string; te
     const messageId = str(record.id, MESSAGE_ID);
     if (!senderUserId || !messageId) return { kind: "ignored", reason: "message_shape" };
     if (senderUserId.toLowerCase() === botId.toLowerCase()) return { kind: "ignored", reason: "own_message" };
+    // Other bots (role "bot", or a Bot Framework `28:` id) never reach a bridge: no bot-to-bot loops or relays.
+    if (from?.role === "bot" || senderUserId.startsWith("28:")) return { kind: "ignored", reason: "bot_message" };
     const threadId = str(threadSuffix, MESSAGE_ID) ?? str(record.replyToId, MESSAGE_ID);
     const attachments = (Array.isArray(record.attachments) ? record.attachments : [])
       .map((raw) => asRecord(raw))
@@ -542,9 +550,10 @@ export function createTeamsProvider(options: TeamsProviderOptions = {}): Channel
         add({ type: "channel", externalId: channelId, title: sanitizeText(`${teamName} / #${name}`), parentId: teamId });
       }
     }
+    // A chat's name is free text that can imitate "Team / #channel": the title always starts with its kind.
     for (const ref of refs) {
-      if (ref.type === "groupChat") add({ type: "group", externalId: ref.conversationId, title: ref.title || "Group chat" });
-      if (ref.type === "personal") add({ type: "person", externalId: ref.conversationId, title: ref.title || "Direct chat" });
+      if (ref.type === "groupChat") add({ type: "group", externalId: ref.conversationId, title: kindTitle("Group chat", ref.title) });
+      if (ref.type === "personal") add({ type: "person", externalId: ref.conversationId, title: kindTitle("Direct chat", ref.title) });
     }
     return {
       ok: true,

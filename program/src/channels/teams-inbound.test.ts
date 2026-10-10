@@ -120,6 +120,17 @@ describe("Teams conversation store", () => {
     expect(listed[2]!.conversationId).toBe("a:1p1199");
   });
 
+  it("caps each kind on its own, so many group chats never crowd out team channels", () => {
+    const store = memoryStore();
+    store.upsert("org", ref("19:c1@thread.tacv2", "channel"), new Date(9_000_000));
+    for (let index = 0; index < 1200; index += 1) store.upsert("org", ref(`19:g${index}@thread.v2`, "groupChat"), new Date(1_000 + index));
+    const listed = store.listActive("org");
+    expect(listed[0]!.conversationId).toBe("19:c1@thread.tacv2");
+    expect(listed.filter((entry) => entry.type === "groupChat")).toHaveLength(1000);
+    // The most recently updated group chats are the ones listed.
+    expect(listed[1]!.conversationId).toBe("19:g1199@thread.v2");
+  });
+
   it("keeps at most the cap of 1:1 rows per tenant, removed rows first, then the oldest", () => {
     const store = memoryStore(3);
     store.upsert("org", ref("a:1old", "personal"), new Date(1_000));

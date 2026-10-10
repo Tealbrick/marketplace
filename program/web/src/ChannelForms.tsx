@@ -8,6 +8,7 @@ import { createChannel, discoverChannels, newChannelKey, updateChannel } from ".
 import {
   CHANNEL_PROVIDERS,
   declarationFor,
+  destinationTypeLabel,
   KIND_LABEL,
   kindsFor,
   formatBytes,
@@ -262,7 +263,7 @@ export function CreateChannelPanel({ browse, onCreated, onCancel }: { browse: Ch
         {destinations.length > 0 && <div className="destination-list" role="radiogroup" aria-label="Discovered destinations">
           {destinations.map((entry) => <label key={keyOf(entry)} className={destinationKey === keyOf(entry) ? "is-selected" : ""}>
             <input type="radio" name={`${id}-destination`} checked={destinationKey === keyOf(entry)} onChange={() => pick(entry)} />
-            <span><DestinationTitle destination={entry} /><small>{entry.type}{entry.parentId ? ` · in ${entry.parentId}` : ""} · <code>{entry.externalId}</code></small></span>
+            <span><DestinationTitle destination={entry} /><small>{destinationTypeLabel(entry.type)}{entry.parentId ? ` · in ${entry.parentId}` : ""} · <code>{entry.externalId}</code></small></span>
           </label>)}
         </div>}
       </li>}

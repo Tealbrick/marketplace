@@ -1,8 +1,10 @@
+import { createSign, generateKeyPairSync } from "node:crypto";
+
 import { afterEach, describe, expect, it } from "vitest";
 
 import { TENANT, channelFixture, type ChannelFixture } from "./channels/app-fixture.js";
 import { jsonResponse } from "./channels/providers/test-support.js";
-import type { BotFrameworkVerifier } from "./channels/providers/teams-auth.js";
+import { BOT_FRAMEWORK_OPENID_URL, type BotFrameworkVerifier } from "./channels/providers/teams-auth.js";
 import { createTeamsProvider, type TeamsConversationSource } from "./channels/providers/teams.js";
 import { resolveChannelCredential } from "./channels/runtime.js";
 import { TEAMS_MESSAGES_PATH } from "./channels/teams-inbound.js";
@@ -38,7 +40,24 @@ afterEach(async () => {
   await Promise.all(fixtures.splice(0).map((fixture) => fixture.close()));
 });
 
-async function setup(input: { environment?: Record<string, string | undefined> } = {}) {
+// The real Bot Framework verifier, against a locally generated RSA key served by a fake OpenID metadata endpoint.
+const SIGNING_KID = "local-test-kid";
+const signingKeys = generateKeyPairSync("rsa", { modulusLength: 2048 });
+const JWKS_URL = "https://login.botframework.com/v1/.well-known/keys";
+function botFrameworkJwt(claims: Record<string, unknown>, key = signingKeys.privateKey): string {
+  const part = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  const signingInput = `${part({ alg: "RS256", typ: "JWT", kid: SIGNING_KID })}.${part(claims)}`;
+  const signature = createSign("RSA-SHA256").update(signingInput).sign(key).toString("base64url");
+  return `Bearer ${signingInput}.${signature}`;
+}
+function validClaims(overrides: Record<string, unknown> = {}) {
+  const now = Math.floor(Date.now() / 1000);
+  return { iss: "https://api.botframework.com", aud: APP_ID, serviceurl: SERVICE_URL, nbf: now - 10, exp: now + 3600, ...overrides };
+}
+
+let activityCounter = 0;
+
+async function setup(input: { environment?: Record<string, string | undefined>; realVerifier?: boolean } = {}) {
   const holder: { fixture?: ChannelFixture } = {};
   const source = (): TeamsConversationSource => holder.fixture!.store.channels.teams.source(TENANT, () => new Date());
   const lazy: TeamsConversationSource = {
@@ -54,6 +73,11 @@ async function setup(input: { environment?: Record<string, string | undefined> }
     const headers = new Headers(init?.headers);
     requests.push({ method: init?.method ?? "GET", url, body: typeof init?.body === "string" ? init.body : undefined, authorization: headers.get("authorization") ?? undefined });
     if (url.startsWith("https://login.microsoftonline.com/")) return jsonResponse(200, { token_type: "Bearer", expires_in: 3600, access_token: ACCESS_TOKEN });
+    if (url === BOT_FRAMEWORK_OPENID_URL) return jsonResponse(200, { issuer: "https://api.botframework.com", jwks_uri: JWKS_URL });
+    if (url === JWKS_URL) {
+      const jwk = signingKeys.publicKey.export({ format: "jwk" });
+      return jsonResponse(200, { keys: [{ kty: "RSA", use: "sig", kid: SIGNING_KID, n: jwk.n, e: jwk.e, endorsements: ["msteams"] }] });
+    }
     if (url.endsWith(`/v3/teams/${encodeURIComponent(TEAM_ID)}/conversations`)) {
       return jsonResponse(200, { conversations: [{ id: TEAM_ID, name: null }, { id: CHANNEL_ID, name: "announcements" }] });
     }
@@ -63,12 +87,20 @@ async function setup(input: { environment?: Record<string, string | undefined> }
   const teams = createTeamsProvider({ fetchImpl, conversations: lazy });
   const fixture = await channelFixture({
     environment: { ...TEAMS_ENV, ...input.environment },
-    options: { channelProviders: { teams }, teamsVerifier: fakeVerifier },
+    options: input.realVerifier
+      ? { channelProviders: { teams }, providerFetch: fetchImpl }
+      : { channelProviders: { teams }, teamsVerifier: fakeVerifier },
   });
   holder.fixture = fixture;
   fixtures.push(fixture);
+  // Every activity gets a fresh id unless the test sets one (the endpoint processes one id once).
   const activity = (body: Record<string, unknown>, authorization = GOOD) =>
-    fixture.app.inject({ method: "POST", url: TEAMS_MESSAGES_PATH, headers: { authorization, "content-type": "application/json" }, payload: body });
+    fixture.app.inject({
+      method: "POST",
+      url: TEAMS_MESSAGES_PATH,
+      headers: { authorization, "content-type": "application/json" },
+      payload: { id: `f:activity-${++activityCounter}`, ...body },
+    });
   return { f: fixture, requests, activity };
 }
 
@@ -160,7 +192,19 @@ describe("Teams channel end to end", () => {
     const { activity, f, requests } = await setup();
     const browse = await f.owner("GET", "/api/marketplace/channels");
     expect(browse.json().readiness).toEqual({ teams: "available" });
-    expect(browse.json().providers[0]).toMatchObject({ id: "teams", kinds: ["chat"], capabilities: { markup: "teams-markdown", mentions: { users: true } } });
+    // The adapter declares mentions, replies, edit and delete, but no agent operation uses them: not exposed.
+    expect(browse.json().providers[0]).toMatchObject({
+      id: "teams",
+      kinds: ["chat"],
+      capabilities: {
+        markup: "teams-markdown",
+        mentions: { users: false },
+        thread: { replies: false },
+        edit: { own: false },
+        delete: { own: false },
+        dm: { open: false, maxMembers: 0 },
+      },
+    });
     await activity(install);
     await activity(personalInstall);
     const channel = await f.createChannel({ provider: "teams", slug: "ana-direct", externalId: PERSONAL_ID });
@@ -203,5 +247,52 @@ describe("Teams credential resolution", () => {
       readSecret: (pluginId, name) => (pluginId === "channels-teams" && secrets[name] ? { value: secrets[name]!, id: `secret-${name}` } : null),
     });
     expect(selfHosted).toMatchObject({ ref: "marketplace-secret:secret-appSecret", secrets: [SECRET] });
+  });
+});
+
+describe("Teams replay protection and other bots", () => {
+  it("processes one activity id once, so a replayed install cannot bring back a removed conversation", async () => {
+    const { activity, f } = await setup();
+    const captured = { ...install, id: "f:install-0001" };
+    expect((await activity(captured)).statusCode).toBe(200);
+    expect(f.store.channels.teams.listActive(TENANT)).toHaveLength(1);
+    expect((await activity({ ...install, action: "remove" })).statusCode).toBe(200);
+    expect(f.store.channels.teams.listActive(TENANT)).toEqual([]);
+    // The same token and body again: acknowledged, nothing changes.
+    const replayed = await activity(captured);
+    expect(replayed.statusCode).toBe(200);
+    expect(f.store.channels.teams.listActive(TENANT)).toEqual([]);
+    // An activity with no usable id changes nothing either.
+    for (const id of [undefined, "", 42, "bad id\u0000"]) {
+      const response = await f.app.inject({ method: "POST", url: TEAMS_MESSAGES_PATH, headers: { authorization: GOOD, "content-type": "application/json" }, payload: { ...install, id } });
+      expect(response.statusCode).toBe(200);
+    }
+    expect(f.store.channels.teams.listActive(TENANT)).toEqual([]);
+  });
+});
+
+describe("Teams endpoint end to end with the real Bot Framework verifier", () => {
+  it("accepts an RS256 token signed by the metadata key and refuses wrong audience, service URL, key or expiry", async () => {
+    const { activity, f, requests } = await setup({ realVerifier: true });
+    const installed = await activity(install, botFrameworkJwt(validClaims()));
+    expect(installed.statusCode, installed.body).toBe(200);
+    expect(f.store.channels.teams.listActive(TENANT).map((ref) => ref.conversationId)).toEqual([CHANNEL_ID]);
+    // Keys came from the pinned metadata document, then its jwks_uri; nothing else was fetched to verify.
+    expect(requests.filter((request) => request.url === BOT_FRAMEWORK_OPENID_URL || request.url === JWKS_URL).map((request) => request.url)).toEqual([BOT_FRAMEWORK_OPENID_URL, JWKS_URL]);
+
+    const other = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey;
+    const refusals: Array<[string, number, string]> = [
+      [botFrameworkJwt(validClaims({ aud: "99999999-2222-4333-8444-555555555555" })), 401, "token_audience"],
+      [botFrameworkJwt(validClaims({ iss: "https://evil.example" })), 401, "token_issuer"],
+      [botFrameworkJwt(validClaims({ serviceurl: "https://smba.trafficmanager.net/emea/" })), 403, "token_service_url"],
+      [botFrameworkJwt(validClaims({ exp: Math.floor(Date.now() / 1000) - 3600 })), 401, "token_expired"],
+      [botFrameworkJwt(validClaims(), other), 401, "token_signature"],
+    ];
+    for (const [authorization, status, reason] of refusals) {
+      const response = await activity(personalInstall, authorization);
+      expect(response.statusCode, reason).toBe(status);
+      expect(response.json()).toMatchObject({ reason });
+    }
+    expect(f.store.channels.teams.listActive(TENANT).map((ref) => ref.conversationId)).toEqual([CHANNEL_ID]);
   });
 });

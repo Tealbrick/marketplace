@@ -66,7 +66,7 @@ const COLUMNS = "conversation_id, conversation_type, team_id, channel_id, team_n
 
 /** Most stored 1:1 references per tenant; beyond it the oldest rows go, removed ones first. */
 export const TEAMS_PERSONAL_ROWS_PER_TENANT = 5000;
-/** Most references discovery reads of each kind (team channels and group chats; 1:1 chats). */
+/** Most references discovery reads of each kind (team channels, group chats, 1:1 chats). */
 export const TEAMS_LIST_LIMIT = 1000;
 
 export class TeamsConversationStore {
@@ -152,23 +152,22 @@ export class TeamsConversationStore {
   }
 
   /**
-   * Active references: team channels and group chats first, then 1:1 chats, each read with its own limit, so
-   * many 1:1 chats never crowd team channels out of discovery.
+   * Active references, each kind read with its own limit (team channels, then group chats, then 1:1 chats), so
+   * many chats of one kind never crowd another kind out of discovery.
    */
   listActive(workspaceSlug: string): TeamsConversationRef[] {
-    const shared = this.db
-      .prepare(
-        `SELECT ${COLUMNS} FROM channel_teams_conversation WHERE workspace_slug = ? AND removed_at IS NULL AND conversation_type <> 'personal'
-         ORDER BY installed_at, conversation_id LIMIT ?`,
-      )
-      .all(workspaceSlug, TEAMS_LIST_LIMIT) as Row[];
-    const personal = this.db
-      .prepare(
-        `SELECT ${COLUMNS} FROM channel_teams_conversation WHERE workspace_slug = ? AND removed_at IS NULL AND conversation_type = 'personal'
-         ORDER BY updated_at DESC, conversation_id LIMIT ?`,
-      )
-      .all(workspaceSlug, TEAMS_LIST_LIMIT) as Row[];
-    return [...shared, ...personal].map(toRef);
+    const ofType = (type: TeamsConversationType, order: string) =>
+      this.db
+        .prepare(
+          `SELECT ${COLUMNS} FROM channel_teams_conversation WHERE workspace_slug = ? AND removed_at IS NULL AND conversation_type = ?
+           ORDER BY ${order} LIMIT ?`,
+        )
+        .all(workspaceSlug, type, TEAMS_LIST_LIMIT) as Row[];
+    return [
+      ...ofType("channel", "installed_at, conversation_id"),
+      ...ofType("groupChat", "updated_at DESC, conversation_id"),
+      ...ofType("personal", "updated_at DESC, conversation_id"),
+    ].map(toRef);
   }
 
   getActive(workspaceSlug: string, conversationId: string): TeamsConversationRef | null {
