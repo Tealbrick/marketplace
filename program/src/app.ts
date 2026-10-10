@@ -146,7 +146,7 @@ import { registerCompanyBoxRoutes } from "./company-box-routes.js";
 import {
   baseContentType,
   fileArgumentPaths,
-  sanitizeToolFileName,
+  validToolFileName,
   TOOL_FILE_IDEMPOTENCY_KEY,
   TOOL_FILES_SUBDIR,
   ToolFileError,
@@ -9015,10 +9015,10 @@ export async function buildMarketplaceApp(
         return { ok: false, error: "idempotency_key_required" };
       }
       const query = (request.query ?? {}) as { consentId?: unknown; name?: unknown };
-      const filename = sanitizeToolFileName(query.name);
-      if (!filename) {
+      const filename = validToolFileName(query.name);
+      if (filename === null) {
         reply.code(400);
-        return { ok: false, error: "tool_file_name_required" };
+        return { ok: false, error: "tool_file_name_invalid" };
       }
       const consentId = typeof query.consentId === "string" && query.consentId.length <= 200 ? query.consentId : "";
       const deploymentId = portalConfiguration.deploymentId;

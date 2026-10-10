@@ -240,6 +240,21 @@ async function fixture(input: { maxUploadBytes?: number } = {}) {
 }
 
 describe("tool-files.upload", () => {
+  it("stores the file name byte for byte and refuses any name it would have to change", async () => {
+    const f = await fixture();
+    const png = PNG;
+    for (const name of ["logo.png", "Speaker pack — Chiang Mai.png", "日本語.png"]) {
+      const res = await f.upload(png, { name, key: `upload.name-ok-${Buffer.from(name).toString("hex").slice(0, 16)}.${sha(png).slice(0, 16)}` });
+      expect(res.statusCode, name).toBe(201);
+      expect(res.json().filename, name).toBe(name);
+    }
+    for (const name of ["", " logo.png", "logo.png ", "a/b.png", "a\\b.png", "lo\u0000go.png", "lo\u202ego.png", "lo\u200bgo.png", ".", "..", `${"a".repeat(252)}.png`]) {
+      const res = await f.upload(png, { name, key: `upload.name-bad-${Buffer.from(name).toString("hex").slice(0, 16).padEnd(8, "0")}.${sha(png).slice(0, 16)}` });
+      expect(res.statusCode, JSON.stringify(name)).toBe(400);
+      expect(res.json().error, JSON.stringify(name)).toBe("tool_file_name_invalid");
+    }
+  });
+
   it("stores an allowed file once and returns a reference without a URL", async () => {
     const f = await fixture();
     const response = await f.upload(PNG);

@@ -129,11 +129,16 @@ export function baseContentType(header: string | undefined) {
   return (header ?? "").split(";", 1)[0]!.trim().toLowerCase();
 }
 
-/** A display file name: no control characters or path separators, at most 255 characters. Empty when unusable. */
-export function sanitizeToolFileName(raw: unknown): string {
-  if (typeof raw !== "string") return "";
-  const name = raw.replace(/[\p{Cc}\\/]/gu, "_").trim().slice(0, 255);
-  return name === "." || name === ".." ? "" : name;
+/**
+ * The file name exactly as the owner approved it, or null. Never rewritten: the kit shows the owner this name before
+ * the upload and requires Marketplace to store and return it byte for byte, so a name that would need any change is
+ * refused instead. Valid: non-empty, at most 255 UTF-16 units, no control (\p{Cc}) or format/bidi (\p{Cf}) characters, no "/" or "\\", no leading or
+ * trailing whitespace, not "." or "..". No Unicode normalization (exact string compare).
+ */
+export function validToolFileName(raw: unknown): string | null {
+  if (typeof raw !== "string" || raw.length === 0 || raw.length > 255) return null;
+  if (/[\p{Cc}\p{Cf}\\/]/u.test(raw) || raw !== raw.trim() || raw === "." || raw === "..") return null;
+  return raw;
 }
 
 export type ToolFileTypeCheck = { ok: true } | { ok: false; status: number; error: string };

@@ -335,6 +335,12 @@ reference instead:
   {fileRef, sha256, bytes, contentType, filename, expiresAt}`; the same key
   and file answer the same body with `replayed: true` and store nothing new,
   another file under the key is `409 idempotency_conflict`.
+- **File name**: stored and returned byte for byte, never rewritten. A name that
+  is empty, longer than 255 UTF-16 units, has a control (`\p{Cc}`) or
+  format/bidi (`\p{Cf}`) character, a `/` or `\`, leading or trailing
+  whitespace, or is `.`/`..` is refused (`400 tool_file_name_invalid`); no
+  Unicode normalization. The kit applies the same rule before the owner
+  approves, so the approved name is the stored name.
 - **Binding**: the consent must be the caller's (same deployment, workspace and
   agent), active, and its action must take a file (`x-file-upload`);
   otherwise one uniform `404 consent_not_found`.
