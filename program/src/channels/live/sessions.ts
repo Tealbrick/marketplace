@@ -115,12 +115,91 @@ export function forbiddenSkeletons(value: string): string[] {
   return [...out];
 }
 
-/** Forbidden terms (owner-approved) any of whose skeletons occurs in any skeleton of `text`. Over-matching is accepted. */
+const finalFold = (value: string) => value.toLowerCase().normalize("NFD").replace(/\p{Mn}/gu, "").replace(/[^\p{L}\p{N}]/gu, "");
+
+/**
+ * Every reading of one character of the text (review of #53, mixed-mode bypass): both tables, as written and
+ * lowercased, plus the plain lowercase letter. An empty reading means the character can be skipped (punctuation,
+ * spaces, marks). A term matches when SOME choice of one reading per character spells it, so letters that need
+ * different modes in one word ("ΙΝVEST") cannot slip through.
+ */
+function readingsOf(char: string): string[] {
+  const lower = char.toLowerCase();
+  const out = new Set<string>();
+  for (const candidate of [CONFUSABLE_SKELETON[char], HAND_FIRST_SKELETON[char], CONFUSABLE_SKELETON[lower], HAND_FIRST_SKELETON[lower], lower]) {
+    if (candidate !== undefined) out.add(finalFold(candidate));
+  }
+  return [...out];
+}
+
+type Needle = { term: string; length: number; words: number; masks: Map<string, Uint32Array> };
+
+function needleOf(term: string, skeleton: string): Needle {
+  const chars = [...skeleton];
+  const words = Math.ceil(chars.length / 32);
+  const masks = new Map<string, Uint32Array>();
+  chars.forEach((ch, index) => {
+    let mask = masks.get(ch);
+    if (!mask) masks.set(ch, (mask = new Uint32Array(words)));
+    mask[index >>> 5]! |= 1 << (index & 31);
+  });
+  return { term, length: chars.length, words, masks };
+}
+
+/**
+ * Forbidden terms (owner-approved) that occur in `text` under any per-character choice of readings. Bit-parallel
+ * shift-and over the reading lattice: one bitset of matched term prefixes per needle (each needle is one skeleton of
+ * a term), so the cost is text length × readings × needle words. Over-matching is accepted.
+ */
 export function forbiddenTermsIn(text: string, terms: readonly string[]): string[] {
-  const haystacks = forbiddenSkeletons(text);
-  return terms.filter((term) =>
-    forbiddenSkeletons(term).some((needle) => needle.length > 0 && haystacks.some((haystack) => haystack.includes(needle))),
-  );
+  const letters = [...text.normalize("NFKC").normalize("NFD").replace(/[\p{Mn}\p{Cf}]/gu, "").replace(INVISIBLE_LETTERS, "")];
+  const lattice = letters.map(readingsOf);
+  const needles: Needle[] = [];
+  for (const term of terms) {
+    for (const skeleton of forbiddenSkeletons(term)) if (skeleton.length > 0) needles.push(needleOf(term, skeleton));
+  }
+  const found = new Set<string>();
+  for (const needle of needles) {
+    if (found.has(needle.term)) continue;
+    const { words, masks, length } = needle;
+    const lastWord = (length - 1) >>> 5;
+    const lastBit = 1 << ((length - 1) & 31);
+    let state = new Uint32Array(words);
+    const step = (from: Uint32Array, ch: string, start: boolean): Uint32Array => {
+      const mask = masks.get(ch);
+      const next = new Uint32Array(words);
+      if (!mask) return next;
+      let carry = start ? 1 : 0;
+      for (let word = 0; word < words; word += 1) {
+        const value = from[word]!;
+        next[word] = ((value << 1) | carry) & mask[word]!;
+        carry = value >>> 31;
+      }
+      return next;
+    };
+    for (const readings of lattice) {
+      const acc = new Uint32Array(words);
+      for (const reading of readings) {
+        if (reading === "") {
+          for (let word = 0; word < words; word += 1) acc[word]! |= state[word]!;
+          continue;
+        }
+        let t: Uint32Array = state;
+        let first = true;
+        for (const ch of reading) {
+          t = step(t, ch, first);
+          first = false;
+        }
+        for (let word = 0; word < words; word += 1) acc[word]! |= t[word]!;
+      }
+      state = acc;
+      if ((state[lastWord]! & lastBit) !== 0) {
+        found.add(needle.term);
+        break;
+      }
+    }
+  }
+  return terms.filter((term) => found.has(term));
 }
 
 /** A fixed server template (review L2); the agent's topic follows on its own, labelled line. */

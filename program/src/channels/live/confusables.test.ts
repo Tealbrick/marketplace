@@ -56,4 +56,27 @@ describe("forbidden-term confusables", () => {
     expect(forbiddenTermsIn("order 1001 shipped", ["1001"])).toEqual(["1001"]);
     expect(forbiddenTermsIn("an ordinary sentence", ["project"])).toEqual([]);
   });
+
+  it("matches words that mix letters needing different modes or tables (per-character readings)", () => {
+    const cases: Array<[string, string]> = [
+      ["ΙΝVEST now", "invest"], ["ΗΙDDEΝ fee", "hidden"], ["ΝΙCE", "nice"], ["ΗΙRE", "hire"], ["ΥΙELD", "yield"],
+      ["ΗЦnt", "hunt"], ["баd", "bad"], ["ｉｎｖｅｓｔ", "invest"], ["ínvést", "invest"], ["in\u034Fvest", "invest"],
+      ["in\u200Dvest", "invest"], ["i\u00ADnvest", "invest"], ["pr0ject", "project"], ["ΡR0JΕСТ", "project"],
+    ];
+    for (const [text, term] of cases) expect(forbiddenTermsIn(text, [term]), `${text} vs ${term}`).toEqual([term]);
+    expect(forbiddenTermsIn("nothing to see here", ["invest", "hidden", "hire"])).toEqual([]);
+  });
+
+  it("stays within a time budget at the grant maxima (64 terms × 200 chars, 4096-char text)", () => {
+    const alphabet = [..."ΙΝΗΥΜΤΒΕΚΡСОАНВМТаеорсухьbcdfghjklmnpqrstvwxyz0123456789 ".normalize("NFC")];
+    let seed = 7;
+    const random = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+    const pick = (length: number) => Array.from({ length }, () => alphabet[Math.floor(random() * alphabet.length)]).join("");
+    const terms = Array.from({ length: 64 }, () => pick(200).replace(/ /gu, "x"));
+    const text = pick(4096);
+    const started = performance.now();
+    forbiddenTermsIn(text, terms);
+    expect(performance.now() - started).toBeLessThan(5000);
+  });
 });
+
