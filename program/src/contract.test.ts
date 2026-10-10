@@ -287,12 +287,15 @@ describe("tealbrick.app.json", () => {
     expect(agent.map((operation) => operation.id)).toEqual([
       AGENT_OPERATION.consentsList,
       AGENT_OPERATION.toolsCall,
+      AGENT_OPERATION.toolFilesUpload,
       ...Object.values(CHANNEL_AGENT_OPERATION),
       AGENT_OPERATION.approvalsResolve,
     ]);
     expect(agent[0]).toMatchObject({ method: "GET", crud: ["read"], effects: "read-only" });
     // The contract requires an idempotency key for any operation that creates (validator rule).
     expect(agent[1]).toMatchObject({ method: "POST", crud: ["create"], effects: "external-effects", idempotency: "required" });
+    // Tool files (#59): the harness-only raw upload behind tools.call file arguments.
+    expect(agent[2]).toMatchObject({ method: "POST", path: "/api/marketplace/v1/agent/tool-files", crud: ["create"], effects: "writes-app-state", idempotency: "required" });
     const owner = MARKETPLACE_MANIFEST.operations.filter((operation) => operation.audience === "owner").map((operation) => operation.id);
     expect(owner).toEqual(expect.arrayContaining([
       "marketplace.consents.request",
@@ -317,7 +320,8 @@ describe("tealbrick.app.json", () => {
     // + 3: Channels inbound (marketplace.channel-inbound-routes.update, -events.list, -settings.update; P2 scope 2.2).
     // + 4: the Buzz identity (marketplace.channel-buzz-identity.get|update, -buzz-key.generate, -buzz-auth-tag.revoke).
     // + 4: routes v2 people (marketplace.channel-people-policy.get|update, marketplace.channel-people.list|revoke).
-    expect(owner.length).toBe(16 + 16 + 3 + 3 + 4 + 4);
+    // + 1: the owner preview/download of a held call's tool file (marketplace.approvals.file, #59).
+    expect(owner.length).toBe(16 + 16 + 3 + 3 + 4 + 4 + 1);
     // Channels: the account-sourced bot tokens (and the Slack signing secret) arrive as provider env, never stored by Portal.
     const channels = MARKETPLACE_MANIFEST.settings?.groups.find((group) => group.id === "channels");
     expect(channels?.fields.map((field) => [field.key, field.env])).toEqual([

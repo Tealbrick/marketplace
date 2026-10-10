@@ -50,6 +50,8 @@ export const MARKETPLACE_APP_MAJOR = MARKETPLACE_MANIFEST.app.major;
 export const AGENT_OPERATION = Object.freeze({
   consentsList: "marketplace.consents.list",
   toolsCall: "marketplace.tools.call",
+  /** Tool files (#59): harness-only raw upload of a file argument for tools.call (the model never calls it). */
+  toolFilesUpload: "marketplace.tool-files.upload",
   approvalsResolve: "marketplace.approvals.resolve",
 } as const);
 

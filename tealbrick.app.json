@@ -117,6 +117,18 @@
       "summary": "Run one consented connector action for the calling agent; the consent must belong to the caller"
     },
     {
+      "id": "marketplace.tool-files.upload",
+      "crud": [
+        "create"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/v1/agent/tool-files",
+      "idempotency": "required",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Harness only: upload the raw bytes of a file argument (?consentId=&name=, real Content-Type) for the caller's consent whose action takes a file; returns {fileRef, sha256, bytes, contentType, filename, expiresAt} to use once in marketplace.tools.call"
+    },
+    {
       "id": "marketplace.channels.list",
       "crud": [
         "read"
@@ -592,6 +604,19 @@
       "effects": "writes-app-state",
       "review": "none",
       "summary": "Deny a held connector call",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.approvals.file",
+      "crud": [
+        "read"
+      ],
+      "method": "GET",
+      "path": "/api/marketplace/company-box/approvals/{approvalId}/files/{fileRef}",
+      "idempotency": "none",
+      "effects": "read-only",
+      "review": "none",
+      "summary": "Preview or download an image or PDF a held connector call will upload",
       "audience": "owner"
     },
     {
