@@ -324,6 +324,32 @@ describe("Telegram webhook receiver", () => {
   });
 });
 
+describe("Telegram channel-post self-loop (review F4)", () => {
+  it("drops channel posts that are our own sends (receipt message ids) or came via our bot", async () => {
+    const { f, telegramApi, enable } = await setup();
+    const channel = await f.createChannel({ provider: "telegram", slug: "community", externalId: "-1001234" });
+    f.consentFor("agent-1", channel);
+    await f.proposeAndApprove(channel.id);
+    const sent = await f.post(channel.id, { text: "Our announcement" }, "own-post-0001");
+    expect(sent.json().receipt.resultIds).toEqual(["99"]);
+    expect((await enable(channel.id)).statusCode).toBe(200);
+    const set = telegramApi.calls.find((call) => call.method === "setWebhook")!;
+    const deliver = (update: unknown) =>
+      f.app.inject({
+        method: "POST",
+        url: `${TELEGRAM_WEBHOOK_PREFIX}${String(set.body.url).split("/").pop()}`,
+        headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": String(set.body.secret_token) },
+        payload: update as Record<string, unknown>,
+      });
+    const chat = { id: -1001234, type: "channel", title: "Community" };
+    await deliver({ update_id: 60, channel_post: { message_id: 99, chat, sender_chat: chat, text: "Our announcement" } });
+    await deliver({ update_id: 61, channel_post: { message_id: 100, chat, sender_chat: chat, via_bot: { id: 4242, is_bot: true, first_name: "bot" }, text: "inline" } });
+    await deliver({ update_id: 62, channel_post: { message_id: 101, chat, sender_chat: chat, text: "An admin wrote this" } });
+    await f.runtime.inbound.pipeline.settled();
+    expect(f.store.channels.inbound.listEvents(TENANT, { limit: 10 }).map((event) => event.messageId)).toEqual(["101"]);
+  });
+});
+
 describe("Telegram webhook lifecycle (review F3, S1)", () => {
   it("serializes concurrent enables: one setWebhook for two channels", async () => {
     const { f, telegramApi, enable } = await setup();

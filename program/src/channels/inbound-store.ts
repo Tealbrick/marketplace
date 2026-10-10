@@ -462,6 +462,29 @@ export class InboundStore {
     return { textPurged, deleted };
   }
 
+  /**
+   * Message ids this workspace posted to one platform chat since `since` (from receipts), for self-loop checks:
+   * Telegram delivers a bot's own channel posts back as `channel_post` updates without a bot sender.
+   */
+  recentOutboundMessageIds(workspaceSlug: string, provider: string, externalChannelId: string, since: Date): Set<string> {
+    const rows = this.db
+      .prepare(
+        `SELECT r.result_ids_json FROM channel_receipt r JOIN channel c ON c.id = r.channel_id AND c.workspace_slug = r.workspace_slug
+         WHERE r.workspace_slug = ? AND r.provider = ? AND json_extract(c.destination_json, '$.externalId') = ? AND r.created_at >= ?
+         ORDER BY r.created_at DESC LIMIT 500`,
+      )
+      .all(workspaceSlug, provider, externalChannelId, since.toISOString()) as Row[];
+    const ids = new Set<string>();
+    for (const row of rows) {
+      try {
+        for (const id of JSON.parse(String(row.result_ids_json)) as unknown[]) if (typeof id === "string") ids.add(id);
+      } catch {
+        // A malformed row contributes nothing.
+      }
+    }
+    return ids;
+  }
+
   // ----- reply links ----------------------------------------------------------
 
   /** Records (or confirms) the reply target of one reply post. A different event or target for the key is a conflict. */

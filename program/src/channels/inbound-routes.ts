@@ -122,6 +122,21 @@ export function registerInboundRoutes(deps: InboundRoutesDeps): void {
     );
   });
 
+  /**
+   * Review F4: Telegram sends the bot's own channel posts back as `channel_post` updates (sender = the channel, no
+   * bot `from`). Such a post is ours when it came via our bot or carries a message id we posted to that chat in
+   * the last 48 hours (receipts).
+   */
+  const ownTelegramChannelPost = (update: unknown, message: InboundMessage, botId: string | null, now: Date): boolean => {
+    const record = update && typeof update === "object" ? (update as Record<string, unknown>) : {};
+    const post = (record.channel_post ?? record.edited_channel_post) as Record<string, unknown> | undefined;
+    if (!post || typeof post !== "object") return false;
+    const viaBot = post.via_bot as { id?: unknown } | undefined;
+    if (botId && viaBot && String(viaBot.id) === botId) return true;
+    const since = new Date(now.getTime() - 48 * 3_600_000);
+    return deps.inbound.recentOutboundMessageIds(deps.organizationId, "telegram", message.channelId, since).has(message.messageId);
+  };
+
   deps.app.post(
     `${TELEGRAM_WEBHOOK_PREFIX}:segment`,
     {
@@ -171,7 +186,7 @@ export function registerInboundRoutes(deps: InboundRoutesDeps): void {
       if (seen.destinations.length > 0) deps.inbound.recordTelegramDestinations(deps.organizationId, seen.destinations, now);
       const botId = deps.botIdFor("telegram");
       const parsed = parseTelegramUpdate(update, botId ? { botId } : {});
-      if (parsed.kind === "message" && !parsed.edited) hand(parsed.message);
+      if (parsed.kind === "message" && !parsed.edited && !ownTelegramChannelPost(update, parsed.message, botId, now)) hand(parsed.message);
       return reply.code(200).send({});
     },
   );
