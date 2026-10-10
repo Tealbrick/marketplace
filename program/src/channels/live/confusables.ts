@@ -7,6 +7,8 @@
  * Latin, Greek, Cyrillic and Cherokee letters; where UTS #39 has an entry, it wins. Lookups run AFTER NFKC,
  * lowercasing and mark removal (Cherokee capitals are listed in both cases because `toLowerCase` maps them to the
  * U+AB70 block). Matching over-folds on purpose: a forbidden-term refusal may be a false positive, never a bypass.
+ * Keys that decompose under NFD (ё, й, ї: the base letter is looked up after mark removal) or that are more than one
+ * code point are not listed: they could never match.
  */
 import { UTS39_SKELETON } from "./confusables-data.js";
 
@@ -18,7 +20,7 @@ const LATIN_EXTENSIONS: Record<string, string> = {
   // Letters with strokes, hooks and other Latin lookalikes NFKC keeps.
   "ꞩ": "s", "ꞡ": "g", "ꞣ": "k", "ꞥ": "n", "ꞧ": "r", "ɑ": "a", "ɡ": "g", "ɩ": "i", "ȷ": "j",
   "ı": "i", "ł": "l", "ø": "o", "đ": "d", "ħ": "h", "ŀ": "l", "ß": "ss", "ɵ": "o", "ɔ": "o",
-  "ǀ": "l", "ʃ": "f", "ʒ": "3", "ƅ": "b", "Ɩ": "l", "Ʀ": "r", "ʀ̆": "r",
+  "ǀ": "l", "ʃ": "f", "ʒ": "3", "ƅ": "b", "Ɩ": "l", "Ʀ": "r",
 };
 
 const GREEK: Record<string, string> = {
@@ -28,9 +30,9 @@ const GREEK: Record<string, string> = {
 };
 
 const CYRILLIC: Record<string, string> = {
-  "а": "a", "б": "b", "в": "b", "г": "r", "д": "d", "е": "e", "ё": "e", "з": "3", "и": "u", "й": "u", "к": "k", "л": "n", "м": "m",
+  "а": "a", "б": "b", "в": "b", "г": "r", "д": "d", "е": "e", "з": "3", "и": "u", "к": "k", "л": "n", "м": "m",
   "н": "h", "о": "o", "п": "n", "р": "p", "с": "c", "т": "t", "у": "y", "ф": "f", "х": "x", "ц": "u", "ч": "4", "ш": "w", "щ": "w",
-  "ы": "bi", "ь": "b", "ѕ": "s", "і": "i", "ї": "i", "ј": "j", "ԁ": "d", "ԛ": "q", "ԝ": "w", "ӏ": "l", "һ": "h", "ү": "y", "ҳ": "x",
+  "ы": "bi", "ь": "b", "ѕ": "s", "і": "i", "ј": "j", "ԁ": "d", "ԛ": "q", "ԝ": "w", "ӏ": "l", "һ": "h", "ү": "y", "ҳ": "x",
   "ҫ": "c", "ԍ": "g", "ɡ": "g", "ѵ": "v", "ѡ": "w", "ꙇ": "i",
 };
 
@@ -38,7 +40,7 @@ const CYRILLIC: Record<string, string> = {
 const CHEROKEE_CAPITALS: Record<number, string> = {
   0x13a0: "d", 0x13a1: "r", 0x13a2: "t", 0x13a5: "i", 0x13a9: "y", 0x13aa: "a", 0x13ab: "j", 0x13ac: "e", 0x13b3: "w", 0x13b7: "m",
   0x13bb: "h", 0x13bd: "y", 0x13c0: "g", 0x13c2: "h", 0x13c3: "z", 0x13cf: "b", 0x13d9: "v", 0x13da: "s", 0x13de: "l", 0x13df: "c",
-  0x13e2: "p", 0x13e6: "k", 0x13f4: "b",
+  0x13d4: "w", 0x13e2: "p", 0x13e6: "k", 0x13f4: "b",
 };
 
 function cherokee(): Record<string, string> {

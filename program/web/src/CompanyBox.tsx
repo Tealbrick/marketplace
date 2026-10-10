@@ -245,27 +245,43 @@ async function sha256OfBlob(blob: Blob): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-function LiveClipView({ approvalId, live, onHeard }: { approvalId: string; live: NonNullable<CompanyBoxApproval["live"]>; onHeard: (playedSha256: string) => void }) {
-  const clip = useQuery({
-    queryKey: ["live-clip", approvalId],
-    queryFn: async () => {
+/**
+ * A held huddle clip (live sessions, review H1c): nothing is fetched until the owner clicks Play. The page fetches the
+ * exact held bytes (strict owner gate, CSRF header), checks their SHA-256 against the hold, plays them from a blob URL,
+ * and reports the hash only when playback ENDED; Approve stays off until then.
+ */
+export function LiveClipView({ approvalId, live, onHeard }: { approvalId: string; live: NonNullable<CompanyBoxApproval["live"]>; onHeard: (playedSha256: string) => void }) {
+  const [clip, setClip] = useState<{ url: string; sha256: string | null; played: string } | null>(null);
+  const [error, setError] = useState<Error | null>(null);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => () => {
+    if (clip) URL.revokeObjectURL(clip.url);
+  }, [clip]);
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
       const { blob, sha256 } = await apiBlob(`/api/marketplace/channels/live/clips/${encodeURIComponent(approvalId)}`);
-      // The SHA-256 of the bytes this page plays (sent with the approval; the server compares it with the held clip).
-      return { url: URL.createObjectURL(blob), sha256, played: await sha256OfBlob(blob) };
-    },
-    retry: false,
-    staleTime: Infinity,
-  });
+      setClip({ url: URL.createObjectURL(blob), sha256, played: await sha256OfBlob(blob) });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught : new Error("The clip could not be loaded."));
+    } finally {
+      setLoading(false);
+    }
+  };
+  const matches = clip !== null && clip.sha256 === live.clipSha256 && clip.played === live.clipSha256;
   return <div className="live-clip" aria-label="Huddle clip to approve">
     <p>Play in a live huddle, once: clip <code title={live.clipSha256}>{live.clipSha256.slice(0, 16)}</code> · session <code>{live.sessionId.slice(0, 12)}</code></p>
     <p><strong>Transcript (stated by the agent, not verified):</strong> {live.transcript}</p>
-    {clip.error ? <InlineError error={clip.error as Error} /> : clip.data
-      ? <>
-        <audio controls src={clip.data.url} onPlay={() => onHeard(clip.data!.played)} aria-label="Play the clip" />
-        {(clip.data.sha256 !== live.clipSha256 || clip.data.played !== live.clipSha256) && <p role="alert">The served clip does not match the held SHA-256. Do not approve.</p>}
-      </>
-      : <span className="muted-detail">Loading the clip…</span>}
-    <p className="muted-detail">Digest <code title={live.digest}>{live.digest.slice(0, 32)}</code>{live.played ? " · played" : ""}</p>
+    {error && <InlineError error={error} />}
+    {!clip
+      ? <Button size="small" disabled={loading} onClick={() => void load()}>{loading ? <LoaderCircle className="spin" size={14} /> : null}Play the clip</Button>
+      : <>
+        <audio controls autoPlay src={clip.url} onEnded={() => matches && onHeard(clip.played)} aria-label="Clip player" />
+        {!matches && <p role="alert">The served clip does not match the held SHA-256. Do not approve.</p>}
+        <p className="muted-detail">Listen to the end to enable Approve.</p>
+      </>}
+    <p className="muted-detail">Digest <code title={live.digest}>{live.digest.slice(0, 32)}</code>{live.usedByAgent ? " · already used by the agent" : ""}</p>
   </div>;
 }
 
@@ -289,7 +305,7 @@ function ApprovalRow({ approval, onDecided }: { approval: CompanyBoxApproval; on
   });
   const pending = approval.state === "pending";
   const payload = channelHold ? (full.data ? full.data.payloadView ?? null : undefined) : undefined;
-  const reviewable = approval.live ? heard === approval.live.clipSha256 : channelHold ? Boolean(payload && !("error" in payload) && payload.matchesHeldDigest) : Boolean(full.data);
+  const reviewable = approval.live ? heard !== null && heard === approval.live.clipSha256 : channelHold ? Boolean(payload && !("error" in payload) && payload.matchesHeldDigest) : Boolean(full.data);
   const title = channelHold ? actionTitle(channelHold.action, channelHold.label ?? "a channel") : `${approval.app} · ${approval.operation.title}`;
   return <div className="company-box-approval" aria-label={channelHold ? title : `${approval.app}: ${approval.operation.title}`}>
     <div>

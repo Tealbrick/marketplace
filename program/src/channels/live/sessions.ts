@@ -613,7 +613,11 @@ export function createLiveSessionManager(deps: LiveSessionManagerDeps) {
   };
 
   /** Retention: transcript text after the inbound text retention. */
-  const purge = (now: Date) => live.purgeTranscripts(org, new Date(now.getTime() - deps.retentionDays() * DAY_MS), now);
+  const purge = (now: Date) => {
+    // Clip play records outlive their hold (24 h) by a day at most.
+    live.purgeClipPlays(org, new Date(now.getTime() - 2 * DAY_MS));
+    return live.purgeTranscripts(org, new Date(now.getTime() - deps.retentionDays() * DAY_MS), now);
+  };
 
   /** Stops every running session (app close). */
   const close = async () => {

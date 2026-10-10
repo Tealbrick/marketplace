@@ -5506,7 +5506,8 @@ export async function buildMarketplaceApp(
               channelId: String(approval.arguments.channelId ?? ""),
               digest: approval.fingerprint,
               transcript: String(approval.arguments.transcript ?? ""),
-              played: options.store.channels.live.clipUsed(approval.id),
+              // The agent already played the approved clip in the huddle (single use); not the owner's playback.
+              usedByAgent: options.store.channels.live.clipUsed(approval.id),
             },
           }
         : {}),

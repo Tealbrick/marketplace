@@ -41,9 +41,12 @@ describe("forbidden-term confusables", () => {
   });
 
   it("matches common Cyrillic, Greek and stroked-Latin smuggling of a forbidden term", () => {
-    for (const text of ["sесrеt plan", "ѕecret plan", "secreτ plan", "secret pƖan"]) {
+    for (const text of ["sесrеt plan", "ѕecret plan", "secreτ plan", "secret pƖan", "secret pɩan"]) {
       expect(forbiddenTermsIn(text, ["secret"]), text).toEqual(["secret"]);
     }
     expect(forbiddenTermsIn("a perfectly normal sentence", ["secret"])).toEqual([]);
+    // Re-review follow-ups: Cherokee Ꮤ (both cases) folds to w, Latin Ɩ to l.
+    for (const text of ["Ꮤell done", "ꮤell done"]) expect(forbiddenTermsIn(text, ["well"]), text).toEqual(["well"]);
+    expect(forbiddenTermsIn("pƖan", ["plan"])).toEqual(["plan"]);
   });
 });

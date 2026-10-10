@@ -661,6 +661,12 @@ export class LiveStore {
     );
   }
 
+  /** Retention: play records older than `before` (holds live at most 24 h, so these can approve nothing). */
+  purgeClipPlays(workspaceSlug: string, before: Date): number {
+    const result = this.db.prepare("DELETE FROM channel_live_clip_play WHERE workspace_slug = ? AND served_at < ?").run(workspaceSlug, iso(before));
+    return Number(result.changes);
+  }
+
   clipUsed(approvalId: string): boolean {
     return Boolean(this.db.prepare("SELECT 1 FROM channel_live_clip_use WHERE approval_id = ?").get(approvalId));
   }

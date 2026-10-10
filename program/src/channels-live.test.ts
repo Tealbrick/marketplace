@@ -13,7 +13,7 @@ import { BUZZ_IDENTITY_ROUTE } from "./channels/buzz-identity-routes.js";
 import { encodeFrame, HUDDLE_FLAG_DTX } from "./channels/huddle/frame.js";
 import { createFakeHuddleRelay, type FakeHuddleRelay } from "./channels/huddle/huddle-test-relay.js";
 import { createFakeSpeechProvider, guardedTestFactory, opusPacket, waitFor } from "./channels/huddle/test-support.js";
-import { liveClipDigest } from "./channels/live/routes.js";
+import { LIVE_CLIP_APPROVAL_TEXT, liveClipDigest, recordWhenFullySent } from "./channels/live/routes.js";
 import { forbiddenTermsIn } from "./channels/live/sessions.js";
 import { ownerKeyFingerprint } from "./channels/owner-key.js";
 import { createFakeBuzzRelay, signAuthTag, signTestEvent } from "./channels/providers/buzz-test-relay.js";
@@ -671,6 +671,8 @@ describe("live sessions: speaking", () => {
     expect((await speak(first.sessionId, "about the ｓｅｃｒｅｔ project")).json().error).toBe("live_forbidden_term");
     const held = await speak(first.sessionId);
     expect(held.statusCode, held.body).toBe(202);
+    // No Buzz approval code for a clip: it is approved only in Marketplace after playback.
+    expect(held.json().approvalText).toBe(LIVE_CLIP_APPROVAL_TEXT);
     const record = t.f.store.channels.live.getGrant(TENANT, grant.id)!;
     expect(held.json().digest).toBe(liveClipDigest(record.digest, first.sessionId, sha));
     expect((await speak(first.sessionId)).json().approvalId).toBe(held.json().approvalId);
@@ -690,11 +692,21 @@ describe("live sessions: speaking", () => {
     expect(buzz.json().error).toBe("live_clip_requires_playback");
     expect((await t.f.owner("GET", `${O}/clips/${approvalId}`)).statusCode).toBe(403);
     expect((await t.f.app.inject({ method: "GET", url: `${O}/clips/${approvalId}`, headers: { ...(await t.strictHeaders()), range: "bytes=0-10" } })).statusCode).toBe(416);
+    // Re-review H1c: HEAD (and any non-GET method) is 405 and records nothing; the approval stays refused.
+    const playRows = () => (t.f.store.channels.live as unknown as { db: DatabaseSync }).db.prepare("SELECT COUNT(*) AS n FROM channel_live_clip_play").get() as { n: number };
+    for (const method of ["HEAD", "POST", "PUT", "DELETE"] as const) {
+      const other = await t.f.app.inject({ method, url: `${O}/clips/${approvalId}`, headers: await t.strictHeaders() });
+      expect(other.statusCode, method).toBe(405);
+    }
+    expect(playRows().n).toBe(0);
+    expect((await strictApprove(await t.strictHeaders())).json().error).toBe("live_clip_requires_playback");
     // Played to ANOTHER owner session: this session still has not listened.
     const other = await t.otherOwnerSession();
     expect((await t.f.app.inject({ method: "GET", url: `${O}/clips/${approvalId}`, headers: other })).statusCode).toBe(200);
     expect((await strictApprove(await t.strictHeaders())).json().error).toBe("live_clip_requires_playback");
     const played = await t.f.app.inject({ method: "GET", url: `${O}/clips/${approvalId}`, headers: await t.strictHeaders() });
+    // A full GET to this session is recorded once the whole body was sent.
+    await waitFor(() => playRows().n === 2, 3000, "play record");
     expect(played.statusCode).toBe(200);
     expect(played.headers["content-type"]).toBe("audio/ogg");
     expect(played.headers["content-disposition"]).toBe("inline");
@@ -702,7 +714,7 @@ describe("live sessions: speaking", () => {
     expect(played.headers["x-content-sha256"]).toBe(sha);
     expect(Buffer.compare(played.rawPayload, clip)).toBe(0);
     const listed = await t.f.owner("GET", "/api/marketplace/company-box/approvals?state=pending");
-    expect(listed.json().approvals.find((entry: { id: string }) => entry.id === approvalId).live).toMatchObject({ clipSha256: sha, sessionId: first.sessionId, transcript: "Welcome to the call", played: false });
+    expect(listed.json().approvals.find((entry: { id: string }) => entry.id === approvalId).live).toMatchObject({ clipSha256: sha, sessionId: first.sessionId, transcript: "Welcome to the call", usedByAgent: false });
     // The page must report the SHA-256 of what it played.
     expect((await strictApprove(await t.strictHeaders(), "0".repeat(64))).json().error).toBe("live_clip_sha_mismatch");
     expect((await strictApprove(await t.strictHeaders(), "")).json().error).toBe("live_clip_sha_mismatch");
@@ -735,6 +747,32 @@ describe("live sessions: speaking", () => {
 });
 
 describe("security review of PR #53", () => {
+  it("H1c: a play is recorded only when the response finished with the whole body (an aborted GET records nothing)", async () => {
+    const { EventEmitter } = await import("node:events");
+    const fake = () => {
+      const emitter = new EventEmitter() as InstanceType<typeof EventEmitter> & { write: (chunk: unknown) => boolean; end: (chunk?: unknown) => void };
+      emitter.write = () => true;
+      emitter.end = () => undefined;
+      return emitter;
+    };
+    const recorded: string[] = [];
+    const aborted = fake();
+    recordWhenFullySent(aborted, 10, () => recorded.push("aborted"));
+    aborted.write(Buffer.alloc(4));
+    aborted.emit("close");
+    const short = fake();
+    recordWhenFullySent(short, 10, () => recorded.push("short"));
+    short.end(Buffer.alloc(9));
+    short.emit("finish");
+    const full = fake();
+    recordWhenFullySent(full, 10, () => recorded.push("full"));
+    full.write(Buffer.alloc(4));
+    full.end(Buffer.alloc(6));
+    full.emit("close");
+    full.emit("finish");
+    expect(recorded).toEqual(["full"]);
+  });
+
   it("M4: forbidden terms survive zero-width, soft hyphen, ligatures, full-width, Turkish İ, combining marks and Cyrillic lookalikes", async () => {
     const terms = ["secret-project", "confidential", "istanbul"];
     const cases = [

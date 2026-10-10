@@ -62,6 +62,39 @@ export function liveClipDigest(grantDigest: string, sessionId: string, clipSha25
 }
 export const liveClipApprovalKey = (sessionId: string, clipSha256: string) => `live-clip.${sessionId}.${clipSha256}`;
 
+export const LIVE_CLIP_APPROVAL_TEXT =
+  "The owner approves this clip in Marketplace (Approvals) after playing it there; Buzz and TBD replies cannot approve clips.";
+
+/**
+ * Calls `onComplete` once the response finished AND exactly `expected` body bytes were handed to it (counted at
+ * write/end). A response that closes before finishing (client abort) or writes fewer bytes calls nothing.
+ */
+export function recordWhenFullySent(
+  raw: { write: (...args: never[]) => unknown; end: (...args: never[]) => unknown; once: (event: "finish", listener: () => void) => unknown },
+  expected: number,
+  onComplete: () => void,
+): void {
+  let written = 0;
+  const count = (chunk: unknown) => {
+    if (chunk === undefined || chunk === null || typeof chunk === "function") return;
+    written += chunk instanceof Uint8Array ? chunk.byteLength : Buffer.byteLength(String(chunk));
+  };
+  const target = raw as unknown as { write: (chunk: unknown, ...rest: unknown[]) => unknown; end: (chunk?: unknown, ...rest: unknown[]) => unknown };
+  const write = target.write.bind(raw);
+  const end = target.end.bind(raw);
+  target.write = (chunk: unknown, ...rest: unknown[]) => {
+    count(chunk);
+    return write(chunk, ...rest);
+  };
+  target.end = (chunk?: unknown, ...rest: unknown[]) => {
+    count(chunk);
+    return end(chunk, ...rest);
+  };
+  raw.once("finish", () => {
+    if (written === expected) onComplete();
+  });
+}
+
 /** The owner launch session a request belongs to: SHA-256 of the operator session cookie (never the cookie itself). */
 export function ownerSessionRef(cookieHeader: string | string[] | undefined): string | null {
   const header = Array.isArray(cookieHeader) ? cookieHeader.join(";") : cookieHeader;
@@ -381,7 +414,9 @@ export function registerLiveRoutes(ctx: LiveRouteContext): void {
     const existing = store.findCompanyBoxApprovalByKey({ workspaceSlug: org, agentId: caller.agentId, idempotencyKey: approvalKey });
     const pending = (approval: CompanyBoxApproval) => {
       reply.code(202);
-      return { ok: true, schema: 1, status: "approval_pending", approvalId: approval.id, digest, clipSha256, approvalText: `approve ${digest.slice(0, NOSTR_MIN_PREFIX_HEX)}` };
+      // A clip is approved only in the Marketplace Approvals view after the owner played it (Buzz/TBD replies are
+      // refused for clips), so there is no `approve <prefix>` text to post.
+      return { ok: true, schema: 1, status: "approval_pending", approvalId: approval.id, digest, clipSha256, approvalText: LIVE_CLIP_APPROVAL_TEXT };
     };
     if (existing) {
       if (existing.sourceKind !== "live-clip" || existing.fingerprint !== digest) return fail(reply, 409, "live_clip_approval_conflict");
@@ -591,7 +626,17 @@ export function registerLiveRoutes(ctx: LiveRouteContext): void {
    * re-encoded), `audio/ogg`, inline, no-store, with the SHA-256 in `x-content-sha256`. The pinned owner's own launch
    * session only (the owner UI fetches it with its CSRF header and plays a blob URL).
    */
-  app.get(`${OWNER_PREFIX}/clips/:approvalId`, async (request, reply) => {
+  // Re-review H1c: only GET serves a clip. HEAD (Fastify adds it to every GET unless told not to) and every other
+  // method answer 405 and never record a play.
+  app.route({
+    method: ["HEAD", "POST", "PUT", "PATCH", "DELETE"],
+    url: `${OWNER_PREFIX}/clips/:approvalId`,
+    handler: async (_request, reply) => {
+      reply.header("allow", "GET").header("cache-control", "no-store");
+      return fail(reply, 405, "method_not_allowed");
+    },
+  });
+  app.get(`${OWNER_PREFIX}/clips/:approvalId`, { exposeHeadRoute: false }, async (request, reply) => {
     const principal = await ctx.owner(request, reply);
     if (!principal) return ctx.ownerDenied(request);
     const gate = await ctx.strictOwner(request, reply);
@@ -610,8 +655,16 @@ export function registerLiveRoutes(ctx: LiveRouteContext): void {
     } catch {
       return fail(reply, 410, "channel_attachment_gone");
     }
-    // Recorded server-side: this owner session was served these exact bytes for this hold digest, now.
-    live.recordClipPlay({ workspaceSlug: org, approvalId: approval.id, ownerSessionRef: session, clipDigest: approval.fingerprint, clipSha256, bytes: bytes.length, now: new Date() });
+    // Recorded server-side ONLY when the whole body was written and the response finished (an aborted GET leaves no
+    // record): this owner session was served these exact bytes for this hold digest.
+    const length = bytes.length;
+    recordWhenFullySent(reply.raw, length, () => {
+      try {
+        live.recordClipPlay({ workspaceSlug: org, approvalId: approval.id, ownerSessionRef: session, clipDigest: approval.fingerprint, clipSha256, bytes: length, now: new Date() });
+      } catch {
+        // No record means no approval; the owner plays it again.
+      }
+    });
     reply
       .header("content-type", "audio/ogg")
       .header("content-disposition", "inline")

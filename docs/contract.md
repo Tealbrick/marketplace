@@ -1170,11 +1170,17 @@ owner's own launch session (strict gate) AND a server-side record that the playb
 clip (whole body; `Range` requests are refused) to that same session after the hold was created and within its TTL,
 plus the page's SHA-256 of the played bytes (`{playedSha256}`); otherwise `409 live_clip_requires_playback` /
 `live_clip_sha_mismatch`. Buzz replies and TBD assertions cannot prove listening: `marketplace.approvals.resolve`
-refuses clip holds with `409 live_clip_requires_playback`. Forbidden terms are matched on a skeleton of both sides (NFKC,
+refuses clip holds with `409 live_clip_requires_playback`, and a clip hold's `approvalText` points to the Marketplace
+Approvals view instead of an `approve <prefix>` code. Only `GET` serves a clip (`HEAD` and every other method answer
+405 and record nothing), and the play is recorded only when the response finished with the whole body (an aborted
+download records nothing); the owner UI fetches the clip only when the owner clicks Play and enables Approve only
+after playback ended with a matching SHA-256. Play records are purged after two days. Forbidden terms are matched on a skeleton of both sides (NFKC,
 lowercase, combining marks, format characters and invisible letters (Hangul fillers) removed, a vendored UTS #39
 confusables subset folded (Latin extensions and small capitals, Greek, Cyrillic, Cherokee:
 `program/src/channels/live/confusables.ts`), letters and digits only); speak-live text and clip transcripts with
-format characters or invisible letters are refused (`live_text_hidden_characters`).
+format characters or invisible letters are refused (`live_text_hidden_characters`). Operator note: the folding over-matches on purpose,
+so Cyrillic or Greek speech can be flagged or refused for a Latin term (for example `мах`, `сор`, `нор` read as `max`,
+`cop`, `hop`); a false refusal is accepted, a bypass is not.
 The bound consent must stay active and `outward`.
 
 Receipts. `channel_live_transcript` keeps what the agent heard (other participants: `framing:
