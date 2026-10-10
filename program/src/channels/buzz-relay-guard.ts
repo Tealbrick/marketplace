@@ -150,3 +150,32 @@ export function guardedRelaySocketFactory(options: { allowPrivate: boolean; look
   const dispatcher = guardedRelayAgent(options);
   return (url) => new UndiciWebSocket(url, { dispatcher }) as unknown as GatewaySocket;
 }
+
+/** A WebSocket that carries binary frames too (the huddle audio socket). */
+export type BinarySocket = {
+  binaryType?: string;
+  send(data: string | Uint8Array): void;
+  close(code?: number, reason?: string): void;
+  onmessage: ((event: { data: unknown }) => void) | null;
+  onclose: ((event: { code: number }) => void) | null;
+  onerror: ((event: unknown) => void) | null;
+};
+
+export type BinarySocketFactory = (url: string) => BinarySocket;
+
+/**
+ * The huddle audio socket's default factory (`/huddle/{channel}/audio`): the same guarded, address-pinned undici
+ * agent as the relay socket (every connect re-resolves and checks every answer), binary frames as ArrayBuffer.
+ * An IP-literal host never reaches a `lookup` (net.connect skips it for addresses), so it is checked here, before
+ * the socket exists: a blocked address throws `relay_address_blocked`.
+ */
+export function guardedHuddleSocketFactory(options: { allowPrivate: boolean; lookup?: RelayLookup }): BinarySocketFactory {
+  const dispatcher = guardedRelayAgent(options);
+  return (url) => {
+    const host = new URL(url).hostname.replace(/^\[|\]$/gu, "");
+    if (!options.allowPrivate && isIP(host) !== 0 && isBlockedRelayAddress(host)) throw new Error("relay_address_blocked");
+    const socket = new UndiciWebSocket(url, { dispatcher });
+    socket.binaryType = "arraybuffer";
+    return socket as unknown as BinarySocket;
+  };
+}
