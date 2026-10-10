@@ -9,10 +9,12 @@ import { MarketplaceOperatorSessionManager } from "../operator-auth.js";
 import { SqliteMarketplaceStore } from "../store.js";
 import type { ConnectorCapability } from "../types.js";
 import type { OwnerApprovalVerifier } from "./approvals.js";
+import { createBuzzProvider } from "./providers/buzz.js";
 import { createDiscordProvider } from "./providers/discord.js";
 import { createSlackProvider } from "./providers/slack.js";
+import { createTeamsProvider } from "./providers/teams.js";
 import { createTelegramProvider } from "./providers/telegram.js";
-import type { ChannelDestination, ChannelProvider, ChannelProviderId, OutboundMessage, SendResult } from "./providers/types.js";
+import type { ActionResult, ChannelDestination, ChannelProvider, ChannelProviderId, OutboundMessage, PersonQuery, SendResult } from "./providers/types.js";
 import { CHANNEL_AGENT_OPERATION } from "./routes.js";
 
 export const PORTAL = "https://portal.test";
@@ -29,13 +31,45 @@ export const GRANT_ALL = `tbag_${"d".repeat(43)}`;
 const AGENT_OPS = [...Object.values(CHANNEL_AGENT_OPERATION), AGENT_OPERATION.approvalsResolve, AGENT_OPERATION.consentsList, AGENT_OPERATION.toolsCall];
 
 export type FakeSend = { credential: string | null | undefined; destination: ChannelDestination; message: OutboundMessage };
+/** A recorded routes v2 adapter call (reaction, edit, delete, person lookup, DM open). */
+export type FakeAction =
+  | { kind: "react"; destination: ChannelDestination; messageId: string; emoji: string; remove: boolean }
+  | { kind: "edit"; destination: ChannelDestination; messageId: string; text: string }
+  | { kind: "remove"; destination: ChannelDestination; messageId: string }
+  | { kind: "findPerson"; query: PersonQuery }
+  | { kind: "openDirect"; userId: string };
 
-/** A provider with the real capability declaration whose send/discover/verify are recorded fakes. */
+/**
+ * A provider with the real capability declaration whose send/discover/verify are recorded fakes. The routes v2
+ * methods (react, edit, remove, findPerson, openDirect) are recorded fakes too, present only where the real
+ * adapter has them. `people` is the fake directory (`email` or `handle` → one person).
+ */
 export function fakeProvider(id: ChannelProviderId, token: string) {
-  const real: ChannelProvider = id === "telegram" ? createTelegramProvider() : id === "slack" ? createSlackProvider() : createDiscordProvider();
+  const real: ChannelProvider =
+    id === "telegram"
+      ? createTelegramProvider()
+      : id === "slack"
+        ? createSlackProvider()
+        : id === "teams"
+          ? createTeamsProvider({ graphEnabled: true })
+          : id === "buzz"
+            ? createBuzzProvider()
+            : createDiscordProvider();
   const sends: FakeSend[] = [];
+  const actions: FakeAction[] = [];
+  const actionReplies: ActionResult[] = [];
+  const people = new Map<string, { userId: string; displayName: string } | "ambiguous">();
   const replies: Array<SendResult | (() => Promise<SendResult>)> = [];
-  const ids = id === "telegram" ? ["-1001234", "-1005678"] : id === "slack" ? ["C0ANNOUNCE", "C0SECOND0"] : ["5550001", "5550002"];
+  const ids =
+    id === "telegram"
+      ? ["-1001234", "-1005678"]
+      : id === "slack"
+        ? ["C0ANNOUNCE", "C0SECOND0"]
+        : id === "teams"
+          ? ["19:announce@thread.tacv2", "19:second@thread.tacv2"]
+          : id === "buzz"
+            ? ["8f9c2a3e-0000-4000-8000-000000000001", "8f9c2a3e-0000-4000-8000-000000000002"]
+            : ["5550001", "5550002"];
   let destinations: ChannelDestination[] = [
     { type: "channel", externalId: ids[0]!, title: `${id} test chat`, ...(id === "discord" ? { parentId: "777" } : {}) },
     { type: "channel", externalId: ids[1]!, title: `${id} second chat`, ...(id === "discord" ? { parentId: "777" } : {}) },
@@ -59,9 +93,47 @@ export function fakeProvider(id: ChannelProviderId, token: string) {
       return next ?? { status: "sent", resultIds: [`m${sends.length}`], resultUrls: [`https://t.me/c/1234/${sends.length}`] };
     },
   };
+  if (real.react) {
+    provider.react = async (_credential, destination, messageId, emoji, options) => {
+      actions.push({ kind: "react", destination, messageId, emoji, remove: options?.remove === true });
+      return actionReplies.shift() ?? { status: "sent" };
+    };
+  }
+  if (real.edit) {
+    provider.edit = async (_credential, destination, messageId, message) => {
+      actions.push({ kind: "edit", destination, messageId, text: message.text });
+      const reply = actionReplies.shift();
+      return reply ? { ...reply, resultIds: reply.status === "sent" ? [messageId] : [], resultUrls: [] } : { status: "sent", resultIds: [messageId], resultUrls: [] };
+    };
+  }
+  if (real.remove) {
+    provider.remove = async (_credential, destination, messageId) => {
+      actions.push({ kind: "remove", destination, messageId });
+      return actionReplies.shift() ?? { status: "sent" };
+    };
+  }
+  if (real.findPerson) {
+    provider.findPerson = async (_credential, query) => {
+      actions.push({ kind: "findPerson", query });
+      const found = people.get((query.email ?? query.handle ?? "").toLowerCase());
+      if (found === "ambiguous") return { ok: false, reason: "ambiguous", errorCode: "person_ambiguous", detail: "more than one person matches" };
+      return found ? { ok: true, ...found } : { ok: false, reason: "not_found", errorCode: "person_not_found", detail: "no person matches" };
+    };
+  }
+  if (real.openDirect) {
+    provider.openDirect = async (_credential, userId) => {
+      actions.push({ kind: "openDirect", userId });
+      return { ok: true, destination: { type: "person", externalId: `dm-${userId}`, title: "Direct message", personId: userId } };
+    };
+  }
   return {
     provider,
     sends,
+    actions,
+    /** Queues the next reaction, edit or delete answers (default `sent`). */
+    actionReply: (...more: ActionResult[]) => void actionReplies.push(...more),
+    /** Adds a person to the fake directory under an email or handle (or marks the key ambiguous). */
+    addPerson: (key: string, person: { userId: string; displayName: string } | "ambiguous") => void people.set(key.toLowerCase(), person),
     reply: (...more: Array<SendResult | (() => Promise<SendResult>)>) => void replies.push(...more),
     setDestinations: (next: ChannelDestination[]) => {
       destinations = next;
@@ -154,7 +226,7 @@ export async function channelFixture(input: {
   const runtime = channelRuntimeOf(app);
   await runtime.ready;
 
-  const owner = (method: "GET" | "POST" | "PATCH", url: string, payload?: unknown, headers: Record<string, string> = {}) =>
+  const owner = (method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE", url: string, payload?: unknown, headers: Record<string, string> = {}) =>
     app.inject({ method, url, ...(payload !== undefined ? { payload: payload as Record<string, unknown> } : {}), headers });
   let ownerKey = 0;
   const createChannel = async (create: {
@@ -216,7 +288,7 @@ export async function channelFixture(input: {
   };
 
   const agent = (
-    method: "GET" | "POST",
+    method: "GET" | "POST" | "PATCH" | "DELETE",
     url: string,
     input: { payload?: unknown; key?: string | null; token?: string; headers?: Record<string, string> } = {},
   ) =>
