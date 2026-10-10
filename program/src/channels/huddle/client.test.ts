@@ -110,6 +110,25 @@ describe("HuddleAudioClient against a fake relay audio endpoint", () => {
     await client.stop();
   });
 
+  it("ignores joined/left/roster entries whose pubkey is not 64 lowercase hex", async () => {
+    const { client } = setup();
+    await client.join();
+    const bad = ["", "zz".repeat(32), "A1".repeat(32), "a1".repeat(31), "a1".repeat(33), 42];
+    for (const pubkey of bad) {
+      relay.sendControl(huddleId, { type: "joined", revision: 9, pubkey, peer_index: 7, epoch: 0, peers: [{ pubkey, peer_index: 8, epoch: 0 }] });
+      relay.sendControl(huddleId, { type: "roster", peers: [{ pubkey, peer_index: 9, epoch: 0 }] });
+      relay.sendControl(huddleId, { type: "left", revision: 10, pubkey, peer_index: 0, epoch: 0 });
+    }
+    const a = relay.addVirtualPeer(huddleId, PEER_A);
+    await waitFor(() => client.peers.length === 1, 2000, "valid peer");
+    expect(client.peers).toEqual([PEER_A]);
+    // A valid roster replaces the map; a bad entry inside it is skipped.
+    relay.sendControl(huddleId, { type: "roster", peers: [{ pubkey: PEER_B, peer_index: 3, epoch: 0 }, { pubkey: "nope", peer_index: 4, epoch: 0 }, { pubkey: client.selfPubkey, peer_index: 0, epoch: 0 }] });
+    await waitFor(() => client.peers.join() === PEER_B, 2000, "roster");
+    a.leave();
+    await client.stop();
+  });
+
   it("sends 20 ms frames with consecutive seq/ts, DTX flag and level", async () => {
     const { client } = setup();
     await client.join();

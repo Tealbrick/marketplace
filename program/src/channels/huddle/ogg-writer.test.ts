@@ -57,12 +57,52 @@ describe("Ogg/Opus writer", () => {
     expect(read.ok && read.packets.map((packet) => packet.length)).toEqual([255, 510, 3]);
   });
 
+  it("fills pages by segment count: large packets continue across pages with granule -1 where none ends", () => {
+    // 50 × 1300 B = 300 segments: more than one page can hold (used to throw ogg_page_too_many_segments).
+    const large = Array.from({ length: 50 }, (_unused, index) => opusPacket(index, 1300));
+    const ogg = writeOggOpus(large);
+    const list = pages(ogg).slice(2);
+    expect(list.every((page) => page.crcOk && page.segments.length <= 255)).toBe(true);
+    expect(list).toHaveLength(2);
+    // 1300 B = 5 × 255 + 25 → 6 segments; 255 segments hold 42 packets and 3 segments of the 43rd.
+    expect(list[0]).toMatchObject({ flags: 0x00, granule: 42n * 960n });
+    expect(list[1]).toMatchObject({ flags: 0x01 | 0x04, granule: 50n * 960n });
+    const read = readOggOpusPackets(ogg);
+    expect(read.ok && read.packets.map((packet) => Buffer.from(packet).toString("hex"))).toEqual(large.map((packet) => Buffer.from(packet).toString("hex")));
+
+    // One 64 KiB packet (258 segments) fills a whole page on which no packet ends (granule -1) and continues on the
+    // next page, then many small packets (some two segments long) follow.
+    const huge = opusPacket(7, 64 * 1024);
+    const mixed = [huge, ...Array.from({ length: 300 }, (_unused, index) => opusPacket(index, 3 + (index % 300)))];
+    const mixedOgg = writeOggOpus(mixed);
+    const mixedPages = pages(mixedOgg).slice(2);
+    expect(mixedPages.every((page) => page.crcOk && page.segments.length <= 255)).toBe(true);
+    expect(mixedPages.map((page) => page.sequence)).toEqual(mixedPages.map((_page, index) => index + 2));
+    expect(mixedPages[0]).toMatchObject({ flags: 0x00, granule: -1n });
+    expect(mixedPages[0]!.segments).toEqual(new Array(255).fill(255));
+    expect(mixedPages[1]!.flags & 0x01).toBe(0x01);
+    expect(mixedPages[1]!.segments.slice(0, 3)).toEqual([255, 255, 1]);
+    expect(mixedPages[1]!.granule).toBe(50n * 960n); // the huge packet + 49 small ones end on page 3
+    // Granules never decrease and the last one counts every packet.
+    const granules = mixedPages.map((page) => page.granule).filter((granule) => granule !== -1n);
+    expect([...granules].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))).toEqual(granules);
+    expect(mixedPages.at(-1)!.granule).toBe(BigInt(mixed.length * 960));
+    expect(mixedPages.filter((page) => (page.flags & 0x04) !== 0)).toHaveLength(1);
+    const mixedRead = readOggOpusPackets(mixedOgg);
+    expect(mixedRead.ok).toBe(true);
+    if (!mixedRead.ok) return;
+    expect(mixedRead.packets.map((packet) => packet.length)).toEqual(mixed.map((packet) => packet.length));
+    expect(Buffer.from(mixedRead.packets[0]!).equals(Buffer.from(huge))).toBe(true);
+    expect(mixedRead.info.durationSecs).toBeCloseTo((mixed.length * 960 - 312) / 48_000, 6);
+  });
+
   it("refuses empty input and invalid Opus packets", () => {
     expect(() => writeOggOpus([])).toThrow("ogg_opus_no_packets");
     expect(() => writeOggOpus([new Uint8Array(0)])).toThrow("ogg_opus_packet_invalid");
     // TOC code 3 with a zero frame count is not a valid packet.
     expect(() => writeOggOpus([Uint8Array.from([0xfb, 0x00])])).toThrow("ogg_opus_packet_invalid");
     expect(() => writeOggOpus([opusPacket(1)], { channels: 3 })).toThrow("ogg_opus_channels_unsupported");
+    expect(() => writeOggOpus([opusPacket(1, 64 * 1024 + 1)])).toThrow("ogg_opus_packet_invalid");
   });
 
   it("keeps readOggOpus results unchanged for the voice-message path", () => {

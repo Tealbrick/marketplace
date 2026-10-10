@@ -2,9 +2,11 @@
  * Speech-to-text and text-to-speech for huddles. Audio crosses this interface only as in-memory Ogg/Opus bytes
  * (RFC 7845); an implementation must not keep or log them.
  *
- * Implementations: the fake in `test-support.ts` (tests) and `createPortalVoiceSpeechProvider` in
- * `voice-speech.ts` (@tealbrick/voice, Portal-authorized endpoints; disabled unless explicitly enabled and not
- * reachable from any route until live-session grants exist, contract alpha.8).
+ * Implementations: the fake in `test-support.ts` (tests only for now).
+ * TODO(channels P2 wiring PR, with live-session grants / contract alpha.8): add the @tealbrick/voice-backed
+ * implementation (Portal-authorized speech endpoints; credentials stay in Portal / account connections) together
+ * with the dependency and the Node >= 24 engines alignment. Note: @tealbrick/voice 0.3.0-rc.16 synthesis returns
+ * MP3 only; a huddle needs Ogg/Opus (20 ms packets), so it needs an `opus` output option upstream.
  */
 export type TranscriptionSegment = { startSecs: number; endSecs: number; text: string };
 

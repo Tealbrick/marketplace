@@ -54,7 +54,8 @@ export function createSpeaker(options: SpeakerOptions) {
     const parsed = readOggOpusPackets(oggOpus);
     if (!parsed.ok) throw new HuddleError("speak_audio_invalid");
     const packets = parsed.packets;
-    if (parsed.info.channels > 2) throw new HuddleError("speak_audio_invalid");
+    // Huddle audio is mono (the Desktop sends mono VOIP Opus); downmixing needs a decoder and is out of scope.
+    if (parsed.info.channels !== 1) throw new HuddleError("huddle_audio_not_mono");
     for (const packet of packets) {
       if (packet.length > HUDDLE_MAX_PACKET_BYTES) throw new HuddleError("speak_packet_too_large");
       if (opusPacketSamples(packet) !== HUDDLE_FRAME_SAMPLES) throw new HuddleError("speak_packet_duration_unsupported");

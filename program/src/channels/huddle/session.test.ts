@@ -233,6 +233,7 @@ describe("huddle speak pipeline", () => {
     sender.state = "joined";
     await expect(speaker.speak(new Uint8Array([1, 2, 3]))).rejects.toThrow("speak_audio_invalid");
     await expect(speaker.speak(writeOggOpus(Array.from({ length: 51 }, (_unused, index) => markedPacket(randomBytes(16), index))))).rejects.toThrow("speak_clip_too_long");
+    await expect(speaker.speak(writeOggOpus([markedPacket(randomBytes(16), 1)], { channels: 2 }))).rejects.toThrow("huddle_audio_not_mono");
     // A 40 ms packet (SILK 40 ms config) is not a 20 ms frame.
     await expect(speaker.speak(writeOggOpus([Uint8Array.from([0x10, 1, 2])]))).rejects.toThrow("speak_packet_duration_unsupported");
     const playing = speaker.speak(clip);
@@ -354,15 +355,13 @@ describe("gating: nothing exposes live voice yet", () => {
       const relative = path.relative(SRC, file);
       if (relative.startsWith(path.join("channels", "huddle") + path.sep)) continue;
       const text = await readFile(file, "utf8");
-      if (/from "[^"]*huddle\/|createHuddleSession|createHuddleAudioClient|createPortalVoiceSpeechProvider|@tealbrick\/voice/u.test(text)) offenders.push(relative);
+      if (/from "[^"]*huddle\/|createHuddleSession|createHuddleAudioClient|from "@tealbrick\/voice/u.test(text)) offenders.push(relative);
     }
     expect(offenders).toEqual([]);
-    // Inside the module, only the adapter imports @tealbrick/voice.
-    const voiceImporters: string[] = [];
+    // The speech dependency arrives with the wiring PR: nothing imports @tealbrick/voice yet.
     for (const file of await sourceFiles(path.join(SRC, "channels", "huddle"))) {
-      if (/from "@tealbrick\/voice"/u.test(await readFile(file, "utf8"))) voiceImporters.push(path.basename(file));
+      expect(await readFile(file, "utf8"), file).not.toMatch(/from "@tealbrick\/voice/u);
     }
-    expect(voiceImporters).toEqual(["voice-speech.ts"]);
   });
 
   it("round-trips a clip through the writer and reader without touching the input", () => {

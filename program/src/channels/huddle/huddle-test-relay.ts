@@ -321,6 +321,10 @@ export function createFakeHuddleRelay(options: { host?: string; members?: string
         },
       };
     },
+    /** Raw control frame to every socket peer of a channel (malformed-input tests). */
+    sendControl(channelId: string, value: unknown): void {
+      broadcastControl(channelId, value);
+    },
     /** Server-side error then close for every socket in a channel (e.g. huddle ended). */
     endRoom(channelId: string): void {
       for (const conn of conns) {

@@ -231,9 +231,10 @@ export function createHuddleAudioClient(options: HuddleClientOptions) {
       finish(relayErrorCode(value));
       return;
     }
-    if (type === "joined" && typeof value.pubkey === "string") {
+    // Peer pubkeys must be 64 lowercase hex; any other control frame is ignored.
+    if (type === "joined" && typeof value.pubkey === "string" && HEX64.test(value.pubkey)) {
       applyPeers(value.peers);
-      if (Number.isInteger(value.peer_index) && HEX64.test(value.pubkey)) {
+      if (Number.isInteger(value.peer_index) && (value.peer_index as number) >= 0 && (value.peer_index as number) <= 254) {
         peers.set(value.peer_index as number, { pubkey: value.pubkey, epoch: Number.isInteger(value.epoch) ? (value.epoch as number) & 0xff : 0 });
       }
       if (value.pubkey === selfPubkey && state === "authenticating") {
@@ -250,7 +251,7 @@ export function createHuddleAudioClient(options: HuddleClientOptions) {
       }
       return;
     }
-    if (type === "left" && typeof value.pubkey === "string") {
+    if (type === "left" && typeof value.pubkey === "string" && HEX64.test(value.pubkey)) {
       if (Number.isInteger(value.peer_index)) {
         const known = peers.get(value.peer_index as number);
         if (known && known.pubkey === value.pubkey) peers.delete(value.peer_index as number);
