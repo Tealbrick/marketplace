@@ -221,6 +221,10 @@ export const decideCompanyBoxApproval = (approvalId: string, decision: "approve"
   api<{ ok: boolean; approval: CompanyBoxApproval; channel?: { scheduled?: boolean; receipt?: { status?: string } } & Record<string, unknown> }>(`${companyBoxRoute()}/approvals/${encodeURIComponent(approvalId)}/${decision}`, { method: "POST" });
 
 /** Owner-only: the full stored arguments of a held call (a channel hold adds the exact payload view). */
+/** Owner-only preview (images inline) or download (`download`) of a file a held call uploads. */
+export const companyBoxApprovalFileUrl = (approvalId: string, fileRef: string, download = false) =>
+  `${companyBoxRoute()}/approvals/${encodeURIComponent(approvalId)}/files/${encodeURIComponent(fileRef)}${download ? "?download=1" : ""}`;
+
 export const getCompanyBoxApproval = (approvalId: string) =>
   api<{ ok: true; approval: CompanyBoxApproval; arguments: Record<string, unknown>; payloadView?: ChannelPayloadView | null }>(`${companyBoxRoute()}/approvals/${encodeURIComponent(approvalId)}`);
 
