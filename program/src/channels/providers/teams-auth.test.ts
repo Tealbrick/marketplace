@@ -212,7 +212,7 @@ describe("Bot Framework JWT verification", () => {
     expect(requests.length - before).toBeGreaterThan(0);
   });
 
-  it("refreshes keys older than 60 minutes on an unknown kid even when the per-kid and global limits are spent", async () => {
+  it("refreshes keys older than 15 minutes on an unknown kid even when the per-kid and global limits are spent", async () => {
     const rotated = generateKeyPairSync("rsa", { modulusLength: 2048 });
     let keys = [jwk(signer.publicKey, "key-1")];
     const clock = createFakeClock(1_800_000_000_000);
@@ -231,7 +231,7 @@ describe("Bot Framework JWT verification", () => {
     keys = [jwk(signer.publicKey, "key-1"), jwk(rotated.publicKey, "key-2")];
     clock.advance(10_000);
     expect(await verifier.verify({ authorization: token(claims, { kid: "key-2", key: rotated.privateKey }), appId: APP_ID, activity })).toEqual({ ok: false, status: 401, reason: "token_key_unknown" });
-    clock.advance(61 * 60_000);
+    clock.advance(16 * 60_000);
     const fresh = Math.floor(clock.now() / 1000);
     const later = { ...claims, nbf: fresh - 10, exp: fresh + 3600 };
     expect((await verifier.verify({ authorization: token(later, { kid: "key-2", key: rotated.privateKey }), appId: APP_ID, activity })).ok).toBe(true);
@@ -297,6 +297,23 @@ describe("Bot Framework JWT verification", () => {
       status: 403,
       reason: "token_endorsement",
     });
+  });
+
+  it("answers 401, with no JWKS fetch, for forged public claims and an unreadable activity; 400 only for a valid token", async () => {
+    const { verifier, claims, requests } = setup();
+    const garbage = () => undefined;
+    // Cold cache: a forged token (public claims, unknown signer) is a 401 and fetches nothing.
+    expect(await verifier.verify({ authorization: token(claims, { key: stranger.privateKey }), appId: APP_ID, activity: garbage })).toEqual({ ok: false, status: 401, reason: "token_key_unknown" });
+    expect(await verifier.verify({ authorization: token(claims, { kid: "random-kid", key: stranger.privateKey }), appId: APP_ID, activity: garbage })).toEqual({ ok: false, status: 401, reason: "token_key_unknown" });
+    expect(requests).toEqual([]);
+    // Warm cache: forged signature on a cached kid is 401 token_signature, an unknown kid is 401, no refresh.
+    await verifier.verify({ authorization: token(claims), appId: APP_ID, activity: { serviceUrl: SERVICE_URL, channelId: "msteams" } });
+    const warm = requests.length;
+    expect(await verifier.verify({ authorization: token(claims, { key: stranger.privateKey }), appId: APP_ID, activity: garbage })).toEqual({ ok: false, status: 401, reason: "token_signature" });
+    expect(await verifier.verify({ authorization: token(claims, { kid: "random-kid", key: stranger.privateKey }), appId: APP_ID, activity: garbage })).toEqual({ ok: false, status: 401, reason: "token_key_unknown" });
+    expect(requests).toHaveLength(warm);
+    // A validly signed token with the same unreadable activity: 400.
+    expect(await verifier.verify({ authorization: token(claims), appId: APP_ID, activity: garbage })).toEqual({ ok: false, status: 400, reason: "activity_invalid" });
   });
 
   it("never follows a jwks_uri off login.botframework.com and answers 503 without keys", async () => {

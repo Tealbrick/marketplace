@@ -33,7 +33,7 @@ export const JWKS_MIN_REFRESH_MS = 5 * 60_000;
 /** Most unknown-`kid` refreshes in one `JWKS_MIN_REFRESH_MS` window, whatever the `kid`s are. */
 export const JWKS_MAX_REFRESHES_PER_WINDOW = 6;
 /** Keys older than this are refreshed on an unknown `kid` even when the per-`kid` and global limits are spent. */
-export const JWKS_FORCE_REFRESH_AGE_MS = 60 * 60_000;
+export const JWKS_FORCE_REFRESH_AGE_MS = 15 * 60_000;
 /** Whatever the reason, two fetch attempts are never closer than this (an outage never turns into one fetch per request). */
 export const JWKS_MIN_ATTEMPT_SPACING_MS = 30_000;
 /** Recently missed `kid`s remembered for the per-`kid` limit (least recently missed dropped first). */
@@ -215,7 +215,7 @@ function toSigningKey(raw: unknown): [string, SigningKey] | undefined {
  * metadata (the `jwks_uri` must stay on login.botframework.com), cached for 24 hours. An unknown `kid` refreshes
  * them at most once per `kid` per five minutes and at most `JWKS_MAX_REFRESHES_PER_WINDOW` times per five
  * minutes in all, and only after the token's issuer, audience, validity and `serviceUrl` checks passed. Keys
- * older than 60 minutes are refreshed on an unknown `kid` regardless of those limits (but never closer than
+ * older than 15 minutes are refreshed on an unknown `kid` regardless of those limits (but never closer than
  * `JWKS_MIN_ATTEMPT_SPACING_MS` apart).
  */
 export function createBotFrameworkVerifier(runtime: ProviderRuntime): BotFrameworkVerifier {

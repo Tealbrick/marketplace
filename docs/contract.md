@@ -625,7 +625,7 @@ answers 429): RS256 with a key from
 an unknown `kid` refreshes them at most once per `kid` per 5 min and at most 6
 times per 5 min in all, and only after `iss`, `aud`, `exp`/`nbf` and
 `serviceurl` passed, so a forged random `kid` never uses up the slot a real key
-rotation needs; keys older than 60 min refresh on any unknown `kid` regardless
+rotation needs; keys older than 15 min refresh on any unknown `kid` regardless
 of those limits; two fetch attempts are at least 30 s apart; stale keys stay
 usable while a refresh fails; `jwks_uri` pinned to `login.botframework.com`), `iss`
 `https://api.botframework.com`, `aud` = app id, `exp`/`nbf` with 5 min skew,
@@ -988,7 +988,8 @@ on the socket address. Behind a reverse proxy (Railway's edge) every request
 arrives from the proxy, so with the variable unset all senders share one
 bucket per route and an anonymous flood can starve real deliveries. Set
 `MARKETPLACE_TRUSTED_PROXIES` to the comma-separated IPs or CIDRs of the
-proxies in front of Marketplace (the Railway recipe uses `100.64.0.0/10`);
+proxies in front of Marketplace. On Railway set it to `100.64.0.0/10`, the
+Railway default (the release recipe sets it);
 the source is then the right-most `X-Forwarded-For` entry that is not a
 trusted proxy. Entries may carry a port (`ip:port`, `[v6]:port`); the port is
 dropped. An entry that is still not an IP stops the walk and the socket
