@@ -197,6 +197,8 @@ spec's sub-resource ids use a hyphenated resource
 | `marketplace.channel-grants.propose` | `POST /api/marketplace/v1/agent/channels/{channelId}/grants` | writes-app-state | required |
 | `marketplace.channel-grants.narrow` | `POST /api/marketplace/v1/agent/channels/grants/{grantId}/narrow` | writes-app-state | required |
 | `marketplace.channel-grants.withdraw` | `POST /api/marketplace/v1/agent/channels/grants/{grantId}/withdraw` | writes-app-state | supported |
+| `marketplace.channels.inbound` | `GET /api/marketplace/v1/agent/channels/inbound?limit=&before=` | read-only | none |
+| `marketplace.channels.reply` | `POST /api/marketplace/v1/agent/channels/inbound/{eventId}/reply` | external-effects (`approvalAuthority: "app"`, `appHold`) | required |
 | `marketplace.approvals.resolve` | `POST /api/marketplace/v1/agent/approvals/{approvalId}/resolve` | writes-app-state | required (`resolve.<approvalId>.<decision>`) |
 
 Consent: a Portal v1.4 class grant `{pluginId: channels-<provider>, accountId:
@@ -429,6 +431,9 @@ provider-env or account field.
 | `marketplace.channel-posts.cancel` | `POST /api/marketplace/channels/posts/{postId}/cancel` (scheduled posts, and held posts, immediate or scheduled; in one transaction with the post: denies a waiting approval, fails an approved one; refused once sending started) |
 | `marketplace.channel-posts.resolve` | `POST /api/marketplace/channels/posts/{postId}/resolve` `{status: sent|failed}` |
 | `marketplace.channel-receipts.export` / `.purge` | `GET /api/marketplace/channels/receipts/export`, `POST /api/marketplace/channels/receipts/purge` `{olderThanDays}` (default 90; finished posts only; answers `{purged, skipped}`) |
+| `marketplace.channel-inbound-routes.update` | `PUT /api/marketplace/channels/{channelId}/inbound` `{enabled, agentId?}` → `{route, receivers}` (see [Inbound](#inbound-channels-p2)) |
+| `marketplace.channel-inbound-events.list` | `GET /api/marketplace/channels/inbound/events?channelId=&limit=&before=` (metadata, route outcome, at most 500 characters of text per event, receiver status) |
+| `marketplace.channel-inbound-settings.update` | `PUT /api/marketplace/channels/inbound/settings` `{textRetentionDays?: 1-365, discordMessageContent?: bool}` |
 
 "Grant to agent" is `marketplace.consents.request` with the channel's class
 selection (each channel in `browse` carries it as `grantSelection`, with the
@@ -479,11 +484,15 @@ own message and native schedule need no new scope (`chat:write`); mention a
 named person and find a person by handle add `users:read`; find a person by
 email adds `users:read.email`; open a direct message with one person (owner
 approval on first contact) adds `im:write`; reactions add `reactions:write`;
-receiving messages (inbound) adds `channels:history`, `groups:history`,
-`im:history` and the event subscriptions `message.channels`,
-`message.groups`, `message.im` in a separate inbound manifest variant.
+receiving messages (inbound) adds `channels:history` and `groups:history` and
+the event subscriptions `message.channels` and `message.groups` in the inbound
+manifest variant `docs/channels-slack-app-manifest.inbound.json` (request URL
+`https://<your Marketplace host>/api/marketplace/channels/slack/events`; DMs
+are not routed yet, so no `im:history` / `message.im`). Use the inbound variant
+only when the owner turns inbound on for a Slack channel.
 
-Inbound helpers (pure, no route yet): `acceptSlackEvent` checks, in order, the
+Inbound (see [Inbound](#inbound-channels-p2)): the Events API route uses
+`acceptSlackEvent`, which checks, in order, the
 `X-Slack-Signature` over the raw body (`rejected`: answer 401), the team, then
 the `event_id` in a bounded replay store (`createSlackEventDedupe`: 15 minutes,
 10,000 ids, which covers Slack's retries and the ±300 s signature window); a
@@ -609,8 +618,9 @@ needs an `id`; each conversation + activity id is processed once while its
 token is valid (kept until `exp` + 5 min, at least 1 min, at most 24 h; at most
 20,000 ids in memory), because a Bot Framework token is not bound to the body.
 An activity without an id, or a repeat, is answered 200 and changes nothing.
-Message activities are parsed into the normalized inbound shape and not stored
-yet (the Buzz bridge comes later), so `inbound.mode` stays `none`.
+Message activities are parsed into the normalized inbound shape and, after
+the replay check and the bot filter, handed to the inbound pipeline
+(`inbound: {mode: "webhook", dedupe: true}`; see [Inbound](#inbound-channels-p2)).
 
 1:1 references are capped at 5,000 per tenant (removed rows go first, then
 the oldest). Discovery reads each kind (team channels, group chats, 1:1 chats)
@@ -645,6 +655,102 @@ conversation 7/1 s, 8/2 s, 60/30 s, 1800/h and 50 requests/s per tenant
 once with jittered backoff; 502/504 are retried once only for idempotent calls
 (PUT, DELETE, create-conversation) and a send is never retried (`uncertain`).
 
+### Inbound (Channels P2)
+
+The inbound worker receives messages for agents (P2 scope 2.2). Code:
+`program/src/channels/inbound*.ts`, `discord-gateway.ts`, `teams-inbound.ts`.
+
+Receivers (public routes at the Marketplace level, not manifest operations;
+each is authenticated by the provider's own proof, with the Teams endpoint's
+protections: exact path, a per-source budget and a cheap header check in
+`onRequest` before the body is read, 128 KB body limit):
+
+| Route | Purpose |
+| --- | --- |
+| `POST /api/marketplace/channels/slack/events` | Slack Events API. `X-Slack-Signature` v0 = HMAC-SHA256(signing secret, `v0:{timestamp}:{raw body}`), timestamp within ±5 minutes (`401 slack_signature_invalid` with `reason` `header_missing | stale | mismatch`). `url_verification` answers `{challenge}` after the signature check. Retries (`X-Slack-Retry-Num`) and the `message` + `app_mention` pair of one mention are de-duplicated by (channel, `ts`). No signing secret: `503 channels_slack_inbound_not_configured`. |
+| `POST /api/marketplace/channels/telegram/webhook/{segment}` | Telegram webhook. `{segment}` is 32 random bytes (base64url) and `X-Telegram-Bot-Api-Secret-Token` 32 more; Marketplace stores only their SHA-256 (`channel_inbound_webhook`) and compares in constant time. Unknown segment `404`, wrong secret `401 telegram_secret_invalid`. Every update feeds the chats-seen table; message updates go to the pipeline (edits are not delivered again). |
+| Discord gateway (outbound WebSocket) | In-process client over Node's built-in WebSocket: intents `GUILDS | GUILD_MESSAGES | DIRECT_MESSAGES`, plus the privileged `MESSAGE_CONTENT` only when the owner turns on `discordMessageContent` (it must also be enabled for the bot in the Discord developer portal; without it Discord sends empty content except in DMs and mentions). Heartbeat with zombie detection, RESUME, op 7/9, capped backoff; close 4004 and 4010–4014 stop it (`failed` with a fixed reason). |
+| `POST /api/marketplace/channels/teams/messages` | The existing Teams messaging endpoint: message activities now go to the pipeline. |
+
+Capabilities (truthful, `channelCapabilities: 2`): Slack and Teams `inbound:
+{mode: "webhook", dedupe: true}`, Telegram `webhook`, Discord `socket`.
+
+Owner switch (`PUT .../{channelId}/inbound`): the route `channelId → agentId`
+is off by default. Enabling needs an active channel, a provider that declares
+inbound, an agent that holds an active class consent (read or outward) for the
+channel (`409 channel_inbound_agent_not_consented`), and per provider: Slack
+the signing secret (`409 channel_inbound_signing_secret_missing`), Teams the
+app credential, Discord the bot token. Telegram: the first enabled route calls
+`getWebhookInfo` (a webhook of another host or path is another consumer of the
+bot: `409 channel_consumer_conflict`), then `setWebhook` with the
+`MARKETPLACE_PUBLIC_ORIGIN` URL (https, else `409
+channel_inbound_public_origin_missing`), the secret token and `allowed_updates
+[message, channel_post, edited_message, my_chat_member]`; the last disabled
+route calls `deleteWebhook`. While a webhook is set `getUpdates` answers 409,
+so Telegram discovery lists the chats seen by the webhook (with a note). In
+groups with Telegram's privacy mode on, the bot receives only commands, replies
+to it and mentions (turn privacy mode off in BotFather, or make the bot an
+admin, to receive every message). Discord:
+the gateway runs only while a Discord channel has an enabled route.
+`browse` carries `inbound: {settings, routes, receivers}`.
+
+Pipeline, in order: the bot's own messages are ignored; the message is matched
+to an active Marketplace channel (provider + platform channel id; a Telegram
+topic or Slack thread destination wins over the plain chat) with an enabled
+route, else nothing is stored; de-duplication on (platform, platform channel
+id, message id) in `channel_inbound_event`; loop breaker: at most 4
+agent-bound events per thread and 8 per peer (sender) in 15 minutes, plus a
+per-sender burst bucket (5, then one per 12 s) → `loop-limited` /
+`rate-limited`; the routed agent's consent is re-checked (`consent-inactive`);
+then `InboundSink.deliver(event, route)`. The default sink only records
+(`bridge_status: pending-bridge`); the Buzz bridge sink (a private Buzz channel
+per route, a provenance header with source, channel, sender display name and
+message id, untrusted framing, only the owner-configured relay) plugs in
+behind the same interface. The audit event
+`marketplace.channels.inbound.received` carries metadata only (event id,
+platform, channel, outcome, routed agent), never text or sender names.
+
+`channel_inbound_event` (additive): id, workspace, platform, channel id, thread
+id, message id, sender user id, sender display (cleaned), text (untrusted,
+cleaned by the parser, at most 8,000 characters, `text_truncated`),
+attachments metadata (never bytes), route channel id, received at, routed to,
+bridge status and detail, purged at. Other additive tables:
+`channel_inbound_route`, `channel_inbound_reply`, `channel_inbound_setting`,
+`channel_inbound_webhook`, `channel_consumer_lease`, `channel_telegram_chat`.
+
+Agents: `marketplace.channels.inbound` lists the delivered events routed to
+the caller on channels it still holds a consent for (newest first, `limit` ≤
+100, cursor `before`), each with `framing: "untrusted-external-message"`, the
+source ids (`source: {channelId, threadId?, messageId, senderUserId}`), the
+sender, text, attachments metadata and `bridgeStatus`. It is the fallback for
+agents without the Buzz bridge. `marketplace.channels.reply` takes the post
+body (`text`, `attachments?`, `campaign?`) and replies natively: it runs the
+normal post path (`executeConsentedCall`, outward consent for that channel,
+standing grant or owner approval, caps, receipts) with `replyTo` = the thread
+root (Slack, Teams) or the message (Telegram, Discord). `replyTo` is part of
+the payload digest (absent on plain posts, whose digests are unchanged), so an
+approval covers the reply target; a held reply keeps its target in
+`channel_inbound_reply` under the internal key `inbound-reply:<key>`. Refusals:
+`404 channel_inbound_event_not_found` (unknown, or routed to another agent),
+`404 channel_not_found` (no consent), `403 channel_inbound_route_inactive`
+(the owner disabled or moved the route), `403
+channel_outward_consent_required`, `409 channel_idempotency_conflict`, and
+every post refusal.
+
+Consumer lease (spec §8): a bot token serves one inbound consumer. The Discord
+gateway connects only while it holds `channel_consumer_lease`
+`discord:<first 32 hex of sha256(token)>` (60 s, renewed every 20 s); while
+another instance holds it the gateway waits (`waiting_lease`,
+`consumer_conflict`) and it disconnects when it loses it. The lease works
+between instances that share the data directory; a Marketplace with another
+data directory on the same token is detected only for Telegram (the webhook
+check above).
+
+Retention: received text, sender display names and attachment names are
+cleared after `textRetentionDays` (owner setting, default 30, 1–365) and the
+metadata row is deleted after 90 days, in the scheduler tick (audit
+`marketplace.channels.inbound.purged` with counts only).
+
 ### Inert mode
 
 Without any channel credential (no token in the environment or in
@@ -653,6 +759,9 @@ every channel operation except the owner browse answers `409
 channels_not_configured`, the browse answers `{configured: false, providers:
 [{id, readiness: "credential_missing"}]}`, and `/api/portal/readiness` has no
 `channels` block. The channel tables are created (additive) and stay empty.
+No inbound receiver starts: no gateway connection, no webhook call; the Slack
+events route answers `503 channels_slack_inbound_not_configured` and the
+Telegram webhook route `404` after their cheap checks.
 
 ### Send-time rules
 
