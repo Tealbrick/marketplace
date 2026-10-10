@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { createBuzzRelaySocket, type BuzzSocketStatus } from "./buzz-relay-socket.js";
 import type { Timers } from "./discord-gateway.js";
-import { createFakeBuzzRelay, signAuthTag, type FakeRelaySocket } from "./providers/buzz-test-relay.js";
+import { createFakeBuzzRelay, signAuthTag, signTestEvent, type FakeRelaySocket } from "./providers/buzz-test-relay.js";
 import { encodeBuzzCredential } from "./providers/buzz.js";
 import { generateSecretKey, publicKeyOf, signEvent, verifyEvent } from "./providers/nostr.js";
 import type { InboundMessage } from "./providers/types.js";
@@ -144,7 +144,7 @@ describe("buzz relay socket", () => {
     expect(t.messages.map((message) => message.text)).toEqual(["now routed"]);
     const dm = t.relay.createGroup({ name: "", members: [t.alice], hidden: true });
     // Alice's client adds the agent (the relay emits 44100 to the agent).
-    t.relay.events.push(signEvent("11".repeat(32), { kind: 44100, created_at: START, tags: [["p", t.agent], ["h", dm]], content: "" }));
+    t.relay.events.push(signTestEvent("11".repeat(32), { kind: 44100, created_at: START, tags: [["p", t.agent], ["h", dm]], content: "" }));
     t.relay.pushRaw("tb-membership", t.relay.events.at(-1));
     expect(t.membership).toEqual([{ added: true, channelId: dm }]);
   });

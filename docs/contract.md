@@ -701,7 +701,7 @@ other operator can point the bridge at another relay or agent key.
 | --- | --- | --- |
 | `marketplace.channel-buzz-identity.get` | `GET /api/marketplace/channels/buzz/identity` | npub, relay URL, tag status (`missing`, `valid`, `invalid`, `expired`) with reason, end date, days left, `renewalDue` (< 14 days), tag SHA-256, pinned owner fingerprint, and `signing.preimage`: the exact NIP-OA text to sign for a 90-day tag. Also in the owner browse (`buzz`). |
 | `marketplace.channel-buzz-key.generate` | `POST /api/marketplace/channels/buzz/identity/key` `{rotate?}` | Generate the key (`409 buzz_key_exists` when one exists), or rotate it. Before a rotation, with the OLD key still in the store, the bridge deletes every bridged message still on the relay (kind 5, one per event) and its bridge channels (kind 9008), since Buzz deletes are author-only; the answer carries `bridgeCleanup: {deleted, failed, channelsDeleted}` and rotation proceeds even if the relay is down. Then the old secret is overwritten, the tag cleared and every route unconfirmed (its channel retired). |
-| `marketplace.channel-buzz-identity.update` | `PUT /api/marketplace/channels/buzz/identity` `{relayUrl?, authTag?}` | Relay: `wss://host[:port]` only, a DNS name or an IP literal (`422 buzz_relay_url_invalid`), and egress rules (below; `422 buzz_relay_host_blocked`, `buzz_relay_address_blocked`, `buzz_relay_dns_failed`). A change clears the tag (readiness `credential_missing` until the owner pastes a tag again) and unconfirms every bridge route (bridge paused, `buzz_relay_changed`, until the owner saves the route again); audit `relay_changed` `{oldRelayHost, newRelayHost, actor, pausedRoutes}`. Tag: `["auth", ownerHex, conditions, sig]`, verified: BIP-340 by `ownerHex` over SHA-256 of `nostr:agent-auth:<agent hex>:<conditions>` (conditions verbatim), owner ≠ agent, the NIP-OA conditions grammar, `ownerHex` = the pinned owner Buzz key (`approvals.ownerNostrPubkey`; none set → `409 buzz_owner_key_required`), a `created_at<T` end with now < T ≤ now + 90 days, no `kind=` clause (NIP-OA kind clauses are conjunctive, so a limited tag cannot cover the kinds Marketplace publishes: 9, 9007, 9000, 9001, 9008, 5, 7, 40003, 41010, 20002; `422 buzz_auth_tag_kinds_too_narrow`; the view lists `authTag.allowsKinds`). Refusals `422 buzz_auth_tag_<reason>`; a pasted `nsec` is refused and never echoed. |
+| `marketplace.channel-buzz-identity.update` | `PUT /api/marketplace/channels/buzz/identity` `{relayUrl?, authTag?}` | Relay: `wss://host[:port]` only, a DNS name or an IP literal (`422 buzz_relay_url_invalid`), and egress rules (below; `422 buzz_relay_host_blocked`, `buzz_relay_address_blocked`, `buzz_relay_dns_failed`). A change clears the tag (readiness `credential_missing` until the owner pastes a tag again) and unconfirms every bridge route (bridge paused, `buzz_relay_changed`, until the owner saves the route again); audit `relay_changed` `{oldRelayHost, newRelayHost, actor, pausedRoutes}`. Tag: `["auth", ownerHex, conditions, sig]`, verified: BIP-340 by `ownerHex` over SHA-256 of `nostr:agent-auth:<agent hex>:<conditions>` (conditions verbatim), owner ≠ agent, the NIP-OA conditions grammar, `ownerHex` = the pinned owner Buzz key (`approvals.ownerNostrPubkey`; none set → `409 buzz_owner_key_required`), a `created_at<T` end with now < T ≤ now + 90 days, no `kind=` clause (NIP-OA kind clauses are conjunctive, so a limited tag cannot cover the kinds Marketplace signs, `BUZZ_SIGNABLE_KINDS`; `422 buzz_auth_tag_kinds_too_narrow`; the view lists `authTag.allowsKinds`). Refusals `422 buzz_auth_tag_<reason>`; a pasted `nsec` is refused and never echoed. |
 | `marketplace.channel-buzz-auth-tag.revoke` | `DELETE /api/marketplace/channels/buzz/identity/auth-tag` | Clear the tag: Marketplace stops publishing and receiving at once. The tag stays valid on the relay until its end date; rotation ends it for good. |
 
 Relay egress (Coordinator rules; `program/src/channels/buzz-relay-guard.ts`):
@@ -717,7 +717,20 @@ relay socket use an undici agent whose connect lookup resolves again, checks
 every answer and connects only to a checked address, so a DNS change cannot
 bypass it. `MARKETPLACE_CHANNELS_BUZZ_ALLOW_PRIVATE_RELAY=1` allows private
 relays for development only: env only (not a manifest setting, so Portal cannot
-set it), off by default, ignored when `NODE_ENV=production`.
+set it), off by default, and honoured only when `NODE_ENV` is exactly
+`development` or `test` (unset or anything else: off). IPv6 addresses that carry
+an IPv4 address in any notation (IPv4-mapped, IPv4-compatible, NAT64
+64:ff9b::/96 and 64:ff9b:1::/48, 6to4 2002::/16, Teredo 2001::/32) get every
+IPv4 rule applied to the embedded address.
+
+Signable kinds: `BUZZ_SIGNABLE_KINDS` (`providers/nostr.ts`) is the only set of
+kinds Marketplace signs with the agent key: 9, 7, 5, 40003, 41010, 9007, 9000,
+9001, 9008, 20002, 22242 (NIP-42 AUTH), 27235 (NIP-98), 24242 (Blossom). The one
+signing function and `publish()` (the single choke point for every published
+event) refuse anything else (`buzz_kind_not_allowed`); the owner
+screen shows the list next to the tag (`signableKinds`); a test snapshots the
+list and scans the source for event construction sites. Changing it needs a
+spec change (docs/channels-p2-scope.md §3).
 
 Readiness: `credential_missing` (no key, relay or tag), `credential_invalid`
 (a tag that ended, no longer names the pinned owner key, has no pinned owner

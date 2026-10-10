@@ -25,6 +25,22 @@ export type NostrEvent = {
 
 export type UnsignedEvent = { kind: number; created_at: number; tags: string[][]; content: string };
 
+/**
+ * The ONLY Nostr kinds Marketplace may sign with a Buzz agent key (Coordinator, 2026-10-10), enforced in
+ * `signEvent`: chat message 9, reaction 7, deletion 5, edit 40003, DM open 41010, NIP-29 create group 9007,
+ * add user 9000, remove user 9001, delete group 9008, typing 20002, NIP-42 AUTH 22242, NIP-98 HTTP auth 27235,
+ * Blossom upload auth 24242. Changing this list needs a spec change (docs/channels-p2-scope.md §3).
+ */
+export const BUZZ_SIGNABLE_KINDS: readonly number[] = Object.freeze([9, 7, 5, 40003, 41010, 9007, 9000, 9001, 9008, 20002, 22242, 27235, 24242]);
+
+/** A kind outside BUZZ_SIGNABLE_KINDS: nothing is signed. */
+export class BuzzKindNotAllowedError extends Error {
+  readonly code = "buzz_kind_not_allowed";
+  constructor(readonly kind: number) {
+    super("buzz_kind_not_allowed");
+  }
+}
+
 /** A new random secp256k1 secret key (64 hex). */
 export function generateSecretKey(random?: () => Uint8Array): string {
   const bytes = random ? random() : schnorr.utils.randomSecretKey();
@@ -49,8 +65,13 @@ export function publicKeyOf(secretHex: string): string | null {
   }
 }
 
-/** Signs an event with the secret key: NIP-01 id (contract helper) and a BIP-340 signature with fresh aux randomness. */
+/**
+ * The one signing function for Buzz agent keys: refuses any kind outside BUZZ_SIGNABLE_KINDS
+ * (`BuzzKindNotAllowedError`, `buzz_kind_not_allowed`), then signs: NIP-01 id (contract helper) and a BIP-340
+ * signature with fresh aux randomness.
+ */
 export function signEvent(secretHex: string, input: UnsignedEvent): NostrEvent {
+  if (!BUZZ_SIGNABLE_KINDS.includes(input.kind)) throw new BuzzKindNotAllowedError(input.kind);
   const pubkey = publicKeyOf(secretHex);
   if (!pubkey) throw new Error("nostr_key_invalid");
   const unsigned = { pubkey, created_at: input.created_at, kind: input.kind, tags: input.tags, content: input.content };

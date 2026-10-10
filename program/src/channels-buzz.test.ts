@@ -531,7 +531,8 @@ describe("Buzz review round: echo, re-bind, rotation, tag scope, relay egress", 
     const narrow = await t.call("PUT", BUZZ_IDENTITY_ROUTE, { authTag: signAuthTag(OWNER_SECRET, agent, `kind=9&created_at<${nowSeconds() + 86_400}`) });
     expect(narrow.json()).toMatchObject({ error: "buzz_auth_tag_kinds_too_narrow", detail: expect.stringContaining("9007") });
     const full = await t.call("PUT", BUZZ_IDENTITY_ROUTE, { authTag: signAuthTag(OWNER_SECRET, agent, `created_at<${nowSeconds() + 86_400}`) });
-    expect(full.json().buzz.authTag.allowsKinds).toEqual([9, 9007, 9000, 9001, 9008, 5, 7, 40003, 41010, 20002]);
+    expect(full.json().buzz.authTag.allowsKinds).toEqual([9, 7, 5, 40003, 41010, 9007, 9000, 9001, 9008, 20002, 22242, 27235, 24242]);
+    expect(full.json().buzz.signableKinds).toEqual([9, 7, 5, 40003, 41010, 9007, 9000, 9001, 9008, 20002, 22242, 27235, 24242]);
   });
 
   it("relay egress: a relay resolving to a private or metadata address is refused; the dev-only flag allows it outside production", async () => {

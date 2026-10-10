@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buzzPrivateRelayAllowed, checkRelayHost, guardedLookup, guardedRelayFetch, isBlockedRelayAddress, isBlockedRelayHostname, type RelayLookup } from "./buzz-relay-guard.js";
+import { buzzPrivateRelayAllowed, checkRelayHost, embeddedIpv4, guardedLookup, guardedRelayFetch, isBlockedRelayAddress, isBlockedRelayHostname, type RelayLookup } from "./buzz-relay-guard.js";
 import { normalizeRelayUrl } from "./providers/buzz.js";
 
 const PUBLIC_V4 = "104.16.132.229";
@@ -28,6 +28,37 @@ describe("buzz relay egress guard", () => {
       expect(isBlockedRelayHostname(name), name).toBe(true);
     }
     expect(isBlockedRelayHostname("martinatrin.up.railway.app")).toBe(false);
+  });
+
+  it("applies every IPv4 rule to IPv4 carried in IPv6, in hex and dotted notation (mapped, compatible, NAT64, 6to4, Teredo)", () => {
+    // Teredo client 100.64.0.1 → inverted 9bbf:fffe; 6to4 of 10.0.0.1 → 2002:0a00:0001::.
+    const embedded: Array<[string, string]> = [
+      ["::ffff:100.64.0.1", "100.64.0.1"],
+      ["::ffff:6440:1", "100.64.0.1"],
+      ["[::ffff:6440:1]", "100.64.0.1"],
+      ["::ffff:a9fe:a9fe", "169.254.169.254"],
+      ["::6440:1", "100.64.0.1"],
+      ["::10.0.0.1", "10.0.0.1"],
+      ["64:ff9b::6440:1", "100.64.0.1"],
+      ["64:ff9b::127.0.0.1", "127.0.0.1"],
+      ["64:ff9b:1::a00:1", "10.0.0.1"],
+      ["64:ff9b:1:abcd::c0a8:101", "192.168.1.1"],
+      ["2002:a00:1::1", "10.0.0.1"],
+      ["2002:6440:1::", "100.64.0.1"],
+      ["2002:a9fe:a9fe::1", "169.254.169.254"],
+      ["2001:0:4136:e378:8000:63bf:9bbf:fffe", "100.64.0.1"],
+      ["2001:0:4136:e378:8000:63bf:f5ff:fffe", "10.0.0.1"],
+    ];
+    for (const [address, ipv4] of embedded) {
+      expect(embeddedIpv4(address), address).toBe(ipv4);
+      expect(isBlockedRelayAddress(address), address).toBe(true);
+    }
+    // The same forms carrying a public IPv4 stay allowed.
+    for (const address of ["::ffff:6810:84e5", "64:ff9b::6810:84e5", "2002:6810:84e5::1", "2001:0:4136:e378:8000:63bf:97ef:7b1a"]) {
+      expect(isBlockedRelayAddress(address), address).toBe(false);
+    }
+    expect(embeddedIpv4(PUBLIC_V6)).toBeNull();
+    expect(normalizeRelayUrl("wss://[::ffff:100.64.0.1]")?.host).toBe("[::ffff:6440:1]");
   });
 
   it("checks every resolved address: a name resolving to a private IP, or mixed A/AAAA records, is refused", async () => {
@@ -85,7 +116,10 @@ describe("buzz relay egress guard", () => {
 
   it("allows private relays only behind the dev flag, never in production", async () => {
     expect(buzzPrivateRelayAllowed({})).toBe(false);
-    expect(buzzPrivateRelayAllowed({ MARKETPLACE_CHANNELS_BUZZ_ALLOW_PRIVATE_RELAY: "1" })).toBe(true);
+    // NODE_ENV unset (or anything but development/test): the flag is off.
+    expect(buzzPrivateRelayAllowed({ MARKETPLACE_CHANNELS_BUZZ_ALLOW_PRIVATE_RELAY: "1" })).toBe(false);
+    expect(buzzPrivateRelayAllowed({ MARKETPLACE_CHANNELS_BUZZ_ALLOW_PRIVATE_RELAY: "1", NODE_ENV: "staging" })).toBe(false);
+    expect(buzzPrivateRelayAllowed({ MARKETPLACE_CHANNELS_BUZZ_ALLOW_PRIVATE_RELAY: "1", NODE_ENV: "test" })).toBe(true);
     expect(buzzPrivateRelayAllowed({ MARKETPLACE_CHANNELS_BUZZ_ALLOW_PRIVATE_RELAY: "true", NODE_ENV: "development" })).toBe(true);
     expect(buzzPrivateRelayAllowed({ MARKETPLACE_CHANNELS_BUZZ_ALLOW_PRIVATE_RELAY: "1", NODE_ENV: "production" })).toBe(false);
     expect(buzzPrivateRelayAllowed({ MARKETPLACE_CHANNELS_BUZZ_ALLOW_PRIVATE_RELAY: "0" })).toBe(false);

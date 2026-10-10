@@ -19,6 +19,8 @@ import {
   type HttpResult,
 } from "./common.js";
 import {
+  BUZZ_SIGNABLE_KINDS,
+  BuzzKindNotAllowedError,
   HEX64,
   authTagAllows,
   blossomUploadAuthorization,
@@ -79,12 +81,6 @@ export const BUZZ_IDENTITY_RULE: RateRule = { name: "buzz-per-minute", capacity:
 const BUZZ_TYPING_RULE: RateRule = { name: "buzz-typing", capacity: 1, refillPerSecond: 1 / 5 };
 const INBOUND_MAX_TEXT_CHARS = 20_000;
 const INBOUND_MAX_FILES = 10;
-
-/**
- * Kinds Marketplace publishes with the owner's tag. NIP-OA `kind=` clauses are conjunctive, so a tag with any
- * `kind=` clause cannot cover them: the owner's tag must carry no `kind=` clause (checked at paste).
- */
-export const BUZZ_PUBLISHED_KINDS = Object.freeze([9, 9007, 9000, 9001, 9008, 5, 7, 40003, 41010, 20002] as const);
 
 export const BUZZ_KIND = Object.freeze({
   message: 9,
@@ -388,6 +384,10 @@ export function createBuzzProvider(options: ChannelProviderOptions & { allowPriv
     input: { kind: number; tags: string[][]; content: string },
     secrets: string[],
   ): Promise<{ ok: true; event: NostrEvent; json: Record<string, unknown> } | { ok: false; failure: Failure; event?: NostrEvent }> {
+    // Single choke point for everything Marketplace publishes: only BUZZ_SIGNABLE_KINDS (signEvent checks again).
+    if (!BUZZ_SIGNABLE_KINDS.includes(input.kind)) {
+      return { ok: false, failure: { status: "failed", errorCode: "buzz_kind_not_allowed", detail: `Marketplace never signs kind ${input.kind}` } };
+    }
     const createdAt = nowSeconds();
     if (!authTagAllows(cred.auth.parsed, input.kind, createdAt)) {
       return {
@@ -399,7 +399,13 @@ export function createBuzzProvider(options: ChannelProviderOptions & { allowPriv
         },
       };
     }
-    const event = signEvent(cred.secretKey, { kind: input.kind, created_at: createdAt, tags: [...input.tags, [...cred.auth.tag]], content: input.content });
+    let event: NostrEvent;
+    try {
+      event = signEvent(cred.secretKey, { kind: input.kind, created_at: createdAt, tags: [...input.tags, [...cred.auth.tag]], content: input.content });
+    } catch (error) {
+      if (error instanceof BuzzKindNotAllowedError) return { ok: false, failure: { status: "failed", errorCode: "buzz_kind_not_allowed", detail: `Marketplace never signs kind ${input.kind}` } };
+      throw error;
+    }
     const outcome = await bridgePost(cred, "/events", event, secrets);
     // The signed event id is known even when delivery is uncertain (callers record it for a later delete).
     if (!outcome.ok) return { ...outcome, event };

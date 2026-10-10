@@ -3,7 +3,7 @@ import { isIP } from "node:net";
 
 import { Agent, fetch as undiciFetch, WebSocket as UndiciWebSocket } from "undici";
 
-import { isForbiddenMcpAddress } from "../mcp-url-policy.js";
+import { expandIpv6, isForbiddenMcpAddress } from "../mcp-url-policy.js";
 import type { GatewaySocket, GatewaySocketFactory } from "./discord-gateway.js";
 
 /**
@@ -29,10 +29,33 @@ export type RelayLookup = (hostname: string) => Promise<ReadonlyArray<{ address:
 
 export const defaultRelayLookup: RelayLookup = async (hostname) => dnsLookup(hostname, { all: true, verbatim: true });
 
-/** The dev-only flag: on only when set to 1/true AND not in production. */
+/** The dev-only flag: on only when set to 1/true AND `NODE_ENV` is exactly `development` or `test` (unset: off). */
 export function buzzPrivateRelayAllowed(env: Record<string, string | undefined>): boolean {
-  if (env.NODE_ENV === "production") return false;
+  if (env.NODE_ENV !== "development" && env.NODE_ENV !== "test") return false;
   return /^(1|true)$/iu.test(env[BUZZ_ALLOW_PRIVATE_RELAY_ENV]?.trim() ?? "");
+}
+
+const dotted = (high: number, low: number) => `${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`;
+
+/**
+ * The IPv4 address an IPv6 address carries, whatever the notation (hex or dotted): IPv4-mapped ::ffff:0:0/96,
+ * IPv4-compatible ::/96, NAT64 64:ff9b::/96 and 64:ff9b:1::/48 (last 32 bits), 6to4 2002::/16 (bits 16–48) and
+ * Teredo 2001::/32 (client address: the last 32 bits inverted). Null when none.
+ */
+export function embeddedIpv4(address: string): string | null {
+  const groups = expandIpv6(address.replace(/^\[|\]$/gu, ""));
+  if (!groups) return null;
+  const [g0, g1, g2, g3, g4, g5, g6, g7] = groups as [number, number, number, number, number, number, number, number];
+  const zeros = (from: number, to: number) => groups.slice(from, to).every((group) => group === 0);
+  if (zeros(0, 5) && g5 === 0xffff) return dotted(g6, g7);
+  if (zeros(0, 6) && !(g6 === 0 && (g7 === 0 || g7 === 1))) return dotted(g6, g7);
+  if (g0 === 0x64 && g1 === 0xff9b && zeros(2, 6)) return dotted(g6, g7);
+  if (g0 === 0x64 && g1 === 0xff9b && g2 === 1) return dotted(g6, g7);
+  if (g0 === 0x2002) return dotted(g1, g2);
+  if (g0 === 0x2001 && g1 === 0) return dotted(~g6 & 0xffff, ~g7 & 0xffff);
+  void g3;
+  void g4;
+  return null;
 }
 
 function cgnat(address: string): boolean {
@@ -42,13 +65,14 @@ function cgnat(address: string): boolean {
 
 /** True when the relay may not be contacted at this address (production rules). */
 export function isBlockedRelayAddress(address: string): boolean {
-  const bare = address.replace(/^\[|\]$/gu, "");
-  if (isIP(bare) === 0) return true;
-  if (isForbiddenMcpAddress(bare)) return true;
-  if (isIP(bare) === 4 && cgnat(bare)) return true;
-  // IPv4-mapped / NAT64 CGNAT (isForbiddenMcpAddress allows CGNAT for tailnets; Buzz does not).
-  const mapped = /^(?:::ffff:|64:ff9b::)(\d+\.\d+\.\d+\.\d+)$/iu.exec(bare)?.[1];
-  return mapped !== undefined && cgnat(mapped);
+  const bare = address.replace(/^\[|\]$/gu, "").split("%")[0] ?? "";
+  const family = isIP(bare);
+  if (family === 0) return true;
+  if (family === 4) return isForbiddenMcpAddress(bare) || cgnat(bare);
+  // IPv6 carrying an IPv4 address (mapped, compatible, NAT64, 6to4, Teredo): every IPv4 rule applies to it.
+  const embedded = embeddedIpv4(bare);
+  if (embedded !== null && isBlockedRelayAddress(embedded)) return true;
+  return isForbiddenMcpAddress(bare);
 }
 
 const METADATA_NAMES = new Set(["metadata.google.internal", "metadata.goog", "metadata", "instance-data", "instance-data.ec2.internal"]);

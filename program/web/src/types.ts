@@ -707,6 +707,8 @@ export interface BuzzIdentityView {
     allowsKinds: number[];
   };
   readiness: "available" | "credential_missing" | "credential_invalid";
+  /** The only kinds Marketplace ever signs with the agent key. */
+  signableKinds: number[];
   signing: { preimage: string; suggestedConditions: string; maxDays: number; reminderDays: number } | null;
   pinnedOwner: { set: boolean; fingerprint: string | null };
   secretStore: "available" | "unavailable";

@@ -591,8 +591,9 @@ function buzzView(overrides: Partial<BuzzIdentityView> = {}): BuzzIdentityView {
       daysLeft: 9,
       renewalDue: true,
       setAt: "2026-10-10T00:00:00.000Z",
-      allowsKinds: [9, 9007, 9000, 9001, 9008, 5, 7, 40003, 41010, 20002],
+      allowsKinds: [9, 7, 5, 40003, 41010, 9007, 9000, 9001, 9008, 20002, 22242, 27235, 24242],
     },
+    signableKinds: [9, 7, 5, 40003, 41010, 9007, 9000, 9001, 9008, 20002, 22242, 27235, 24242],
     readiness: "available",
     signing: { preimage: "nostr:agent-auth:7e7e9c42a91bfef19fa929e5fda1b72e0ebc1a4c1141673e2794234d86addf4e:created_at<1800000000", suggestedConditions: "created_at<1800000000", maxDays: 90, reminderDays: 14 },
     pinnedOwner: { set: true, fingerprint: "0123456789abcdef" },
@@ -630,7 +631,7 @@ describe("Buzz identity", () => {
     expect(screen.getByText(BUZZ_NPUB)).toBeTruthy();
     expect(screen.getByText(/Sign a new tag before then/u)).toBeTruthy();
     expect(screen.getByText(/A Buzz delete is a soft delete/u)).toBeTruthy();
-    expect(screen.getByText(/kinds 9, 9007/u)).toBeTruthy();
+    expect(screen.getAllByText("kinds 9, 7, 5, 40003, 41010, 9007, 9000, 9001, 9008, 20002, 22242, 27235, 24242")).toHaveLength(2);
     expect(document.querySelector('input[type="password"]')).toBeNull();
     const tagField = screen.getByLabelText("NIP-OA tag") as HTMLTextAreaElement;
     fireEvent.change(tagField, { target: { value: "nsec1vl029mgpspedva04g90vltkh6fvh240zqtv9k0t9af8935ke9laqsnlfe5" } });

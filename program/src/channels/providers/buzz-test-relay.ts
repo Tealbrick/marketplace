@@ -1,10 +1,11 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import { schnorr } from "@noble/curves/secp256k1.js";
 import { nostrEventId, nostrSignatureValid } from "@tealbrick/contract/nostr-approval";
 
 import type { GatewaySocket } from "../discord-gateway.js";
-import { HEX64, publicKeyOf, signEvent, verifyAuthTag, verifyEvent, type NostrEvent } from "./nostr.js";
+
+import { HEX64, publicKeyOf, verifyAuthTag, verifyEvent, type NostrEvent } from "./nostr.js";
 
 // Test-only: an in-memory fake Buzz relay. Never imported by runtime code. It speaks the relay's HTTP bridge
 // (`GET /` NIP-11, `POST /events`, `POST /query`, `PUT /media/upload`) as a `fetch` implementation and the
@@ -14,6 +15,18 @@ import { HEX64, publicKeyOf, signEvent, verifyAuthTag, verifyEvent, type NostrEv
 // `x` = body hash, expiration). Nothing here opens a network connection.
 
 export const TEST_RELAY_SECRET = "11".repeat(32);
+
+/**
+ * Test-only signer for keys that are NOT a Marketplace agent key (the relay's own key, other members): any kind.
+ * Marketplace code signs only through `nostr.signEvent`, which enforces BUZZ_SIGNABLE_KINDS.
+ */
+export function signTestEvent(secretHex: string, input: { kind: number; created_at: number; tags: string[][]; content: string }): NostrEvent {
+  const pubkey = publicKeyOf(secretHex)!;
+  const unsigned = { pubkey, created_at: input.created_at, kind: input.kind, tags: input.tags, content: input.content };
+  const id = nostrEventId(unsigned);
+  const sig = Buffer.from(schnorr.sign(Buffer.from(id, "hex"), Buffer.from(secretHex, "hex"), randomBytes(32))).toString("hex");
+  return { id, ...unsigned, sig };
+}
 
 export type RecordedRelayRequest = { method: string; path: string; headers: Record<string, string>; body: string | null };
 
@@ -65,7 +78,7 @@ export function createFakeBuzzRelay(options: { host?: string; members?: string[]
   const uploads: Array<{ sha256: string; type: string; size: number }> = [];
 
   const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
-  const relaySigned = (kind: number, tags: string[][], content = "") => signEvent(TEST_RELAY_SECRET, { kind, created_at: nowSeconds(), tags, content });
+  const relaySigned = (kind: number, tags: string[][], content = "") => signTestEvent(TEST_RELAY_SECRET, { kind, created_at: nowSeconds(), tags, content });
 
   const replaceAddressable = (event: NostrEvent) => {
     const d = event.tags.find((tag) => tag[0] === "d")?.[1];
@@ -415,7 +428,7 @@ export function createFakeBuzzRelay(options: { host?: string; members?: string[]
     },
     /** Publishes an event signed by another member (inbound tests). */
     inject(secret: string, input: { kind: number; tags: string[][]; content: string; created_at?: number }): NostrEvent {
-      const event = signEvent(secret, { kind: input.kind, created_at: input.created_at ?? nowSeconds(), tags: input.tags, content: input.content });
+      const event = signTestEvent(secret, { kind: input.kind, created_at: input.created_at ?? nowSeconds(), tags: input.tags, content: input.content });
       const group = input.tags.find((tag) => tag[0] === "h")?.[1];
       if (group && groups.get(group)) groups.get(group)!.members.add(event.pubkey);
       if (input.kind === 0) replaceAddressable({ ...event, tags: [...event.tags, ["d", "profile"]] });

@@ -1,8 +1,9 @@
 import type { SqliteMarketplaceStore } from "../store.js";
 import { ownerKeyFingerprint } from "./owner-key.js";
 import { checkRelayHost, type RelayLookup } from "./buzz-relay-guard.js";
-import { BUZZ_PUBLISHED_KINDS, encodeBuzzCredential, normalizeRelayUrl } from "./providers/buzz.js";
+import { encodeBuzzCredential, normalizeRelayUrl } from "./providers/buzz.js";
 import {
+  BUZZ_SIGNABLE_KINDS,
   NIP_OA_MAX_LIFETIME_SECONDS,
   NIP_OA_RENEWAL_REMINDER_SECONDS,
   authPreimage,
@@ -56,6 +57,8 @@ export type BuzzIdentityView = {
     /** Event kinds the stored tag lets Marketplace publish (all of them for a tag without kind clauses). */
     allowsKinds: number[];
   };
+  /** The only kinds Marketplace ever signs with the agent key (BUZZ_SIGNABLE_KINDS). */
+  signableKinds: number[];
   /** From the stored identity alone (no network): what the provider readiness will at best be. */
   readiness: Exclude<ChannelReadiness, "unavailable">;
   /** What the owner signs on their own device: the exact NIP-OA preimage for a 90-day tag, and the bounds. */
@@ -144,9 +147,10 @@ export function createBuzzIdentity(deps: BuzzIdentityDeps) {
         daysLeft: secondsLeft !== null ? Math.max(0, Math.floor(secondsLeft / 86_400)) : null,
         renewalDue: secondsLeft !== null && secondsLeft < NIP_OA_RENEWAL_REMINDER_SECONDS,
         setAt: identity?.authSetAt ?? null,
-        allowsKinds: state.status === "valid" && "checked" in state && state.checked ? BUZZ_PUBLISHED_KINDS.filter((kind) => state.checked!.parsed.kinds.every((allowed) => allowed === kind)) : [],
+        allowsKinds: state.status === "valid" && "checked" in state && state.checked ? BUZZ_SIGNABLE_KINDS.filter((kind) => state.checked!.parsed.kinds.every((allowed) => allowed === kind)) : [],
       },
       readiness,
+      signableKinds: [...BUZZ_SIGNABLE_KINDS],
       signing: pubkey
         ? { preimage: authPreimage(pubkey, suggested), suggestedConditions: suggested, maxDays: NIP_OA_MAX_LIFETIME_SECONDS / 86_400, reminderDays: NIP_OA_RENEWAL_REMINDER_SECONDS / 86_400 }
         : null,
@@ -223,7 +227,7 @@ export function createBuzzIdentity(deps: BuzzIdentityDeps) {
       if (!checked.ok) return { ok: false, status: 422, error: `buzz_${checked.reason}` };
       // NIP-OA kind clauses are conjunctive: a tag with any kind= clause cannot cover the kinds Marketplace publishes.
       if (checked.value.parsed.kinds.length > 0) {
-        return { ok: false, status: 422, error: "buzz_auth_tag_kinds_too_narrow", detail: `the tag must not limit kinds; Marketplace publishes kinds ${BUZZ_PUBLISHED_KINDS.join(", ")}` };
+        return { ok: false, status: 422, error: "buzz_auth_tag_kinds_too_narrow", detail: `the tag must not limit kinds; Marketplace signs kinds ${BUZZ_SIGNABLE_KINDS.join(", ")}` };
       }
       if (identity.authTagSha256 !== checked.value.sha256) {
         buzz.setAuthTag({
