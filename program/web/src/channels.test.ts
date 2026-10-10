@@ -186,7 +186,7 @@ describe("channels model", () => {
     const base = channel().capabilities!;
     const rows = Object.fromEntries(capabilityRows(base).map((row) => [row.key, row]));
     expect(rows.thread).toMatchObject({ label: "Threads", value: "Forum topics", available: true });
-    for (const key of ["dm", "reactions", "edit", "delete", "canvas", "presence", "ephemeral", "live", "inbound"]) {
+    for (const key of ["dm", "reactions", "edit", "delete", "canvas", "presence", "ephemeral", "live", "inbound", "poll"]) {
       expect(rows[key], key).toMatchObject({ value: "Not available", available: false });
     }
     const rich = Object.fromEntries(
@@ -203,8 +203,14 @@ describe("channels model", () => {
         ephemeral: true,
         live: { join: true, listen: true, speak: false, transcript: true, maxSessionMinutes: 120 },
         inbound: { mode: "socket", dedupe: true },
+        markupOptions: ["markdown-v2"],
+        poll: { questionMaxChars: 300, minOptions: 1, maxOptions: 10, optionMaxChars: 55, multiple: true, durationHours: { min: 1, max: 768, default: 24 } },
       }).map((row) => [row.key, row]),
     );
+    expect(rich.text.value).toMatch(/markdown-v2 on request/u);
+    expect(rich.poll).toMatchObject({ label: "Polls", value: "1-10 options · multiple answers allowed · open up to 768 hours", available: true });
+    const windowed = Object.fromEntries(capabilityRows({ ...base, delete: { own: true, windowSeconds: 172800 } }).map((row) => [row.key, row]));
+    expect(windowed.delete).toMatchObject({ value: "Within 48 h", available: true });
     expect(rich.mentions.value).toMatch(/Named people/u);
     expect(rich.dm).toMatchObject({ label: "Direct messages", value: "Up to 8 people", available: true });
     expect(rich.thread).toMatchObject({ value: "Replies, forum posts", available: true });

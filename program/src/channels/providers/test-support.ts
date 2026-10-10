@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { oggPageCrc } from "./ogg-opus.js";
 import type { AttachmentKind, OutboundAttachment } from "./types.js";
 
 // Test-only helpers: a recording fake fetch and a fake clock. Never imported by runtime code.
@@ -91,4 +92,60 @@ export function attachment(
 export function telegramMethod(request: RecordedRequest, token: string): string | undefined {
   const prefix = `https://api.telegram.org/bot${token}/`;
   return request.url.startsWith(prefix) ? request.url.slice(prefix.length) : undefined;
+}
+
+/**
+ * A valid Ogg/Opus file (mono, 48 kHz, CRC-correct pages) whose audio packets have the given sizes in bytes.
+ * Each packet is one 20 ms CELT frame (TOC 0xF8) padded to its size; at most 50 packets per page.
+ */
+export function buildOggOpus(packetSizes: readonly number[], options: { preSkip?: number; lastGranule?: bigint } = {}): Uint8Array {
+  const preSkip = options.preSkip ?? 312;
+  const serial = 0x1234abcd;
+  const pages: Uint8Array[] = [];
+  let sequence = 0;
+  const page = (flags: number, granule: bigint, packets: Uint8Array[]) => {
+    const lacing: number[] = [];
+    for (const packet of packets) {
+      let remaining = packet.length;
+      while (remaining >= 255) {
+        lacing.push(255);
+        remaining -= 255;
+      }
+      lacing.push(remaining);
+    }
+    const header = Buffer.alloc(27 + lacing.length);
+    header.write("OggS", 0, "latin1");
+    header.writeUInt8(flags, 5);
+    header.writeBigInt64LE(granule, 6);
+    header.writeUInt32LE(serial, 14);
+    header.writeUInt32LE(sequence++, 18);
+    header.writeUInt8(lacing.length, 26);
+    lacing.forEach((value, index) => header.writeUInt8(value, 27 + index));
+    const whole = Buffer.concat([header, ...packets]);
+    whole.writeUInt32LE(oggPageCrc(whole), 22);
+    pages.push(whole);
+  };
+  const head = Buffer.alloc(19);
+  head.write("OpusHead", 0, "latin1");
+  head.writeUInt8(1, 8);
+  head.writeUInt8(1, 9);
+  head.writeUInt16LE(preSkip, 10);
+  head.writeUInt32LE(48_000, 12);
+  const tags = Buffer.alloc(16);
+  tags.write("OpusTags", 0, "latin1");
+  page(0x02, 0n, [head]);
+  page(0, 0n, [tags]);
+  const packets = packetSizes.map((size) => {
+    const packet = new Uint8Array(Math.max(1, size)).fill(0x55);
+    packet[0] = 0xf8;
+    return packet;
+  });
+  let granule = 0n;
+  for (let start = 0; start < packets.length; start += 50) {
+    const chunk = packets.slice(start, start + 50);
+    granule += BigInt(chunk.length * 960);
+    const last = start + 50 >= packets.length;
+    page(last ? 0x04 : 0, last && options.lastGranule !== undefined ? options.lastGranule : granule, chunk);
+  }
+  return Uint8Array.from(Buffer.concat(pages));
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AGENT_WIRED_FEATURES, CHANNEL_FEATURES, capabilitySupports, featureRefusal, wiredCapabilities } from "./capabilities.js";
+import { AGENT_WIRED_FEATURES, CHANNEL_FEATURES, capabilitySupports, featureRefusal, markupSupported, pollProblem, wiredCapabilities } from "./capabilities.js";
 import { createDiscordProvider } from "./discord.js";
 import { createTelegramProvider } from "./telegram.js";
 import { CHANNEL_CAPABILITIES_VERSION, type ChannelCapabilities } from "./types.js";
@@ -20,7 +20,7 @@ const RICH: ChannelCapabilities = {
   ephemeral: true,
   live: { join: true, listen: true, speak: false, transcript: true, maxSessionMinutes: 120 },
   inbound: { mode: "socket", dedupe: true },
-  poll: true,
+  poll: { questionMaxChars: 300, minOptions: 2, maxOptions: 10, optionMaxChars: 100, multiple: false },
 };
 
 describe("capability model v2", () => {
@@ -35,18 +35,18 @@ describe("capability model v2", () => {
     }
   });
 
-  it("declares only what the adapters do today: P2 features are false or none", () => {
+  it("declares only what the adapters do today", () => {
+    const declared = (caps: ChannelCapabilities) =>
+      CHANNEL_FEATURES.filter((feature) => !["image", "file", "audio", "voice", "video"].includes(feature) && capabilitySupports(caps, feature));
+    expect(declared(telegram)).toEqual(["thread.replies", "thread.topics", "reactions.add", "reactions.remove", "edit", "delete", "poll", "markup.markdown-v2"]);
+    expect(declared(discord)).toEqual(["dm", "thread.replies", "mentions.users", "reactions.add", "reactions.remove", "reactions.custom", "edit", "delete", "poll"]);
     for (const caps of [telegram, discord]) {
-      for (const feature of CHANNEL_FEATURES) {
-        if (["image", "file", "audio", "voice", "video"].includes(feature)) continue;
-        if (feature === "thread.topics" && caps === telegram) continue; // forum topics are a Phase 1 destination type
-        expect(capabilitySupports(caps, feature), feature).toBe(false);
-      }
       expect(caps.live).toBe(false);
+      expect(caps.events).toEqual({ create: false });
       expect(caps.inbound).toEqual({ mode: "none", dedupe: false });
     }
-    expect(telegram.thread).toEqual({ replies: false, topics: true, forum: false });
-    expect(discord.thread).toEqual({ replies: false, topics: false, forum: false });
+    expect(telegram.thread).toEqual({ replies: true, topics: true, forum: false });
+    expect(discord.thread).toEqual({ replies: true, topics: false, forum: false });
   });
 });
 
@@ -76,9 +76,9 @@ describe("capabilitySupports", () => {
 
   it("builds the channel_capability_unavailable refusal only for an undeclared feature", () => {
     expect(featureRefusal(RICH, "canvas")).toBeNull();
-    expect(featureRefusal(telegram, "reactions.add")).toEqual({
+    expect(featureRefusal(telegram, "dm")).toEqual({
       errorCode: "channel_capability_unavailable",
-      detail: 'this provider does not declare "reactions.add"',
+      detail: 'this provider does not declare "dm"',
     });
   });
 });
@@ -120,5 +120,31 @@ describe("wired features (review of PR #43)", () => {
     expect(effective.reactions).toEqual({ add: true, remove: false, custom: false });
     expect(effective.edit).toEqual({ own: true, windowSeconds: 900 });
     expect(wiredCapabilities(wiredCapabilities(RICH))).toEqual(wiredCapabilities(RICH));
+  });
+
+  it("leaves out markupOptions, since no route lets a post choose another markup yet", () => {
+    expect(telegram.markupOptions?.length).toBeGreaterThan(0);
+    expect(wiredCapabilities(telegram)).not.toHaveProperty("markupOptions");
+  });
+});
+
+describe("markupSupported and pollProblem", () => {
+  it("allows the default markup and listed options only", () => {
+    expect(markupSupported(telegram, "plain")).toBe(true);
+    expect(markupSupported(telegram, "markdown-v2")).toBe(true);
+    expect(markupSupported(telegram, "html")).toBe(false);
+    expect(markupSupported(discord, "markdown-v2")).toBe(false);
+    expect(capabilitySupports(discord, "markup.markdown-v2")).toBe(false);
+  });
+
+  it("refuses an undeclared poll and checks every limit without cutting", () => {
+    expect(pollProblem({ ...telegram, poll: false }, { question: "q", options: ["a", "b"] })).toMatchObject({ errorCode: "channel_capability_unavailable" });
+    expect(pollProblem(RICH, undefined)).toBeUndefined();
+    expect(pollProblem(RICH, { question: "q", options: ["a", "b"] })).toBeUndefined();
+    expect(pollProblem(RICH, { question: "q", options: ["a", "b"], allowsMultiple: true })).toMatchObject({ errorCode: "channel_poll_invalid" });
+    expect(pollProblem(RICH, { question: "q", options: ["a", "b\u202e"] })).toMatchObject({ errorCode: "channel_poll_invalid" });
+    expect(pollProblem(RICH, { question: "q", options: ["a", "b"], durationHours: 1 })).toMatchObject({ errorCode: "channel_poll_invalid" });
+    expect(pollProblem(RICH, { question: "q", options: "ab" as never })).toMatchObject({ errorCode: "channel_poll_invalid" });
+    expect(pollProblem(RICH, null as never)).toMatchObject({ errorCode: "channel_poll_invalid" });
   });
 });

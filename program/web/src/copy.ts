@@ -17,7 +17,8 @@ export const CHANNEL_TOKEN_HINT = "Add the bot token (or, for Microsoft Teams, t
 
 export const TELEGRAM_DISCOVER_HINT = "Add the bot to the chat and send one message, then press Discover.";
 
-export const DISCORD_DISCOVER_HINT = "Invite the bot to your server with View Channels, Send Messages, Attach Files and Embed Links, then press Discover.";
+export const DISCORD_DISCOVER_HINT =
+  "Invite the bot to your server with View Channels, Send Messages, Send Messages in Threads, Attach Files, Embed Links, Read Message History, Add Reactions, Send Voice Messages and Send Polls, then press Discover. Active threads are listed too.";
 
 /** Slack shows only channels the bot is a member of (the app has no chat:write.public). */
 export const SLACK_DISCOVER_HINT = "In Slack, open the channel and type /invite @your-app-name, then press Discover. Only channels the app is a member of are listed.";

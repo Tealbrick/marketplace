@@ -45,10 +45,26 @@ export type LiveCapability = {
 
 export type InboundMode = "socket" | "webhook" | "poll" | "none";
 
+export type ChannelMarkup = "plain" | "markdown-v2" | "discord-markdown" | "mrkdwn" | "html" | "teams-markdown";
+
+/** Poll limits of a provider (`poll` in the declaration is `false` when the adapter sends no polls). */
+export type PollCapability = {
+  questionMaxChars: number;
+  minOptions: number;
+  maxOptions: number;
+  optionMaxChars: number;
+  multiple: boolean;
+  /** Set when the post may say how long the poll stays open, in hours (Discord). */
+  durationHours?: { min: number; max: number; default: number };
+};
+
 export type ChannelCapabilities = {
   channelCapabilities: typeof CHANNEL_CAPABILITIES_VERSION;
   text: { maxChars: number; captionMaxChars?: number };
-  markup: "plain" | "markdown-v2" | "discord-markdown" | "mrkdwn" | "html" | "teams-markdown";
+  /** The markup of a post that does not ask for one. */
+  markup: ChannelMarkup;
+  /** Other markups a post may ask for with `OutboundMessage.markup` (Telegram: `markdown-v2`). Absent: none. */
+  markupOptions?: readonly ChannelMarkup[];
   /** Mention named users; broadcast mentions never ping (`suppressed`) in every version. */
   mentions: { users: boolean; broadcast: "suppressed" };
   /** Direct messages to named people: `open` when the adapter can start one, up to `maxMembers` people. */
@@ -62,10 +78,10 @@ export type ChannelCapabilities = {
   thread: { replies: boolean; topics: boolean; forum: boolean };
   reactions: { add: boolean; remove: boolean; custom: boolean };
   buttons: { url: boolean; callback: boolean };
-  poll: boolean;
+  poll: PollCapability | false;
   /** Edit or delete the agent's own message. `windowSeconds` is the provider's edit window, when it has one. */
   edit: { own: boolean; windowSeconds?: number };
-  delete: { own: boolean };
+  delete: { own: boolean; windowSeconds?: number };
   /** Shared document per channel. */
   canvas: boolean;
   presence: { typing: boolean; status: boolean };
@@ -125,6 +141,15 @@ export type OutboundMention = {
   name?: string;
 };
 
+/** A native poll. Validated against the provider's `poll` limits before any request; never cut. */
+export type OutboundPoll = {
+  question: string;
+  options: readonly string[];
+  allowsMultiple?: boolean;
+  /** Hours the poll stays open. Only where `poll.durationHours` is declared; otherwise refused. */
+  durationHours?: number;
+};
+
 export type OutboundMessage = {
   text: string;
   attachments?: readonly OutboundAttachment[];
@@ -132,6 +157,10 @@ export type OutboundMessage = {
   replyTo?: string;
   /** Named people to mention. Only where `mentions.users` is declared; otherwise refused. */
   mentions?: readonly OutboundMention[];
+  /** A markup other than the default: only one the provider lists in `markupOptions`; otherwise refused. */
+  markup?: ChannelMarkup;
+  /** A native poll. Only where `poll` is declared; a poll post carries no attachments. */
+  poll?: OutboundPoll;
 };
 
 export type SendStatus = "sent" | "failed" | "uncertain";
@@ -228,7 +257,7 @@ export type ChannelProvider = {
     credential: string | null | undefined,
     destination: ChannelDestination,
     messageId: string,
-    message: { text: string; mentions?: readonly OutboundMention[] },
+    message: { text: string; mentions?: readonly OutboundMention[]; markup?: ChannelMarkup },
   ): Promise<SendResult>;
   /** Delete the bot's own message. Needs `delete.own`. */
   remove?(credential: string | null | undefined, destination: ChannelDestination, messageId: string): Promise<ActionResult>;

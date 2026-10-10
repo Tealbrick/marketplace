@@ -208,6 +208,8 @@ export type ProofRequest = {
   delivered: boolean;
   /** Discord only: `allowed_mentions.parse` of the request, null when absent. */
   allowedMentionsParse?: string[] | null;
+  /** Discord only: the native voice message fields of the request, when it sets IS_VOICE_MESSAGE. */
+  discordVoice?: { flags: number; hasContent: boolean; attachments: number; durationSecs: number | null; waveformBytes: number | null };
   hints: RequestHints;
 };
 
@@ -287,6 +289,7 @@ export function createGuardedFetch(input: {
       }
     }
     let allowedMentionsParse: string[] | null | undefined;
+    let discordVoice: ProofRequest["discordVoice"];
     if (provider === "discord" && isSend) {
       let payload = fields.json;
       if (fields.form) {
@@ -295,6 +298,18 @@ export function createGuardedFetch(input: {
       }
       const parse = asRecord(payload?.allowed_mentions)?.parse;
       allowedMentionsParse = Array.isArray(parse) ? parse.map(String) : null;
+      const flags = typeof payload?.flags === "number" ? payload.flags : 0;
+      if ((flags & (1 << 13)) !== 0) {
+        const attachments = Array.isArray(payload?.attachments) ? payload.attachments : [];
+        const first = asRecord(attachments[0]);
+        discordVoice = {
+          flags,
+          hasContent: typeof payload?.content === "string" && payload.content.length > 0,
+          attachments: attachments.length,
+          durationSecs: typeof first?.duration_secs === "number" ? first.duration_secs : null,
+          waveformBytes: typeof first?.waveform === "string" ? Buffer.from(first.waveform, "base64").length : null,
+        };
+      }
     }
 
     const entry: ProofRequest = {
@@ -306,6 +321,7 @@ export function createGuardedFetch(input: {
       http: null,
       delivered: false,
       ...(allowedMentionsParse !== undefined ? { allowedMentionsParse } : {}),
+      ...(discordVoice ? { discordVoice } : {}),
       hints: {},
     };
     input.log.push(entry);
@@ -916,7 +932,7 @@ async function proveProvider(ctx: Ctx, prepared: Prepared) {
     }
   });
 
-  await ctx.step(provider, "§10.6", provider === "telegram" ? "voice note via sendVoice (OGG/Opus, native voice message)" : "voice delivered as audio file + transcript (declared fallback)", async (s) => {
+  await ctx.step(provider, "§10.6", provider === "telegram" ? "voice note via sendVoice (OGG/Opus, native voice message)" : "native voice message (IS_VOICE_MESSAGE, duration + waveform) then the transcript as a reply", async (s) => {
     const tag = ctx.nextTag();
     const from = ctx.requestLog.length;
     const res = await post("features", {
@@ -924,17 +940,22 @@ async function proveProvider(ctx: Ctx, prepared: Prepared) {
       attachments: [{ attachmentId: oggId, kind: "voice", ...(provider === "discord" ? { transcript: "tealbrick channels proof, one second of silence" } : {}) }],
     });
     ctx.recordPost(provider, tag, "features", res);
-    const request = ctx.requestLog.slice(from).find((entry) => entry.isSend && entry.delivered);
-    s.ev({ ...ctx.receiptEvidence(res), op: request?.op, hints: request?.hints });
+    const delivered = ctx.requestLog.slice(from).filter((entry) => entry.isSend && entry.delivered);
+    const request = delivered[0];
+    s.ev({ ...ctx.receiptEvidence(res), op: request?.op, hints: request?.hints, ...(request?.discordVoice ? { discordVoice: request.discordVoice } : {}) });
     s.expect(res.statusCode === 200 && jsonOf(res).receipt?.status === "sent", "the post is sent");
     if (provider === "telegram") {
       s.expect(request?.op === "sendVoice", "the adapter used sendVoice");
       s.expect(typeof request?.hints.voiceDuration === "number" && request.hints.voiceDuration > 0, "Telegram returned a voice message with a duration (plays as a voice note)");
       s.expect(jsonOf(res).receipt?.fallback === undefined, "no fallback was applied");
     } else {
-      s.expect(jsonOf(res).receipt?.fallback === "voice→audio+transcript", "the receipt names the voice fallback");
-      s.expect(request?.hints.attachmentTypes?.some((type) => type.startsWith("audio/")) === true, "the message has an audio file attachment");
-      s.expect(request?.hints.hasTranscript === true, "the message text carries the transcript");
+      const voice = request?.discordVoice;
+      s.expect(jsonOf(res).receipt?.fallback === undefined, "no fallback was applied");
+      s.expect(voice?.flags === 1 << 13 && voice.attachments === 1 && voice.hasContent === false, "the first message is a voice message: IS_VOICE_MESSAGE, one attachment, no content");
+      s.expect(typeof voice?.durationSecs === "number" && voice.durationSecs > 0, "the voice message carries duration_secs");
+      s.expect(typeof voice?.waveformBytes === "number" && voice.waveformBytes > 0 && voice.waveformBytes <= 256, "the voice message carries a waveform of 1-256 bytes");
+      s.expect(request?.hints.attachmentTypes?.some((type) => type.startsWith("audio/")) === true, "the voice message has the OGG attachment");
+      s.expect(delivered.length === 2 && delivered[1]?.hints.hasTranscript === true, "the transcript follows as a second message");
     }
   });
 

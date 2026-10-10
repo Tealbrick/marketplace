@@ -110,8 +110,8 @@ Steps per provider: credentials (§8), discover and allowlist, destination safet
 fake consent, standing grant propose and owner approve, widening refused (§10.4), post under
 grant (§10.1), min interval, duplicate phase and 404 (§10.2), two scheduled posts 70 s ahead and
 one grant revoked (§10.5), per-payload approval with replay and changed text (§10.3), photo,
-voice (Telegram `sendVoice`; Discord audio file plus transcript with the receipt naming the
-fallback), `@everyone` pings nobody (the request log shows `allowed_mentions.parse = []`),
+voice (Telegram `sendVoice`; Discord a native voice message with `IS_VOICE_MESSAGE`, duration and
+waveform and no content, then the transcript as a reply), `@everyone` pings nobody (the request log shows `allowed_mentions.parse = []`),
 undeclared kind `poll` refused (§10.6), scheduler tick (§10.5), posts 2 and 3 then the 4th
 refused `channel_cap_per_day` (§10.2), consent revoke suspends the grant and refuses the next
 post (§10.7). Last, hygiene (§10.8): both tokens are searched for in the temporary database
