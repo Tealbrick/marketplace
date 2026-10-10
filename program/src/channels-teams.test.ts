@@ -192,14 +192,15 @@ describe("Teams channel end to end", () => {
     const { activity, f, requests } = await setup();
     const browse = await f.owner("GET", "/api/marketplace/channels");
     expect(browse.json().readiness).toEqual({ teams: "available" });
-    // The adapter declares mentions, replies, edit and delete, but no agent operation uses them: not exposed.
+    // The adapter declares mentions, edit and delete, but no agent operation uses them: not exposed. Replies are
+    // wired (marketplace.channels.reply).
     expect(browse.json().providers[0]).toMatchObject({
       id: "teams",
       kinds: ["chat"],
       capabilities: {
         markup: "teams-markdown",
         mentions: { users: false },
-        thread: { replies: false },
+        thread: { replies: true },
         edit: { own: false },
         delete: { own: false },
         dm: { open: false, maxMembers: 0 },

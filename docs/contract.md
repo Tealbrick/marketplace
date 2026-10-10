@@ -221,8 +221,10 @@ agent consumers must branch on `channelCapabilities` (absent or `1` is the v1
 shape). The answer is **effective**, not the adapter's raw declaration: it is
 the declaration intersected with `AGENT_WIRED_FEATURES`
 (`program/src/channels/providers/capabilities.ts`), the closed set of features
-an agent operation can use today (the attachment kinds and forum topics as
-destinations). A feature an adapter can do but no route performs yet reads as
+an agent operation can use today (the attachment kinds, forum topics as
+destinations, `inbound` for `marketplace.channels.inbound` and
+`thread.replies` for `marketplace.channels.reply`, the only operation that
+replies in a thread). A feature an adapter can do but no route performs yet reads as
 `false`, `{own: false}` or `{mode: "none"}`. A later release that ships an
 operation adds its feature to that set in the same change.
 
@@ -513,8 +515,9 @@ not in the agent capability answer (wired filter) until a later change ships
 the route and its scope: `react` (`reactions.add/remove`), `edit`
 (`chat.update`), `remove` (`chat.delete`), `findPerson`
 (`users.lookupByEmail`, or a handle from a `users.list` cache of at most 10
-minutes that is never returned), `openDirect` (`conversations.open`), replies
-and named mentions in `send`, and the opt-in `scheduleNative`
+minutes that is never returned), `openDirect` (`conversations.open`), named
+mentions in `send` (replies in `send` are used only by
+`marketplace.channels.reply`), and the opt-in `scheduleNative`
 (`chat.scheduleMessage`, 1 minute to 120 days ahead, 30 per 5 minutes per
 channel). Marketplace's own scheduler stays the default,
 because it re-checks authority and caps at send time. Limits: one message per
@@ -640,10 +643,11 @@ bytes) is refused. Mentions: `<at>name</at>` plus a mention entity, only for a
 Teams user id (`29:…`) or an Entra object id that the caller lists (with its
 `name`); an undeclared `<at>` tag is refused, so a team, channel or tag is
 never mentioned. No files, images, cards or reactions in this version.
-`edit` = `PUT .../activities/{id}`, `remove` = `DELETE`. Thread replies,
-mentions, `edit`, `remove`, `findPerson` and `openDirect` are adapter-level
-only: no agent operation uses them yet, so the wired filter keeps them out of
-the agent capability answer (agents see text posts and Marketplace scheduling). `findPerson` (Graph
+`edit` = `PUT .../activities/{id}`, `remove` = `DELETE`. Mentions, `edit`,
+`remove`, `findPerson` and `openDirect` are adapter-level only: no agent
+operation uses them yet, so the wired filter keeps them out of the agent
+capability answer. Thread replies are used by `marketplace.channels.reply`
+(reply to the source thread of an inbound event). `findPerson` (Graph
 `users?$filter=mail eq … or userPrincipalName eq …`, User.Read.All
 application permission) and `openDirect` (`POST {serviceUrl}/v3/conversations`,
 1:1, the app must already be installed for that person) exist only when

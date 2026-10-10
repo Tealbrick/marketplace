@@ -86,8 +86,8 @@ describe("capabilitySupports", () => {
 });
 
 describe("wired features (review of PR #43)", () => {
-  it("wires only what P1 routes really do: the attachment kinds and forum topics as destinations", () => {
-    expect([...AGENT_WIRED_FEATURES].sort()).toEqual(["audio", "file", "image", "thread.topics", "video", "voice"]);
+  it("wires only what the routes really do: attachment kinds, forum topics, inbound delivery and reply to source", () => {
+    expect([...AGENT_WIRED_FEATURES].sort()).toEqual(["audio", "file", "image", "inbound", "thread.replies", "thread.topics", "video", "voice"]);
   });
 
   it("exposes declaration ∩ wired for every feature", () => {
@@ -99,7 +99,7 @@ describe("wired features (review of PR #43)", () => {
     }
   });
 
-  it("hides a declared feature with no operation behind it (reactions, edit, dm, live, inbound)", () => {
+  it("hides a declared feature with no operation behind it (reactions, edit, dm, live) and keeps inbound", () => {
     const effective = wiredCapabilities(RICH);
     expect(effective.reactions).toEqual({ add: false, remove: false, custom: false });
     expect(effective.edit).toEqual({ own: false });
@@ -107,7 +107,7 @@ describe("wired features (review of PR #43)", () => {
     expect(effective.dm).toEqual({ open: false, maxMembers: 0 });
     expect(effective.mentions).toEqual({ users: false, broadcast: "suppressed" });
     expect(effective.live).toBe(false);
-    expect(effective.inbound).toEqual({ mode: "none", dedupe: false });
+    expect(effective.inbound).toEqual(RICH.inbound);
     expect(effective.poll).toBe(false);
     // Non-feature keys and wired features are kept as declared.
     expect(effective.text).toEqual(RICH.text);

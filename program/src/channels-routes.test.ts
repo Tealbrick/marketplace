@@ -97,12 +97,12 @@ describe("channels: post with a standing grant (§10 item 1)", () => {
         text: { maxChars: 4096 },
         voice: { native: true, types: ["audio/ogg"] },
         video: false,
-        // Telegram declares replies, reactions, edit, delete, polls and markdown-v2, but no agent operation uses
-        // them yet: the wired filter keeps them out of the agent answer.
+        // Telegram declares reactions, edit, delete, polls and markdown-v2, but no agent operation uses them yet:
+        // the wired filter keeps them out. Replies are wired (marketplace.channels.reply), and so is inbound.
         markup: "plain",
         mentions: { users: false, broadcast: "suppressed" },
         dm: { open: false, maxMembers: 0 },
-        thread: { replies: false, topics: true, forum: false },
+        thread: { replies: true, topics: true, forum: false },
         reactions: { add: false, remove: false, custom: false },
         edit: { own: false },
         delete: { own: false },
@@ -146,10 +146,10 @@ describe("channels: post with a standing grant (§10 item 1)", () => {
       delete: { own: false },
       dm: { open: false, maxMembers: 0 },
       mentions: { users: false, broadcast: "suppressed" },
-      inbound: { mode: "none", dedupe: false },
     };
     const list = await f.agent("GET", "/api/marketplace/v1/agent/channels");
-    expect(list.json().channels[0].capabilities).toMatchObject({ ...hidden, thread: { topics: true }, voice: { native: true } });
+    // Inbound and reply to source are wired (marketplace.channels.inbound / .reply).
+    expect(list.json().channels[0].capabilities).toMatchObject({ ...hidden, inbound: { mode: "webhook", dedupe: true }, thread: { topics: true, replies: true }, voice: { native: true } });
     const one = await f.agent("GET", `/api/marketplace/v1/agent/channels/${channel.id}`);
     expect(one.json().channel.capabilities).toMatchObject(hidden);
     const browse = await f.owner("GET", "/api/marketplace/channels");

@@ -664,9 +664,10 @@ describe("teams discovery titles and the wired filter", () => {
     });
   });
 
-  it("exposes no edit, delete, mentions, replies or DM to agents until their operations ship", () => {
+  it("exposes no edit, delete, mentions or DM to agents until their operations ship; inbound and replies are wired", () => {
     const effective = wiredCapabilities(createTeamsProvider({ graphEnabled: true }).capabilities);
-    for (const feature of ["edit", "delete", "mentions.users", "thread.replies", "dm"]) expect(capabilitySupports(effective, feature), feature).toBe(false);
+    for (const feature of ["edit", "delete", "mentions.users", "dm"]) expect(capabilitySupports(effective, feature), feature).toBe(false);
+    for (const feature of ["inbound", "thread.replies"]) expect(capabilitySupports(effective, feature), feature).toBe(true);
     expect(effective.edit).toEqual({ own: false });
     expect(effective.dm).toEqual({ open: false, maxMembers: 0 });
   });
