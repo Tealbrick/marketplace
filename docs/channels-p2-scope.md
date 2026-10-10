@@ -56,6 +56,23 @@ Phase 1 sends only. Phase 2 also receives messages for agents.
 
 Effort: 5–7 wd.
 
+### 2.2a Outbound is native; the Buzz bridge is only for waking agents
+
+1. **Outbound stays native in each platform.** An agent sends through the Marketplace Channels operations to a Slack channel, a Slack DM or a Slack thread, mentions a Slack user, sends files, and schedules posts. Teams, Telegram and Discord work the same way, in their own platforms. The capability model declares what each platform supports.
+2. **The Buzz bridge is only the inbound wake-up path.** A message that arrives in Slack (or Teams, Telegram, Discord) wakes the agent through its Buzz channel. Each bridged event carries the source ids: platform, channel id, thread id, message id and sender user id.
+3. **The agent replies in the source platform, not in Buzz.** The operation `marketplace.channels.reply` takes the bridged event id and sends the reply natively (for example into the same Slack thread). It is outward like every post: a covering standing grant, or the owner's approval of the exact payload.
+4. **Agents can start a new DM with a named person.** Destination type `person` on a connection:
+
+| Platform | How the agent finds the person | How the DM starts | Limits |
+|---|---|---|---|
+| Slack | `users.lookupByEmail` (scope `users:read.email`) or the handle from a cached `users.list` of the connected workspace | `conversations.open` (scope `im:write`), then post | Only people in the connected workspace |
+| Teams | Entra user by email or UPN (Graph) | The bot must be installed for that user first (proactive install through Graph for an app in the org catalog), then a proactive 1:1 message | Only users in the tenant where the app is allowed |
+| Discord | Member of a guild where the bot is | Create a DM channel, then post | Fails if the user does not accept DMs from server members |
+| Telegram | — | **Not possible:** a bot can message a person only after the person starts the bot | Refused (`channel_capability_unavailable`) unless the person started the bot |
+| Buzz | npub or a member name in the relay | Buzz DM (1–8 people) | Only relay members |
+
+5. **Policy for DMs.** The owner sets a people policy per connection: `none` (default), `allowlist` (named people or email domains), or `workspace` (anyone in the connected workspace or tenant). The first message to a new person always needs the owner's approval of the exact payload. A standing grant can cover later messages to people already approved. Agents never get a bulk list of members.
+
 ### 2.3 Live-session grant (huddles and voice)
 
 The owner cannot approve each spoken sentence before it is said. Live voice therefore needs a new grant type. The rules:
@@ -117,7 +134,8 @@ Facts are from the Buzz source (`block/buzz`, desktop 0.5.25), the `buzz` CLI an
 
 | Capability | Slack support | Channels plan |
 |---|---|---|
-| Text | `chat.postMessage`, `mrkdwn`, Block Kit | Post, schedule, standing grants |
+| Text | `chat.postMessage`, `mrkdwn`, Block Kit | Post, schedule, standing grants; reply into the source thread (§2.2a) |
+| DMs to named people | `users.lookupByEmail`, `conversations.open` | Start a DM with a person in the workspace (§2.2a item 4) |
 | Threads | Yes (`thread_ts`) | `replyTo` |
 | Files | Upload v2 (`files.getUploadURLExternal` + `files.completeUploadExternal`); old `files.upload` retired | Three-step upload; a failure after the share step is `uncertain` |
 | Voice notes | No bot voice-clip API | Fallback: audio file + transcript |
