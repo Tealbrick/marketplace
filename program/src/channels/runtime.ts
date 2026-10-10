@@ -16,6 +16,7 @@ import {
 } from "./providers/capabilities.js";
 import { scrubSecrets, validateOutbound } from "./providers/common.js";
 import { buildDiscordVoicePayload, createDiscordProvider } from "./providers/discord.js";
+import { createBuzzProvider, type BuzzProvider } from "./providers/buzz.js";
 import { createSlackProvider } from "./providers/slack.js";
 import { createTeamsProvider, encodeTeamsCredential, type TeamsConversationSource } from "./providers/teams.js";
 import { createTelegramProvider } from "./providers/telegram.js";
@@ -45,10 +46,10 @@ import {
  * no HTTP; the app wires these into `executeConsentedCall`.
  */
 
-export const CHANNEL_PROVIDER_IDS: readonly ChannelProviderId[] = ["telegram", "discord", "slack", "teams"];
+export const CHANNEL_PROVIDER_IDS: readonly ChannelProviderId[] = ["telegram", "discord", "slack", "teams", "buzz"];
 
 /** Providers whose credential is one bot token. */
-export type ChannelTokenProviderId = Exclude<ChannelProviderId, "teams">;
+export type ChannelTokenProviderId = Exclude<ChannelProviderId, "teams" | "buzz">;
 
 /** Hosted credentials: Account Connections deliver these as provider env (spec §8). */
 export const CHANNEL_TOKEN_ENV: Readonly<Record<ChannelTokenProviderId, string>> = {
@@ -78,6 +79,8 @@ export const TEAMS_CREDENTIAL_ENV = Object.freeze({
 
 /** Every hosted credential env name of a provider (for presence reports; values are never read here). */
 export function channelCredentialEnvNames(provider: ChannelProviderId): string[] {
+  // Buzz has no env credential: Marketplace generates the agent key and keeps it only in connector_secret.
+  if (provider === "buzz") return [];
   return provider === "teams"
     ? [TEAMS_CREDENTIAL_ENV.appId, TEAMS_CREDENTIAL_ENV.appSecret, TEAMS_CREDENTIAL_ENV.tenantId]
     : [CHANNEL_TOKEN_ENV[provider]];
@@ -99,12 +102,14 @@ export function teamsGraphEnabled(environment: Record<string, string | undefined
 export function defaultChannelProviders(
   options: ChannelProviderOptions = {},
   teams: { conversations?: TeamsConversationSource; graphEnabled?: boolean } = {},
+  buzz: BuzzProvider = createBuzzProvider(options),
 ): ChannelProviderRegistry {
   return {
     telegram: createTelegramProvider(options),
     discord: createDiscordProvider(options),
     slack: createSlackProvider(options),
     teams: createTeamsProvider({ ...options, ...teams }),
+    buzz,
   };
 }
 
@@ -133,7 +138,10 @@ export function resolveChannelCredential(input: {
   provider: ChannelProviderId;
   environment: Record<string, string | undefined>;
   readSecret: (pluginId: string, name: string) => { value: string; id: string } | null;
+  /** Buzz: the Marketplace-generated identity (connector_secret key + owner relay URL + NIP-OA tag); never env. */
+  buzz?: () => ChannelCredential | null;
 }): ChannelCredential | null {
+  if (input.provider === "buzz") return input.buzz?.() ?? null;
   if (input.provider === "teams") {
     const env = (name: string) => input.environment[name]?.trim() ?? "";
     const hosted = { appId: env(TEAMS_CREDENTIAL_ENV.appId), appSecret: env(TEAMS_CREDENTIAL_ENV.appSecret), tenantId: env(TEAMS_CREDENTIAL_ENV.tenantId) };

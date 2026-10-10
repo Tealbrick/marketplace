@@ -804,6 +804,58 @@
       "review": "none",
       "summary": "Inbound text retention (1-365 days, default 30) and the Discord Message Content intent (privileged, default off)",
       "audience": "owner"
+    },
+    {
+      "id": "marketplace.channel-buzz-identity.get",
+      "crud": [
+        "read"
+      ],
+      "method": "GET",
+      "path": "/api/marketplace/channels/buzz/identity",
+      "idempotency": "none",
+      "effects": "read-only",
+      "review": "none",
+      "summary": "The Buzz connection identity: agent npub, owner relay URL, NIP-OA tag status, end date and renewal reminder, and the exact preimage to sign (never the secret key)",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channel-buzz-key.generate",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/channels/buzz/identity/key",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Generate the Buzz agent key (kept only in the encrypted connector secret store, never shown or exported), or rotate it: the old key is destroyed and the NIP-OA tag cleared",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channel-buzz-identity.update",
+      "crud": [
+        "update"
+      ],
+      "method": "PUT",
+      "path": "/api/marketplace/channels/buzz/identity",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Set the Buzz relay address (a secure WebSocket address the owner enters) and/or the owner's NIP-OA tag for the agent key (verified: owner signature, pinned owner key, end date within 90 days)",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channel-buzz-auth-tag.revoke",
+      "crud": [
+        "delete"
+      ],
+      "method": "DELETE",
+      "path": "/api/marketplace/channels/buzz/identity/auth-tag",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Revoke the Buzz NIP-OA tag: Marketplace stops publishing and receiving with the Buzz identity at once",
+      "audience": "owner"
     }
   ],
   "approvals": {
@@ -2563,7 +2615,8 @@
                   "slack",
                   "telegram",
                   "discord",
-                  "teams"
+                  "teams",
+                  "buzz"
                 ]
               },
               "channelId": {

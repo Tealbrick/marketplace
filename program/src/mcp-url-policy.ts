@@ -82,7 +82,8 @@ function forbiddenIpv4(octets: number[]): boolean {
   return false;
 }
 
-function expandIpv6(address: string): number[] | null {
+/** Eight 16-bit groups of an IPv6 literal (zone dropped, dotted IPv4 tail accepted), or null. */
+export function expandIpv6(address: string): number[] | null {
   let value = address.toLowerCase();
   const zone = value.indexOf("%");
   if (zone >= 0) value = value.slice(0, zone);

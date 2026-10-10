@@ -1,4 +1,5 @@
 import type {
+  BuzzIdentityView,
   ChannelEffectiveCapabilities,
   ChannelPolicy,
   ChannelPolicyInput,
@@ -14,8 +15,8 @@ import type {
 // Pure helpers for the Channels owner UI. The server validates everything
 // again; these only keep the forms honest and explain refusals early.
 
-export const CHANNEL_PROVIDERS: readonly ChannelProviderId[] = ["telegram", "discord", "slack", "teams"];
-export const PROVIDER_LABEL: Record<ChannelProviderId, string> = { telegram: "Telegram", discord: "Discord", slack: "Slack", teams: "Microsoft Teams" };
+export const CHANNEL_PROVIDERS: readonly ChannelProviderId[] = ["telegram", "discord", "slack", "teams", "buzz"];
+export const PROVIDER_LABEL: Record<ChannelProviderId, string> = { telegram: "Telegram", discord: "Discord", slack: "Slack", teams: "Microsoft Teams", buzz: "Buzz" };
 export const GRANT_PHASES: readonly GrantPhase[] = ["announce", "reminder", "recap", "update"];
 export const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 export const MIB = 1024 * 1024;
@@ -589,4 +590,29 @@ const DESTINATION_TYPE_LABEL: Readonly<Record<string, string>> = {
 /** The destination kind shown next to the untrusted title in the picker (a chat name cannot pass for a channel). */
 export function destinationTypeLabel(type: string): string {
   return DESTINATION_TYPE_LABEL[type] ?? "Destination";
+}
+
+/** Owner-facing state of the Buzz NIP-OA tag: one short line and a tone. */
+export function buzzTagSummary(view: BuzzIdentityView): { text: string; tone: "success" | "warning" | "danger" | "default" } {
+  if (!view.key.present) return { text: "No agent key yet", tone: "warning" };
+  const tag = view.authTag;
+  if (tag.status === "missing") return { text: "Waiting for your signed NIP-OA tag", tone: "warning" };
+  if (tag.status === "expired") return { text: "The NIP-OA tag has ended. Sign a new one.", tone: "danger" };
+  if (tag.status === "invalid") {
+    const why =
+      tag.reason === "auth_tag_wrong_owner"
+        ? "it is not signed by your pinned Buzz key"
+        : tag.reason === "owner_key_required"
+          ? "set your owner Buzz key under Approvals first"
+          : "it no longer verifies";
+    return { text: `The NIP-OA tag is not valid: ${why}.`, tone: "danger" };
+  }
+  const days = tag.daysLeft ?? 0;
+  if (tag.renewalDue) return { text: `Valid, ends in ${days} ${days === 1 ? "day" : "days"}. Sign a new tag now.`, tone: "warning" };
+  return { text: `Valid for ${days} more days`, tone: "success" };
+}
+
+/** True for a paste that looks like a secret key (never sent; the field takes the tag only). */
+export function looksLikeSecretKey(value: string): boolean {
+  return /nsec1[02-9ac-hj-np-z]{20,}/iu.test(value);
 }

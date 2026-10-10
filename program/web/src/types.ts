@@ -520,7 +520,7 @@ export interface OwnerKeyResponse {
 
 // ----- Channels (spec docs/channels-spec.md v0.2, owner audience) -----------
 
-export type ChannelProviderId = "telegram" | "discord" | "slack" | "teams";
+export type ChannelProviderId = "telegram" | "discord" | "slack" | "teams" | "buzz";
 export type ChannelReadiness = "available" | "credential_missing" | "credential_invalid" | "paused" | "unavailable";
 export type ChannelStatus = "draft" | "active" | "paused" | "archived";
 export type GrantPhase = "announce" | "reminder" | "recap" | "update";
@@ -688,12 +688,49 @@ export interface ChannelProviderEntry {
   kinds?: string[];
 }
 
+/** The Buzz connection identity (owner view): never the secret key. */
+export interface BuzzIdentityView {
+  key: { present: boolean; npub: string | null; pubkeyHex: string | null; createdAt: string | null };
+  relay: { url: string | null; httpBase: string | null };
+  authTag: {
+    status: "missing" | "valid" | "invalid" | "expired";
+    reason?: string;
+    sha256: string | null;
+    ownerNpub: string | null;
+    ownerFingerprint: string | null;
+    conditions: string | null;
+    expiresAt: string | null;
+    daysLeft: number | null;
+    renewalDue: boolean;
+    setAt: string | null;
+    /** Event kinds the tag lets Marketplace publish. */
+    allowsKinds: number[];
+  };
+  readiness: "available" | "credential_missing" | "credential_invalid";
+  /** The only kinds Marketplace ever signs with the agent key. */
+  signableKinds: number[];
+  signing: { preimage: string; suggestedConditions: string; maxDays: number; reminderDays: number } | null;
+  pinnedOwner: { set: boolean; fingerprint: string | null };
+  secretStore: "available" | "unavailable";
+}
+
+export interface BuzzIdentityResponse {
+  ok: true;
+  schema: 1;
+  changed?: boolean;
+  buzz: BuzzIdentityView;
+  /** Inert mode: the first identity takes effect after Marketplace restarts. */
+  appliesAfterRestart?: boolean;
+}
+
 /** Inert mode: no channel credentials are configured, so only provider readiness is reported. */
 export interface ChannelsInertResponse {
   ok: true;
   schema: 1;
   configured: false;
   providers: ChannelProviderEntry[];
+  /** Present when the Buzz provider is loaded (the identity can be set up in inert mode). */
+  buzz?: BuzzIdentityView;
 }
 
 export interface ChannelsBrowseResponse {
@@ -706,6 +743,7 @@ export interface ChannelsBrowseResponse {
   channels: ChannelView[];
   pendingGrants: StandingGrantView[];
   uncertainPosts: UncertainChannelPost[];
+  buzz?: BuzzIdentityView;
 }
 
 export type ChannelsBrowseAnswer = ChannelsBrowseResponse | ChannelsInertResponse;

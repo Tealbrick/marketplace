@@ -37,6 +37,10 @@ import { ChannelStoreError, writeAttachmentBytes, type ChannelPostRecord, type C
 import { replyTargetFor } from "./inbound.js";
 import { DELIVERED_STATUSES, INBOUND_TEXT_RETENTION_BOUNDS, type InboundEventRecord } from "./inbound-store.js";
 import type { InboundWorker } from "./inbound-worker.js";
+import type { BuzzIdentity } from "./buzz-identity.js";
+import { registerBuzzIdentityRoutes } from "./buzz-identity-routes.js";
+import type { OwnerWriterGateResult } from "./owner-key-routes.js";
+import { npubEncode } from "./providers/nostr.js";
 
 /** Manifest operation ids (contract alpha.3 ids are `<app>.<resource>.<verb>`, so sub-resources use a hyphen). */
 export const CHANNEL_AGENT_OPERATION = Object.freeze({
@@ -63,6 +67,7 @@ const PROVIDER_KINDS: Readonly<Record<ChannelProviderId, readonly (typeof CHANNE
   discord: ["chat"],
   slack: ["chat"],
   teams: ["chat"],
+  buzz: ["chat"],
 };
 const POST_STATUSES: readonly ChannelPostStatus[] = ["held", "scheduled", "sending", "sent", "failed", "uncertain", "skipped", "cancelled", "expired"];
 const OWNER_PREFIX = "/api/marketplace/channels";
@@ -154,6 +159,14 @@ export type ChannelRouteDeps = {
   traceIdFrom: (request: FastifyRequest) => string;
   /** The inbound worker (owner switches, receiver status). */
   inbound: InboundWorker;
+  /** The Buzz connection identity and the hook that applies a change (provider re-verify, socket, bridge sink). */
+  buzz?: {
+    identity: BuzzIdentity;
+    onChanged: () => Promise<void>;
+    /** The strict owner gate (launch session + CSRF + pinned owner) for Buzz writes. */
+    ownerWriter: (request: FastifyRequest, reply: FastifyReply) => Promise<OwnerWriterGateResult>;
+    beforeRotate?: () => Promise<Record<string, unknown>>;
+  };
 };
 
 type Caller = NonNullable<ReturnType<ChannelRouteDeps["agentGrant"]>>;
@@ -731,6 +744,34 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
     };
   };
 
+  /** Per route: the routed agent's Buzz key (npub), its bridge channel and whether the relay changed since. */
+  const buzzBridgeView = () => {
+    const relayUrl = deps.buzz?.identity.relayUrl() ?? null;
+    return store.channels.buzz.listRoutes(org).map((route) => ({
+      channelId: route.channelId,
+      agentNpub: npubEncode(route.agentPubkey),
+      relayUrl: route.relayUrl || null,
+      relayChanged: relayUrl !== route.relayUrl,
+      /** The owner must save the route again (relay changed since it was confirmed). */
+      needsConfirmation: route.relayUrl === "" || relayUrl !== route.relayUrl,
+      bridgeChannel: route.groupId ? { groupId: route.groupId, memberAdded: route.memberAdded, createdAt: route.groupCreatedAt } : null,
+    }));
+  };
+
+  if (deps.buzz) {
+    registerBuzzIdentityRoutes({
+      app,
+      identity: deps.buzz.identity,
+      owner: (request, reply) => owner(request, reply, true),
+      ownerDenied,
+      ownerWriter: deps.buzz.ownerWriter,
+      fail,
+      onChanged: deps.buzz.onChanged,
+      ...(deps.buzz.beforeRotate ? { beforeRotate: deps.buzz.beforeRotate } : {}),
+      configured: deps.configured,
+    });
+  }
+
   app.get(OWNER_PREFIX, async (request, reply) => {
     const principal = await owner(request, reply, true);
     if (!principal) return ownerDenied(request);
@@ -742,7 +783,13 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
     }
     const readiness = service.readinessView();
     if (!deps.configured) {
-      return { ok: true, schema: 1, configured: false, providers: Object.entries(readiness).map(([id, state]) => ({ id, readiness: state })) };
+      return {
+        ok: true,
+        schema: 1,
+        configured: false,
+        providers: Object.entries(readiness).map(([id, state]) => ({ id, readiness: state })),
+        ...(deps.buzz ? { buzz: deps.buzz.identity.view() } : {}),
+      };
     }
     // U2: each configured provider's static capability declaration (§3.1), so the create form offers only declared kinds.
     const providers = Object.entries(readiness).map(([id, state]) => ({
@@ -782,7 +829,9 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
         settings: inboundStore.getSettings(org),
         routes: inboundStore.listRoutes(org),
         receivers: deps.inbound.receiverView(),
+        buzzBridge: buzzBridgeView(),
       },
+      ...(deps.buzz ? { buzz: deps.buzz.identity.view() } : {}),
       uncertainPosts: channels.listPosts(org, { status: "uncertain", limit: 100 }).map((post) => ({
         id: post.id,
         channelId: post.channelId,
@@ -830,6 +879,10 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
       // Destinations are picked from discovery, never typed (spec §4.2).
       const destination = service.discoveredDestination(input.provider, input.destination.externalId, input.destination.parentId);
       if (!destination) return { status: 409, body: { ok: false, schema: 1, error: "channel_destination_not_discovered" } };
+      // Buzz bridge channels are delivery-only, never a channel (or an inbound source).
+      if (input.provider === "buzz" && store.channels.buzz.bridgeGroupIds(org).has(destination.externalId)) {
+        return { status: 409, body: { ok: false, schema: 1, error: "channel_destination_is_bridge" } };
+      }
       const policy = policyFor(input.provider, input.policy);
       if (!policy.ok) return { status: 422, body: { ok: false, schema: 1, error: policy.error, errors: policy.errors } };
       try {
@@ -888,6 +941,7 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
         ? service.discoveredDestination(channel.provider, input.destination.externalId, input.destination.parentId)
         : null;
       if (!picked) return fail(reply, 409, "channel_destination_not_discovered");
+      if (channel.provider === "buzz" && store.channels.buzz.bridgeGroupIds(org).has(picked.externalId)) return fail(reply, 409, "channel_destination_is_bridge");
       destination = {
         type: picked.type,
         externalId: picked.externalId,
@@ -1083,6 +1137,8 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
   const InboundRouteSchema = z.strictObject({
     enabled: z.boolean(),
     agentId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9:._@-]{0,199}$/u).optional(),
+    /** The routed agent's Buzz key (npub1… or 64 hex) for the Buzz bridge. */
+    agentBuzzPubkey: z.string().min(1).max(128).optional(),
     workspaceSlug: z.string().optional(),
   });
 
@@ -1093,7 +1149,23 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
     if (!channel || channel.status === "archived") return fail(reply, 404, "channel_not_found");
     const parsed = InboundRouteSchema.safeParse(request.body);
     if (!parsed.success) return fail(reply, 400, "validation_failed");
-    const result = await deps.inbound.setRoute({ channel, enabled: parsed.data.enabled, agentId: parsed.data.agentId ?? null, actor: principal.id });
+    // The routed agent's Buzz key decides who receives bridged messages: the strict owner gate, like the identity.
+    // So does any change of the agent on a Buzz-bound route (a re-bind drops the binding; nothing carries over).
+    const currentRoute = inboundStore.getRoute(org, channel.id);
+    const buzzBound = store.channels.buzz.getRoute(org, channel.id) !== null;
+    const agentChange = parsed.data.agentId !== undefined && currentRoute !== null && parsed.data.agentId !== currentRoute.agentId;
+    if (parsed.data.agentBuzzPubkey !== undefined || (buzzBound && agentChange)) {
+      if (!deps.buzz) return fail(reply, 409, "buzz_bridge_unavailable");
+      const gate = await deps.buzz.ownerWriter(request, reply);
+      if (!gate.ok) return { ok: false, schema: 1, error: gate.error === "marketplace_operator_required" ? "owner_session_required" : gate.error };
+    }
+    const result = await deps.inbound.setRoute({
+      channel,
+      enabled: parsed.data.enabled,
+      agentId: parsed.data.agentId ?? null,
+      actor: principal.id,
+      ...(parsed.data.agentBuzzPubkey !== undefined ? { agentBuzzPubkey: parsed.data.agentBuzzPubkey } : {}),
+    });
     if (!result.ok) return fail(reply, result.status, result.error, result.detail ? { detail: result.detail } : {});
     return { ok: true, schema: 1, route: result.route, receivers: result.receiver };
   });

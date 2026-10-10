@@ -38,6 +38,8 @@ export type OwnerKeyRouteDeps = {
   requireOperator: (request: FastifyRequest, reply: FastifyReply) => MarketplacePrincipal | null;
   /** The owner's Portal launch session with a valid CSRF token, or null (writes). */
   ownerLaunchSession: (request: FastifyRequest) => MarketplacePrincipal | null;
+  /** Called after a change (the Buzz identity re-checks its tag against the new key). */
+  onChanged?: () => Promise<void>;
 };
 
 /** The owner key state for the owner UI and the Approvals view (fingerprints only). */
@@ -85,6 +87,13 @@ export function registerOwnerKeyRoutes(deps: OwnerKeyRouteDeps): void {
         },
       });
     }
+    if (result.changed && deps.onChanged) {
+      try {
+        await deps.onChanged();
+      } catch {
+        // Best effort: readiness is also re-checked on every read.
+      }
+    }
     return {
       ok: true,
       changed: result.changed,
@@ -93,30 +102,10 @@ export function registerOwnerKeyRoutes(deps: OwnerKeyRouteDeps): void {
     };
   };
 
-  /** The owner session gate for writes; answers the refusal itself and returns false. */
+  const gate = createOwnerWriterGate({ organizationId: org, pinSource: deps.pinSource, requireOperator: deps.requireOperator, ownerLaunchSession: deps.ownerLaunchSession });
   const ownerWriter = async (request: FastifyRequest, reply: FastifyReply): Promise<boolean | "approval_owner_unbound"> => {
-    reply.header("cache-control", "no-store");
-    const principal = deps.requireOperator(request, reply);
-    if (!principal) return false;
-    const owner = deps.ownerLaunchSession(request);
-    // The launch session itself (cookie + CSRF, checked strictly) is the actor; the request principal only gates the org.
-    if (!owner || owner.organizationId !== org || principal.organizationId !== org) {
-      reply.code(403);
-      return false;
-    }
-    // Review M1: only the PINNED deployment owner (claim binding `ownerSubject`, alpha.7) may change the key.
-    // Without a pin (no claim yet, or a cleared one) nobody can: any Portal-launched member would otherwise
-    // qualify. Same fail-closed rule as portal proofs.
-    const pin = await readOwnerPin(deps.pinSource);
-    if (!pin) {
-      reply.code(409);
-      return "approval_owner_unbound";
-    }
-    if (pin.ownerSubject !== `${USER_PRINCIPAL_PREFIX}${owner.id}`) {
-      reply.code(403);
-      return false;
-    }
-    return true;
+    const result = await gate(request, reply);
+    return result.ok ? true : result.error === "approval_owner_unbound" ? "approval_owner_unbound" : false;
   };
   const writerRefusal = (gate: boolean | string) => ({ ok: false, error: typeof gate === "string" ? gate : "owner_session_required" });
 
@@ -135,4 +124,42 @@ export function registerOwnerKeyRoutes(deps: OwnerKeyRouteDeps): void {
     if (gate !== true) return writerRefusal(gate);
     return write(request, reply, null);
   });
+}
+
+export type OwnerWriterGateResult = { ok: true; owner: MarketplacePrincipal; actor: string } | { ok: false; error: "owner_session_required" | "approval_owner_unbound" | "marketplace_operator_required" };
+
+/**
+ * The strict owner gate for owner-only state (review M1): the owner's own operator session from a Portal launch
+ * ticket with its CSRF token, in this organization, and the PINNED deployment owner (claim binding
+ * `ownerSubject`) equal to the session user. Without a pin every write is `409 approval_owner_unbound`
+ * (fail closed); any other session, bearer or bypass is `403 owner_session_required`. Sets the status code.
+ */
+export function createOwnerWriterGate(deps: {
+  organizationId: string;
+  pinSource: OwnerPinSource;
+  requireOperator: (request: FastifyRequest, reply: FastifyReply) => MarketplacePrincipal | null;
+  ownerLaunchSession: (request: FastifyRequest) => MarketplacePrincipal | null;
+}) {
+  return async (request: FastifyRequest, reply: FastifyReply): Promise<OwnerWriterGateResult> => {
+    reply.header("cache-control", "no-store");
+    const principal = deps.requireOperator(request, reply);
+    if (!principal) return { ok: false, error: "marketplace_operator_required" };
+    const owner = deps.ownerLaunchSession(request);
+    // The launch session itself (cookie + CSRF, checked strictly) is the actor; the request principal only gates the org.
+    if (!owner || owner.organizationId !== deps.organizationId || principal.organizationId !== deps.organizationId) {
+      reply.code(403);
+      return { ok: false, error: "owner_session_required" };
+    }
+    // Only the PINNED deployment owner may change owner-only state; without a pin nobody can.
+    const pin = await readOwnerPin(deps.pinSource);
+    if (!pin) {
+      reply.code(409);
+      return { ok: false, error: "approval_owner_unbound" };
+    }
+    if (pin.ownerSubject !== `${USER_PRINCIPAL_PREFIX}${owner.id}`) {
+      reply.code(403);
+      return { ok: false, error: "owner_session_required" };
+    }
+    return { ok: true, owner, actor: `operator:${owner.id}` };
+  };
 }

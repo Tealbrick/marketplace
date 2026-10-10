@@ -11,6 +11,7 @@ import { CreateChannelPanel, DestinationTitle, EditChannelPanel } from "./Channe
 import { GrantInbox } from "./ChannelGrants";
 import { ReceiptsSection, ReceiptSummary, UncertainPosts, WaitingPosts } from "./ChannelPosts";
 import { ApprovalsPanel } from "./CompanyBox";
+import { BuzzIdentityPanel } from "./BuzzIdentity";
 import { CHANNEL_TOKEN_HINT, SLACK_SETUP_STEPS, TEAMS_SETUP_STEPS } from "./copy";
 import type { AgentGrantRequestResponse, ChannelProviderEntry, ChannelProviderId, ChannelReadiness, ChannelsBrowseAnswer, ChannelStatus, ChannelView } from "./types";
 import { formatWhen, InlineError, StatePanel } from "./ui";
@@ -39,9 +40,9 @@ function ProviderReadiness({ browse }: { browse: ChannelsBrowseAnswer }) {
       const channels = browse.configured ? browse.channels.filter((channel) => channel.provider === provider && channel.status !== "archived").length : 0;
       return <article key={provider} aria-label={`${PROVIDER_LABEL[provider]} readiness`}>
         <div><span className={`provider-dot provider-dot--${copy.dot}`} aria-hidden="true" /><h2>{PROVIDER_LABEL[provider]}</h2><Tag tone={copy.tone}>{copy.label}</Tag></div>
-        <p>{copy.detail}</p>
+        <p>{provider === "buzz" ? BUZZ_READINESS_NOTE[readiness] ?? copy.detail : copy.detail}</p>
         <dl>
-          <dt>Bot</dt><dd>{connection?.botUsername ? <code>@{connection.botUsername}</code> : "—"}</dd>
+          <dt>Bot</dt><dd>{connection?.botUsername ? <code>{provider === "buzz" ? connection.botUsername : `@${connection.botUsername}`}</code> : "—"}</dd>
           <dt>Verified</dt><dd>{formatWhen(connection?.verifiedAt)}</dd>
           <dt>Channels</dt><dd>{channels}</dd>
         </dl>
@@ -57,6 +58,13 @@ function ProviderReadiness({ browse }: { browse: ChannelsBrowseAnswer }) {
     })}
   </div>;
 }
+
+/** Buzz has no bot token: its readiness comes from the identity set up below. */
+const BUZZ_READINESS_NOTE: Partial<Record<ChannelReadiness, string>> = {
+  available: "The agent key, relay and NIP-OA tag are verified.",
+  credential_missing: "Set up the Buzz identity below: agent key, relay address and your signed NIP-OA tag.",
+  credential_invalid: "The NIP-OA tag is not valid (ended, revoked or not signed by your pinned key). Sign a new one below.",
+};
 
 function CapabilitiesList({ channel }: { channel: ChannelView }) {
   if (!channel.capabilities) return <p className="muted-detail">This provider isn't loaded, so its capabilities are unknown.</p>;
@@ -230,6 +238,7 @@ export function ChannelsPage({ workspaceSlug }: { workspaceSlug: string }) {
       <header><div><p className="eyebrow">Outward destinations</p><h1>Channels</h1><p>Chats and channels your agents may post to, with the limits you set.</p></div></header>
       <div className="credential-proof channel-inert" role="status"><ShieldCheck size={18} /><div><strong>Channels aren't set up yet</strong><p>{CHANNEL_TOKEN_HINT} After the token is saved and Marketplace restarts, you can discover destinations and add channels here.</p></div></div>
       <ProviderReadiness browse={browse.data} />
+      {browse.data.buzz && <BuzzIdentityPanel view={browse.data.buzz} onChanged={announce} />}
     </section>;
   }
   const data = browse.data;
@@ -242,6 +251,7 @@ export function ChannelsPage({ workspaceSlug }: { workspaceSlug: string }) {
     </header>
     {notice && <p className="inline-success channel-notice" role="status"><CheckCircle2 size={14} />{notice}<button type="button" aria-label="Dismiss notification" onClick={() => setNotice(null)}><X size={13} /></button></p>}
     <ProviderReadiness browse={data} />
+    {data.buzz && <BuzzIdentityPanel view={data.buzz} onChanged={announce} />}
     <div className="channel-approvals"><ApprovalsPanel onNotice={announce} only="channel" /></div>
     <UncertainPosts posts={data.uncertainPosts} channels={channels} onNotice={announce} />
     <WaitingPosts channels={channels} onConfirm={setConfirm} onNotice={announce} />
@@ -257,7 +267,7 @@ export function ChannelsPage({ workspaceSlug }: { workspaceSlug: string }) {
           </button>)}
         </nav>
         {selected && <ChannelDetail channel={selected} providers={data.providers} workspaceSlug={workspaceSlug} onConfirm={setConfirm} onNotice={announce} onChanged={changed} />}
-      </div> : !creating && <div className="collection-empty compact"><Megaphone /><h3>No channels yet</h3><p>{anyReady ? "Add a Telegram chat, a Discord or Slack channel, or a Microsoft Teams channel or chat your agents may post to." : CHANNEL_TOKEN_HINT}</p></div>}
+      </div> : !creating && <div className="collection-empty compact"><Megaphone /><h3>No channels yet</h3><p>{anyReady ? "Add a Telegram chat, a Discord or Slack channel, a Microsoft Teams channel or chat, or a Buzz channel your agents may post to." : CHANNEL_TOKEN_HINT}</p></div>}
     </section>
     <ReceiptsSection channels={channels} onConfirm={(state) => setConfirm(state)} onNotice={announce} />
     <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} onSuccess={(result) => confirm?.after?.(result)} />

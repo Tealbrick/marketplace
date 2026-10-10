@@ -64,6 +64,7 @@ export type InboundLimits = {
 
 export type IngestOutcome =
   | { outcome: "own" | "unrouted" | "duplicate"; eventId?: string }
+  | { outcome: "ignored"; reason: string; eventId?: undefined }
   | { outcome: "loop-limited" | "rate-limited" | "consent-inactive" | "delivered"; eventId: string };
 
 export type InboundPipelineDeps = {
@@ -81,6 +82,11 @@ export type InboundPipelineDeps = {
   limits?: InboundLimits;
   /** Milliseconds clock for the sender buckets. */
   clock?: () => number;
+  /**
+   * A reason to drop the message before routing (nothing stored), or null. Buzz: messages in a bridge channel
+   * (delivery-only) and messages authored by a routed agent's own Buzz key (no echo back to it).
+   */
+  ignoreMessage?: (message: InboundMessage) => string | null;
 };
 
 /** The provider-native reply target of an event: the thread root where threads are roots (Slack, Teams), else the message. */
@@ -163,6 +169,8 @@ export function createInboundPipeline(deps: InboundPipelineDeps) {
   const ingest = (message: InboundMessage): IngestOutcome => {
     const botId = deps.botIdFor(message.platform);
     if (botId && message.senderUserId === botId) return { outcome: "own" };
+    const ignored = deps.ignoreMessage?.(message) ?? null;
+    if (ignored) return { outcome: "ignored", reason: ignored };
     const channel = channelForMessage(deps.channels.listChannels(org), message);
     const route = channel ? deps.store.getRoute(org, channel.id) : null;
     if (!channel || !route || !route.enabled) return { outcome: "unrouted" };

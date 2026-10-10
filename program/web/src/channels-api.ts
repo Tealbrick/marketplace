@@ -1,5 +1,6 @@
 import { api, ApiError } from "./api";
 import type {
+  BuzzIdentityResponse,
   ChannelCreateInput,
   ChannelDiscoverResponse,
   ChannelPolicyInput,
@@ -89,3 +90,16 @@ export const exportChannelReceipts = (input: { channelId?: string; limit?: numbe
 
 export const purgeChannelReceipts = (olderThanDays: number) =>
   api<{ ok: true; purged: number; before: string }>(`${ROOT}/receipts/purge`, { method: "POST", body: JSON.stringify({ olderThanDays }) });
+
+// ----- Buzz identity (owner). The agent secret key never travels: only the npub, relay URL and NIP-OA tag do.
+const BUZZ_IDENTITY = `${ROOT}/buzz/identity`;
+
+export const getBuzzIdentity = () => api<BuzzIdentityResponse>(BUZZ_IDENTITY);
+
+export const generateBuzzKey = (rotate: boolean) =>
+  api<BuzzIdentityResponse>(`${BUZZ_IDENTITY}/key`, { method: "POST", body: JSON.stringify(rotate ? { rotate: true } : {}) });
+
+export const updateBuzzIdentity = (input: { relayUrl?: string; authTag?: string }) =>
+  api<BuzzIdentityResponse>(BUZZ_IDENTITY, { method: "PUT", body: JSON.stringify(input) });
+
+export const revokeBuzzTag = () => api<BuzzIdentityResponse>(`${BUZZ_IDENTITY}/auth-tag`, { method: "DELETE" });

@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 
+import { createBuzzRelaySocket, type BuzzRelaySocket, type BuzzSocketStatus } from "./buzz-relay-socket.js";
 import { createDiscordGateway, type DiscordGateway, type DiscordGatewayStatus, type GatewaySocketFactory, type Timers } from "./discord-gateway.js";
 import { inboundConsumerKey, sha256Hex } from "./inbound-http.js";
 import { TELEGRAM_WEBHOOK_PREFIX } from "./inbound-routes.js";
@@ -20,12 +21,17 @@ import type { ChannelRecord } from "./store.js";
  *   last disabled route deletes it. Before setting, getWebhookInfo must show no webhook of another host/path
  *   (another consumer of the same bot): else `channel_consumer_conflict`.
  * - Slack and Teams receive on their public routes; a route needs the Slack signing secret / the Teams app.
+ * - Buzz: one relay socket per agent key (consumer lease `buzz:<sha256 prefix>`), started only while at least one
+ *   Buzz channel has an enabled route and the Buzz identity is available; its channel filter follows the routes.
+ * - Any route may carry the routed agent's Buzz key (`agentBuzzPubkey`) for the Buzz bridge sink.
  *
  * Inert mode: without credentials nothing starts (the worker is never reconciled) and the switches refuse.
  */
 
 export const DISCORD_LEASE_TTL_MS = 60_000;
 export const DISCORD_LEASE_RENEW_MS = 20_000;
+export const BUZZ_LEASE_TTL_MS = 60_000;
+export const BUZZ_LEASE_RENEW_MS = 20_000;
 
 export type InboundSwitchResult =
   | { ok: true; route: InboundRouteRecord; receiver: Record<string, unknown> }
@@ -52,6 +58,28 @@ export type InboundWorkerDeps = {
   socketFactory?: GatewaySocketFactory;
   timers?: Timers;
   random?: () => number;
+  /** The Marketplace channel record of a route (Buzz: its destination is the Buzz channel id). */
+  channelById?: (channelId: string) => ChannelRecord | null;
+  /**
+   * The Buzz bridge binding of a route: `validate` checks the routed agent's Buzz key (no write); `record` stores
+   * it for the agent on the configured relay; `drop` removes it (agent re-bind: nothing carries over).
+   */
+  buzzRoute?: {
+    validate: (agentPubkey: string) => { ok: true; agentPubkey: string } | { ok: false; status: number; error: string };
+    record: (input: { channelId: string; agentId: string; agentPubkey: string; actor: string }) => Record<string, unknown>;
+    current: (channelId: string) => { agentId: string } | null;
+    drop: (channelId: string, actor: string) => void;
+  };
+  /** Buzz inbound filters: bridge channels (delivery-only), routed agents' keys, the stored own key, the pin. */
+  buzzFilter?: {
+    bridgeGroups: () => ReadonlySet<string>;
+    agentKeys: () => ReadonlySet<string>;
+    selfPubkey: () => string | null;
+    pinnedOwner: () => string | null;
+    authorized: () => boolean;
+  };
+  buzzSocketFactory?: GatewaySocketFactory;
+  buzzTimers?: Timers;
 };
 
 export type InboundWorker = ReturnType<typeof createInboundWorker>;
@@ -65,6 +93,9 @@ export function createInboundWorker(deps: InboundWorkerDeps) {
   let gateway: DiscordGateway | null = null;
   let gatewayKey: string | null = null;
   let gatewayStatus: { status: DiscordGatewayStatus; detail?: string } = { status: "stopped" };
+  let buzzSocket: BuzzRelaySocket | null = null;
+  let buzzKey: string | null = null;
+  let buzzStatus: { status: BuzzSocketStatus; detail?: string } = { status: "stopped" };
   let stopped = false;
   // Telegram webhook changes run one at a time (review F3): enable and disable never interleave their API calls.
   let telegramChain: Promise<unknown> = Promise.resolve();
@@ -131,6 +162,71 @@ export function createInboundWorker(deps: InboundWorkerDeps) {
       ...(deps.random ? { random: deps.random } : {}),
     });
     gateway.start();
+  };
+
+  // ----- Buzz relay socket -------------------------------------------------------------
+
+  const stopBuzz = () => {
+    buzzSocket?.stop();
+    buzzSocket = null;
+    buzzKey = null;
+  };
+
+  // Bridge channels are delivery-only: never subscribed as an inbound source.
+  const buzzChannelIds = () => {
+    const bridges = deps.buzzFilter?.bridgeGroups() ?? new Set<string>();
+    return deps.inbound
+      .enabledRoutesFor(org, "buzz")
+      .map((route) => deps.channelById?.(route.channelId)?.destination.externalId)
+      .filter((id): id is string => typeof id === "string" && !bridges.has(id));
+  };
+
+  const reconcileBuzz = () => {
+    if (stopped) return;
+    const credential = deps.credential("buzz");
+    const channelIds = credential ? buzzChannelIds() : [];
+    if (!credential || channelIds.length === 0) {
+      stopBuzz();
+      buzzStatus = { status: "stopped" };
+      return;
+    }
+    const key = consumerKey("buzz", credential);
+    if (buzzSocket && buzzKey === key && buzzSocket.status !== "failed") {
+      buzzSocket.setChannels(channelIds);
+      return;
+    }
+    stopBuzz();
+    buzzKey = key;
+    buzzSocket = createBuzzRelaySocket({
+      credential,
+      channelIds,
+      lease: {
+        acquire: () => deps.inbound.acquireLease({ consumerKey: key, holder: deps.instanceId, now: deps.now(), ttlMs: BUZZ_LEASE_TTL_MS }),
+        release: () => deps.inbound.releaseLease(key, deps.instanceId),
+      },
+      onMessage: deps.ingest,
+      ...(deps.buzzFilter
+        ? {
+            selfPubkey: deps.buzzFilter.selfPubkey(),
+            ignoreAuthors: deps.buzzFilter.agentKeys,
+            pinnedOwner: deps.buzzFilter.pinnedOwner,
+            authorized: deps.buzzFilter.authorized,
+          }
+        : {}),
+      onStatus: (status, detail) => {
+        const previous = buzzStatus.status;
+        buzzStatus = { status, ...(detail ? { detail } : {}) };
+        if (status !== previous && (status === "ready" || status === "failed" || status === "waiting_lease")) {
+          deps.audit("marketplace.channels.inbound.buzz_socket", "marketplace:inbound", { status, ...(detail ? { detail } : {}) });
+        }
+      },
+      leaseRenewMs: BUZZ_LEASE_RENEW_MS,
+      ...(deps.buzzSocketFactory ? { socketFactory: deps.buzzSocketFactory } : {}),
+      ...(deps.buzzTimers ? { timers: deps.buzzTimers } : {}),
+      ...(deps.random ? { random: deps.random } : {}),
+      now: () => deps.now().getTime(),
+    });
+    buzzSocket.start();
   };
 
   // ----- Telegram webhook ----------------------------------------------------------
@@ -207,11 +303,12 @@ export function createInboundWorker(deps: InboundWorkerDeps) {
       },
       discord: { gateway: gatewayStatus.status, ...(gatewayStatus.detail ? { detail: gatewayStatus.detail } : {}), messageContent: deps.inbound.getSettings(org).discordMessageContent },
       teams: { configured: deps.teamsConfigured() },
+      buzz: { socket: buzzStatus.status, ...(buzzStatus.detail ? { detail: buzzStatus.detail } : {}), channels: buzzSocket?.channelIds.length ?? 0 },
     };
   };
 
   /** The owner's per-channel inbound switch. Enabling runs the provider's receiver set-up first; nothing is half-on. */
-  const setRoute = (input: { channel: ChannelRecord; enabled: boolean; agentId: string | null; actor: string }): Promise<InboundSwitchResult> =>
+  const setRoute = (input: { channel: ChannelRecord; enabled: boolean; agentId: string | null; actor: string; agentBuzzPubkey?: string }): Promise<InboundSwitchResult> =>
     input.channel.provider === "telegram" ? telegramSerial(() => applyRoute(input)) : applyRoute(input);
 
   /**
@@ -233,20 +330,45 @@ export function createInboundWorker(deps: InboundWorkerDeps) {
       if (!ensured.ok) telegramHealth = { state: telegramHealth?.state === "conflict" ? "conflict" : "unhealthy", detail: ensured.error };
     });
 
-  const applyRoute = async (input: { channel: ChannelRecord; enabled: boolean; agentId: string | null; actor: string }): Promise<InboundSwitchResult> => {
+  const applyRoute = async (input: { channel: ChannelRecord; enabled: boolean; agentId: string | null; actor: string; agentBuzzPubkey?: string }): Promise<InboundSwitchResult> => {
     const { channel } = input;
     const provider = channel.provider as ChannelProviderId;
     const current = deps.inbound.getRoute(org, channel.id);
+    // The routed agent's Buzz key for the bridge: validated first (no write); recorded only after the route change
+    // itself succeeded.
+    let buzzKey: string | null = null;
+    if (input.agentBuzzPubkey !== undefined) {
+      if (!deps.buzzRoute) return { ok: false, status: 409, error: "buzz_bridge_unavailable" };
+      const checked = deps.buzzRoute.validate(input.agentBuzzPubkey);
+      if (!checked.ok) return checked;
+      buzzKey = checked.agentPubkey;
+    }
+    let buzzBridge: Record<string, unknown> | undefined;
+    /** After a successful change: bind the key, or drop a binding whose agent is no longer the routed one. */
+    const settleBuzz = (agentId: string) => {
+      if (!deps.buzzRoute) return;
+      if (buzzKey) {
+        buzzBridge = deps.buzzRoute.record({ channelId: channel.id, agentId, agentPubkey: buzzKey, actor: input.actor });
+        return;
+      }
+      const binding = deps.buzzRoute.current(channel.id);
+      if (binding && binding.agentId !== agentId) {
+        deps.buzzRoute.drop(channel.id, input.actor);
+        buzzBridge = { dropped: true, reason: "agent_rebound" };
+      }
+    };
     if (!input.enabled) {
       if (!current) return { ok: false, status: 404, error: "channel_inbound_route_not_found" };
       const route = deps.inbound.setRoute({ workspaceSlug: org, channelId: channel.id, agentId: current.agentId, enabled: false, actor: input.actor, now: deps.now() });
+      settleBuzz(route.agentId);
       deps.audit("marketplace.channels.inbound.route_disabled", input.actor, { channelId: channel.id, agentId: route.agentId, provider });
       if (provider === "telegram") {
         const removed = await removeTelegramWebhookIfUnused();
         if (!removed.ok) return { ok: true, route, receiver: { ...receiverView(), warning: removed.error } };
       }
       if (provider === "discord") reconcileDiscord();
-      return { ok: true, route, receiver: receiverView() };
+      if (provider === "buzz") reconcileBuzz();
+      return { ok: true, route, receiver: { ...receiverView(), ...(buzzBridge ? { buzzBridge } : {}) } };
     }
     const agentId = input.agentId ?? current?.agentId ?? null;
     if (!agentId) return { ok: false, status: 400, error: "channel_inbound_agent_required" };
@@ -257,14 +379,17 @@ export function createInboundWorker(deps: InboundWorkerDeps) {
     if (provider === "slack" && !deps.slackSigningSecretSet()) return { ok: false, status: 409, error: "channel_inbound_signing_secret_missing" };
     if (provider === "teams" && !deps.teamsConfigured()) return { ok: false, status: 409, error: "channel_credential_unavailable" };
     if (provider === "discord" && !deps.credential("discord")) return { ok: false, status: 503, error: "channel_credential_unavailable" };
+    if (provider === "buzz" && !deps.credential("buzz")) return { ok: false, status: 503, error: "channel_credential_unavailable" };
     if (provider === "telegram") {
       const ensured = await ensureTelegramWebhook();
       if (!ensured.ok) return ensured;
     }
     const route = deps.inbound.setRoute({ workspaceSlug: org, channelId: channel.id, agentId, enabled: true, actor: input.actor, now: deps.now() });
     deps.audit("marketplace.channels.inbound.route_enabled", input.actor, { channelId: channel.id, agentId, provider });
+    settleBuzz(agentId);
     if (provider === "discord") reconcileDiscord();
-    return { ok: true, route, receiver: receiverView() };
+    if (provider === "buzz") reconcileBuzz();
+    return { ok: true, route, receiver: { ...receiverView(), ...(buzzBridge ? { buzzBridge } : {}) } };
   };
 
   const updateSettings = (input: { textRetentionDays?: number; discordMessageContent?: boolean; actor: string }): { ok: true; settings: InboundSettings } | { ok: false; status: number; error: string } => {
@@ -284,6 +409,7 @@ export function createInboundWorker(deps: InboundWorkerDeps) {
     /** Starts or stops the long-lived parts to match the routes and the current credentials (after boot). */
     async reconcile(): Promise<void> {
       reconcileDiscord();
+      reconcileBuzz();
       await reconcileTelegram();
     },
     setRoute,
@@ -292,9 +418,13 @@ export function createInboundWorker(deps: InboundWorkerDeps) {
     get discordGateway(): DiscordGateway | null {
       return gateway;
     },
+    get buzzSocket(): BuzzRelaySocket | null {
+      return buzzSocket;
+    },
     stop(): void {
       stopped = true;
       stopGateway();
+      stopBuzz();
     },
   };
 }
