@@ -206,6 +206,7 @@ export function LivePanel({ onNotice }: { onNotice: (notice: string) => void }) 
         {data.control.paused ? <><Play size={14} />Resume all grants</> : <><Pause size={14} />Pause all grants</>}
       </Button>
     </div>
+    <p className="muted-detail" role="note">To stop a session reliably, use Stop, Pause or Revoke here. Signed Buzz commands work only when an agent forwards them.</p>
     {data.control.paused && <p role="status"><Tag tone="warning">All live-session grants are paused</Tag></p>}
     {control.error && <InlineError error={control.error} />}
     <h3>Grants</h3>

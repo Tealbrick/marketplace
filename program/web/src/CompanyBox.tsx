@@ -240,12 +240,18 @@ function channelDecisionNotice(approval: CompanyBoxApproval, result: Awaited<Ret
  * A held huddle clip (live sessions, review H1): the owner plays the exact stored bytes (strict owner gate, fetched
  * with the CSRF header, played from a blob URL) and reads the agent-stated transcript before approving one play.
  */
-function LiveClipView({ approvalId, live, onHeard }: { approvalId: string; live: NonNullable<CompanyBoxApproval["live"]>; onHeard: () => void }) {
+async function sha256OfBlob(blob: Blob): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function LiveClipView({ approvalId, live, onHeard }: { approvalId: string; live: NonNullable<CompanyBoxApproval["live"]>; onHeard: (playedSha256: string) => void }) {
   const clip = useQuery({
     queryKey: ["live-clip", approvalId],
     queryFn: async () => {
       const { blob, sha256 } = await apiBlob(`/api/marketplace/channels/live/clips/${encodeURIComponent(approvalId)}`);
-      return { url: URL.createObjectURL(blob), sha256 };
+      // The SHA-256 of the bytes this page plays (sent with the approval; the server compares it with the held clip).
+      return { url: URL.createObjectURL(blob), sha256, played: await sha256OfBlob(blob) };
     },
     retry: false,
     staleTime: Infinity,
@@ -255,8 +261,8 @@ function LiveClipView({ approvalId, live, onHeard }: { approvalId: string; live:
     <p><strong>Transcript (stated by the agent, not verified):</strong> {live.transcript}</p>
     {clip.error ? <InlineError error={clip.error as Error} /> : clip.data
       ? <>
-        <audio controls src={clip.data.url} onPlay={onHeard} aria-label="Play the clip" />
-        {clip.data.sha256 !== live.clipSha256 && <p role="alert">The served clip does not match the held SHA-256. Do not approve.</p>}
+        <audio controls src={clip.data.url} onPlay={() => onHeard(clip.data!.played)} aria-label="Play the clip" />
+        {(clip.data.sha256 !== live.clipSha256 || clip.data.played !== live.clipSha256) && <p role="alert">The served clip does not match the held SHA-256. Do not approve.</p>}
       </>
       : <span className="muted-detail">Loading the clip…</span>}
     <p className="muted-detail">Digest <code title={live.digest}>{live.digest.slice(0, 32)}</code>{live.played ? " · played" : ""}</p>
@@ -264,12 +270,12 @@ function LiveClipView({ approvalId, live, onHeard }: { approvalId: string; live:
 }
 
 function ApprovalRow({ approval, onDecided }: { approval: CompanyBoxApproval; onDecided: (notice: string) => void }) {
-  const [heard, setHeard] = useState(false);
+  const [heard, setHeard] = useState<string | null>(null);
   const pendingRow = approval.state === "pending";
   const channelHold = approval.channel;
   const full = useQuery({ queryKey: ["company-box-approval", approval.id], queryFn: () => getCompanyBoxApproval(approval.id), enabled: pendingRow, retry: false });
   const decide = useMutation({
-    mutationFn: (decision: "approve" | "deny") => decideCompanyBoxApproval(approval.id, decision),
+    mutationFn: (decision: "approve" | "deny") => decideCompanyBoxApproval(approval.id, decision, decision === "approve" && approval.live && heard ? { playedSha256: heard } : undefined),
     onSuccess: (result, decision) =>
       onDecided(
         decision === "deny"
@@ -283,14 +289,14 @@ function ApprovalRow({ approval, onDecided }: { approval: CompanyBoxApproval; on
   });
   const pending = approval.state === "pending";
   const payload = channelHold ? (full.data ? full.data.payloadView ?? null : undefined) : undefined;
-  const reviewable = approval.live ? heard : channelHold ? Boolean(payload && !("error" in payload) && payload.matchesHeldDigest) : Boolean(full.data);
+  const reviewable = approval.live ? heard === approval.live.clipSha256 : channelHold ? Boolean(payload && !("error" in payload) && payload.matchesHeldDigest) : Boolean(full.data);
   const title = channelHold ? actionTitle(channelHold.action, channelHold.label ?? "a channel") : `${approval.app} · ${approval.operation.title}`;
   return <div className="company-box-approval" aria-label={channelHold ? title : `${approval.app}: ${approval.operation.title}`}>
     <div>
       <strong>{title}</strong>
       {!channelHold && approval.operation.method && <code>{approval.operation.method} {approval.operation.path}</code>}
       <p>Requested by <strong>{approval.agentId}</strong> {formatWhen(approval.createdAt)}{pending ? ` · expires ${formatWhen(approval.expiresAt)}` : ""}</p>
-      {approval.live && pendingRow && <LiveClipView approvalId={approval.id} live={approval.live} onHeard={() => setHeard(true)} />}
+      {approval.live && pendingRow && <LiveClipView approvalId={approval.id} live={approval.live} onHeard={setHeard} />}
       {channelHold
         ? pendingRow
           ? full.error ? <InlineError error={full.error} /> : <ChannelHoldView summary={channelHold} payload={payload} />

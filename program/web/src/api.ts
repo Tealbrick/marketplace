@@ -227,8 +227,9 @@ async function companyBoxResult(run: () => Promise<CompanyBoxResult>): Promise<C
 export const getCompanyBoxApprovals = (state?: CompanyBoxApproval["state"]) =>
   api<CompanyBoxApprovalsResponse>(`${companyBoxRoute()}/approvals${state ? `?state=${state}` : ""}`);
 
-export const decideCompanyBoxApproval = (approvalId: string, decision: "approve" | "deny") =>
-  api<{ ok: boolean; approval: CompanyBoxApproval; channel?: { scheduled?: boolean; receipt?: { status?: string } } & Record<string, unknown> }>(`${companyBoxRoute()}/approvals/${encodeURIComponent(approvalId)}/${decision}`, { method: "POST" });
+/** `extra`: a held huddle clip's approval carries the SHA-256 of the clip the page played (`playedSha256`). */
+export const decideCompanyBoxApproval = (approvalId: string, decision: "approve" | "deny", extra?: { playedSha256: string }) =>
+  api<{ ok: boolean; approval: CompanyBoxApproval; channel?: { scheduled?: boolean; receipt?: { status?: string } } & Record<string, unknown> }>(`${companyBoxRoute()}/approvals/${encodeURIComponent(approvalId)}/${decision}`, { method: "POST", ...(extra ? { body: JSON.stringify(extra) } : {}) });
 
 /** Owner-only: the full stored arguments of a held call (a channel hold adds the exact payload view). */
 export const getCompanyBoxApproval = (approvalId: string) =>
