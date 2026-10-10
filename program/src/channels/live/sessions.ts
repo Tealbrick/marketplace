@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import type { BinarySocketFactory } from "../buzz-relay-guard.js";
 import type { Timers } from "../discord-gateway.js";
 import { HuddleError } from "../huddle/client.js";
+import { parseHuddleLifecycle } from "../huddle/events.js";
 import type { TranscriptSegment } from "../huddle/listen.js";
 import { createHuddleSession, type HuddleSession } from "../huddle/session.js";
 import { SPEAK_TEXT_MAX_CHARS } from "../huddle/speak.js";
@@ -53,7 +54,13 @@ export type LiveSessionManagerDeps = {
   /** Text-to-speech in Ogg/Opus (needs @tealbrick/voice rc.19 `format: "opus"`). False: speak-live is refused. */
   ttsAvailable: boolean;
   /** Posts the disclosure notice (kind 9) in the huddle's parent channel; returns the event id. */
-  postNotice: (channel: ChannelRecord, text: string) => Promise<{ ok: true; eventId: string | null } | { ok: false; error: string }>;
+  /** Posts the disclosure notice (kind 9) in one Buzz conversation (the parent channel or the huddle itself). */
+  postNotice: (channel: ChannelRecord, conversationId: string, text: string) => Promise<{ ok: true; eventId: string | null } | { ok: false; error: string }>;
+  /**
+   * The huddle's creator-signed 48100 "started" events in the parent channel (relay query; review M3). Each is
+   * verified here (signature, kind, `h` = parent, content `ephemeral_channel_id` = the huddle).
+   */
+  huddleStartedEvents: (parentChannelId: string) => Promise<{ ok: true; events: unknown[] } | { ok: false; error: string }>;
   retentionDays: () => number;
   audit: (eventType: string, actorId: string, metadata: Record<string, unknown>) => void;
   socketFactory?: BinarySocketFactory;
@@ -81,22 +88,52 @@ export function sha256Hex(value: string | Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-/** Case-insensitive literal terms found in `text` (forbidden terms are owner-approved literal substrings). */
-export function forbiddenTermsIn(text: string, terms: readonly string[]): string[] {
-  const haystack = text.toLowerCase();
-  return terms.filter((term) => term && haystack.includes(term.toLowerCase()));
+/**
+ * Lookalikes that NFKC keeps apart from Latin (review of PR #53, M4): common Cyrillic and Greek letters that render
+ * like Latin ones, plus `ß`. Applied after lowercasing, so only lowercase forms are listed.
+ */
+const CONFUSABLES: Readonly<Record<string, string>> = {
+  а: "a", б: "b", в: "b", г: "r", д: "d", е: "e", ё: "e", з: "3", и: "u", й: "u", к: "k", л: "n", м: "m", н: "h", о: "o", п: "n",
+  р: "p", с: "c", т: "t", у: "y", ф: "f", х: "x", ц: "u", ч: "4", ш: "w", щ: "w", ы: "bi", ь: "b", ѕ: "s", і: "i", ї: "i", ј: "j",
+  ԁ: "d", ԛ: "q", ԝ: "w", ӏ: "l", һ: "h",
+  α: "a", β: "b", γ: "y", δ: "d", ε: "e", ζ: "z", η: "n", θ: "o", ι: "i", κ: "k", λ: "l", μ: "u", ν: "v", ξ: "e", ο: "o", π: "n",
+  ρ: "p", σ: "o", ς: "c", τ: "t", υ: "u", φ: "f", χ: "x", ψ: "w", ω: "w",
+  ß: "ss", ı: "i", ł: "l", ø: "o", đ: "d", ħ: "h", ŀ: "l",
+};
+
+/**
+ * The comparison skeleton of a text or a forbidden term: NFKC (ligatures, full-width), lowercase (casefold; Turkish
+ * `İ` becomes `i` + a combining dot), NFD and removal of combining marks (Mn) and format characters (Cf: zero-width,
+ * soft hyphen), confusable folding, then letters and digits only (spaces and punctuation cannot split a term).
+ */
+export function forbiddenSkeleton(value: string): string {
+  const folded = value.normalize("NFKC").toLowerCase().normalize("NFD").replace(/[\p{Mn}\p{Cf}]/gu, "");
+  let out = "";
+  for (const char of folded) out += CONFUSABLES[char] ?? char;
+  return out.replace(/[^\p{L}\p{N}]/gu, "");
 }
 
+/** Forbidden terms (owner-approved) whose skeleton occurs in the skeleton of `text`. Over-matching is accepted. */
+export function forbiddenTermsIn(text: string, terms: readonly string[]): string[] {
+  const haystack = forbiddenSkeleton(text);
+  return terms.filter((term) => {
+    const needle = forbiddenSkeleton(term);
+    return needle.length > 0 && haystack.includes(needle);
+  });
+}
+
+/** A fixed server template (review L2); the agent's topic follows on its own, labelled line. */
 export function disclosureText(input: { agentId: string; modes: LiveModes; topic: string; retentionDays: number }): string {
   const parts: string[] = [];
   if (input.modes.listen) parts.push("transcribe what is said (speech-to-text)");
   if (input.modes.speakApproved || input.modes.speakLive) parts.push("speak");
   const topic = input.topic.replace(HIDDEN, " ").slice(0, 200);
   return [
-    `Notice: an AI agent (${input.agentId}) is joining this huddle to ${parts.join(" and ")}.`,
-    input.modes.listen ? `A text transcript is kept for ${input.retentionDays} days; audio is never recorded.` : "Audio is never recorded.",
-    `Topic: ${topic}`,
-  ].join(" ");
+    `Notice from Marketplace: an AI agent (${input.agentId}) is joining this huddle to ${parts.join(" and ")}. ${
+      input.modes.listen ? `A text transcript is kept for ${input.retentionDays} days; audio is never recorded.` : "Audio is never recorded."
+    }`,
+    `Topic (from the agent): ${topic}`,
+  ].join("\n");
 }
 
 export type LiveSessionManager = ReturnType<typeof createLiveSessionManager>;
@@ -313,9 +350,22 @@ export function createLiveSessionManager(deps: LiveSessionManagerDeps) {
     const nowMs = deps.now().getTime();
     const caps = capsRefusal(usable.record, grant, nowMs);
     if (caps) return caps;
+    // Review M3: the huddle must be an ephemeral huddle of THIS channel, proven by its creator-signed 48100 link.
+    let started: Awaited<ReturnType<LiveSessionManagerDeps["huddleStartedEvents"]>>;
+    try {
+      started = await deps.huddleStartedEvents(parent);
+    } catch {
+      started = { ok: false, error: "provider_internal_error" };
+    }
+    if (!started.ok) return refuse(502, "live_huddle_check_failed", { detail: started.error });
+    const linked = started.events.some((event) => {
+      const lifecycle = parseHuddleLifecycle(event, "");
+      return lifecycle?.type === "started" && lifecycle.parentChannelId === parent && lifecycle.huddleChannelId === input.huddleId;
+    });
+    if (!linked) return refuse(403, "live_huddle_not_in_channel");
     const modes: LiveModes = Object.fromEntries(requested.map((mode) => [mode, true])) as LiveModes;
     recoverStale({ grantId: record.id });
-    const started = live.startSession({
+    const startedRow = live.startSession({
       workspaceSlug: org,
       grantId: record.id,
       grantDigest: record.digest,
@@ -326,25 +376,31 @@ export function createLiveSessionManager(deps: LiveSessionManagerDeps) {
       instanceId: deps.instanceId,
       now: deps.now(),
     });
-    if (!started.ok) return refuse(409, started.error);
-    const session = started.session;
+    if (!startedRow.ok) return refuse(409, startedRow.error);
+    const session = startedRow.session;
     const remainingDayMs = (scope.maxDayMinutes - dayMinutes(record.id, nowMs)) * 60_000;
     const maxSessionMs = Math.max(1000, Math.min(scope.maxSessionMinutes * 60_000, remainingDayMs));
     deps.audit("marketplace.channels.live_session.joining", `agent:${input.agentId}`, { sessionId: session.id, grantId: record.id, digest: record.digest, channelId: channel.id, huddleId: input.huddleId, modes });
 
-    // Disclosure first: nothing is captured before the notice is out (scope §2.3 rule 4).
+    // Disclosure first: nothing is captured before the notice is out (scope §2.3 rule 4), in the parent channel AND
+    // in the huddle itself (review M3). Both must be posted, or nothing joins.
     if (scope.consent.disclosureNotice) {
-      let notice: Awaited<ReturnType<LiveSessionManagerDeps["postNotice"]>>;
-      try {
-        notice = await deps.postNotice(channel, disclosureText({ agentId: input.agentId, modes, topic: scope.topic, retentionDays: deps.retentionDays() }));
-      } catch {
-        notice = { ok: false, error: "provider_internal_error" };
+      const text = disclosureText({ agentId: input.agentId, modes, topic: scope.topic, retentionDays: deps.retentionDays() });
+      let firstEventId: string | null = null;
+      for (const conversation of [parent, input.huddleId]) {
+        let notice: Awaited<ReturnType<LiveSessionManagerDeps["postNotice"]>>;
+        try {
+          notice = await deps.postNotice(channel, conversation, text);
+        } catch {
+          notice = { ok: false, error: "provider_internal_error" };
+        }
+        if (!notice.ok) {
+          live.endSession(org, session.id, { status: "failed", reason: "disclosure_failed", now: deps.now() });
+          return refuse(502, "live_disclosure_failed", { sessionId: session.id, detail: notice.error });
+        }
+        firstEventId ??= notice.eventId;
       }
-      if (!notice.ok) {
-        live.endSession(org, session.id, { status: "failed", reason: "disclosure_failed", now: deps.now() });
-        return refuse(502, "live_disclosure_failed", { sessionId: session.id, detail: notice.error });
-      }
-      live.setDisclosure(org, session.id, notice.eventId);
+      live.setDisclosure(org, session.id, firstEventId);
     }
 
     let run: Running | null = null;
@@ -461,8 +517,11 @@ export function createLiveSessionManager(deps: LiveSessionManagerDeps) {
     return ok(200, { session: sessionView(live.getSession(org, row.id) ?? row) });
   };
 
-  /** speak-approved: plays an Ogg/Opus clip whose approval the route already confirmed (by digest). */
-  const speakClip = async (input: { agentId: string; channelId: string; sessionId: string; clip: Uint8Array; clipSha256: string }): Promise<LiveResult> => {
+  /**
+   * speak-approved: plays an Ogg/Opus clip whose approval the route confirmed (digest bound to the grant digest, this
+   * session and the clip bytes). Single use: the approval is claimed before the first packet (review H1).
+   */
+  const speakClip = async (input: { agentId: string; channelId: string; sessionId: string; clip: Uint8Array; clipSha256: string; approvalId: string; transcript: string }): Promise<LiveResult> => {
     const run = ownRunning(input.agentId, input.sessionId, input.channelId);
     if (!run || run.stopping) return refuse(409, "live_session_not_joined");
     if (!run.record.modes.speakApproved) return refuse(403, "live_mode_not_granted", { modes: ["speakApproved"] });
@@ -471,6 +530,7 @@ export function createLiveSessionManager(deps: LiveSessionManagerDeps) {
       void stopRun(run, reason);
       return refuse(409, "live_grant_not_active", { reason });
     }
+    if (!live.claimClipUse(org, input.approvalId, run.record.id, deps.now())) return refuse(409, "live_clip_already_played", { approvalId: input.approvalId });
     const startedAt = deps.now();
     let result;
     try {
@@ -485,8 +545,9 @@ export function createLiveSessionManager(deps: LiveSessionManagerDeps) {
       agentId: input.agentId,
       kind: "said",
       speakerPubkey: null,
-      text: "",
-      textSha256: sha256Hex(""),
+      // The agent-stated transcript of the clip the owner approved (and listened to).
+      text: input.transcript,
+      textSha256: sha256Hex(input.transcript),
       clipSha256: result.sha256,
       flaggedTerms: [],
       startedAt,
@@ -502,6 +563,8 @@ export function createLiveSessionManager(deps: LiveSessionManagerDeps) {
     if (!run || run.stopping) return refuse(409, "live_session_not_joined");
     if (!run.record.modes.speakLive) return refuse(403, "live_mode_not_granted", { modes: ["speakLive"] });
     if (!deps.ttsAvailable || !deps.speech) return refuse(409, "live_tts_unavailable", { detail: "text-to-speech in Ogg/Opus needs @tealbrick/voice rc.19 (format opus)" });
+    // Hidden format characters (zero-width, soft hyphen, bidi controls) are refused, never silently cleaned (M4).
+    if (/\p{Cf}/u.test(input.text)) return refuse(422, "live_text_hidden_characters");
     const text = input.text.replace(HIDDEN, " ").trim();
     if (!text || text.length > SPEAK_TEXT_MAX_CHARS) return refuse(422, "speak_text_invalid");
     const hits = forbiddenTermsIn(text, run.forbidden);

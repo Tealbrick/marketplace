@@ -14,6 +14,7 @@ import { encodeFrame, HUDDLE_FLAG_DTX } from "./channels/huddle/frame.js";
 import { createFakeHuddleRelay, type FakeHuddleRelay } from "./channels/huddle/huddle-test-relay.js";
 import { createFakeSpeechProvider, guardedTestFactory, opusPacket, waitFor } from "./channels/huddle/test-support.js";
 import { liveClipDigest } from "./channels/live/routes.js";
+import { forbiddenTermsIn } from "./channels/live/sessions.js";
 import { ownerKeyFingerprint } from "./channels/owner-key.js";
 import { createFakeBuzzRelay, signAuthTag, signTestEvent } from "./channels/providers/buzz-test-relay.js";
 import { createBuzzProvider } from "./channels/providers/buzz.js";
@@ -26,6 +27,7 @@ import { writeOggOpus } from "./channels/providers/ogg-opus.js";
 const OWNER_SECRET = "0000000000000000000000000000000000000000000000000000000000000003";
 const OWNER = publicKeyOf(OWNER_SECRET)!;
 const STRANGER_SECRET = "0000000000000000000000000000000000000000000000000000000000000004";
+const CREATOR_SECRET = "0000000000000000000000000000000000000000000000000000000000000009";
 const AGENT_KEY_BYTES = Uint8Array.from({ length: 32 }, (_unused, index) => (index === 0 ? 0x4d : 0x21 + index));
 const AGENT_KEY = publicKeyOf(Buffer.from(AGENT_KEY_BYTES).toString("hex"))!;
 const ORIGIN = "https://marketplace.fixture.invalid";
@@ -41,6 +43,9 @@ afterEach(async () => {
 });
 
 let counter = 0;
+/** Signed owner commands get strictly increasing times (they must be newer than the last change they follow). */
+let commandSeconds = Math.floor(Date.now() / 1000) + 2;
+const nextCommandAt = () => (commandSeconds = Math.max(commandSeconds + 1, Math.floor(Date.now() / 1000) + 2));
 const key = (prefix = "k") => `${prefix}-live-${String(++counter).padStart(6, "0")}`;
 let ticket = 0;
 
@@ -149,11 +154,14 @@ async function setup(input: { tts?: boolean; speechReply?: (index: number) => st
     });
   const resolve = (grantId: string, proof: Record<string, unknown>) =>
     f.agent("POST", `${A}/live-grants/${grantId}/resolve`, { key: key("resolve"), payload: { approvalId: grantId, proof } });
-  const command = (content: string, channelId: string, secret = OWNER_SECRET) =>
-    f.agent("POST", `${A}/live-grants/commands`, { payload: { event: signTestEvent(secret, { kind: 9, created_at: Math.floor(Date.now() / 1000), tags: [["h", channelId]], content }) } });
-  const huddle = () => {
+  const command = (content: string, channelId: string, secret = OWNER_SECRET, createdAt = nextCommandAt()) =>
+    f.agent("POST", `${A}/live-grants/commands`, { payload: { event: signTestEvent(secret, { kind: 9, created_at: createdAt, tags: [["h", channelId]], content }) } });
+  /** A huddle of the channel: the audio room, the creator-signed 48100 link in the parent, and its Buzz chat. */
+  const huddle = (parent = group) => {
     const huddleId = randomUUID();
-    huddleRelay.addChannel(huddleId, { parentId: group, parentMembers: [AGENT_KEY] });
+    huddleRelay.addChannel(huddleId, { parentId: parent, parentMembers: [AGENT_KEY] });
+    relay.inject(CREATOR_SECRET, { kind: 48100, tags: [["h", parent]], content: JSON.stringify({ ephemeral_channel_id: huddleId }) });
+    relay.createGroup({ id: huddleId, name: "huddle", members: [AGENT_KEY] });
     return huddleId;
   };
   const join = (grantId: string, huddleId: string, modes: Record<string, true> = { listen: true }, token?: string) =>
@@ -165,8 +173,19 @@ async function setup(input: { tts?: boolean; speechReply?: (index: number) => st
     return { huddleId, sessionId: response.json().session.sessionId as string };
   };
   const sessionRow = (sessionId: string) => f.store.channels.live.getSession(TENANT, sessionId)!;
+  /** The owner's consent decision through the strict-gated narrow route, then approval of the new digest. */
+  const ownerConsent = async (grantId: string, consent: { disclosureNotice: boolean; perParticipantConsent: boolean }) => {
+    const record = f.store.channels.live.getGrant(TENANT, grantId)!;
+    const g = JSON.parse(record.canonical) as Record<string, any>;
+    const terms = { modes: g.scope.modes, maxSessionMinutes: g.scope.maxSessionMinutes, maxDayMinutes: g.scope.maxDayMinutes, costCap: g.scope.costCap, topic: g.scope.topic, forbiddenTerms: g.scope.forbiddenTerms, consent, caps: g.caps, expires: g.expires };
+    const narrowed = await strict("POST", `${O}/grants/${grantId}/narrow`, { terms });
+    expect(narrowed.statusCode, narrowed.body).toBe(200);
+    const approved = await approveUi(grantId, narrowed.json().grant.digest);
+    expect(approved.statusCode, approved.body).toBe(200);
+    return approved.json().grant as { id: string; digest: string; canonical: string; summary: Record<string, any> };
+  };
   const audit = () => f.store.listAudit({ workspaceSlug: TENANT, limit: 1000 }) as Array<{ event_type: string; actor_id: string | null; metadata: string }>;
-  return { f, relay, huddleRelay, signer, speech, group, channel, strict, strictHeaders, propose, proposed, approveUi, active, approveEvent, resolve, command, huddle, join, joined, sessionRow, audit, proposal };
+  return { f, relay, huddleRelay, signer, speech, group, channel, strict, strictHeaders, ownerConsent, propose, proposed, approveUi, active, approveEvent, resolve, command, huddle, join, joined, sessionRow, audit, proposal };
 }
 
 /** Virtual peer speech: speech frames at -20 dBov carrying a marker, then DTX silence. */
@@ -203,13 +222,15 @@ describe("live-session grants: proposal and the canonical grant", () => {
     // The consent block is required by the contract: a grant without it is refused.
     const { consent: _consent, ...withoutConsent } = parsed.scope;
     expect(parseGrant({ ...parsed, scope: withoutConsent }).ok).toBe(false);
-    // false/false is approvable, and visible in the digest.
-    const quiet = await t.proposed({ consent: { disclosureNotice: false, perParticipantConsent: false } });
+    // The agent can never ask for weaker consent than the defaults (review M1).
+    const agentQuiet = await t.propose({ consent: { disclosureNotice: false, perParticipantConsent: false } });
+    expect(agentQuiet.statusCode).toBe(422);
+    expect(agentQuiet.json()).toMatchObject({ error: "live_consent_weaker_than_default", fields: ["consent.disclosureNotice"] });
+    // false/false is the OWNER's decision (strict-gated narrow), approvable, and visible in the digest.
+    const quiet = await t.ownerConsent(grant.id, { disclosureNotice: false, perParticipantConsent: false });
     expect(JSON.parse(quiet.canonical).scope.consent).toEqual({ disclosureNotice: false, perParticipantConsent: false });
     expect(quiet.digest).not.toBe(grant.digest);
-    const approved = await t.approveUi(quiet.id, quiet.digest);
-    expect(approved.statusCode, approved.body).toBe(200);
-    expect(approved.json().grant.summary.consent).toEqual({ disclosureNotice: false, perParticipantConsent: false });
+    expect(quiet.summary.consent).toEqual({ disclosureNotice: false, perParticipantConsent: false });
   });
 
   it("refuses invalid proposals: over the contract limits, past 30 days, no outward consent, unknown fields", async () => {
@@ -457,7 +478,7 @@ describe("live sessions: join, disclosure, transcripts, receipts", () => {
     const { huddleId, sessionId } = await t.joined(grant.id);
     const notices = t.relay.eventsOfKind(9).filter((event) => event.pubkey === AGENT_KEY && event.tags.some((tag) => tag[0] === "h" && tag[1] === t.group));
     expect(notices).toHaveLength(1);
-    expect(notices[0]!.content).toContain("Notice: an AI agent (agent-1) is joining this huddle");
+    expect(notices[0]!.content).toContain("Notice from Marketplace: an AI agent (agent-1) is joining this huddle");
     expect(t.sessionRow(sessionId)).toMatchObject({ status: "joined", disclosureEventId: notices[0]!.id });
     const peer = t.huddleRelay.addVirtualPeer(huddleId, PEER);
     const marker = randomBytes(16);
@@ -481,7 +502,7 @@ describe("live sessions: join, disclosure, transcripts, receipts", () => {
 
   it("joins without a notice when the owner approved disclosureNotice false (visible in the digest)", async () => {
     const t = await setup();
-    const grant = await t.active({ consent: { disclosureNotice: false, perParticipantConsent: false } });
+    const grant = await t.ownerConsent((await t.active()).id, { disclosureNotice: false, perParticipantConsent: false });
     await t.joined(grant.id);
     expect(t.relay.eventsOfKind(9).filter((event) => event.pubkey === AGENT_KEY)).toHaveLength(0);
   });
@@ -531,7 +552,7 @@ describe("live sessions: stop within 5 s and caps", () => {
     const { sessionId } = await t.joined(grant.id);
     expect((await t.command("pause grants", randomUUID())).statusCode).toBe(403);
     expect((await t.command("pause grants", commandChannel, STRANGER_SECRET)).statusCode).toBe(403);
-    const event = signTestEvent(OWNER_SECRET, { kind: 9, created_at: Math.floor(Date.now() / 1000), tags: [["h", commandChannel]], content: "pause grants" });
+    const event = signTestEvent(OWNER_SECRET, { kind: 9, created_at: nextCommandAt(), tags: [["h", commandChannel]], content: "pause grants" });
     const started = Date.now();
     const paused = await t.f.agent("POST", `${A}/live-grants/commands`, { payload: { event } });
     expect(paused.statusCode, paused.body).toBe(200);
@@ -541,7 +562,8 @@ describe("live sessions: stop within 5 s and caps", () => {
     expect((await t.join(grant.id, t.huddle())).json()).toMatchObject({ error: "live_grant_not_active", reason: "grants_paused" });
     const replay = await t.f.agent("POST", `${A}/live-grants/commands`, { payload: { event } });
     expect(replay.statusCode).toBe(409);
-    expect((await t.command("resume grants", commandChannel)).json()).toMatchObject({ command: "resume", paused: false });
+    const resumed = await t.command("resume grants", commandChannel);
+    expect(resumed.json(), resumed.body).toMatchObject({ command: "resume", paused: false });
     // `revoke <id>` must come from the grant's own channel.
     expect((await t.command(`revoke ${grant.id}`, commandChannel)).statusCode).toBe(403);
     const revoked = await t.command(`revoke ${grant.id}`, t.group);
@@ -578,6 +600,8 @@ describe("live sessions: stop within 5 s and caps", () => {
     expect(day.json()).toMatchObject({ error: "live_cap_reached", cap: "maxDayMinutes" });
     expect(t.huddleRelay.upgrades).toHaveLength(upgrades);
 
+    // A wider proposal needs the current grant out of the way first (review M1).
+    expect((await t.f.owner("POST", `${O}/grants/${grant.id}/revoke`, {})).statusCode).toBe(200);
     const costly = await t.active({ topic: "Cost test", costCap: { providerMinutes: 1 } });
     const third = await t.joined(costly.id);
     t.f.store.channels.live.addProviderSeconds(TENANT, costly.id, 60);
@@ -613,10 +637,10 @@ describe("live sessions: speaking", () => {
     expect(t.f.store.channels.live.listTranscript(TENANT, sessionId).map((line) => [line.kind, line.text])).toEqual([["said", "Hello from the agent"]]);
   });
 
-  it("speak-approved: a clip is held for the owner's approval of its exact digest, then plays", async () => {
+  it("speak-approved: the owner plays the exact held clip, approves a digest bound to grant digest + session + clip, and it plays once (H1)", async () => {
     const t = await setup();
-    const grant = await t.active({ modes: { speakApproved: true } });
-    const { sessionId } = await t.joined(grant.id, { speakApproved: true });
+    const grant = await t.active({ modes: { speakApproved: true }, forbiddenTerms: ["secret-project"] });
+    const first = await t.joined(grant.id, { speakApproved: true });
     const clip = Buffer.from(writeOggOpus(Array.from({ length: 5 }, (_unused, index) => opusPacket(index + 1))));
     const uploaded = await t.f.app.inject({
       method: "POST",
@@ -626,18 +650,139 @@ describe("live sessions: speaking", () => {
     });
     expect(uploaded.statusCode, uploaded.body).toBe(201);
     const attachmentId = uploaded.json().attachmentId as string;
-    const speak = () => t.f.agent("POST", `${A}/${t.channel.id}/live/sessions/${sessionId}/speak`, { key: key("speak"), payload: { attachmentId } });
-    const held = await speak();
+    const sha = uploaded.json().sha256 as string;
+    const speak = (sessionId: string, transcript = "Welcome to the call") =>
+      t.f.agent("POST", `${A}/${t.channel.id}/live/sessions/${sessionId}/speak`, { key: key("speak"), payload: { attachmentId, transcript } });
+    // The stated transcript is checked against the forbidden terms (normalized) before anything is held.
+    expect((await speak(first.sessionId, "about the ｓｅｃｒｅｔ project")).json().error).toBe("live_forbidden_term");
+    const held = await speak(first.sessionId);
     expect(held.statusCode, held.body).toBe(202);
-    expect(held.json().digest).toBe(liveClipDigest(grant.id, uploaded.json().sha256 as string));
-    expect((await speak()).json().approvalId).toBe(held.json().approvalId);
-    const approved = await t.f.owner("POST", `/api/marketplace/company-box/approvals/${held.json().approvalId}/approve`, {});
+    const record = t.f.store.channels.live.getGrant(TENANT, grant.id)!;
+    expect(held.json().digest).toBe(liveClipDigest(record.digest, first.sessionId, sha));
+    expect((await speak(first.sessionId)).json().approvalId).toBe(held.json().approvalId);
+    // Owner playback: the exact stored bytes, strict owner gate only.
+    const approvalId = held.json().approvalId as string;
+    expect((await t.f.owner("GET", `${O}/clips/${approvalId}`)).statusCode).toBe(403);
+    const played = await t.f.app.inject({ method: "GET", url: `${O}/clips/${approvalId}`, headers: await t.strictHeaders() });
+    expect(played.statusCode).toBe(200);
+    expect(played.headers["content-type"]).toBe("audio/ogg");
+    expect(played.headers["content-disposition"]).toBe("inline");
+    expect(played.headers["cache-control"]).toBe("no-store");
+    expect(played.headers["x-content-sha256"]).toBe(sha);
+    expect(Buffer.compare(played.rawPayload, clip)).toBe(0);
+    const listed = await t.f.owner("GET", "/api/marketplace/company-box/approvals?state=pending");
+    expect(listed.json().approvals.find((entry: { id: string }) => entry.id === approvalId).live).toMatchObject({ clipSha256: sha, sessionId: first.sessionId, transcript: "Welcome to the call", played: false });
+    const approved = await t.f.owner("POST", `/api/marketplace/company-box/approvals/${approvalId}/approve`, {});
     expect(approved.statusCode, approved.body).toBe(200);
     expect(approved.json().approval.state).toBe("succeeded");
-    const played = await speak();
-    expect(played.statusCode, played.body).toBe(200);
-    expect(played.json().spoken).toMatchObject({ kind: "clip", sha256: uploaded.json().sha256 });
+    const once = await speak(first.sessionId);
+    expect(once.statusCode, once.body).toBe(200);
+    expect(once.json().spoken).toMatchObject({ kind: "clip", sha256: sha });
     await waitFor(() => t.huddleRelay.conns.some((conn) => conn.framesIn.length >= 5), 3000, "frames");
+    // Single use.
+    const twice = await speak(first.sessionId);
+    expect(twice.statusCode).toBe(409);
+    expect(twice.json().error).toBe("live_clip_already_played");
+    expect(t.f.store.channels.live.listTranscript(TENANT, first.sessionId).map((line) => [line.kind, line.text, line.clipSha256])).toEqual([["said", "Welcome to the call", sha]]);
+    // A later session needs a new approval (the digest is bound to the session) ...
+    await t.f.agent("POST", `${A}/${t.channel.id}/live/sessions/${first.sessionId}/leave`);
+    const second = await t.joined(grant.id, { speakApproved: true });
+    const again = await speak(second.sessionId);
+    expect(again.statusCode).toBe(202);
+    expect(again.json().approvalId).not.toBe(approvalId);
+    // ... and a narrowed, re-approved grant invalidates a held clip of the old digest (its session stops).
+    await t.ownerConsent(grant.id, { disclosureNotice: true, perParticipantConsent: true });
+    await waitFor(() => t.sessionRow(second.sessionId).status === "left", 5000, "left");
+    const stale = await t.f.owner("POST", `/api/marketplace/company-box/approvals/${again.json().approvalId}/approve`, {});
+    expect(stale.json().approval).toMatchObject({ state: "failed" });
+  });
+});
+
+describe("security review of PR #53", () => {
+  it("M4: forbidden terms survive zero-width, soft hyphen, ligatures, full-width, Turkish İ, combining marks and Cyrillic lookalikes", async () => {
+    const terms = ["secret-project", "confidential", "istanbul"];
+    const cases = ["the secret\u200b-project is live", "it is confi\u00addential", "it is con\ufb01dential", "\uff53\uff45\uff43\uff52\uff45\uff54-project", "\u0130STANBUL office", "confide\u0301ntial", "c\u043enfidential", "the SECRET project"];
+    for (const text of cases) expect(forbiddenTermsIn(text, terms), text).not.toEqual([]);
+    expect(forbiddenTermsIn("a normal sentence", terms)).toEqual([]);
+    // speak-live refuses hidden format characters outright.
+    const ogg = writeOggOpus(Array.from({ length: 5 }, (_unused, index) => opusPacket(index + 1)));
+    const t = await setup({ tts: true, synthesize: () => Uint8Array.from(ogg) });
+    const grant = await t.active({ modes: { speakLive: true } });
+    const { sessionId } = await t.joined(grant.id, { speakLive: true });
+    const hidden = await t.f.agent("POST", `${A}/${t.channel.id}/live/sessions/${sessionId}/speak`, { key: key("speak"), payload: { text: "hello\u200bthere" } });
+    expect(hidden.json().error).toBe("live_text_hidden_characters");
+    const lookalike = await t.f.agent("POST", `${A}/${t.channel.id}/live/sessions/${sessionId}/speak`, { key: key("speak"), payload: { text: "the s\u0435cret project" } });
+    expect(lookalike.json().error).toBe("live_forbidden_term");
+    expect(t.speech.synthesizeCalls).toHaveLength(0);
+  });
+
+  it("M1: an agent proposal is never weaker than the defaults nor wider than its current approved grant", async () => {
+    const t = await setup();
+    expect((await t.propose({ consent: { disclosureNotice: false } })).json().error).toBe("live_consent_weaker_than_default");
+    const grant = await t.active({ modes: { listen: true }, maxSessionMinutes: 20 });
+    const wider = await t.propose({ modes: { listen: true, speakLive: true }, maxSessionMinutes: 60, expires: new Date(t.f.now + 8 * 86_400_000).toISOString() });
+    expect(wider.statusCode).toBe(422);
+    expect(wider.json()).toMatchObject({ error: "live_grant_wider_than_approved" });
+    expect(wider.json().fields).toEqual(expect.arrayContaining(["modes.speakLive", "maxSessionMinutes", "expires"]));
+    // A stricter one is fine; consent can only be made stricter by the agent.
+    expect((await t.propose({ modes: { listen: true }, maxSessionMinutes: 10, expires: new Date(t.f.now + 86_400_000).toISOString(), consent: { perParticipantConsent: true } })).statusCode).toBe(201);
+    void grant;
+  });
+
+  it("M2: an older withheld `resume grants` cannot undo a later pause; an older `revoke` is refused after a later change", async () => {
+    const t = await setup();
+    const commandChannel = randomUUID();
+    expect((await t.strict("PUT", `${O}/control`, { commandChannel })).statusCode).toBe(200);
+    const grant = await t.active();
+    const staleResume = signTestEvent(OWNER_SECRET, { kind: 9, created_at: Math.floor(t.f.now / 1000) - 30, tags: [["h", commandChannel]], content: "resume grants" });
+    const staleRevoke = signTestEvent(OWNER_SECRET, { kind: 9, created_at: Math.floor(t.f.now / 1000) - 30, tags: [["h", t.group]], content: `revoke ${grant.id}` });
+    expect((await t.f.owner("PUT", `${O}/control`, { paused: true })).statusCode).toBe(200);
+    const replayed = await t.f.agent("POST", `${A}/live-grants/commands`, { payload: { event: staleResume } });
+    expect(replayed.statusCode).toBe(409);
+    expect(replayed.json()).toMatchObject({ error: "live_command_stale" });
+    expect(t.f.store.channels.live.getControl(TENANT).paused).toBe(true);
+    expect((await t.join(grant.id, t.huddle())).json().reason).toBe("grants_paused");
+    const revoke = await t.f.agent("POST", `${A}/live-grants/commands`, { payload: { event: staleRevoke } });
+    expect(revoke.json()).toMatchObject({ error: "live_command_stale" });
+  });
+
+  it("M3: a channel grant joins only a huddle whose creator-signed 48100 link names this channel; the notice goes to the huddle too", async () => {
+    const t = await setup();
+    const grant = await t.active();
+    // A channel the agent key can enter, with no 48100 link to the granted channel.
+    const stray = randomUUID();
+    t.huddleRelay.addChannel(stray, { members: [AGENT_KEY] });
+    const refused = await t.join(grant.id, stray);
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json().error).toBe("live_huddle_not_in_channel");
+    // A huddle of another channel.
+    const elsewhere = await t.join(grant.id, t.huddle(randomUUID()));
+    expect(elsewhere.json().error).toBe("live_huddle_not_in_channel");
+    expect(t.huddleRelay.upgrades).toHaveLength(0);
+    const { huddleId } = await t.joined(grant.id);
+    const notices = t.relay.eventsOfKind(9).filter((event) => event.pubkey === AGENT_KEY);
+    expect(notices.map((event) => event.tags.find((tag) => tag[0] === "h")?.[1]).sort()).toEqual([t.group, huddleId].sort());
+    // L2: a fixed server template; the agent topic on its own labelled line.
+    expect(notices[0]!.content).toMatch(/^Notice from Marketplace: an AI agent \(agent-1\) is joining this huddle/u);
+    expect(notices[0]!.content).toContain("\nTopic (from the agent): Weekly community call");
+  });
+
+  it("L1/L3: standing grants switched off or the consent downgraded stop live sessions; proposals need standing grants allowed", async () => {
+    const t = await setup();
+    const grant = await t.active();
+    const first = await t.joined(grant.id);
+    const policy = { standingGrants: "disabled", caps: { perDay: 20, minIntervalSeconds: 0, onePerPhase: false }, content: { files: { types: ["png"] } } };
+    const changed = await t.f.owner("PATCH", `/api/marketplace/channels/${t.channel.id}`, { policy });
+    expect(changed.statusCode, changed.body).toBe(200);
+    await waitFor(() => t.sessionRow(first.sessionId).status === "left", 5000, "left");
+    expect(t.sessionRow(first.sessionId).endReason).toBe("standing_grants_disabled");
+    expect((await t.propose()).json().error).toBe("standing_grants_disabled");
+    await t.f.owner("PATCH", `/api/marketplace/channels/${t.channel.id}`, { policy: { ...policy, standingGrants: "allowed" } });
+    const second = await t.joined(grant.id);
+    const record = t.f.store.channels.live.getGrant(TENANT, grant.id)!;
+    t.f.store.revokeMarketplaceAgentConsent(record.consentId);
+    await waitFor(() => t.sessionRow(second.sessionId).status === "left", 5000, "left");
+    expect(t.sessionRow(second.sessionId).endReason).toBe("consent_inactive");
   });
 });
 

@@ -11,6 +11,7 @@ import { npubEncode } from "../providers/nostr.js";
 import { capabilitySupports } from "../providers/capabilities.js";
 import type { ChannelCapabilities } from "../providers/types.js";
 import { readAttachmentBytes, type ChannelRecord } from "../store.js";
+import { forbiddenTermsIn } from "./sessions.js";
 import { LiveGrantProposalSchema, LiveGrantTermsSchema, liveGrantOf, liveGrantView, type LiveGrantService } from "./grants.js";
 import type { LiveSessionManager, LiveResult } from "./sessions.js";
 import type { LiveGrantRecord, LiveTranscriptRecord } from "./store.js";
@@ -41,6 +42,7 @@ export const LIVE_OWNER_OPERATION = Object.freeze({
   control: "marketplace.channel-live-control.update",
   stop: "marketplace.channel-live-sessions.stop",
   ownerTranscript: "marketplace.channel-live-sessions.transcript",
+  clip: "marketplace.channel-live-clips.get",
 } as const);
 
 /** The CompanyBox hold of one speak-approved clip. */
@@ -50,11 +52,14 @@ const LIVE_CLIP_TTL_MS = 24 * 3_600_000;
 const LIVE_CLIP_MAX_BYTES = 512 * 1024;
 const LIVE_CLIP_MAX_PENDING = 20;
 
-/** The digest the owner approves for a clip: domain-separated, bound to the grant id and the clip bytes' SHA-256. */
-export function liveClipDigest(grantId: string, clipSha256: string): string {
-  return createHash("sha256").update(`${LIVE_CLIP_DIGEST_DOMAIN}${grantId}\n${clipSha256}`, "utf8").digest("hex");
+/**
+ * The digest the owner approves for a clip: domain-separated, bound to the grant DIGEST (a narrowed and re-approved
+ * grant invalidates it), the session (expires with it) and the clip bytes' SHA-256 (review H1).
+ */
+export function liveClipDigest(grantDigest: string, sessionId: string, clipSha256: string): string {
+  return createHash("sha256").update(`${LIVE_CLIP_DIGEST_DOMAIN}${grantDigest}\n${sessionId}\n${clipSha256}`, "utf8").digest("hex");
 }
-export const liveClipApprovalKey = (grantId: string, clipSha256: string) => `live-clip.${grantId}.${clipSha256}`;
+export const liveClipApprovalKey = (sessionId: string, clipSha256: string) => `live-clip.${sessionId}.${clipSha256}`;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
 const GRANT_ID = /^live-[0-9a-f]{16}$/u;
@@ -68,7 +73,8 @@ const JoinSchema = z.strictObject({
   modes: z.strictObject({ listen: z.literal(true).optional(), speakApproved: z.literal(true).optional(), speakLive: z.literal(true).optional() }),
 });
 const SpeakSchema = z.union([
-  z.strictObject({ attachmentId: z.string().min(1).max(100) }),
+  // The agent-stated transcript is shown to the owner with the clip and checked against the forbidden terms.
+  z.strictObject({ attachmentId: z.string().min(1).max(100), transcript: z.string().min(1).max(2000) }),
   z.strictObject({ text: z.string().min(1).max(4096), voice: z.string().min(1).max(64).regex(/^[A-Za-z0-9._-]+$/u).optional() }),
 ]);
 const CommandSchema = z.strictObject({ event: z.record(z.unknown()) });
@@ -277,9 +283,11 @@ export function registerLiveRoutes(ctx: LiveRouteContext): void {
   });
 
   /**
-   * speak-approved: `{attachmentId}` of an uploaded Ogg/Opus clip. The first call holds the clip for the owner (the
-   * normal approval queue: Marketplace UI, Buzz `approve <prefix>`, TBD) and answers 202; after approval the same
-   * clip plays. speak-live: `{text, voice?}` under the grant's speakLive mode.
+   * speak-approved: `{attachmentId, transcript}` of an uploaded Ogg/Opus clip (review H1). The first call holds the
+   * clip in the approvals queue: the owner listens to the exact stored bytes (owner playback route, strict owner gate)
+   * and reads the agent-stated transcript (forbidden terms refused before any hold). The approved digest binds the
+   * grant DIGEST, this session and the clip bytes; it expires with the hold (24 h) or the session, and plays ONCE.
+   * speak-live: `{text, voice?}` under the grant's speakLive mode.
    */
   app.post(`${AGENT_PREFIX}/:channelId/live/sessions/:sessionId/speak`, { bodyLimit: 16 * 1024 }, async (request, reply) => {
     const caller = await ctx.agentPreamble(request, reply, LIVE_AGENT_OPERATION.liveSpeak);
@@ -301,14 +309,36 @@ export function registerLiveRoutes(ctx: LiveRouteContext): void {
         ctx.sessions.speakText({ agentId: caller.agentId, channelId, sessionId, text: data.text, ...(data.voice ? { voice: data.voice } : {}) }),
       );
     }
-    const attachment = store.channels.getAttachment(org, parsed.data.attachmentId);
+    const data = parsed.data;
+    if (session.status !== "joined" && session.status !== "joining") return fail(reply, 409, "live_session_not_joined");
+    const grantRecord = live.getGrant(org, session.grantId);
+    const usable = ctx.grants.usable(grantRecord);
+    if (!usable.ok) return fail(reply, 409, "live_grant_not_active", { reason: usable.reason });
+    // The session belongs to the grant digest it joined under; a narrowed and re-approved grant is a new digest.
+    if (usable.record.digest !== session.grantDigest) return fail(reply, 409, "live_grant_not_active", { reason: "grant_changed" });
+    if (!usable.grant.scope.modes.speakApproved || !session.modes.speakApproved) return fail(reply, 403, "live_mode_not_granted", { modes: ["speakApproved"] });
+    if (/\p{Cf}/u.test(data.transcript)) return fail(reply, 422, "live_text_hidden_characters");
+    const transcript = data.transcript.replace(/[\p{Cc}\p{Zl}\p{Zp}]/gu, " ").trim();
+    if (!transcript) return fail(reply, 400, "validation_failed");
+    if (forbiddenTermsIn(transcript, usable.grant.scope.forbiddenTerms).length > 0) return fail(reply, 422, "live_forbidden_term");
+    const attachment = store.channels.getAttachment(org, data.attachmentId);
     if (!attachment || attachment.createdBy !== caller.agentId) return fail(reply, 404, "channel_attachment_not_found");
     if (attachment.contentType !== "audio/ogg" || attachment.bytes > LIVE_CLIP_MAX_BYTES) return fail(reply, 415, "live_clip_type_invalid", { contentType: "audio/ogg", maxBytes: LIVE_CLIP_MAX_BYTES });
     const clipSha256 = attachment.sha256;
-    const digest = liveClipDigest(session.grantId, clipSha256);
-    const approvalKey = liveClipApprovalKey(session.grantId, clipSha256);
+    const digest = liveClipDigest(session.grantDigest, session.id, clipSha256);
+    const approvalKey = liveClipApprovalKey(session.id, clipSha256);
     const existing = store.findCompanyBoxApprovalByKey({ workspaceSlug: org, agentId: caller.agentId, idempotencyKey: approvalKey });
-    if (existing && existing.state === "succeeded" && existing.fingerprint === digest && existing.sourceKind === "live-clip") {
+    const pending = (approval: CompanyBoxApproval) => {
+      reply.code(202);
+      return { ok: true, schema: 1, status: "approval_pending", approvalId: approval.id, digest, clipSha256, approvalText: `approve ${digest.slice(0, NOSTR_MIN_PREFIX_HEX)}` };
+    };
+    if (existing) {
+      if (existing.sourceKind !== "live-clip" || existing.fingerprint !== digest) return fail(reply, 409, "live_clip_approval_conflict");
+      if (existing.state === "denied" || existing.state === "failed") return fail(reply, 403, "live_clip_denied", { approvalId: existing.id });
+      if (existing.state === "expired" || Date.parse(existing.expiresAt) <= Date.now()) return fail(reply, 410, "live_clip_approval_expired", { approvalId: existing.id });
+      if (existing.state !== "succeeded") return pending(existing);
+      if (existing.arguments.transcript !== transcript) return fail(reply, 409, "live_clip_transcript_mismatch");
+      if (live.clipUsed(existing.id)) return fail(reply, 409, "live_clip_already_played", { approvalId: existing.id });
       let bytes: Buffer;
       try {
         bytes = readAttachmentBytes(ctx.attachmentsDir, clipSha256);
@@ -317,23 +347,12 @@ export function registerLiveRoutes(ctx: LiveRouteContext): void {
       }
       return ctx.idempotent(reply, { scope: `channel-live-speak:${caller.agentId}`, key, request: { sessionId, clipSha256 } }, async () => {
         try {
-          return await ctx.sessions.speakClip({ agentId: caller.agentId, channelId, sessionId, clip: new Uint8Array(bytes), clipSha256 });
+          return await ctx.sessions.speakClip({ agentId: caller.agentId, channelId, sessionId, clip: new Uint8Array(bytes), clipSha256, approvalId: existing.id, transcript });
         } finally {
           bytes.fill(0);
         }
       });
     }
-    if (existing) {
-      if (existing.state === "denied" || existing.state === "failed") return fail(reply, 403, "live_clip_denied", { approvalId: existing.id });
-      if (existing.state === "expired") return fail(reply, 410, "live_clip_approval_expired", { approvalId: existing.id });
-      reply.code(202);
-      return { ok: true, schema: 1, status: "approval_pending", approvalId: existing.id, digest, clipSha256, approvalText: `approve ${digest.slice(0, NOSTR_MIN_PREFIX_HEX)}` };
-    }
-    // The clip must be playable under the grant before the owner is asked.
-    const grantRecord = live.getGrant(org, session.grantId);
-    const usable = ctx.grants.usable(grantRecord);
-    if (!usable.ok) return fail(reply, 409, "live_grant_not_active", { reason: usable.reason });
-    if (!usable.grant.scope.modes.speakApproved || !session.modes.speakApproved) return fail(reply, 403, "live_mode_not_granted", { modes: ["speakApproved"] });
     if (store.countPendingCompanyBoxApprovals({ workspaceSlug: org, agentId: caller.agentId }) >= LIVE_CLIP_MAX_PENDING) return fail(reply, 429, "approval_queue_full");
     if (store.hasLiveApprovalWithPrefix({ workspaceSlug: org, prefix: digest.slice(0, NOSTR_MIN_PREFIX_HEX) })) return fail(reply, 409, "channel_digest_prefix_collision");
     let approval: CompanyBoxApproval;
@@ -348,9 +367,9 @@ export function registerLiveRoutes(ctx: LiveRouteContext): void {
         sourceRef: session.grantId,
         idempotencyKey: approvalKey,
         fingerprint: digest,
-        // References only (no audio): the owner view reads the clip by its attachment id.
-        arguments: { grantId: session.grantId, channelId, sessionId, attachmentId: attachment.id, clipSha256, bytes: attachment.bytes },
-        argumentsPreview: `${found.channel.label} (buzz) · huddle clip ${clipSha256.slice(0, 12)} · digest ${digest.slice(0, 12)}`,
+        // References and the agent-stated transcript only; the owner plays the stored clip by this approval id.
+        arguments: { grantId: session.grantId, grantDigest: session.grantDigest, channelId, sessionId, attachmentId: attachment.id, clipSha256, bytes: attachment.bytes, transcript },
+        argumentsPreview: `${found.channel.label} (buzz) · huddle clip ${clipSha256.slice(0, 12)} · "${transcript.slice(0, 80)}" (agent-stated) · digest ${digest.slice(0, 12)}`,
         ttlMs: LIVE_CLIP_TTL_MS,
       });
     } catch {
@@ -361,10 +380,9 @@ export function registerLiveRoutes(ctx: LiveRouteContext): void {
       pluginId: "channels-buzz",
       eventType: "marketplace.company_box.approval.requested",
       actorId: `agent:${caller.agentId}`,
-      metadata: { governance: "live-clip", approvalId: approval.id, actionKey: LIVE_CLIP_ACTION, agentId: caller.agentId, grantId: session.grantId, clipSha256, digest, expiresAt: approval.expiresAt },
+      metadata: { governance: "live-clip", approvalId: approval.id, actionKey: LIVE_CLIP_ACTION, agentId: caller.agentId, grantId: session.grantId, sessionId, clipSha256, digest, expiresAt: approval.expiresAt },
     });
-    reply.code(202);
-    return { ok: true, schema: 1, status: "approval_pending", approvalId: approval.id, digest, clipSha256, approvalText: `approve ${digest.slice(0, NOSTR_MIN_PREFIX_HEX)}` };
+    return pending(approval);
   });
 
   /** Other participants' words are untrusted input from outside, never instructions; each line names its speaker key. */
@@ -515,6 +533,36 @@ export function registerLiveRoutes(ctx: LiveRouteContext): void {
     const { sessionId } = request.params as { sessionId: string };
     if (!SESSION_ID.test(sessionId)) return fail(reply, 404, "live_session_not_found");
     return send(reply, await ctx.sessions.stopByOwner({ sessionId, actorId: `operator:${principal.id}` }));
+  });
+
+  /**
+   * Owner playback of a held speak-approved clip (review H1): the EXACT stored bytes (SHA-256 checked on read, never
+   * re-encoded), `audio/ogg`, inline, no-store, with the SHA-256 in `x-content-sha256`. The pinned owner's own launch
+   * session only (the owner UI fetches it with its CSRF header and plays a blob URL).
+   */
+  app.get(`${OWNER_PREFIX}/clips/:approvalId`, async (request, reply) => {
+    const principal = await ctx.owner(request, reply);
+    if (!principal) return ctx.ownerDenied(request);
+    const gate = await ctx.strictOwner(request, reply);
+    if (!gate.ok) return gate.body;
+    const { approvalId } = request.params as { approvalId: string };
+    const approval = /^[A-Za-z0-9_-]{1,100}$/u.test(approvalId) ? store.getCompanyBoxApproval(approvalId) : null;
+    if (!approval || approval.workspaceSlug !== org || approval.sourceKind !== "live-clip") return fail(reply, 404, "live_clip_not_found");
+    const clipSha256 = String(approval.arguments.clipSha256 ?? "");
+    let bytes: Buffer;
+    try {
+      bytes = readAttachmentBytes(ctx.attachmentsDir, clipSha256);
+    } catch {
+      return fail(reply, 410, "channel_attachment_gone");
+    }
+    reply
+      .header("content-type", "audio/ogg")
+      .header("content-disposition", "inline")
+      .header("cache-control", "no-store")
+      .header("x-content-type-options", "nosniff")
+      .header("content-security-policy", "default-src 'none'; sandbox")
+      .header("x-content-sha256", clipSha256);
+    return reply.send(bytes);
   });
 
   app.get(`${OWNER_PREFIX}/sessions/:sessionId/transcript`, async (request, reply) => {

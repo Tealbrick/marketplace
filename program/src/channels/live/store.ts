@@ -15,10 +15,13 @@ import type { DatabaseSync } from "node:sqlite";
  * - `channel_live_transcript`: the receipt lines (what the agent heard and said, with times; the SHA-256 of each
  *   approved clip). Text is purged after the inbound text retention; the row keeps metadata.
  * - `channel_live_control`: the owner's global switch (`pause grants` / `resume grants`) and the owner command
- *   channel for signed Buzz commands.
+ *   channel for signed Buzz commands. `changed_at` (and each grant's `state_changed_at`) is a monotonic time in ms:
+ *   a signed owner command created at or before it is refused, so an older withheld command never undoes a later
+ *   change.
+ * - `channel_live_clip_use`: one row per approved speak-approved clip that was played (single use).
  */
 
-export const LIVE_TABLES = ["channel_live_grant", "channel_live_session", "channel_live_transcript", "channel_live_control"] as const;
+export const LIVE_TABLES = ["channel_live_grant", "channel_live_session", "channel_live_transcript", "channel_live_control", "channel_live_clip_use"] as const;
 
 const LIVE_DDL = `
   CREATE TABLE IF NOT EXISTS channel_live_grant (
@@ -41,6 +44,7 @@ const LIVE_DDL = `
     approval_expires_at TEXT,
     decided_reason TEXT,
     provider_seconds REAL NOT NULL DEFAULT 0,
+    state_changed_at INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
@@ -102,7 +106,15 @@ const LIVE_DDL = `
     paused_by TEXT,
     command_channel TEXT,
     command_channel_set_by TEXT,
+    changed_at INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS channel_live_clip_use (
+    approval_id TEXT PRIMARY KEY,
+    workspace_slug TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    used_at TEXT NOT NULL
   );
 `;
 
@@ -133,6 +145,8 @@ export type LiveGrantRecord = {
   approvalExpiresAt: string | null;
   decidedReason: string | null;
   providerSeconds: number;
+  /** Monotonic time (ms) of the last state change; signed commands must be newer. */
+  stateChangedAt: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -183,7 +197,7 @@ export type LiveTranscriptRecord = {
   createdAt: string;
 };
 
-export type LiveControl = { paused: boolean; pausedAt: string | null; pausedBy: string | null; commandChannel: string | null; updatedAt: string | null };
+export type LiveControl = { paused: boolean; pausedAt: string | null; pausedBy: string | null; commandChannel: string | null; changedAt: number; updatedAt: string | null };
 
 type Row = Record<string, unknown>;
 const text = (value: unknown) => (value === null || value === undefined ? null : String(value));
@@ -210,6 +224,7 @@ function grantFromRow(row: Row): LiveGrantRecord {
     approvalExpiresAt: text(row.approval_expires_at),
     decidedReason: text(row.decided_reason),
     providerSeconds: Number(row.provider_seconds),
+    stateChangedAt: Number(row.state_changed_at ?? 0),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   };
@@ -365,6 +380,8 @@ export class LiveStore {
       approvedDigest: string | null;
       approvalExpiresAt: string | null;
       decidedReason: string | null;
+      /** The monotonic state time to record (ms); default `now`. The stored value never goes back. */
+      stateChangedAt: number;
     }>,
     now: Date,
   ): LiveGrantRecord | null {
@@ -383,13 +400,14 @@ export class LiveStore {
     const sets: string[] = [];
     const values: Array<string | number | null> = [];
     for (const [key, value] of Object.entries(patch)) {
+      if (key === "stateChangedAt") continue;
       const column = columns[key];
       if (!column || value === undefined) continue;
       sets.push(`${column} = ?`);
       values.push(value as string | null);
     }
-    sets.push("revision = revision + 1", "updated_at = ?");
-    values.push(iso(now));
+    sets.push("revision = revision + 1", "updated_at = ?", "state_changed_at = MAX(state_changed_at, ?)");
+    values.push(iso(now), patch.stateChangedAt ?? now.getTime());
     const statusClause = expect.status && expect.status.length > 0 ? ` AND status IN (${expect.status.map(() => "?").join(", ")})` : "";
     const result = this.db
       .prepare(`UPDATE channel_live_grant SET ${sets.join(", ")} WHERE workspace_slug = ? AND id = ? AND revision = ?${statusClause}`)
@@ -574,25 +592,40 @@ export class LiveStore {
 
   getControl(workspaceSlug: string): LiveControl {
     const row = this.db.prepare("SELECT * FROM channel_live_control WHERE workspace_slug = ?").get(workspaceSlug) as Row | undefined;
-    if (!row) return { paused: false, pausedAt: null, pausedBy: null, commandChannel: null, updatedAt: null };
+    if (!row) return { paused: false, pausedAt: null, pausedBy: null, commandChannel: null, changedAt: 0, updatedAt: null };
     return {
       paused: Number(row.paused) === 1,
       pausedAt: text(row.paused_at),
       pausedBy: text(row.paused_by),
       commandChannel: text(row.command_channel),
+      changedAt: Number(row.changed_at ?? 0),
       updatedAt: text(row.updated_at),
     };
   }
 
-  setPaused(workspaceSlug: string, paused: boolean, actor: string, now: Date): LiveControl {
+  /** Sets the global switch; `changedAtMs` (default now) only ever moves the monotonic change time forward. */
+  setPaused(workspaceSlug: string, paused: boolean, actor: string, now: Date, changedAtMs: number = now.getTime()): LiveControl {
     const at = iso(now);
     this.db
       .prepare(
-        `INSERT INTO channel_live_control (workspace_slug, paused, paused_at, paused_by, updated_at) VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(workspace_slug) DO UPDATE SET paused = excluded.paused, paused_at = excluded.paused_at, paused_by = excluded.paused_by, updated_at = excluded.updated_at`,
+        `INSERT INTO channel_live_control (workspace_slug, paused, paused_at, paused_by, changed_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(workspace_slug) DO UPDATE SET paused = excluded.paused, paused_at = excluded.paused_at, paused_by = excluded.paused_by,
+           changed_at = MAX(channel_live_control.changed_at, excluded.changed_at), updated_at = excluded.updated_at`,
       )
-      .run(workspaceSlug, paused ? 1 : 0, paused ? at : null, paused ? actor : null, at);
+      .run(workspaceSlug, paused ? 1 : 0, paused ? at : null, paused ? actor : null, changedAtMs, at);
     return this.getControl(workspaceSlug);
+  }
+
+  /** Single use of an approved clip: true only for the first claim of this approval. */
+  claimClipUse(workspaceSlug: string, approvalId: string, sessionId: string, now: Date): boolean {
+    const result = this.db
+      .prepare("INSERT INTO channel_live_clip_use (approval_id, workspace_slug, session_id, used_at) VALUES (?, ?, ?, ?) ON CONFLICT(approval_id) DO NOTHING")
+      .run(approvalId, workspaceSlug, sessionId, iso(now));
+    return Number(result.changes) === 1;
+  }
+
+  clipUsed(approvalId: string): boolean {
+    return Boolean(this.db.prepare("SELECT 1 FROM channel_live_clip_use WHERE approval_id = ?").get(approvalId));
   }
 
   setCommandChannel(workspaceSlug: string, channel: string | null, actor: string, now: Date): LiveControl {

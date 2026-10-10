@@ -215,6 +215,7 @@ export type LiveGrantServiceDeps = {
   live: LiveStore;
   organizationId: string;
   now: () => Date;
+  /** The bound consent row is active AND still an `outward` consent (review L3). */
   consentActive: (consentRowId: string) => boolean;
   channel: (channelId: string) => ChannelRecord | null;
   ownerBinding: () => Promise<LiveOwnerBinding>;
@@ -307,6 +308,11 @@ export function createLiveGrantService(deps: LiveGrantServiceDeps) {
     const { channel, proposal } = input;
     if (channel.status !== "active") return { ok: false, status: 409, error: "channel_not_active" };
     if (channel.provider !== "buzz") return { ok: false, status: 422, error: "channel_capability_unavailable" };
+    // Live grants follow the channel's standing-grant switch (review L1).
+    if (channel.policy.standingGrants !== "allowed") return { ok: false, status: 409, error: "standing_grants_disabled" };
+    // Consent (review M1): an agent may only ask for consent at least as strict as the defaults. Turning the
+    // disclosure notice off is the owner's decision, in the Marketplace UI behind the strict owner gate.
+    if (proposal.consent?.disclosureNotice === false) return { ok: false, status: 422, error: "live_consent_weaker_than_default", fields: ["consent.disclosureNotice"] };
     const parent = channel.destination.externalId;
     if (!UUID.test(parent)) return { ok: false, status: 422, error: "live_target_invalid" };
     const description = liveGrantDescription(input.agentId, channel.slug);
@@ -332,6 +338,14 @@ export function createLiveGrantService(deps: LiveGrantServiceDeps) {
       built = build({ id, description, target, terms });
     }
     if (!built.ok) return { ok: false, status: 422, error: "live_grant_invalid", errors: built.errors };
+    // Review M1: never wider than the caller's current approved grant for the same target (consent, modes, caps,
+    // minutes, cost, forbidden terms, expiry). A wider ask needs the current grant withdrawn first (audited).
+    for (const current of live.listGrants(org, { channelId: channel.id, agentId: input.agentId, status: ["active", "paused"] })) {
+      const approved = liveGrantOf(current);
+      if (!approved || JSON.stringify(approved.scope.target) !== JSON.stringify(built.grant.scope.target)) continue;
+      const wider = wideningFields(approved, built.grant, { ownerMaySetConsent: false }).filter((field) => !["id", "topic"].includes(field));
+      if (wider.length > 0) return { ok: false, status: 422, error: "live_grant_wider_than_approved", fields: wider, reason: current.id };
+    }
     const refusal = windowRefusal(built.grant, deps.now().getTime());
     if (refusal) return refusal;
     const record = live.createGrant({
@@ -420,6 +434,7 @@ export function createLiveGrantService(deps: LiveGrantServiceDeps) {
     const channel = deps.channel(record.channelId);
     if (!channel || channel.status !== "active") return { ok: false, status: 409, error: "channel_not_active" };
     if (!deps.consentActive(record.consentId)) return { ok: false, status: 409, error: "live_grant_consent_inactive" };
+    if (channel.policy.standingGrants !== "allowed") return { ok: false, status: 409, error: "standing_grants_disabled" };
     const grant = liveGrantOf(record);
     if (!grant) return { ok: false, status: 409, error: "live_grant_corrupt" };
     if (integrityFailed(record, grant, channel)) return { ok: false, status: 409, error: "live_grant_corrupt" };
@@ -590,6 +605,10 @@ export function createLiveGrantService(deps: LiveGrantServiceDeps) {
   };
 
   /**
+   * TODO(review of PR #53, M2): Marketplace should subscribe to the owner command channel itself (inbound relay
+   * socket) so a signed `pause grants` / `revoke <id>` applies even when no agent forwards it. Today the command needs
+   * a forwarding agent; the owner UI (Pause, Revoke, Stop) does not.
+   *
    * A forwarded owner-signed command. `revoke <id>` must be posted in that grant's own approval conversation;
    * `pause grants` / `resume grants` in the owner command channel (owner setting). Both channels are our state.
    */
@@ -609,9 +628,14 @@ export function createLiveGrantService(deps: LiveGrantServiceDeps) {
       target = claimed.grantId ? live.getGrant(org, claimed.grantId) : null;
       if (!target) return { ok: false, status: 404, error: "live_grant_not_found" };
       channel = target.approvalChannel;
+      // Monotonic (review of PR #53, M2): a command signed at or before the grant's last state change is refused.
+      if (createdAt <= target.stateChangedAt) return { ok: false, status: 409, error: "live_command_stale", reason: "older_than_last_change" };
     } else {
-      channel = live.getControl(org).commandChannel;
+      const control = live.getControl(org);
+      channel = control.commandChannel;
       if (!channel) return { ok: false, status: 409, error: "live_command_channel_unset" };
+      // A withheld older `resume grants` can never undo a later pause (UI or command), and vice versa.
+      if (createdAt <= control.changedAt) return { ok: false, status: 409, error: "live_command_stale", reason: "older_than_last_change" };
     }
     const nowMs = deps.now().getTime();
     const result = await verifyOwnerCommand({
@@ -638,6 +662,7 @@ export function createLiveGrantService(deps: LiveGrantServiceDeps) {
   };
 
   const setPaused = (paused: boolean, actorId: string, via: "ui" | "command") => {
+    // Every change (UI or command) moves the monotonic change time forward to now.
     const control = live.setPaused(org, paused, actorId, deps.now());
     deps.auditControl(paused ? "marketplace.channels.live_grants.paused" : "marketplace.channels.live_grants.resumed", actorId, { via });
     deps.onControlChanged?.(paused);
@@ -666,6 +691,7 @@ export function createLiveGrantService(deps: LiveGrantServiceDeps) {
     if (!deps.consentActive(record.consentId)) return { ok: false, reason: "consent_inactive" };
     const channel = deps.channel(record.channelId);
     if (!channel || channel.status !== "active") return { ok: false, reason: channel ? `channel_${channel.status}` : "channel_missing" };
+    if (channel.policy.standingGrants !== "allowed") return { ok: false, reason: "standing_grants_disabled" };
     if (integrityFailed(record, grant, channel)) return { ok: false, reason: "grant_integrity_failed" };
     return { ok: true, grant, record };
   };

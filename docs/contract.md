@@ -212,7 +212,7 @@ spec's sub-resource ids use a hyphenated resource
 | `marketplace.channel-live-grants.command` | `POST /api/marketplace/v1/agent/channels/live-grants/commands` `{event}` | writes-app-state | supported |
 | `marketplace.channel-live.join` | `POST /api/marketplace/v1/agent/channels/{channelId}/live/sessions` `{grantId, huddleId, modes}` | external-effects | required |
 | `marketplace.channel-live.leave` | `POST /api/marketplace/v1/agent/channels/{channelId}/live/sessions/{sessionId}/leave` | external-effects | supported |
-| `marketplace.channel-live.speak` | `POST /api/marketplace/v1/agent/channels/{channelId}/live/sessions/{sessionId}/speak` `{attachmentId}` or `{text, voice?}` | external-effects (`approvalAuthority: "app"`, `appHold`) | required |
+| `marketplace.channel-live.speak` | `POST /api/marketplace/v1/agent/channels/{channelId}/live/sessions/{sessionId}/speak` `{attachmentId, transcript}` or `{text, voice?}` | external-effects (`approvalAuthority: "app"`, `appHold`) | required |
 | `marketplace.channel-live.transcript` | `GET /api/marketplace/v1/agent/channels/{channelId}/live/sessions/{sessionId}/transcript` | read-only | none |
 | `marketplace.approvals.resolve` | `POST /api/marketplace/v1/agent/approvals/{approvalId}/resolve` | writes-app-state | required (`resolve.<approvalId>.<decision>`) |
 
@@ -464,6 +464,7 @@ provider-env or account field.
 | `marketplace.channel-live-grants.decline` / `.revoke` / `.pause` / `.resume` | `POST /api/marketplace/channels/live/grants/{grantId}/decline|revoke|pause|resume` (resume: pinned owner) |
 | `marketplace.channel-live-control.update` | `PUT /api/marketplace/channels/live/control` `{paused?, commandChannel?}` (resume and command channel: pinned owner) |
 | `marketplace.channel-live-sessions.stop` / `.transcript` | `POST /api/marketplace/channels/live/sessions/{sessionId}/stop`, `GET .../transcript` |
+| `marketplace.channel-live-clips.get` | `GET /api/marketplace/channels/live/clips/{approvalId}` (the exact held clip bytes; pinned owner) |
 
 "Grant to agent" is `marketplace.consents.request` with the channel's class
 selection (each channel in `browse` carries it as `grantSelection`, with the
@@ -1134,16 +1135,39 @@ stricter; the owner may set them either way. Owner revoke/pause/resume: the UI, 
 `revoke <grant-id>` (in that grant's channel) / `pause grants` / `resume grants` (in the owner command channel set in
 the UI), verified with `verifyOwnerCommand`.
 
+Agent proposals (review of PR #53): consent at least as strict as the defaults (`disclosureNotice: false` is refused
+with `live_consent_weaker_than_default`; only the owner turns the notice off, through the strict-gated narrow in the
+Marketplace UI), and never wider than the caller's current approved grant for the same target (modes, minutes, cost,
+caps, forbidden terms, consent, expiry: `live_grant_wider_than_approved`). Live grants need the channel's
+`standingGrants: "allowed"`; switching it off stops live sessions. Signed owner commands are monotonic: a command
+created at or before the last state change of its grant (`revoke`) or of the global switch (`pause` / `resume`,
+UI changes included) is refused (`live_command_stale`), so a withheld older `resume grants` never undoes a later
+pause. Signed commands still need an agent to forward them (Marketplace does not yet subscribe to the owner command
+channel itself; the UI controls do not depend on an agent).
+
 Session. `join` needs the caller's active grant covering every requested mode, the `outward` consent, the Buzz
 identity, and room under the caps (joins per day/hour/interval, minutes in the rolling day, provider minutes). With
 `consent.disclosureNotice` the notice (kind 9) is posted in the huddle's parent channel first; if it fails nothing
-joins. `listen` is refused while `perParticipantConsent` is true (no per-participant gate yet) and while no speech
+joins; the notice is a fixed Marketplace template and the agent's topic follows on its own line, labelled
+`Topic (from the agent):`. The huddle must be an ephemeral huddle of the granted channel: before joining,
+Marketplace queries the relay for the creator-signed 48100 event and checks its signature, `h` = the channel and
+`ephemeral_channel_id` = the huddle (`live_huddle_not_in_channel` otherwise); the notice is posted in the parent
+channel and in the huddle itself. `listen` is refused while `perParticipantConsent` is true (no per-participant gate yet) and while no speech
 provider is wired. Every 250 ms the session re-reads the grant record, the owner switch, the consent and the channel;
 revoke, pause, expiry, narrowing, consent loss, channel pause, `maxSessionMinutes`, `maxDayMinutes` and the cost cap
 stop it, and the client leaves within 5 s. `speak`: `{attachmentId}` of an uploaded `audio/ogg` clip is held once in the
 approvals queue (`live.speak-clip`, digest `sha256("tealbrick-live-clip/v1\n" + grantId + "\n" + clipSha256)`, owner
-approval in the UI, Buzz or TBD) and plays after approval; `{text}` (speak-live) refuses forbidden terms before any
+approval in the UI, Buzz or TBD) and plays once after approval; `{text}` (speak-live) refuses forbidden terms before any
 provider call and is refused (`live_tts_unavailable`) until `@tealbrick/voice` ships Ogg/Opus synthesis (rc.19).
+Clips (review of PR #53): `{attachmentId, transcript}`; the agent-stated transcript is checked against the forbidden
+terms and shown to the owner, who plays the exact stored bytes (`GET /api/marketplace/channels/live/clips/{approvalId}`,
+`marketplace.channel-live-clips.get`, pinned owner's launch session, `audio/ogg`, inline, no-store, `x-content-sha256`)
+before approving. The clip digest is `sha256("tealbrick-live-clip/v1\n" + grantDigest + "\n" + sessionId + "\n" +
+clipSha256)`: a narrowed and re-approved grant, another session or the 24 h hold expiry invalidate it, and an
+approved clip plays once (`live_clip_already_played`). Forbidden terms are matched on a skeleton of both sides (NFKC,
+lowercase, combining marks and format characters removed, Latin/Cyrillic/Greek lookalikes folded, letters and digits
+only); speak-live text with format characters (zero-width, soft hyphen) is refused (`live_text_hidden_characters`).
+The bound consent must stay active and `outward`.
 
 Receipts. `channel_live_transcript` keeps what the agent heard (other participants: `framing:
 "untrusted-external-speech"` with the speaker key; forbidden terms flagged, never refused) and said (text, or the

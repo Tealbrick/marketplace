@@ -21,7 +21,7 @@ function harness(bindings: LiveOwnerBinding[]) {
   migrateLiveTables(db);
   const live = new LiveStore(db);
   const parent = randomUUID();
-  const channel = { id: "chn-1", workspaceSlug: ORG, slug: "community", label: "Community", provider: "buzz", status: "active", destination: { type: "channel", externalId: parent, title: "community" } } as unknown as ChannelRecord;
+  const channel = { id: "chn-1", workspaceSlug: ORG, slug: "community", label: "Community", provider: "buzz", status: "active", policy: { standingGrants: "allowed" }, destination: { type: "channel", externalId: parent, title: "community" } } as unknown as ChannelRecord;
   const used = new Set<string>();
   let calls = 0;
   const service = createLiveGrantService({

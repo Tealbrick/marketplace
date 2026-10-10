@@ -5498,7 +5498,17 @@ export async function buildMarketplaceApp(
       ...(approval.state === "succeeded" ? { result: approval.result } : {}),
       ...(approval.sourceKind === "channel-consent" ? { channel: channelApprovalSummary(approval) } : {}),
       ...(approval.sourceKind === "live-clip"
-        ? { live: { grantId: approval.sourceRef, clipSha256: String(approval.arguments.clipSha256 ?? ""), channelId: String(approval.arguments.channelId ?? ""), digest: approval.fingerprint } }
+        ? {
+            live: {
+              grantId: approval.sourceRef,
+              sessionId: String(approval.arguments.sessionId ?? ""),
+              clipSha256: String(approval.arguments.clipSha256 ?? ""),
+              channelId: String(approval.arguments.channelId ?? ""),
+              digest: approval.fingerprint,
+              transcript: String(approval.arguments.transcript ?? ""),
+              played: options.store.channels.live.clipUsed(approval.id),
+            },
+          }
         : {}),
       ...ownerProofView(approval),
     };
@@ -8564,7 +8574,11 @@ export async function buildMarketplaceApp(
     live: options.store.channels.live,
     organizationId,
     now: channelClock,
-    consentActive: (consentRowId) => options.store.getMarketplaceAgentConsentById(consentRowId)?.state === "active",
+    // The bound consent must stay active AND outward (review L3): a downgrade to read stops live sessions.
+    consentActive: (consentRowId) => {
+      const consent = options.store.getMarketplaceAgentConsentById(consentRowId);
+      return consent?.state === "active" && classSelectionOfConsent(consent)?.grantClass === "outward";
+    },
     channel: (channelId) => options.store.channels.getChannel(organizationId, channelId),
     ownerBinding: liveOwnerBinding,
     markUsed: (proofId, kind, expiresAt) => options.store.channels.markUsedApprovalProof({ proofId, kind, expiresAt }).ok,
@@ -8590,12 +8604,18 @@ export async function buildMarketplaceApp(
       : null,
     speech: options.liveSpeechProvider ?? null,
     ttsAvailable: options.liveTtsAvailable === true && Boolean(options.liveSpeechProvider),
-    postNotice: async (channel, text) => {
+    postNotice: async (channel, conversationId, text) => {
       const credential = buzzIdentity.credential()?.value ?? null;
       if (!credential || !buzzProvider) return { ok: false, error: "credential_missing" };
-      const result = await buzzProvider.send(credential, { type: channel.destination.type as "channel", externalId: channel.destination.externalId, title: channel.destination.title }, { text });
-      liveAudit("marketplace.channels.live_session.notice", "marketplace:live", { channelId: channel.id, status: result.status, textSha256: liveSha256(text), ...(result.errorCode ? { errorCode: result.errorCode } : {}) });
+      const result = await buzzProvider.send(credential, { type: "channel", externalId: conversationId, title: channel.destination.title }, { text });
+      liveAudit("marketplace.channels.live_session.notice", "marketplace:live", { channelId: channel.id, conversationId, status: result.status, textSha256: liveSha256(text), ...(result.errorCode ? { errorCode: result.errorCode } : {}) });
       return result.status === "sent" ? { ok: true, eventId: result.resultIds[0] ?? null } : { ok: false, error: result.errorCode ?? result.status };
+    },
+    huddleStartedEvents: async (parentChannelId) => {
+      const credential = buzzIdentity.credential()?.value ?? null;
+      if (!credential || !buzzProvider) return { ok: false, error: "credential_missing" };
+      const found = await buzzProvider.queryEvents(credential, [{ kinds: [48100], "#h": [parentChannelId], limit: 200 }]);
+      return found.ok ? { ok: true, events: found.events } : { ok: false, error: found.errorCode };
     },
     retentionDays: () => options.store.channels.inbound.getSettings(organizationId).textRetentionDays,
     audit: liveAudit,
@@ -8614,17 +8634,25 @@ export async function buildMarketplaceApp(
    */
   const runApprovedLiveClip = (approval: CompanyBoxApproval): CompanyBoxApproval => {
     const grantId = String(approval.arguments.grantId ?? "");
+    const grantDigest = String(approval.arguments.grantDigest ?? "");
+    const sessionId = String(approval.arguments.sessionId ?? "");
     const clipSha256 = String(approval.arguments.clipSha256 ?? "");
-    if (approval.actionKey !== LIVE_CLIP_ACTION || approval.sourceRef !== grantId || approval.fingerprint !== liveClipDigest(grantId, clipSha256)) {
+    if (approval.actionKey !== LIVE_CLIP_ACTION || approval.sourceRef !== grantId || approval.fingerprint !== liveClipDigest(grantDigest, sessionId, clipSha256)) {
       return options.store.finishCompanyBoxApproval({ id: approval.id, state: "failed", error: "approval_target_unavailable" });
     }
     const record = options.store.channels.live.getGrant(organizationId, grantId);
     const usable = liveGrants.usable(record);
-    if (!usable.ok || record?.agentId !== approval.agentId || !usable.grant.scope.modes.speakApproved) {
+    const session = options.store.channels.live.getSession(organizationId, sessionId);
+    // Still the same approved grant digest, the same live session of the same agent.
+    if (!usable.ok || record?.agentId !== approval.agentId || record.digest !== grantDigest || !usable.grant.scope.modes.speakApproved) {
       return options.store.finishCompanyBoxApproval({ id: approval.id, state: "failed", error: "live_grant_not_active" });
     }
-    return options.store.finishCompanyBoxApproval({ id: approval.id, state: "succeeded", result: { clipApproved: true, grantId, clipSha256 } });
+    if (!session || session.agentId !== approval.agentId || session.grantId !== grantId || (session.status !== "joined" && session.status !== "joining")) {
+      return options.store.finishCompanyBoxApproval({ id: approval.id, state: "failed", error: "live_session_not_joined" });
+    }
+    return options.store.finishCompanyBoxApproval({ id: approval.id, state: "succeeded", result: { clipApproved: true, grantId, sessionId, clipSha256, singleUse: true } });
   };
+
   registerChannelRoutes({
     app,
     store: options.store,
