@@ -4,6 +4,8 @@ Status: proposal, 2026-10-10. Author: Lead · Channels. Decision: Martin.
 This document is in ASD-STE100 Simplified Technical English. It is a scope only. There is no code before Martin selects the scope.
 It replaces the earlier short options note (`channels-p2-options.md`) where they differ.
 
+Martin's decisions (2026-10-10): P2 is one phase. **Teams is in P2** (widely used in companies). **Voice consent: not needed now** — no per-participant consent gate in P2 (§2.3). **iMessage: delayed.** **Buzz relay for P2 and testing: `wss://martinatrin.up.railway.app`** (Martin's personal relay).
+
 Martin's priorities (2026-10-10):
 1. Buzz with all its features from the first day. Buzz is the primary platform between humans and agents.
 2. Then Slack, Microsoft Teams, Telegram, iMessage (if it is possible), Discord.
@@ -16,10 +18,10 @@ Effort is in worker-days (wd). One worker-day is one day of focused work, tests 
 | Phase | Scope | Effort | Calendar (2 workers) |
 |---|---|---|---|
 | **P2** (Martin, 2026-10-10: one phase) | Shared changes (capability model v2, inbound worker, live-session grant with consent). **Buzz: all features** (channels, DMs, threads, mentions, files, reactions, edits, deletes, canvas, inbound, **huddles**). **Slack.** Telegram and Discord additions (reactions, edits, replies, Discord native voice messages, **Discord voice channels**). | 46–65 wd (less if the new kit covers Buzz huddles or voice, §13) | 5–7 weeks |
-| **P3** | Microsoft Teams (messages, cards, files). iMessage only if Martin accepts the business route (§8). WhatsApp Cloud API, LINE. | 20–35 wd | after P2 |
+| **P3** | iMessage (delayed by Martin), WhatsApp Cloud API, LINE. | 13–22 wd | after P2 |
 | Not recommended | Teams live meetings (Windows/.NET media bots). iMessage through a Mac bridge inside Channels. Telegram voice chats (bots cannot join). | — | — |
 
-Why Teams is in P3 and not P2: each customer must do Microsoft 365 admin work (app upload, consent, install in each team). Do Teams in P2 only if a customer needs it now.
+Teams is in P2 (Martin). Each customer must do Microsoft 365 admin work (app upload, consent, install in each team); the owner screen guides it.
 
 ## 2. Shared changes (all channels)
 
@@ -60,10 +62,7 @@ The owner cannot approve each spoken sentence before it is said. Live voice ther
 1. **Who approves.** Only the owner. The agent may propose a live-session grant. The owner may approve it as proposed or narrow it. Nobody can widen it.
 2. **Limits.** One channel or huddle, one agent, a start and end time (maximum 2 hours per session, maximum 30 days for the grant), maximum minutes per day, a topic, and a list of words and subjects that are not permitted.
 3. **Modes.** `listen` (speech-to-text only), `speak-approved` (play audio clips that the owner approved by digest), `speak-live` (text-to-speech from the agent's live text). Each mode is a separate permission.
-4. **Disclosure and consent.**
-   - When the agent joins, it posts a notice in the channel: "An AI agent is in this huddle. It listens and writes a transcript."
-   - In `listen` mode, every human participant must accept once per session before Marketplace stores their speech. A person who does not accept is not transcribed.
-   - Marketplace never stores raw audio. It keeps only the transcript, with a retention period.
+4. **Disclosure and consent.** Martin (2026-10-10): no consent gate in P2. The grant has an optional owner setting "post a notice when the agent joins" (off by default). Marketplace never stores raw audio; it keeps only the transcript, with a retention period. A per-participant consent gate can be added later without a schema change (the grant has a `consent` field, default `none`). Platform rules still apply (for example, the Discord Developer Policy on voice data) and are checked before the Discord listen mode ships.
 5. **Receipts.** The receipt is the full transcript of what the agent said and heard, with times, plus the join and leave times. The audit log keeps metadata and a SHA-256 only.
 6. **Stop.** The owner can end a session at any time. Pause or revoke takes effect at once. The agent leaves within 5 seconds.
 7. **Costs.** Speech-to-text and text-to-speech providers cost money per minute. The grant has a cost cap.
@@ -107,7 +106,7 @@ Facts are from the Buzz source (`block/buzz`, desktop 0.5.25), the `buzz` CLI an
 | Rate limits | Relay limits: agent 120 messages/min (default); configurable | Channel caps (Phase 1) under the relay limits | P2 |
 
 **Martin's setup for Buzz:**
-1. Confirm which Tealbrick relay is canonical (there are two Railway relays).
+1. Done: the P2 and test relay is `wss://martinatrin.up.railway.app` (Martin's personal relay).
 2. Confirm that the relay allows NIP-OA auth.
 3. Sign the NIP-OA tag for the Marketplace agent key on your Mac (the key stays in Marketplace; your key stays on your Mac).
 4. Decide if the relay must be updated, because the deployed relay image (7 September) is older than the source we read.
@@ -134,7 +133,7 @@ Facts are from the Buzz source (`block/buzz`, desktop 0.5.25), the `buzz` CLI an
 
 **Effort:** 3–4 wd (with inbound through the Events API).
 
-## 5. Microsoft Teams (priority 2, recommended P3)
+## 5. Microsoft Teams (priority 2, P2)
 
 | Capability | Teams support | Channels plan |
 |---|---|---|
@@ -194,7 +193,7 @@ Facts are from the Buzz source (`block/buzz`, desktop 0.5.25), the `buzz` CLI an
 
 **Effort:** messages 4–5 wd (P2). Voice channels 6–10 wd (P2), shared with the Buzz huddle audio work where possible.
 
-## 8. iMessage (priority 2, decision needed)
+## 8. iMessage (delayed by Martin, 2026-10-10)
 
 There is no official iMessage API for bots. There are three routes:
 
@@ -229,8 +228,8 @@ There is no official iMessage API for bots. There are three routes:
 | Discord voice channels | 6–10 | P2 |
 | Speech provider integration (speech-to-text, text-to-speech) | 2–3 | P2 |
 | P2 part 2 subtotal | 20–30 (+ provider costs) | |
-| **P2 total (one phase)** | **46–65** | |
-| Teams | 6–9 | P3 |
+| Teams | 6–9 | P2 |
+| **P2 total (one phase, Teams included)** | **52–74** | |
 | iMessage route A or C | 6–12 | P3 (if selected) |
 | WhatsApp Cloud API | 4–6 | P3 |
 | LINE | 3–4 | P3 |
@@ -248,10 +247,10 @@ We verify each item before we build the related part.
 
 1. Decided (2026-10-10): P2a and P2b are one phase (P2).
 2. Decided: live voice (Buzz huddles, Discord voice) is in P2.
-3. For live voice: do you accept the consent rule (every human accepts once per session before the agent stores their speech; no raw audio is stored)?
-4. **Teams:** P3 (recommended) or P2?
-5. **iMessage:** route A (Apple Messages for Business), route C (RCS), or not now? Do you agree that a Mac bridge stays outside Channels?
-6. **Buzz:** which relay is canonical, and may we update it to a newer Buzz version?
+3. Decided: no voice consent gate now.
+4. Decided: Teams in P2.
+5. Decided: iMessage delayed.
+6. Decided: relay `wss://martinatrin.up.railway.app`. Open: may we update that relay to a newer Buzz version if a feature needs it?
 
 ## 13. Open item: the new kit
 
