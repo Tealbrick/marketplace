@@ -359,6 +359,8 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
     return {
       eventId: event.id,
       framing: INBOUND_FRAMING,
+      // Plain text: entities are already decoded (Slack `&lt;` is `<`), so a client must never render it as HTML.
+      textFormat: "plain" as const,
       platform: event.platform,
       channelId: event.routeChannelId,
       channel: channel ? { slug: channel.slug, label: channel.label, provider: channel.provider } : null,
@@ -409,6 +411,8 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
     }
     const found = consentedChannel(caller, event.routeChannelId);
     if (!found) return fail(reply, 404, "channel_not_found");
+    // Checked before anything is written (the reply link), not only in the post path.
+    if (found.selection.grantClass !== "outward") return fail(reply, 403, "channel_outward_consent_required");
     // The owner's route must still send this channel to the caller (disabling inbound also stops replies).
     const route = inboundStore.getRoute(org, found.channel.id);
     if (!route || !route.enabled || route.agentId !== caller.agentId) return fail(reply, 403, "channel_inbound_route_inactive");

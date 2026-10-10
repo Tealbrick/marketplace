@@ -720,7 +720,9 @@ bridge status and detail, purged at. Other additive tables:
 
 Agents: `marketplace.channels.inbound` lists the delivered events routed to
 the caller on channels it still holds a consent for (newest first, `limit` ≤
-100, cursor `before`), each with `framing: "untrusted-external-message"`, the
+100, cursor `before`), each with `framing: "untrusted-external-message"` and
+`textFormat: "plain"` (entities are decoded, so clients render it as plain
+text, never HTML), the
 source ids (`source: {channelId, threadId?, messageId, senderUserId}`), the
 sender, text, attachments metadata and `bridgeStatus`. It is the fallback for
 agents without the Buzz bridge. `marketplace.channels.reply` takes the post

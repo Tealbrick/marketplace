@@ -498,6 +498,7 @@ describe("marketplace.channels.inbound and marketplace.channels.reply", () => {
       {
         eventId,
         framing: "untrusted-external-message",
+        textFormat: "plain",
         platform: "slack",
         channelId: channel.id,
         channel: { slug: "announce", label: "Label announce", provider: "slack" },
@@ -582,6 +583,8 @@ describe("marketplace.channels.inbound and marketplace.channels.reply", () => {
     expect(refused.statusCode).toBe(403);
     expect(refused.json()).toMatchObject({ error: "channel_outward_consent_required" });
     expect(read.slack.sends).toHaveLength(0);
+    // Refused before anything was written: no reply link for the key.
+    expect(read.f.store.channels.inbound.getReplyLink(TENANT, "agent-1", "inbound-reply:reply-key-0006")).toBeNull();
   });
 
   it("purges the received text after the owner's retention in the scheduler tick; the reply target survives", async () => {
