@@ -47,6 +47,8 @@ export type InboundRoutesDeps = {
   now: () => Date;
   inbound: InboundStore;
   slackSigningSecret: () => string | null;
+  /** The consumer key of the current Telegram credential (null without one): a webhook set for another token is stale. */
+  telegramConsumerKey: () => string | null;
   botIdFor: (provider: ChannelProviderId) => string | null;
   ingest: (message: InboundMessage) => void;
   rate?: SourceRate;
@@ -148,8 +150,11 @@ export function registerInboundRoutes(deps: InboundRoutesDeps): void {
       await deps.ready;
       const webhook = deps.inbound.activeWebhook(deps.organizationId, "telegram");
       const { segment } = request.params as { segment: string };
-      // An unknown or old path looks like no route at all.
-      if (!webhook || !matchesDigest(segment, webhook.pathSha256)) return reply.code(404).send({ error: "not_found" });
+      // An unknown or old path, or a webhook set for another bot token (stale, review S1), looks like no route at all.
+      const currentKey = deps.telegramConsumerKey();
+      if (!webhook || !currentKey || webhook.consumerKey !== currentKey || !matchesDigest(segment, webhook.pathSha256)) {
+        return reply.code(404).send({ error: "not_found" });
+      }
       if (!matchesDigest(headerValue(request, "x-telegram-bot-api-secret-token") ?? "", webhook.headerSha256)) {
         return reply.code(401).send({ error: "telegram_secret_invalid", reason: "mismatch" });
       }

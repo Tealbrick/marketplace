@@ -50,6 +50,7 @@ type FakeSocket = GatewaySocket & { url: string; sent: Array<Record<string, unkn
 function fakeTelegramApi() {
   const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
   let webhookUrl = "";
+  let hijackAfterSet = false;
   const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
     const method = String(input).split("/").pop()!;
     const body = typeof init?.body === "string" ? (JSON.parse(init.body) as Record<string, unknown>) : {};
@@ -63,7 +64,8 @@ function fakeTelegramApi() {
       case "getWebhookInfo":
         return jsonResponse(200, { ok: true, result: { url: webhookUrl, pending_update_count: 0 } });
       case "setWebhook":
-        webhookUrl = String(body.url);
+        // Another consumer of the same bot sets its own webhook right after ours (race).
+        webhookUrl = hijackAfterSet ? "https://other-bot-host.example/telegram/hook" : String(body.url);
         return jsonResponse(200, { ok: true, result: true });
       case "deleteWebhook":
         webhookUrl = "";
@@ -76,6 +78,7 @@ function fakeTelegramApi() {
     fetchImpl,
     calls,
     setForeignWebhook: (url: string) => void (webhookUrl = url),
+    hijackAfterSet: () => void (hijackAfterSet = true),
     get webhookUrl() {
       return webhookUrl;
     },
@@ -312,6 +315,67 @@ describe("Telegram webhook receiver", () => {
     expect(refused.json()).toMatchObject({ error: "channel_consumer_conflict" });
     expect(api.calls.map((call) => call.method)).not.toContain("setWebhook");
     expect(f.store.channels.inbound.getRoute(TENANT, channel.id)).toBeNull();
+  });
+});
+
+describe("Telegram webhook lifecycle (review F3, S1)", () => {
+  it("serializes concurrent enables: one setWebhook for two channels", async () => {
+    const { f, telegramApi, enable } = await setup();
+    const a = await f.createChannel({ provider: "telegram", slug: "community", externalId: "-1001234" });
+    f.consentFor("agent-1", a);
+    const b = await f.createChannel({ provider: "telegram", slug: "community-two", externalId: "-1001234", policy: undefined });
+    f.consentFor("agent-1", b);
+    const [first, second] = await Promise.all([enable(a.id), enable(b.id)]);
+    expect([first.statusCode, second.statusCode]).toEqual([200, 200]);
+    expect(telegramApi.calls.filter((call) => call.method === "setWebhook")).toHaveLength(1);
+    // Disabling one keeps the webhook; disabling both deletes it once, verified afterwards.
+    await Promise.all([enable(a.id, "agent-1", false), enable(b.id, "agent-1", false)]);
+    expect(telegramApi.calls.filter((call) => call.method === "deleteWebhook")).toHaveLength(1);
+    expect(f.store.channels.inbound.activeWebhook(TENANT, "telegram")).toBeNull();
+  });
+
+  it("re-checks after setWebhook: a webhook replaced by another consumer is a conflict, not a dead route", async () => {
+    const api = fakeTelegramApi();
+    const { f, enable } = await setup({ withTelegram: api });
+    const channel = await f.createChannel({ provider: "telegram", slug: "community", externalId: "-1001234" });
+    f.consentFor("agent-1", channel);
+    api.hijackAfterSet();
+    const refused = await enable(channel.id);
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json()).toMatchObject({ error: "channel_consumer_conflict" });
+    expect(f.store.channels.inbound.activeWebhook(TENANT, "telegram")).toBeNull();
+    expect(f.store.channels.inbound.getRoute(TENANT, channel.id)).toBeNull();
+    expect(f.runtime.inbound.worker.receiverView().telegram).toMatchObject({ webhook: "none", health: "conflict", healthDetail: "webhook_replaced" });
+  });
+
+  it("a webhook set for another bot token is stale: its secret is refused and reconcile sets this token's webhook", async () => {
+    const { f, telegramApi, enable } = await setup();
+    const channel = await f.createChannel({ provider: "telegram", slug: "community", externalId: "-1001234" });
+    f.consentFor("agent-1", channel);
+    expect((await enable(channel.id)).statusCode).toBe(200);
+    const set = telegramApi.calls.find((call) => call.method === "setWebhook")!;
+    const segment = String(set.body.url).split("/").pop()!;
+    const secret = String(set.body.secret_token);
+    const deliver = (path: string, token: string) =>
+      f.app.inject({
+        method: "POST",
+        url: `${TELEGRAM_WEBHOOK_PREFIX}${path}`,
+        headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": token },
+        payload: { update_id: 50, message: { message_id: 51, chat: { id: -1001234, type: "supergroup", title: "Community" }, from: { id: 7, first_name: "Ada" }, text: "hi" } },
+      });
+    expect((await deliver(segment, secret)).statusCode).toBe(200);
+    // Simulate a token change: the stored webhook now belongs to another credential.
+    const row = f.store.channels.inbound.getWebhook(TENANT, "telegram")!;
+    f.store.channels.inbound.setWebhook({ workspaceSlug: TENANT, provider: "telegram", connectionId: row.connectionId, consumerKey: "telegram:previous-token", pathSha256: row.pathSha256, headerSha256: row.headerSha256, urlOrigin: row.urlOrigin, now: new Date(f.now) });
+    expect((await deliver(segment, secret)).statusCode).toBe(404);
+    await f.runtime.inbound.worker.reconcile();
+    const sets = telegramApi.calls.filter((call) => call.method === "setWebhook");
+    expect(sets).toHaveLength(2);
+    const fresh = String(sets[1]!.body.url).split("/").pop()!;
+    expect(fresh).not.toBe(segment);
+    expect((await deliver(fresh, String(sets[1]!.body.secret_token))).statusCode).toBe(200);
+    expect((await deliver(segment, secret)).statusCode).toBe(404);
+    expect(JSON.stringify(f.store.listAudit({ workspaceSlug: TENANT, limit: 500 }))).toContain("marketplace.channels.inbound.webhook_stale");
   });
 });
 

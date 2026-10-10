@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
 import { sha256Hex } from "./canonical-json.js";
-import { INBOUND_DDL, INBOUND_TABLES, InboundStore } from "./inbound-store.js";
+import { INBOUND_TABLES, InboundStore, migrateInboundTables } from "./inbound-store.js";
 import { TEAMS_CONVERSATION_DDL, TeamsConversationStore } from "./teams-store.js";
 import {
   effectiveCaps,
@@ -197,7 +197,7 @@ export function migrateChannelTables(db: DatabaseSync): void {
   // Teams conversation references (P2): captured by the Teams messaging endpoint at install.
   db.exec(TEAMS_CONVERSATION_DDL);
   // Inbound worker (P2 scope 2.2): routed inbound events, routes, reply links, settings, webhook, leases.
-  db.exec(INBOUND_DDL);
+  migrateInboundTables(db);
 }
 
 // ---------------------------------------------------------------------------

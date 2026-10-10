@@ -99,6 +99,7 @@ export const INBOUND_DDL = `
     workspace_slug TEXT NOT NULL,
     provider TEXT NOT NULL,
     connection_id TEXT NOT NULL,
+    consumer_key TEXT NOT NULL DEFAULT '',
     path_sha256 TEXT NOT NULL,
     header_sha256 TEXT NOT NULL,
     url_origin TEXT NOT NULL,
@@ -127,6 +128,13 @@ export const INBOUND_DDL = `
     PRIMARY KEY (workspace_slug, chat_key)
   );
 `;
+
+/** Creates the inbound tables; adds columns a pre-release build of this PR created without (additive only). */
+export function migrateInboundTables(db: DatabaseSync): void {
+  db.exec(INBOUND_DDL);
+  const webhookColumns = (db.prepare("PRAGMA table_info(channel_inbound_webhook)").all() as Array<{ name: string }>).map((column) => column.name);
+  if (!webhookColumns.includes("consumer_key")) db.exec("ALTER TABLE channel_inbound_webhook ADD COLUMN consumer_key TEXT NOT NULL DEFAULT ''");
+}
 
 /** Received text kept per event, in code points (the parsers already cap at the platform limit). */
 export const INBOUND_TEXT_MAX_CHARS = 8000;
@@ -191,6 +199,8 @@ export type InboundSettings = { textRetentionDays: number; discordMessageContent
 export type InboundWebhookRecord = {
   provider: string;
   connectionId: string;
+  /** `telegram:<sha256 prefix of the bot token>`: the webhook belongs to this credential only (review S1). */
+  consumerKey: string;
   pathSha256: string;
   headerSha256: string;
   urlOrigin: string;
@@ -479,6 +489,7 @@ export class InboundStore {
     return {
       provider: String(row.provider),
       connectionId: String(row.connection_id),
+      consumerKey: String(row.consumer_key ?? ""),
       pathSha256: String(row.path_sha256),
       headerSha256: String(row.header_sha256),
       urlOrigin: String(row.url_origin),
@@ -493,14 +504,24 @@ export class InboundStore {
     return webhook?.status === "active" ? webhook : null;
   }
 
-  setWebhook(input: { workspaceSlug: string; provider: string; connectionId: string; pathSha256: string; headerSha256: string; urlOrigin: string; now: Date }): void {
+  setWebhook(input: {
+    workspaceSlug: string;
+    provider: string;
+    connectionId: string;
+    consumerKey: string;
+    pathSha256: string;
+    headerSha256: string;
+    urlOrigin: string;
+    now: Date;
+  }): void {
     const at = input.now.toISOString();
     this.db
       .prepare(
-        `INSERT INTO channel_inbound_webhook (workspace_slug, provider, connection_id, path_sha256, header_sha256, url_origin, status, set_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)
+        `INSERT INTO channel_inbound_webhook (workspace_slug, provider, connection_id, consumer_key, path_sha256, header_sha256, url_origin, status, set_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
          ON CONFLICT(workspace_slug, provider) DO UPDATE SET
            connection_id = excluded.connection_id,
+           consumer_key = excluded.consumer_key,
            path_sha256 = excluded.path_sha256,
            header_sha256 = excluded.header_sha256,
            url_origin = excluded.url_origin,
@@ -508,7 +529,7 @@ export class InboundStore {
            set_at = excluded.set_at,
            updated_at = excluded.updated_at`,
       )
-      .run(input.workspaceSlug, input.provider, input.connectionId, input.pathSha256, input.headerSha256, input.urlOrigin, at, at);
+      .run(input.workspaceSlug, input.provider, input.connectionId, input.consumerKey, input.pathSha256, input.headerSha256, input.urlOrigin, at, at);
   }
 
   markWebhookDeleted(workspaceSlug: string, provider: string, now: Date): void {

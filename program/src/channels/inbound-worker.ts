@@ -1,7 +1,7 @@
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 
 import { createDiscordGateway, type DiscordGateway, type DiscordGatewayStatus, type GatewaySocketFactory, type Timers } from "./discord-gateway.js";
-import { sha256Hex } from "./inbound-http.js";
+import { inboundConsumerKey, sha256Hex } from "./inbound-http.js";
 import { TELEGRAM_WEBHOOK_PREFIX } from "./inbound-routes.js";
 import { INBOUND_TEXT_RETENTION_BOUNDS, type InboundRouteRecord, type InboundSettings, type InboundStore } from "./inbound-store.js";
 import { TELEGRAM_WEBHOOK_UPDATES } from "./providers/telegram.js";
@@ -56,7 +56,9 @@ export type InboundWorkerDeps = {
 
 export type InboundWorker = ReturnType<typeof createInboundWorker>;
 
-const consumerKey = (provider: string, credential: string) => `${provider}:${createHash("sha256").update(credential, "utf8").digest("hex").slice(0, 32)}`;
+const consumerKey = inboundConsumerKey;
+
+type TelegramHealth = { state: "ok" | "conflict" | "unhealthy" | "stale"; detail?: string };
 
 export function createInboundWorker(deps: InboundWorkerDeps) {
   const org = deps.organizationId;
@@ -64,6 +66,18 @@ export function createInboundWorker(deps: InboundWorkerDeps) {
   let gatewayKey: string | null = null;
   let gatewayStatus: { status: DiscordGatewayStatus; detail?: string } = { status: "stopped" };
   let stopped = false;
+  // Telegram webhook changes run one at a time (review F3): enable and disable never interleave their API calls.
+  let telegramChain: Promise<unknown> = Promise.resolve();
+  const telegramSerial = <T>(run: () => Promise<T>): Promise<T> => {
+    const next = telegramChain.then(run, run);
+    telegramChain = next.catch(() => undefined);
+    return next;
+  };
+  let telegramHealth: TelegramHealth | null = null;
+  const telegramKey = () => {
+    const credential = deps.credential("telegram");
+    return credential ? consumerKey("telegram", credential) : null;
+  };
 
   const publicOrigin = (() => {
     try {
@@ -124,11 +138,18 @@ export function createInboundWorker(deps: InboundWorkerDeps) {
   const telegramWebhookPrefix = () => (publicOrigin ? `${publicOrigin}${TELEGRAM_WEBHOOK_PREFIX}` : null);
 
   const ensureTelegramWebhook = async (): Promise<{ ok: true } | { ok: false; status: number; error: string; detail?: string }> => {
-    if (deps.inbound.activeWebhook(org, "telegram")) return { ok: true };
     const adapter = deps.providers.telegram;
     const credential = deps.credential("telegram");
     const connectionId = deps.connectionId("telegram");
     if (!adapter?.setWebhook || !adapter.webhookInfo || !credential || !connectionId) return { ok: false, status: 503, error: "channel_credential_unavailable" };
+    const key = consumerKey("telegram", credential);
+    const active = deps.inbound.activeWebhook(org, "telegram");
+    if (active && active.consumerKey === key) return { ok: true };
+    if (active) {
+      // Set for another bot token (review S1): its secret is no longer accepted; this token gets its own webhook.
+      deps.inbound.markWebhookDeleted(org, "telegram", deps.now());
+      deps.audit("marketplace.channels.inbound.webhook_stale", "marketplace:inbound", { provider: "telegram" });
+    }
     const prefix = telegramWebhookPrefix();
     if (!prefix) return { ok: false, status: 409, error: "channel_inbound_public_origin_missing", detail: "MARKETPLACE_PUBLIC_ORIGIN must be an https origin" };
     const info = await adapter.webhookInfo(credential);
@@ -137,9 +158,17 @@ export function createInboundWorker(deps: InboundWorkerDeps) {
     if (info.url !== "" && !info.url.startsWith(prefix)) return { ok: false, status: 409, error: "channel_consumer_conflict" };
     const segment = randomBytes(32).toString("base64url");
     const secretToken = randomBytes(32).toString("base64url");
-    const set = await adapter.setWebhook(credential, { url: `${prefix}${segment}`, secretToken, allowedUpdates: TELEGRAM_WEBHOOK_UPDATES });
+    const url = `${prefix}${segment}`;
+    const set = await adapter.setWebhook(credential, { url, secretToken, allowedUpdates: TELEGRAM_WEBHOOK_UPDATES });
     if (set.status !== "sent") return { ok: false, status: set.status === "uncertain" ? 503 : 502, error: "channel_webhook_failed", ...(set.errorCode ? { detail: set.errorCode } : {}) };
-    deps.inbound.setWebhook({ workspaceSlug: org, provider: "telegram", connectionId, pathSha256: sha256Hex(segment), headerSha256: sha256Hex(secretToken), urlOrigin: publicOrigin!, now: deps.now() });
+    // Re-check after the write (review F3): another consumer may have set its own webhook in between.
+    const after = await adapter.webhookInfo(credential);
+    if (!after.ok || after.url !== url) {
+      telegramHealth = { state: "conflict", detail: after.ok ? "webhook_replaced" : after.errorCode };
+      return { ok: false, status: 409, error: "channel_consumer_conflict" };
+    }
+    deps.inbound.setWebhook({ workspaceSlug: org, provider: "telegram", connectionId, consumerKey: key, pathSha256: sha256Hex(segment), headerSha256: sha256Hex(secretToken), urlOrigin: publicOrigin!, now: deps.now() });
+    telegramHealth = { state: "ok" };
     deps.audit("marketplace.channels.inbound.webhook_set", "marketplace:inbound", { provider: "telegram", origin: publicOrigin, allowedUpdates: TELEGRAM_WEBHOOK_UPDATES });
     return { ok: true };
   };
@@ -152,7 +181,15 @@ export function createInboundWorker(deps: InboundWorkerDeps) {
     if (!adapter?.deleteWebhook || !credential) return { ok: false, status: 503, error: "channel_credential_unavailable" };
     const removed = await adapter.deleteWebhook(credential);
     if (removed.status !== "sent") return { ok: false, status: 502, error: "channel_webhook_failed" };
+    // Re-check after the write (review F3): our URL must be gone.
+    const prefix = telegramWebhookPrefix();
+    const after = adapter.webhookInfo ? await adapter.webhookInfo(credential) : null;
+    if (after && (!after.ok || (prefix !== null && after.url.startsWith(prefix)))) {
+      telegramHealth = { state: "unhealthy", detail: after.ok ? "webhook_still_set" : after.errorCode };
+      return { ok: false, status: 502, error: "channel_webhook_failed" };
+    }
     deps.inbound.markWebhookDeleted(org, "telegram", deps.now());
+    telegramHealth = null;
     deps.audit("marketplace.channels.inbound.webhook_deleted", "marketplace:inbound", { provider: "telegram" });
     return { ok: true };
   };
@@ -164,14 +201,39 @@ export function createInboundWorker(deps: InboundWorkerDeps) {
     return {
       sink: deps.sinkId?.() ?? "null",
       slack: { signingSecret: deps.slackSigningSecretSet() },
-      telegram: telegram ? { webhook: telegram.status, origin: telegram.urlOrigin, setAt: telegram.setAt } : { webhook: "none" },
+      telegram: {
+        ...(telegram ? { webhook: telegram.status, origin: telegram.urlOrigin, setAt: telegram.setAt } : { webhook: "none" }),
+        ...(telegramHealth ? { health: telegramHealth.state, ...(telegramHealth.detail ? { healthDetail: telegramHealth.detail } : {}) } : {}),
+      },
       discord: { gateway: gatewayStatus.status, ...(gatewayStatus.detail ? { detail: gatewayStatus.detail } : {}), messageContent: deps.inbound.getSettings(org).discordMessageContent },
       teams: { configured: deps.teamsConfigured() },
     };
   };
 
   /** The owner's per-channel inbound switch. Enabling runs the provider's receiver set-up first; nothing is half-on. */
-  const setRoute = async (input: { channel: ChannelRecord; enabled: boolean; agentId: string | null; actor: string }): Promise<InboundSwitchResult> => {
+  const setRoute = (input: { channel: ChannelRecord; enabled: boolean; agentId: string | null; actor: string }): Promise<InboundSwitchResult> =>
+    input.channel.provider === "telegram" ? telegramSerial(() => applyRoute(input)) : applyRoute(input);
+
+  /**
+   * After start: a Telegram webhook set for another bot token is stale (review S1). It stops accepting updates
+   * (the route compares the consumer key) and, while Telegram routes are enabled, this token's webhook is set.
+   */
+  const reconcileTelegram = () =>
+    telegramSerial(async () => {
+      const active = deps.inbound.activeWebhook(org, "telegram");
+      const key = telegramKey();
+      if (!active || !key || active.consumerKey === key) return;
+      telegramHealth = { state: "stale" };
+      if (deps.inbound.enabledRoutesFor(org, "telegram").length === 0) {
+        deps.inbound.markWebhookDeleted(org, "telegram", deps.now());
+        deps.audit("marketplace.channels.inbound.webhook_stale", "marketplace:inbound", { provider: "telegram" });
+        return;
+      }
+      const ensured = await ensureTelegramWebhook();
+      if (!ensured.ok) telegramHealth = { state: telegramHealth?.state === "conflict" ? "conflict" : "unhealthy", detail: ensured.error };
+    });
+
+  const applyRoute = async (input: { channel: ChannelRecord; enabled: boolean; agentId: string | null; actor: string }): Promise<InboundSwitchResult> => {
     const { channel } = input;
     const provider = channel.provider as ChannelProviderId;
     const current = deps.inbound.getRoute(org, channel.id);
@@ -219,9 +281,10 @@ export function createInboundWorker(deps: InboundWorkerDeps) {
   };
 
   return {
-    /** Starts or stops the long-lived connections to match the routes (after boot and after each change). */
-    reconcile(): void {
+    /** Starts or stops the long-lived parts to match the routes and the current credentials (after boot). */
+    async reconcile(): Promise<void> {
       reconcileDiscord();
+      await reconcileTelegram();
     },
     setRoute,
     updateSettings,

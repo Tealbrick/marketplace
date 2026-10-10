@@ -98,6 +98,11 @@ export function headerValue(request: FastifyRequest, name: string): string | und
   return typeof first === "string" ? first : undefined;
 }
 
+/** The consumer identity of a bot credential: `<provider>:<first 32 hex of sha256(credential)>` (never the credential). */
+export function inboundConsumerKey(provider: string, credential: string): string {
+  return `${provider}:${createHash("sha256").update(credential, "utf8").digest("hex").slice(0, 32)}`;
+}
+
 export const sha256Hex = (value: string): string => createHash("sha256").update(value, "utf8").digest("hex");
 
 /** Constant-time: does sha256(value) equal the stored hex digest? */

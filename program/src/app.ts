@@ -81,7 +81,7 @@ import { createBotFrameworkVerifier, type BotFrameworkVerifier } from "./channel
 import { TEAMS_MESSAGES_PATH, registerTeamsInboundRoute } from "./channels/teams-inbound.js";
 import { createInboundPipeline, type InboundSink } from "./channels/inbound.js";
 import { isInboundPublicPath, registerInboundRoutes } from "./channels/inbound-routes.js";
-import { TRUSTED_PROXIES_ENV, parseTrustedProxies } from "./channels/inbound-http.js";
+import { TRUSTED_PROXIES_ENV, inboundConsumerKey, parseTrustedProxies } from "./channels/inbound-http.js";
 import { createInboundWorker, type InboundWorker } from "./channels/inbound-worker.js";
 import type { GatewaySocketFactory, Timers as GatewayTimers } from "./channels/discord-gateway.js";
 import type { InboundPipeline } from "./channels/inbound.js";
@@ -8319,13 +8319,11 @@ export async function buildMarketplaceApp(
     ...(options.discordGatewayTimers ? { timers: options.discordGatewayTimers } : {}),
   });
   if (channelService.configured) {
-    void channelsReady.then(() => {
-      try {
-        inboundWorker.reconcile();
-      } catch (error) {
+    void channelsReady
+      .then(() => inboundWorker.reconcile())
+      .catch((error: unknown) => {
         console.error(JSON.stringify({ event: "marketplace.channels.inbound_start_failed", name: error instanceof Error ? error.name : typeof error }));
-      }
-    });
+      });
   }
   app.addHook("onClose", async () => {
     inboundWorker.stop();
@@ -8341,6 +8339,10 @@ export async function buildMarketplaceApp(
     now: channelClock,
     inbound: options.store.channels.inbound,
     slackSigningSecret,
+    telegramConsumerKey: () => {
+      const credential = channelService.inboundCredential("telegram");
+      return credential ? inboundConsumerKey("telegram", credential) : null;
+    },
     botIdFor: (provider) => channelService.botIdFor(provider),
     ingest: inboundIngest,
   });
