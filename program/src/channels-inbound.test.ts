@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DISCORD_TOKEN, GRANT_B, TELEGRAM_TOKEN, TENANT, channelFixture, fakeProvider, type ChannelFixture } from "./channels/app-fixture.js";
 import { DISCORD_INTENTS, type GatewaySocket, type Timers } from "./channels/discord-gateway.js";
@@ -166,6 +166,32 @@ describe("Slack inbound app manifest", () => {
     expect(inbound.settings.event_subscriptions!.bot_events).toEqual(["message.channels", "message.groups"]);
     expect(new URL(inbound.settings.event_subscriptions!.request_url).pathname).toBe(SLACK_EVENTS_PATH);
     expect(base.settings.event_subscriptions).toBeUndefined();
+  });
+});
+
+describe("trusted proxies startup warning", () => {
+  async function warnings(environment: Record<string, string | undefined>) {
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, "warn").mockImplementation((...args: unknown[]) => void lines.push(args.map(String).join(" ")));
+    try {
+      await setup({ environment });
+    } finally {
+      spy.mockRestore();
+    }
+    return lines.filter((line) => line.includes("inbound_trusted_proxies_unset"));
+  }
+
+  it("logs one structured warning, without secrets, when a receiver is configured and MARKETPLACE_TRUSTED_PROXIES is unset", async () => {
+    const lines = await warnings({});
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0]!)).toMatchObject({ event: "marketplace.channels.inbound_trusted_proxies_unset", receivers: ["slack"], env: "MARKETPLACE_TRUSTED_PROXIES" });
+    expect(lines[0]).not.toContain(SIGNING_SECRET);
+    expect(lines[0]).not.toContain(SLACK_TOKEN);
+  });
+
+  it("stays quiet when the proxies are set or no receiver is configured", async () => {
+    expect(await warnings({ MARKETPLACE_TRUSTED_PROXIES: "100.64.0.0/10" })).toEqual([]);
+    expect(await warnings({ MARKETPLACE_CHANNELS_SLACK_SIGNING_SECRET: undefined })).toEqual([]);
   });
 });
 

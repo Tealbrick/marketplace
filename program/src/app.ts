@@ -91,7 +91,7 @@ import { createBuzzProvider, type BuzzProvider } from "./channels/providers/buzz
 import { buzzPrivateRelayAllowed, guardedRelaySocketFactory, type RelayLookup } from "./channels/buzz-relay-guard.js";
 import { parsePubkey, npubEncode } from "./channels/providers/nostr.js";
 import { isInboundPublicPath, registerInboundRoutes } from "./channels/inbound-routes.js";
-import { TRUSTED_PROXIES_ENV, inboundConsumerKey, parseTrustedProxies } from "./channels/inbound-http.js";
+import { TRUSTED_PROXIES_ENV, inboundConsumerKey, parseTrustedProxies, trustedProxiesWarning } from "./channels/inbound-http.js";
 import { createInboundWorker, type InboundWorker } from "./channels/inbound-worker.js";
 import type { GatewaySocketFactory, Timers as GatewayTimers } from "./channels/discord-gateway.js";
 import type { InboundPipeline } from "./channels/inbound.js";
@@ -2989,6 +2989,10 @@ export async function buildMarketplaceApp(
       values: {
         "composio.baseUrl": view.values.composioBaseUrl,
         "composio.defaultUserId": view.values.composioDefaultUserId,
+        // Teams app id, tenant id and the Graph switch are plain provider env (not secrets): reported as values.
+        "channels.teams.appId": environment[TEAMS_CREDENTIAL_ENV.appId]?.trim() || null,
+        "channels.teams.tenantId": environment[TEAMS_CREDENTIAL_ENV.tenantId]?.trim() || null,
+        "channels.teams.graphEnabled": teamsGraphEnabled(environment),
       },
       secrets: {},
       // The Composio key is an account-level provider variable (COMPOSIO_API_KEY), reported as presence only.
@@ -2999,10 +3003,7 @@ export async function buildMarketplaceApp(
         "channels.discord.botToken": { set: Boolean(environment[CHANNEL_TOKEN_ENV.discord]?.trim()) },
         "channels.slack.botToken": { set: Boolean(environment[CHANNEL_TOKEN_ENV.slack]?.trim()) },
         "channels.slack.signingSecret": { set: Boolean(environment[CHANNEL_SLACK_SIGNING_SECRET_ENV]?.trim()) },
-        "channels.teams.appId": { set: Boolean(environment[TEAMS_CREDENTIAL_ENV.appId]?.trim()) },
         "channels.teams.appSecret": { set: Boolean(environment[TEAMS_CREDENTIAL_ENV.appSecret]?.trim()) },
-        "channels.teams.tenantId": { set: Boolean(environment[TEAMS_CREDENTIAL_ENV.tenantId]?.trim()) },
-        "channels.teams.graphEnabled": { set: Boolean(environment[TEAMS_CREDENTIAL_ENV.graphEnabled]?.trim()) },
       },
     };
   };
@@ -8534,6 +8535,17 @@ export async function buildMarketplaceApp(
   });
   // Channels-local trusted proxies for the public inbound routes' per-source budgets (Fastify trustProxy unchanged).
   const channelTrustedProxies = parseTrustedProxies(environment[TRUSTED_PROXIES_ENV]);
+  if (channelService.configured) {
+    // One startup warning: unset proxies put every sender behind the proxy's address into one shared budget.
+    void channelsReady.then(() => {
+      const warning = trustedProxiesWarning(channelTrustedProxies, {
+        slack: slackSigningSecret() !== null,
+        telegram: options.store.channels.inbound.activeWebhook(organizationId, "telegram") !== null,
+        teams: channelService.teamsIdentity() !== null,
+      });
+      if (warning) console.warn(JSON.stringify(warning));
+    });
+  }
   registerInboundRoutes({
     app,
     organizationId,

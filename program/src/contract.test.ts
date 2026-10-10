@@ -333,7 +333,13 @@ describe("tealbrick.app.json", () => {
       ["channels.teams.tenantId", "MARKETPLACE_CHANNELS_TEAMS_TENANT_ID"],
       ["channels.teams.graphEnabled", "MARKETPLACE_CHANNELS_TEAMS_GRAPH_ENABLED"],
     ]);
-    expect(channels?.fields.every((field) => field.source === "account" && field.destination === "provider-env")).toBe(true);
+    expect(channels?.fields.every((field) => field.destination === "provider-env")).toBe(true);
+    // Secrets are account-sourced; the Teams app id, tenant id and Graph switch are plain (readable) provider env.
+    const plain = new Set(["channels.teams.appId", "channels.teams.tenantId", "channels.teams.graphEnabled"]);
+    for (const field of channels?.fields ?? []) {
+      if (plain.has(field.key)) expect(field.source, field.key).toBeUndefined();
+      else expect([field.key, field.type, field.source]).toEqual([field.key, "secret", "account"]);
+    }
     expect(MARKETPLACE_MANIFEST.runtime.env?.allow).toEqual(expect.arrayContaining([
       "MARKETPLACE_CHANNELS_TELEGRAM_BOT_TOKEN",
       "MARKETPLACE_CHANNELS_DISCORD_BOT_TOKEN",
@@ -665,12 +671,10 @@ describe("control endpoints", () => {
       "channels.discord.botToken": { set: false, source: "account" },
       "channels.slack.botToken": { set: false, source: "account" },
       "channels.slack.signingSecret": { set: false, source: "account" },
-      "channels.teams.appId": { set: false, source: "account" },
       "channels.teams.appSecret": { set: false, source: "account" },
-      "channels.teams.graphEnabled": { set: false, source: "account" },
-      "channels.teams.tenantId": { set: false, source: "account" },
       "channels.telegram.botToken": { set: false, source: "account" },
       "composio.apiKey": { source: "account", set: true } });
+    expect(read.json().values).toMatchObject({ "channels.teams.appId": null, "channels.teams.tenantId": null, "channels.teams.graphEnabled": false });
     expect(read.body).not.toContain("test-composio-key");
     const revision = read.json().revision as string;
     const bad = await f.app.inject({ method: "PUT", url: "/.well-known/tealbrick/settings", headers, payload: { values: { "composio.baseUrl": "https://evil.example/api" } } });

@@ -42,13 +42,16 @@ code, .mono { font-family: var(--dg-font-mono); overflow-wrap: anywhere; }
 .catalog-index { display: flex; min-width: 0; flex-direction: column; border-right: 1px solid var(--dg-line); background: var(--dg-panel); }
 .index-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 21px 18px 14px; }
 .index-heading h2 { margin: 3px 0 0; font-family: var(--dg-font-editorial); font-size: 28px; font-weight: 400; line-height: 1; letter-spacing: -0.03em }
+.index-count { margin: 7px 0 0; color: var(--dg-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.index-count strong { color: var(--dg-text); font-weight: 600; }
+.index-heading > button { flex: none; margin-top: 2px; }
 .search-box { display: flex; align-items: center; gap: 8px; margin: 0 14px 8px; border: 1px solid var(--dg-line); border-radius: var(--dg-radius-sm); padding: 0 10px; background: var(--dg-canvas); color: var(--dg-text-subtle); }
 .search-box:focus-within { border-color: var(--dg-accent); box-shadow: 0 0 0 3px var(--dg-focus); }
 .search-box input { width: 100%; height: 36px; border: 0; background: transparent; box-shadow: none; font-size: 13px; }
 .source-filter { display: flex; align-items: center; gap: 8px; margin: 0 14px 12px; color: var(--dg-text-subtle); }
 .source-filter select { width: 100%; border: 0; background: transparent; color: var(--dg-text-muted); font-size: 12px; }
 .connect-mode-filter { display: flex; flex-wrap: wrap; gap: 5px; margin: 0 14px 12px; }
-.connect-mode-filter button { display: inline-flex; align-items: center; gap: 5px; min-height: 22px; border: 1px solid var(--dg-line); border-radius: 999px; padding: 2px 8px; background: transparent; color: var(--dg-text-muted); font: inherit; font-size: 11px; cursor: pointer; }
+.connect-mode-filter button { display: inline-flex; align-items: center; gap: 5px; min-height: 22px; border: 1px solid var(--dg-line); border-radius: 2px; padding: 2px 8px; background: transparent; color: var(--dg-text-muted); font: inherit; font-size: 11px; cursor: pointer; }
 .connect-mode-filter button span { color: var(--dg-text-subtle); font-variant-numeric: tabular-nums; }
 .connect-mode-filter button[aria-pressed="true"] { border-color: var(--dg-accent); color: var(--dg-text); background: color-mix(in srgb, var(--dg-accent) 12%, transparent); }
 .connect-mode-filter button:focus-visible { outline: 2px solid var(--dg-accent); outline-offset: 1px; }
@@ -71,6 +74,7 @@ code, .mono { font-family: var(--dg-font-mono); overflow-wrap: anywhere; }
 .catalog-row__meta .dg-tag { min-height: 18px; padding: 2px 5px; font-size: 9px; }
 .installed-mark { display: inline-grid; width: 16px; height: 16px; flex: none; place-items: center; border-radius: 50%; background: var(--dg-success-wash); color: var(--dg-success); }
 .index-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 14px; border-top: 1px solid var(--dg-line); color: var(--dg-text-subtle); font-size: 11px; }
+.list-end { display: flex; min-height: 28px; align-items: center; justify-content: center; color: var(--dg-text-subtle); }
 .list-loading, .list-empty { display: flex; min-height: 260px; align-items: center; justify-content: center; flex-direction: column; gap: 9px; padding: 30px; color: var(--dg-text-muted); text-align: center; }
 .list-loading small { max-width: 220px; color: var(--dg-text-subtle); }
 
