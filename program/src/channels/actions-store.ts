@@ -66,6 +66,7 @@ const ACTIONS_DDL = `
     display_name TEXT NOT NULL,
     lookup_kind TEXT NOT NULL,
     lookup_value TEXT NOT NULL,
+    email_verified INTEGER NOT NULL DEFAULT 0,
     approved_at TEXT,
     approved_by TEXT,
     approved_post_id TEXT,
@@ -129,6 +130,8 @@ export type PersonRecord = {
   displayName: string;
   lookupKind: "email" | "handle";
   lookupValue: string;
+  /** The platform confirmed the person owns the looked-up email (Slack `is_email_confirmed`). */
+  emailVerified: boolean;
   approvedAt: string | null;
   approvedBy: string | null;
   approvedPostId: string | null;
@@ -177,6 +180,7 @@ function personFromRow(row: Row): PersonRecord {
     displayName: String(row.display_name),
     lookupKind: String(row.lookup_kind) === "email" ? "email" : "handle",
     lookupValue: String(row.lookup_value),
+    emailVerified: Number(row.email_verified) === 1,
     approvedAt: text(row.approved_at),
     approvedBy: text(row.approved_by),
     approvedPostId: text(row.approved_post_id),
@@ -339,17 +343,18 @@ export class ActionsStore {
     displayName: string;
     lookupKind: "email" | "handle";
     lookupValue: string;
+    emailVerified: boolean;
     now: Date;
   }): PersonRecord {
     const at = input.now.toISOString();
     this.db
       .prepare(
-        `INSERT INTO channel_agent_person (id, workspace_slug, connection_id, agent_id, provider, platform_user_id, display_name, lookup_kind, lookup_value, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO channel_agent_person (id, workspace_slug, connection_id, agent_id, provider, platform_user_id, display_name, lookup_kind, lookup_value, email_verified, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(workspace_slug, connection_id, agent_id, platform_user_id) DO UPDATE SET display_name = excluded.display_name,
-           lookup_kind = excluded.lookup_kind, lookup_value = excluded.lookup_value, updated_at = excluded.updated_at`,
+           lookup_kind = excluded.lookup_kind, lookup_value = excluded.lookup_value, email_verified = excluded.email_verified, updated_at = excluded.updated_at`,
       )
-      .run(`prs_${randomUUID()}`, input.workspaceSlug, input.connectionId, input.agentId, input.provider, input.platformUserId, input.displayName, input.lookupKind, input.lookupValue, at, at);
+      .run(`prs_${randomUUID()}`, input.workspaceSlug, input.connectionId, input.agentId, input.provider, input.platformUserId, input.displayName, input.lookupKind, input.lookupValue, input.emailVerified ? 1 : 0, at, at);
     return personFromRow(
       this.db
         .prepare("SELECT * FROM channel_agent_person WHERE workspace_slug = ? AND connection_id = ? AND agent_id = ? AND platform_user_id = ?")
@@ -430,6 +435,15 @@ export class ActionsStore {
         )
         .run(workspaceSlug, before.toISOString(), limit).changes,
     );
+  }
+
+  /** Recent finds on a connection for the owner view: agent, real outcome and time (never the query). */
+  listLookups(workspaceSlug: string, connectionId: string, limit = 50): Array<{ agentId: string; outcome: string; at: string }> {
+    return (
+      this.db
+        .prepare("SELECT agent_id, outcome, created_at FROM channel_person_lookup WHERE workspace_slug = ? AND connection_id = ? ORDER BY created_at DESC, id LIMIT ?")
+        .all(workspaceSlug, connectionId, Math.min(Math.max(limit, 1), 200)) as Row[]
+    ).map((row) => ({ agentId: String(row.agent_id), outcome: String(row.outcome), at: String(row.created_at) }));
   }
 
   countLookups(workspaceSlug: string, agentId: string, since: Date): number {

@@ -116,7 +116,7 @@ export const updatePeoplePolicy = (connectionId: string, input: { mode: PeoplePo
   api<PeoplePolicyAnswer>(connectionRoute(connectionId, "/people-policy"), { method: "PUT", body: JSON.stringify(input) });
 
 export const listChannelPeople = (connectionId: string) =>
-  api<PeoplePolicyAnswer & { people: ChannelPersonView[] }>(connectionRoute(connectionId, "/people"));
+  api<PeoplePolicyAnswer & { people: ChannelPersonView[]; recentFinds?: Array<{ agentId: string; outcome: string; at: string }> }>(connectionRoute(connectionId, "/people"));
 
 export const revokeChannelPerson = (connectionId: string, personRef: string) =>
   api<{ ok: true; person: ChannelPersonView; replayed?: boolean }>(connectionRoute(connectionId, `/people/${encodeURIComponent(personRef)}/revoke`), { method: "POST", body: JSON.stringify({}) });

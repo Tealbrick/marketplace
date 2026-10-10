@@ -444,9 +444,10 @@ describe("routes v2: people policy and direct messages (R5)", () => {
     expect((await t.find(channel.id, { email: "alice@example.com" })).statusCode).toBe(200);
     expect((await t.find(channel.id, { email: "bob@partner.org" })).statusCode).toBe(200);
     const eve = await t.find(channel.id, { email: "eve@elsewhere.net" });
-    expect(eve.statusCode).toBe(403);
-    expect(eve.json()).toMatchObject({ error: "channel_person_not_allowed" });
-    expect(t.fakes.slack.actions.filter((action) => action.kind === "findPerson")).toHaveLength(2);
+    // Not listed: the same answer as nobody (the platform is asked in both cases; review of PR #51).
+    expect(eve.statusCode).toBe(404);
+    expect(eve.json()).toMatchObject({ error: "channel_person_not_found" });
+    expect(t.fakes.slack.actions.filter((action) => action.kind === "findPerson")).toHaveLength(3);
     // Slack: by email only in this release (users:read is not requested).
     expect((await t.find(channel.id, { handle: "alice" })).json()).toMatchObject({ error: "channel_person_query_unsupported" });
 
@@ -603,8 +604,8 @@ describe("routes v2: people are per agent (review of PR #51)", () => {
     t.fakes.discord.addPerson("ana", { userId: "4400666", displayName: "ana" });
     await t.setPolicy(channel.connectionId, { mode: "allowlist", people: ["ana"] });
     const spoofed = await t.find(channel.id, { handle: "ana" });
-    expect(spoofed.statusCode).toBe(403);
-    expect(spoofed.json()).toMatchObject({ error: "channel_person_not_allowed" });
+    expect(spoofed.statusCode).toBe(404);
+    expect(spoofed.json()).toMatchObject({ error: "channel_person_not_found" });
     t.fakes.discord.addPerson("ana", { userId: "4400001", displayName: "Ana" });
     await t.setPolicy(channel.connectionId, { mode: "allowlist", people: ["4400001"] });
     const real = await t.find(channel.id, { handle: "ana" });
@@ -613,6 +614,41 @@ describe("routes v2: people are per agent (review of PR #51)", () => {
     const held = await t.dm(channel.id, real.json().person.personRef, "Hi Ana");
     const queue = await t.f.owner("GET", "/api/marketplace/company-box/approvals?state=pending");
     expect(queue.json().approvals.find((entry: { id: string }) => entry.id === held.json().approvalId).channel.action.person).toMatchObject({ displayName: "Ana", platformUserId: "4400001", lookup: { kind: "handle", value: "ana" } });
+  });
+
+  it("answers an existing-but-unlisted person exactly like nobody; the real outcome is only for the owner", async () => {
+    const t = await setup();
+    const channel = await t.channelFor("slack", "no-leak");
+    t.fakes.slack.addPerson("eve@elsewhere.net", { userId: "U0EVE", displayName: "Eve" });
+    await t.setPolicy(channel.connectionId, { mode: "allowlist", domains: ["example.com"] });
+    const unlisted = await t.find(channel.id, { email: "eve@elsewhere.net" }, "find-unlisted-0001");
+    const nobody = await t.find(channel.id, { email: "ghost@elsewhere.net" }, "find-nobody-00001");
+    expect(unlisted.statusCode).toBe(nobody.statusCode);
+    expect(unlisted.statusCode).toBe(404);
+    const strip = (body: Record<string, unknown>) => {
+      const { traceId: _traceId, ...rest } = body;
+      return rest;
+    };
+    expect(strip(unlisted.json())).toEqual(strip(nobody.json()));
+    expect(unlisted.body).not.toContain("Eve");
+    // Both asked the platform (similar timing; no early refusal for one of them).
+    expect(t.fakes.slack.actions.filter((action) => action.kind === "findPerson")).toHaveLength(2);
+    const finds = (await t.f.owner("GET", `/api/marketplace/channels/connections/${channel.connectionId}/people`)).json().recentFinds as Array<{ outcome: string }>;
+    expect(finds.map((entry) => entry.outcome).sort()).toEqual(["not_allowed", "not_found"]);
+    const audit = auditOf(t.f).filter((event) => event.eventType === "marketplace.channels.person.lookup").map((event) => event.metadata.outcome);
+    expect(audit.sort()).toEqual(["not_allowed", "not_found"]);
+  });
+
+  it("matches a Slack email or domain allowlist only for a confirmed email; otherwise only the user id", async () => {
+    const t = await setup();
+    const channel = await t.channelFor("slack", "confirmed-email");
+    t.fakes.slack.addPerson("bob@example.com", { userId: "U0BOB", displayName: "Bob", emailVerified: false });
+    t.fakes.slack.addPerson("carol@example.com", { userId: "U0CAROL", displayName: "Carol", emailVerified: true });
+    await t.setPolicy(channel.connectionId, { mode: "allowlist", people: ["bob@example.com"], domains: ["example.com"] });
+    expect((await t.find(channel.id, { email: "bob@example.com" })).json()).toMatchObject({ error: "channel_person_not_found" });
+    expect((await t.find(channel.id, { email: "carol@example.com" })).statusCode).toBe(200);
+    await t.setPolicy(channel.connectionId, { mode: "allowlist", people: ["U0BOB"] });
+    expect((await t.find(channel.id, { email: "bob@example.com" })).statusCode).toBe(200);
   });
 
   it("changes the people policy and revokes only through the pinned owner's own session", async () => {

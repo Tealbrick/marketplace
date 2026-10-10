@@ -45,8 +45,13 @@ export function normalizePlatformId(provider: string, value: string): string {
   return value.trim().toLowerCase();
 }
 
-function emailMatches(policy: Pick<PeoplePolicy, "people" | "domains">, provider: string, lookup: PersonLookup): boolean {
+/**
+ * Email or domain match, only for an email the platform verified: Teams (the tenant's own directory) always, Slack only
+ * when the profile says `is_email_confirmed` (review of PR #51).
+ */
+function emailMatches(policy: Pick<PeoplePolicy, "people" | "domains">, provider: string, lookup: PersonLookup, emailVerified: boolean): boolean {
   if (!EMAIL_VERIFIED_PROVIDERS.has(provider) || !lookup.value.includes("@")) return false;
+  if (provider === "slack" && !emailVerified) return false;
   if (policy.people.includes(lookup.value)) return true;
   return policy.domains.includes(lookup.value.slice(lookup.value.lastIndexOf("@") + 1));
 }
@@ -60,30 +65,22 @@ function idMatches(policy: Pick<PeoplePolicy, "people">, provider: string, platf
  * Whether the policy lets an agent message this person: `workspace` always; `allowlist` when the found person's
  * platform id is listed, or (Slack, Teams) the verified email or its domain is listed.
  */
-export function peoplePolicyAllows(policy: Pick<PeoplePolicy, "mode" | "people" | "domains">, provider: string, lookup: PersonLookup, platformUserId: string): boolean {
+export function peoplePolicyAllows(policy: Pick<PeoplePolicy, "mode" | "people" | "domains">, provider: string, lookup: PersonLookup, platformUserId: string, emailVerified = false): boolean {
   if (policy.mode === "workspace") return true;
   if (policy.mode !== "allowlist") return false;
-  return idMatches(policy, provider, platformUserId) || emailMatches(policy, provider, lookup);
+  return idMatches(policy, provider, platformUserId) || emailMatches(policy, provider, lookup, emailVerified);
 }
 
 /** The refusal for a person found (at find time and again at send time), or null. */
-export function peoplePolicyRefusal(policy: PeoplePolicy, provider: string, lookup: PersonLookup, platformUserId: string): { status: number; error: string } | null {
+export function peoplePolicyRefusal(
+  policy: PeoplePolicy,
+  provider: string,
+  lookup: PersonLookup,
+  platformUserId: string,
+  emailVerified = false,
+): { status: number; error: string } | null {
   if (policy.mode === "none") return { status: 403, error: "channel_people_disabled" };
-  return peoplePolicyAllows(policy, provider, lookup, platformUserId) ? null : { status: 403, error: "channel_person_not_allowed" };
-}
-
-/**
- * Before the platform is asked: `none` refuses; an allowlist that can only match by email (Slack, Teams without
- * listed ids) refuses a query it does not list, so an agent cannot probe the directory outside the allowlist.
- * Otherwise the lookup runs and the platform id of the person found decides (`peoplePolicyRefusal`).
- */
-export function peoplePolicyLookupRefusal(policy: PeoplePolicy, provider: string, lookup: PersonLookup): { status: number; error: string } | null {
-  if (policy.mode === "none") return { status: 403, error: "channel_people_disabled" };
-  if (policy.mode !== "allowlist") return null;
-  if (emailMatches(policy, provider, lookup)) return null;
-  const listsIds = policy.people.some((entry) => !entry.includes("@"));
-  if (listsIds) return null;
-  return { status: 403, error: "channel_person_not_allowed" };
+  return peoplePolicyAllows(policy, provider, lookup, platformUserId, emailVerified) ? null : { status: 403, error: "channel_person_not_allowed" };
 }
 
 export function personLookupOf(person: Pick<PersonRecord, "lookupKind" | "lookupValue">): PersonLookup {
@@ -131,6 +128,7 @@ export function personOwnerView(person: PersonRecord) {
     displayName: person.displayName,
     platformUserId: person.platformUserId,
     lookup: { kind: person.lookupKind, value: person.lookupValue },
+    emailVerified: person.emailVerified,
     approved: person.approvedAt !== null,
     approvedAt: person.approvedAt,
     approvedPostId: person.approvedPostId,

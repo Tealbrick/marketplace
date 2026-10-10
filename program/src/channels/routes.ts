@@ -1428,7 +1428,9 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
       .listPeople(org, connectionId)
       .filter((person) => query.data.approved === undefined || (person.approvedAt !== null) === (query.data.approved === "true"))
       .map(personOwnerView);
-    return { ok: true, schema: 1, connectionId, provider: found.provider, policy: peoplePolicyView(connectionId), people };
+    // The owner's recent finds: the real outcome (found, not_allowed, not_found, ...) that agents never see.
+    const recentFinds = channels.actions.listLookups(org, connectionId);
+    return { ok: true, schema: 1, connectionId, provider: found.provider, policy: peoplePolicyView(connectionId), people, recentFinds };
   });
 
   app.post(`${OWNER_PREFIX}/connections/:connectionId/people/:personRef/revoke`, async (request, reply) => {

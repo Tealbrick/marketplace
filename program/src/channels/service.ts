@@ -15,7 +15,7 @@ import { parseTeamsCredential } from "./providers/teams.js";
 import { npubEncode } from "./providers/nostr.js";
 import type { ActionResult, ChannelCapabilities, ChannelDestination as ProviderDestination, ChannelProvider, ChannelProviderId, DiscoverResult, SendResult } from "./providers/types.js";
 import type { PersonRecord } from "./actions-store.js";
-import { PERSON_LOOKUPS_PER_DAY, normalizePersonQuery, peoplePolicyLookupRefusal, peoplePolicyRefusal, personLookupOf, type PersonLookup } from "./people.js";
+import { PERSON_LOOKUPS_PER_DAY, normalizePersonQuery, peoplePolicyRefusal, personLookupOf, type PersonLookup } from "./people.js";
 import {
   CHANNEL_PROVIDER_IDS,
   CHANNEL_SECRET_NAME,
@@ -469,7 +469,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
     if (action.op === "dm") {
       const person = payload.person ? channels.actions.getPerson(org, payload.person.personRef) : null;
       if (!person || person.connectionId !== channel.connectionId || person.agentId !== agentId) return { status: 404, error: "channel_person_not_found" };
-      const refused = peoplePolicyRefusal(channels.actions.getPeoplePolicy(org, channel.connectionId), channel.provider, personLookupOf(person), person.platformUserId);
+      const refused = peoplePolicyRefusal(channels.actions.getPeoplePolicy(org, channel.connectionId), channel.provider, personLookupOf(person), person.platformUserId, person.emailVerified);
       return refused ? { status: refused.status, error: refused.error } : null;
     }
     const own = channels.actions.ownMessage({ workspaceSlug: org, channelId: channel.id, destinationKey: destinationKey(channel.destination), messageId: action.targetMessageId });
@@ -1670,11 +1670,14 @@ export function createChannelService(deps: ChannelServiceDeps) {
       });
     };
     const policy = channels.actions.getPeoplePolicy(org, channel.connectionId);
-    const refused = peoplePolicyLookupRefusal(policy, channel.provider, lookup);
-    if (refused) {
-      record(refused.error);
-      return { ok: false, status: refused.status, error: refused.error };
+    if (policy.mode === "none") {
+      record("channel_people_disabled");
+      return { ok: false, status: 403, error: "channel_people_disabled" };
     }
+    // No directory-membership leak (review of PR #51): under an allowlist, a person who exists but is not listed, an
+    // ambiguous match and nobody at all get the SAME answer, after the same platform call. The real outcome is only in
+    // the audit metadata and the owner's recent finds.
+    const notFound = { ok: false as const, status: 404, error: "channel_person_not_found" };
     // The cap is checked and the slot taken in one synchronous step, before the platform is asked.
     lookupId = channels.actions.reserveLookup({
       workspaceSlug: org,
@@ -1694,15 +1697,19 @@ export function createChannelService(deps: ChannelServiceDeps) {
     }
     if (!found.ok) {
       record(found.reason);
-      if (found.reason === "not_found") return { ok: false, status: 404, error: "channel_person_not_found" };
-      if (found.reason === "ambiguous") return { ok: false, status: 409, error: "channel_person_ambiguous", detail: redact(found.detail) };
+      if (found.reason === "not_found") return notFound;
+      if (found.reason === "ambiguous") {
+        return policy.mode === "allowlist" ? notFound : { ok: false, status: 409, error: "channel_person_ambiguous", detail: redact(found.detail) };
+      }
       return { ok: false, status: 502, error: "channel_person_lookup_failed", detail: redact(`${found.errorCode}: ${found.detail}`) };
     }
     // The platform id of the person found decides an allowlist (never a display name or nickname).
-    const notAllowed = peoplePolicyRefusal(policy, channel.provider, lookup, found.userId);
+    // Slack: an email or domain allowlist matches only an email Slack marks confirmed; otherwise only the user id.
+    const emailVerified = channel.provider === "teams" || found.emailVerified === true;
+    const notAllowed = peoplePolicyRefusal(policy, channel.provider, lookup, found.userId, emailVerified);
     if (notAllowed) {
-      record(notAllowed.error);
-      return { ok: false, status: notAllowed.status, error: notAllowed.error };
+      record("not_allowed");
+      return notFound;
     }
     record("found");
     const person = channels.actions.upsertPerson({
@@ -1714,6 +1721,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
       displayName: redact(found.displayName).slice(0, 80) || found.userId,
       lookupKind: lookup.kind,
       lookupValue: lookup.value,
+      emailVerified,
       now,
     });
     return { ok: true, person };

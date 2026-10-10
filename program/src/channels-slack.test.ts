@@ -147,6 +147,7 @@ describe("channels: the Slack signing secret is redacted like a bot token", () =
 
 describe("channels: routes v2 through the real Slack adapter", () => {
   it("reacts, edits and deletes the agent's own message and sends an approved first DM found by email", async () => {
+    let confirmed = false;
     const { f, slack } = await setup(
       { MARKETPLACE_CHANNELS_SLACK_BOT_TOKEN: SLACK_TOKEN },
       {
@@ -156,7 +157,7 @@ describe("channels: routes v2 through the real Slack adapter", () => {
         "reactions.add": () => ({ ok: true }),
         "chat.update": () => ({ ok: true, channel: "C0ENG", ts: "1800000000.000100" }),
         "chat.delete": () => ({ ok: true }),
-        "users.lookupByEmail": () => ({ ok: true, user: { id: "U0ALICE", name: "alice", profile: { display_name: "Alice", real_name: "Alice Example" } } }),
+        "users.lookupByEmail": () => ({ ok: true, user: { id: "U0ALICE", name: "alice", is_email_confirmed: confirmed, profile: { display_name: "Alice", real_name: "Alice Example" } } }),
         "conversations.open": () => ({ ok: true, channel: { id: "D0ALICE01" } }),
       },
     );
@@ -177,6 +178,10 @@ describe("channels: routes v2 through the real Slack adapter", () => {
     expect(form("chat.delete")).toEqual({ channel: "C0ENG", ts });
 
     await f.ownerWrite("PUT", `/api/marketplace/channels/connections/${channel.connectionId}/people-policy`, { mode: "allowlist", domains: ["example.com"] });
+    // An unconfirmed Slack email never matches an email or domain allowlist.
+    const unconfirmed = await f.agent("POST", `/api/marketplace/v1/agent/channels/${channel.id}/people/find`, { key: "slack-v2-find-000", payload: { email: "alice@example.com" } });
+    expect(unconfirmed.json()).toMatchObject({ error: "channel_person_not_found" });
+    confirmed = true;
     const found = await f.agent("POST", `/api/marketplace/v1/agent/channels/${channel.id}/people/find`, { key: "slack-v2-find-001", payload: { email: "alice@example.com" } });
     expect(found.json().person).toMatchObject({ approved: false });
     // The email travels in the form body only.

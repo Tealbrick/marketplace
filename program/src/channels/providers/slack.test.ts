@@ -592,14 +592,22 @@ describe("slack findPerson and openDirect", () => {
   const member = (id: string, name: string, display: string, extra: Record<string, unknown> = {}) => ({ id, name, real_name: `${display} Real`, profile: { display_name: display }, ...extra });
 
   it("looks up by email in the form body (never the URL)", async () => {
-    const { provider, fake } = make([ok({ user: member("U0ANNA", "anna", "Anna") }), slackError("users_not_found"), ok({ user: member("U0GONE", "gone", "Gone", { deleted: true }) }), slackError("missing_scope")]);
-    expect(await provider.findPerson(TOKEN, { email: "anna@example.com" })).toEqual({ ok: true, userId: "U0ANNA", displayName: "Anna" });
+    const { provider, fake } = make([
+      ok({ user: member("U0ANNA", "anna", "Anna") }),
+      slackError("users_not_found"),
+      ok({ user: member("U0GONE", "gone", "Gone", { deleted: true }) }),
+      slackError("missing_scope"),
+      ok({ user: member("U0ANNA", "anna", "Anna", { is_email_confirmed: true }) }),
+    ]);
+    // Slack's is_email_confirmed is passed through as emailVerified (false unless Slack says true).
+    expect(await provider.findPerson(TOKEN, { email: "anna@example.com" })).toEqual({ ok: true, userId: "U0ANNA", displayName: "Anna", emailVerified: false });
     expect(method(fake.requests[0]!)).toBe("users.lookupByEmail");
     expect(fake.requests[0]!.url).not.toContain("anna");
     expect(form(fake.requests[0]!)).toEqual({ email: "anna@example.com" });
     expect(await provider.findPerson(TOKEN, { email: "nobody@example.com" })).toMatchObject({ ok: false, reason: "not_found" });
     expect(await provider.findPerson(TOKEN, { email: "gone@example.com" })).toMatchObject({ ok: false, reason: "not_found" });
     expect(await provider.findPerson(TOKEN, { email: "anna@example.com" })).toEqual({ ok: false, reason: "failed", errorCode: "provider_forbidden", detail: "slack: missing_scope" });
+    expect(await provider.findPerson(TOKEN, { email: "anna@example.com" })).toEqual({ ok: true, userId: "U0ANNA", displayName: "Anna", emailVerified: true });
   });
 
   it("finds by handle from a cached users.list (at most 10 minutes), never returning the list", async () => {

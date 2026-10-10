@@ -1048,10 +1048,16 @@ workspace or tenant can reach). An allowlist matches the person found by an
 immutable platform id listed in `people` (Slack `U…`, Teams Entra object id,
 Discord user id, Buzz npub or hex key) or, on Slack and Teams only, by the
 verified email (or Teams user principal name) in `people` or its domain in
-`domains`; display names, nicknames and handles never match. `channel-people.find`
-runs server-side: `none`, and an email-only allowlist that does not list the
-query, refuse before the platform is asked; the platform id of the person found
-decides otherwise (`403 channel_people_disabled | channel_person_not_allowed`).
+`domains` (Slack: only when the profile has `is_email_confirmed: true`;
+otherwise only the user id matches); display names, nicknames and handles never
+match. `channel-people.find`
+runs server-side: `none` refuses before the platform is asked (`403
+channel_people_disabled`); otherwise the platform is always asked and the
+policy is checked after the lookup. No directory-membership leak: under an
+allowlist, a person who exists but is not listed, an ambiguous match and nobody
+all answer the same `404 channel_person_not_found` (same body, same platform
+call); the real outcome (`not_allowed`, `not_found`, `ambiguous`) is only in the
+audit metadata and the owner's `recentFinds` (in the people listing).
 Finds are capped at 50 per agent per 24 h, the slot taken before the platform
 call (`429 channel_person_lookup_cap`). People are **per agent**: the answer is
 one opaque `personRef` (`prs_…`) that belongs to the calling agent (another

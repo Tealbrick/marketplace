@@ -59,7 +59,7 @@ export function fakeProvider(id: ChannelProviderId, token: string) {
   const sends: FakeSend[] = [];
   const actions: FakeAction[] = [];
   const actionReplies: ActionResult[] = [];
-  const people = new Map<string, { userId: string; displayName: string } | "ambiguous">();
+  const people = new Map<string, { userId: string; displayName: string; emailVerified?: boolean } | "ambiguous">();
   const replies: Array<SendResult | (() => Promise<SendResult>)> = [];
   const ids =
     id === "telegram"
@@ -118,7 +118,9 @@ export function fakeProvider(id: ChannelProviderId, token: string) {
       actions.push({ kind: "findPerson", query });
       const found = people.get((query.email ?? query.handle ?? "").toLowerCase());
       if (found === "ambiguous") return { ok: false, reason: "ambiguous", errorCode: "person_ambiguous", detail: "more than one person matches" };
-      return found ? { ok: true, ...found } : { ok: false, reason: "not_found", errorCode: "person_not_found", detail: "no person matches" };
+      return found
+        ? { ok: true, userId: found.userId, displayName: found.displayName, emailVerified: found.emailVerified ?? query.email !== undefined }
+        : { ok: false, reason: "not_found", errorCode: "person_not_found", detail: "no person matches" };
     };
   }
   if (real.openDirect) {
@@ -134,7 +136,7 @@ export function fakeProvider(id: ChannelProviderId, token: string) {
     /** Queues the next reaction, edit or delete answers (default `sent`). */
     actionReply: (...more: ActionResult[]) => void actionReplies.push(...more),
     /** Adds a person to the fake directory under an email or handle (or marks the key ambiguous). */
-    addPerson: (key: string, person: { userId: string; displayName: string } | "ambiguous") => void people.set(key.toLowerCase(), person),
+    addPerson: (key: string, person: { userId: string; displayName: string; emailVerified?: boolean } | "ambiguous") => void people.set(key.toLowerCase(), person),
     reply: (...more: Array<SendResult | (() => Promise<SendResult>)>) => void replies.push(...more),
     setDestinations: (next: ChannelDestination[]) => {
       destinations = next;

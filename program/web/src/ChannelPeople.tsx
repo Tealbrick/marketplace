@@ -39,8 +39,15 @@ function PeopleList({ connectionId, onNotice }: { connectionId: string; onNotice
   if (people.isLoading) return <span className="muted-detail">Loading people…</span>;
   if (people.error) return <InlineError error={people.error} />;
   const rows = people.data?.people ?? [];
-  if (!rows.length) return <p className="muted-detail">No agent has looked anyone up on this connection yet.</p>;
+  const finds = people.data?.recentFinds ?? [];
+  const findsList = finds.length > 0 && <details>
+    <summary>Recent finds ({finds.length})</summary>
+    <p className="muted-detail">The real outcome of each find. Agents get the same "not found" answer for a person who is not allowed and for nobody.</p>
+    <ul className="plain-list">{finds.map((entry, index) => <li key={`${entry.at}-${index}`}><code>{entry.agentId}</code> · {entry.outcome.replace(/_/gu, " ")} · {formatWhen(entry.at)}</li>)}</ul>
+  </details>;
+  if (!rows.length) return <><p className="muted-detail">No agent has found anyone on this connection yet.</p>{findsList}</>;
   return <>
+    {findsList}
     <table className="caps-table" aria-label="People agents found">
       <thead><tr><th scope="col">Person</th><th scope="col">Agent</th><th scope="col">Found by</th><th scope="col">Status</th><th scope="col"><span className="visually-hidden">Action</span></th></tr></thead>
       <tbody>{rows.map((person) => <tr key={person.personRef}>
