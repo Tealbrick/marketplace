@@ -48,6 +48,7 @@ export const GrantScopeSchema = z.strictObject({
   maxChars: z.number().int().min(1).max(1_000_000).optional(),
   immediate: z.boolean(),
   scheduled: z.boolean(),
+  replies: z.boolean().optional(),
 });
 
 export const GrantTermsSchema = z.strictObject({

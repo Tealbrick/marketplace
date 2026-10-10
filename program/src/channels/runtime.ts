@@ -416,7 +416,8 @@ export function buildChannelPayload(input: {
     provider: channel.provider,
     destination: channel.destination.externalId,
     ...(channel.destination.parentId ? { destinationParentId: channel.destination.parentId } : {}),
-    op: input.op,
+    // A reply is its own operation (review M1): a digest or approval for a post never stands for a reply.
+    op: body.replyTo !== undefined ? "reply" : input.op,
     ...(body.replyTo !== undefined ? { replyTo: body.replyTo } : {}),
     text: applied.text,
     attachments: applied.attachments.map((attachment) => ({

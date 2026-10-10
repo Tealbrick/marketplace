@@ -1560,6 +1560,9 @@
                       },
                       "scheduled": {
                         "type": "boolean"
+                      },
+                      "replies": {
+                        "type": "boolean"
                       }
                     }
                   },
@@ -1721,6 +1724,9 @@
                           "type": "boolean"
                         },
                         "scheduled": {
+                          "type": "boolean"
+                        },
+                        "replies": {
                           "type": "boolean"
                         }
                       }
@@ -1945,6 +1951,9 @@
             },
             "scheduled": {
               "type": "boolean"
+            },
+            "replies": {
+              "type": "boolean"
             }
           }
         },
@@ -2041,6 +2050,9 @@
               "type": "boolean"
             },
             "scheduled": {
+              "type": "boolean"
+            },
+            "replies": {
               "type": "boolean"
             }
           }
@@ -2147,6 +2159,9 @@
                 },
                 "scheduled": {
                   "type": "boolean"
+                },
+                "replies": {
+                  "type": "boolean"
                 }
               }
             },
@@ -2250,6 +2265,9 @@
                   "type": "boolean"
                 },
                 "scheduled": {
+                  "type": "boolean"
+                },
+                "replies": {
                   "type": "boolean"
                 }
               }
@@ -2371,6 +2389,9 @@
                     "type": "boolean"
                   },
                   "scheduled": {
+                    "type": "boolean"
+                  },
+                  "replies": {
                     "type": "boolean"
                   }
                 }

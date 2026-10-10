@@ -848,6 +848,7 @@ export function createChannelService(deps: ChannelServiceDeps) {
       }
       const facts = {
         mode,
+        reply: input.body.replyTo !== undefined,
         sendAt: payload.sendAt,
         text: payload.text,
         attachments: payload.files.map((file) => ({ contentType: file.contentType, bytes: file.bytes, sha256: file.sha256, name: file.name })),

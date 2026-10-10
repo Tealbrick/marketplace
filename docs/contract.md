@@ -727,9 +727,14 @@ agents without the Buzz bridge. `marketplace.channels.reply` takes the post
 body (`text`, `attachments?`, `campaign?`) and replies natively: it runs the
 normal post path (`executeConsentedCall`, outward consent for that channel,
 standing grant or owner approval, caps, receipts) with `replyTo` = the thread
-root (Slack, Teams) or the message (Telegram, Discord). `replyTo` is part of
-the payload digest (absent on plain posts, whose digests are unchanged), so an
-approval covers the reply target; a held reply keeps its target in
+root (Slack, Teams) or the message (Telegram, Discord). A reply is digested
+as `op: "reply"` with `replyTo` (plain posts keep `op: "post"` and their
+digests), so an approval covers the reply target and never stands for a post.
+A standing grant covers replies only with `scope.replies: true` (default false;
+needs `immediate`; adding it is widening, so only a new owner approval grants
+it; in the grant digest only when true, so existing grants are unchanged).
+Without it every reply to an outside sender holds for the owner's approval of
+the exact payload; a held reply keeps its target in
 `channel_inbound_reply` under the internal key `inbound-reply:<key>`. Refusals:
 `404 channel_inbound_event_not_found` (unknown, or routed to another agent),
 `404 channel_not_found` (no consent), `403 channel_inbound_route_inactive`

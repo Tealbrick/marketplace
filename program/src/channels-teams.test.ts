@@ -259,7 +259,7 @@ describe("Teams inbound", () => {
     await f.runtime.inbound.pipeline.settled();
     const events = f.store.channels.inbound.listEvents(TENANT, { limit: 10 });
     expect(events).toEqual([expect.objectContaining({ platform: "teams", channelId: CHANNEL_ID, threadId: "1712345678901", messageId: "1712345679001", senderDisplay: "Ana", routedTo: "agent-1" })]);
-    await f.proposeAndApprove(channel.id, { scope: { files: false, immediate: true, scheduled: true } });
+    await f.proposeAndApprove(channel.id, { scope: { files: false, immediate: true, scheduled: true, replies: true } });
     const replied = await f.agent("POST", `/api/marketplace/v1/agent/channels/inbound/${events[0]!.id}/reply`, { key: "teams-reply-0001", payload: { text: "On it." } });
     expect(replied.statusCode, replied.body).toBe(200);
     const post = requests.filter((request) => request.method === "POST" && request.url.includes("/v3/conversations/")).pop()!;

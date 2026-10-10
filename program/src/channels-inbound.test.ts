@@ -406,9 +406,28 @@ describe("marketplace.channels.inbound and marketplace.channels.reply", () => {
     expect(owner.json().events[0]).toMatchObject({ eventId, routedTo: "agent-1", framing: "untrusted-external-message" });
   });
 
-  it("replies natively in the source thread under a standing grant, and replays on the same key", async () => {
+  it("a standing grant without scope.replies never covers a reply: the reply holds for the owner (M1)", async () => {
+    const { f, slack, eventId, channel } = await routed();
+    await f.proposeAndApprove(channel.id);
+    // A planned post is covered by the immediate grant...
+    expect((await f.post(channel.id, { text: "Planned announcement" }, "plain-post-0001")).statusCode).toBe(200);
+    // ...a reply to an outside sender is not.
+    const held = await f.agent("POST", `/api/marketplace/v1/agent/channels/inbound/${eventId}/reply`, { key: "reply-key-0010", payload: { text: "Planned announcement" } });
+    expect(held.statusCode, held.body).toBe(202);
+    expect(held.json()).toMatchObject({ error: "approval_pending" });
+    expect(held.json().payloadView.canonical).toContain('"op":"reply"');
+    expect(slack.sends).toHaveLength(1);
+    // scope.replies needs immediate, and a narrowing can never add it.
+    const refused = await f.agent("POST", `/api/marketplace/v1/agent/channels/${channel.id}/grants`, {
+      key: "grant-replies-0001",
+      payload: { purpose: "replies", caps: { perDay: 6, minIntervalSeconds: 0, onePerPhase: true }, scope: { files: false, immediate: false, scheduled: true, replies: true }, expires: new Date(f.now + 86_400_000).toISOString() },
+    });
+    expect(refused.json()).toMatchObject({ error: "grant_exceeds_ceiling", fields: ["scope.replies"] });
+  });
+
+  it("replies natively in the source thread under a standing grant with scope.replies, and replays on the same key", async () => {
     const { f, slack, eventId } = await routed();
-    await f.proposeAndApprove((await f.agent("GET", "/api/marketplace/v1/agent/channels")).json().channels[0].id);
+    await f.proposeAndApprove((await f.agent("GET", "/api/marketplace/v1/agent/channels")).json().channels[0].id, { scope: { files: {}, immediate: true, scheduled: true, replies: true } });
     const sent = await f.agent("POST", `/api/marketplace/v1/agent/channels/inbound/${eventId}/reply`, { key: "reply-key-0001", payload: { text: "Thanks, noted." } });
     expect(sent.statusCode, sent.body).toBe(200);
     expect(sent.json().receipt).toMatchObject({ status: "sent", provider: "slack" });
