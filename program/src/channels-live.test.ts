@@ -2,6 +2,8 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
+import type { DatabaseSync } from "node:sqlite";
+
 import { canonicalGrant, grantDigest, parseGrant } from "@tealbrick/contract";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -194,7 +196,7 @@ describe("live-session grants: proposal and the canonical grant", () => {
     const parsed = JSON.parse(grant.canonical) as Record<string, any>;
     expect(parsed.scope).toMatchObject({ kind: "live-session", target: { channelId: t.group }, consent: { disclosureNotice: true, perParticipantConsent: false }, modes: { listen: true, speakApproved: true } });
     expect(parsed.id).toMatch(/^live-[0-9a-f]{16}$/u);
-    expect(parsed.description).toContain("agent-1");
+    expect(parsed.description).toBe("Live huddle session for agent agent-1 in channel buzz-live");
     expect(canonicalGrant(parsed)).toBe(grant.canonical);
     expect(grantDigest(parsed)).toBe(grant.digest);
     expect(grant.approvalText).toBe(`approve grant ${grant.digest.slice(0, 32)}`);
@@ -356,6 +358,78 @@ describe("live-session grants: owner approval paths", () => {
     // Even the owner cannot widen anything else.
     const ownerWider = await t.strict("POST", `${O}/grants/${grant.id}/narrow`, { terms: { ...base, maxDayMinutes: 600 } });
     expect(ownerWider.statusCode).toBe(422);
+  });
+});
+
+describe("live-session grants: defence in depth and owner key changes", () => {
+  const db = (t: Setup) => (t.f.store.channels.live as unknown as { db: DatabaseSync }).db;
+
+  it("a direct database edit of the record or the grant fails closed (unusable, audited once)", async () => {
+    const t = await setup();
+    t.f.consentFor("agent-2", t.channel);
+    const grant = await t.active();
+    const { sessionId } = await t.joined(grant.id);
+    // Reassign agent-1's approved grant to agent-2 in the database: the description still names agent-1.
+    db(t).prepare("UPDATE channel_live_grant SET agent_id = 'agent-2' WHERE id = ?").run(grant.id);
+    await waitFor(() => t.sessionRow(sessionId).status === "left", 5000, "left");
+    expect(t.sessionRow(sessionId).endReason).toBe("grant_integrity_failed");
+    const stolen = await t.join(grant.id, t.huddle(), { listen: true }, GRANT_B);
+    expect(stolen.json()).toMatchObject({ error: "live_grant_not_active", reason: "grant_integrity_failed" });
+    await t.join(grant.id, t.huddle(), { listen: true }, GRANT_B);
+    const audits = t.audit().filter((entry) => entry.event_type === "marketplace.channels.live_grant.integrity_failed");
+    expect(audits).toHaveLength(1);
+    expect(JSON.parse(audits[0]!.metadata)).toMatchObject({ grantId: grant.id, field: "description" });
+
+    // A consistent rewrite (canonical + digest recomputed for another agent) still fails the template check.
+    const other = await t.active({ topic: "Second call" });
+    const parsed = JSON.parse(other.canonical) as Record<string, any>;
+    const forged = { ...parsed, description: "Live huddle session for agent agent-2 in channel buzz-live" };
+    db(t).prepare("UPDATE channel_live_grant SET canonical = ?, digest = ?, approved_digest = ? WHERE id = ?").run(canonicalGrant(forged), grantDigest(forged), grantDigest(forged), other.id);
+    expect((await t.join(other.id, t.huddle())).json()).toMatchObject({ error: "live_grant_not_active", reason: "grant_integrity_failed" });
+
+    // A pending grant whose approval channel was edited cannot be approved.
+    const pending = await t.proposed({ topic: "Third call" });
+    db(t).prepare("UPDATE channel_live_grant SET approval_channel = ? WHERE id = ?").run(randomUUID(), pending.id);
+    const refused = await t.approveUi(pending.id, pending.digest);
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json().error).toBe("live_grant_corrupt");
+  });
+
+  it("refuses Buzz proofs from an old owner key and proofs signed before the current key was set (key_changed)", async () => {
+    const t = await setup();
+    const grant = await t.proposed();
+    // The owner sets a new Buzz key after the proposal.
+    const NEW_SECRET = "0000000000000000000000000000000000000000000000000000000000000005";
+    const NEW_KEY = publicKeyOf(NEW_SECRET)!;
+    const setAt = Date.now();
+    t.f.store.channels.setOwnerKey({ workspaceSlug: TENANT, pubkey: NEW_KEY, fingerprint: ownerKeyFingerprint(NEW_KEY), actor: "operator-1", now: new Date(setAt) });
+    const oldKey = t.approveEvent(grant.digest);
+    const byOld = await t.resolve(grant.id, { proof: "nostr", event: oldKey, channel: t.group });
+    expect(byOld.statusCode).toBe(403);
+    const early = t.approveEvent(grant.digest, { secret: NEW_SECRET, createdAt: Math.floor(setAt / 1000) - 120 });
+    const beforeKey = await t.resolve(grant.id, { proof: "nostr", event: early, channel: t.group });
+    expect(beforeKey.statusCode).toBe(403);
+    expect(beforeKey.json()).toMatchObject({ error: "live_grant_proof_invalid", reason: "key_changed" });
+    expect(t.f.store.channels.isApprovalProofUsed(`nostr:${early.id}`)).toBe(false);
+    expect(t.f.store.channels.isApprovalProofUsed(`nostr:${oldKey.id}`)).toBe(false);
+    const ok = await t.resolve(grant.id, { proof: "nostr", event: t.approveEvent(grant.digest, { secret: NEW_SECRET, createdAt: Math.floor(setAt / 1000) + 1 }), channel: t.group });
+    expect(ok.statusCode, ok.body).toBe(200);
+
+    // After approval the key changes again: commands from the old key, or signed before the change, are refused.
+    const NEWER_SECRET = "0000000000000000000000000000000000000000000000000000000000000006";
+    const NEWER_KEY = publicKeyOf(NEWER_SECRET)!;
+    const changedAt = Date.now() + 2000;
+    t.f.store.channels.setOwnerKey({ workspaceSlug: TENANT, pubkey: NEWER_KEY, fingerprint: ownerKeyFingerprint(NEWER_KEY), actor: "operator-1", now: new Date(changedAt) });
+    const signed = (secret: string, createdAt: number) =>
+      t.f.agent("POST", `${A}/live-grants/commands`, { payload: { event: signTestEvent(secret, { kind: 9, created_at: createdAt, tags: [["h", t.group]], content: `revoke ${grant.id}` }) } });
+    expect((await signed(NEW_SECRET, Math.floor(changedAt / 1000) + 1)).statusCode).toBe(403);
+    const stale = await signed(NEWER_SECRET, Math.floor(changedAt / 1000) - 60);
+    expect(stale.statusCode).toBe(403);
+    expect(stale.json()).toMatchObject({ error: "live_command_invalid", reason: "key_changed" });
+    expect(t.f.store.channels.live.getGrant(TENANT, grant.id)!.status).toBe("active");
+    const revoked = await signed(NEWER_SECRET, Math.floor(changedAt / 1000) + 1);
+    expect(revoked.statusCode, revoked.body).toBe(200);
+    expect(t.f.store.channels.live.getGrant(TENANT, grant.id)!.status).toBe("revoked");
   });
 });
 

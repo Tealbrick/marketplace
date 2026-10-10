@@ -1114,11 +1114,14 @@ Buzz huddles under a **live-session grant** (scope §2.3, contract alpha.8 `@tea
 Grant. The agent proposes `{huddleId?, modes: {listen?, speakApproved?, speakLive?}, maxSessionMinutes ≤ 120,
 maxDayMinutes, costCap.providerMinutes, topic, forbiddenTerms?, consent?: {disclosureNotice (default true),
 perParticipantConsent (default false)}, caps?: {perDay (default 10), perHour?, minIntervalSeconds?}, expires}` for a
-channel it holds an `outward` consent for. Marketplace builds the canonical grant (fresh id `live-<16 hex>`, a
-description naming the agent and channel, target = the Buzz channel or one huddle), checks it with `parseGrant`,
+channel it holds an `outward` consent for. Marketplace builds the canonical grant (fresh id `live-<16 hex>`, the
+description `Live huddle session for agent <agentId> in channel <slug>`, target = the Buzz channel or one huddle), checks it with `parseGrant`,
 `assertServerEnforceable` and `grantApprovalWindow` (≤ 30 days after approval) and stores `canonicalGrant` and
 `grantDigest` (`sha256("tealbrick-grant/v1\n" + canonical)`) in `channel_live_grant`. `experts` and `deny` are
 refused (the server cannot enforce them). Two open grants never share a 32-hex digest prefix.
+At approval and at every use the stored grant must still match the server template for the record (id, description
+for the record's agent and channel slug, target inside the channel's Buzz conversation, approval channel); a direct
+database edit makes it unusable (`live_grant_corrupt` / `grant_integrity_failed`) and is audited once.
 
 Approval (owner only, exactly the digest): the Marketplace UI (`approve` with the shown `digest`, pinned owner's
 launch session); a Buzz reply `approve grant <32+ hex>` signed by the pinned owner Buzz key and posted in the grant's

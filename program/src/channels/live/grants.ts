@@ -25,7 +25,7 @@ import { newLiveGrantId, type LiveGrantRecord, type LiveGrantStatus, type LiveMo
  * Live-session grants (Channels P2 scope §2.3, contract alpha.8 `@tealbrick/contract/grants`).
  *
  * The agent proposes a live-session grant for one channel's huddles (or one huddle); the server builds the canonical
- * grant (fresh id, server-written description naming the agent and channel), validates it with `parseGrant`,
+ * grant (fresh id, server-written description naming the agent and channel slug), validates it with `parseGrant`,
  * `assertServerEnforceable` and `grantApprovalWindow`, and stores `canonicalGrant` + `grantDigest`. Only the owner
  * approves exactly that digest, through:
  *
@@ -112,6 +112,31 @@ export function liveGrantOf(record: Pick<LiveGrantRecord, "canonical" | "digest"
     return null;
   }
   return parsed.grant as LiveGrant;
+}
+
+/**
+ * The server-written grant description: names the agent and the channel by its slug (immutable after creation), so
+ * the owner-visible, digest-covered text binds the grant to one agent and one channel.
+ */
+export function liveGrantDescription(agentId: string, channelSlug: string): string {
+  return `Live huddle session for agent ${agentId} in channel ${channelSlug}`.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, " ").slice(0, 300);
+}
+
+/**
+ * Defence in depth (review of PR #53): the canonical grant must still be exactly what the server would write for this
+ * record: its id, the description template for `record.agentId` and the channel, a target inside the channel's Buzz
+ * conversation, and the approval channel of that conversation. A direct database edit of the record or the grant
+ * fails closed. Returns the first mismatching field, or null.
+ */
+export function liveGrantIntegrityProblem(record: Pick<LiveGrantRecord, "id" | "agentId" | "approvalChannel">, grant: LiveGrant, channel: Pick<ChannelRecord, "slug" | "destination">): string | null {
+  if (grant.id !== record.id) return "id";
+  if (grant.description !== liveGrantDescription(record.agentId, channel.slug)) return "description";
+  const parent = channel.destination.externalId;
+  const target = grant.scope.target;
+  if (target.voiceChannelId !== undefined) return "target";
+  if (target.channelId !== undefined ? target.channelId !== parent : !(target.huddleId && UUID.test(target.huddleId))) return "target";
+  if (record.approvalChannel !== parent) return "approvalChannel";
+  return null;
 }
 
 /** Fields of `next` that are wider than `current` (empty: a narrowing or equal). Consent: see `ownerMaySetConsent`. */
@@ -284,7 +309,7 @@ export function createLiveGrantService(deps: LiveGrantServiceDeps) {
     if (channel.provider !== "buzz") return { ok: false, status: 422, error: "channel_capability_unavailable" };
     const parent = channel.destination.externalId;
     if (!UUID.test(parent)) return { ok: false, status: 422, error: "live_target_invalid" };
-    const description = `Live huddle session for agent ${input.agentId} in ${channel.label}`.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, " ").slice(0, 300);
+    const description = liveGrantDescription(input.agentId, channel.slug);
     const terms: LiveGrantTerms = {
       modes: proposal.modes,
       maxSessionMinutes: proposal.maxSessionMinutes,
@@ -397,9 +422,24 @@ export function createLiveGrantService(deps: LiveGrantServiceDeps) {
     if (!deps.consentActive(record.consentId)) return { ok: false, status: 409, error: "live_grant_consent_inactive" };
     const grant = liveGrantOf(record);
     if (!grant) return { ok: false, status: 409, error: "live_grant_corrupt" };
+    if (integrityFailed(record, grant, channel)) return { ok: false, status: 409, error: "live_grant_corrupt" };
     const refusal = windowRefusal(grant, deps.now().getTime());
     if (refusal && !refusal.ok) return refusal;
     return { ok: true, grant, channel };
+  };
+
+  /** Records an integrity failure once per record revision (a session tick would otherwise repeat it). */
+  const integrityAudited = new Set<string>();
+  const integrityFailed = (record: LiveGrantRecord, grant: LiveGrant, channel: ChannelRecord): boolean => {
+    const field = liveGrantIntegrityProblem(record, grant, channel);
+    if (!field) return false;
+    const key = `${record.id}|${record.revision}|${field}`;
+    if (!integrityAudited.has(key)) {
+      if (integrityAudited.size > 1000) integrityAudited.clear();
+      integrityAudited.add(key);
+      deps.audit("marketplace.channels.live_grant.integrity_failed", record, "marketplace", { field });
+    }
+    return true;
   };
 
   const activate = (record: LiveGrantRecord, input: { canonical: string; digest: string; approvedAt: number; expiresAt: number; source: "marketplace-ui" | "nostr" | "portal"; ref: string; approvedBy: string }) => {
@@ -626,6 +666,7 @@ export function createLiveGrantService(deps: LiveGrantServiceDeps) {
     if (!deps.consentActive(record.consentId)) return { ok: false, reason: "consent_inactive" };
     const channel = deps.channel(record.channelId);
     if (!channel || channel.status !== "active") return { ok: false, reason: channel ? `channel_${channel.status}` : "channel_missing" };
+    if (integrityFailed(record, grant, channel)) return { ok: false, reason: "grant_integrity_failed" };
     return { ok: true, grant, record };
   };
 
