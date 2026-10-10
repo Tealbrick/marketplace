@@ -1,4 +1,6 @@
 import { createHmac } from "node:crypto";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -149,6 +151,23 @@ const slackMessageEvent = (over: Record<string, unknown> = {}, eventId?: string)
     },
   };
 };
+
+describe("Slack inbound app manifest", () => {
+  it("adds only the history scopes and event subscriptions of routed channels to the base manifest, with the real route", () => {
+    const read = (name: string) => JSON.parse(readFileSync(path.join(import.meta.dirname, "../../docs", name), "utf8")) as {
+      oauth_config: { scopes: { bot: string[] } };
+      settings: Record<string, unknown> & { event_subscriptions?: { request_url: string; bot_events: string[] } };
+    };
+    const base = read("channels-slack-app-manifest.json");
+    const inbound = read("channels-slack-app-manifest.inbound.json");
+    expect(inbound.oauth_config.scopes.bot).toEqual([...base.oauth_config.scopes.bot, "channels:history", "groups:history"]);
+    // DMs are not routed yet: no im:history / message.im.
+    expect(inbound.oauth_config.scopes.bot).not.toContain("im:history");
+    expect(inbound.settings.event_subscriptions!.bot_events).toEqual(["message.channels", "message.groups"]);
+    expect(new URL(inbound.settings.event_subscriptions!.request_url).pathname).toBe(SLACK_EVENTS_PATH);
+    expect(base.settings.event_subscriptions).toBeUndefined();
+  });
+});
 
 describe("Slack Events API receiver", () => {
   it("answers the url_verification challenge only with a valid signature", async () => {
