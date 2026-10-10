@@ -158,13 +158,22 @@ export function serviceUrlClaim(claims: Record<string, unknown>): string | undef
 
 export type BotFrameworkVerifyResult =
   | { ok: true; claims: BotFrameworkClaims }
-  | { ok: false; status: 401 | 403 | 503; reason: string };
+  | { ok: false; status: 400 | 401 | 403 | 503; reason: string };
+
+/** What the verifier needs from the activity: its `serviceUrl` and `channelId`. */
+export type BotFrameworkActivityFacts = { serviceUrl: unknown; channelId: unknown };
 
 export type BotFrameworkVerifier = {
+  /**
+   * `activity` may be a function that reads the facts from the request body. The verifier calls it only after the
+   * token's issuer, audience and validity checks passed; it returns undefined for a body that is not an activity.
+   * Until the signature is verified every failure is a 401 (the body is never an oracle); an unreadable activity
+   * with a validly signed token is a 400 `activity_invalid`.
+   */
   verify(input: {
     authorization: string | undefined;
     appId: string;
-    activity: { serviceUrl: unknown; channelId: unknown };
+    activity: BotFrameworkActivityFacts | (() => BotFrameworkActivityFacts | undefined);
   }): Promise<BotFrameworkVerifyResult>;
 };
 
@@ -289,7 +298,7 @@ export function createBotFrameworkVerifier(runtime: ProviderRuntime): BotFramewo
   }
 
   return {
-    async verify({ authorization, appId, activity }) {
+    async verify({ authorization, appId, activity: activitySource }) {
       const match = /^Bearer ([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)$/u.exec(authorization?.trim() ?? "");
       if (!match) return { ok: false, status: 401, reason: "token_missing" };
       const [, headerPart, payloadPart, signaturePart] = match as unknown as [string, string, string, string];
@@ -308,10 +317,12 @@ export function createBotFrameworkVerifier(runtime: ProviderRuntime): BotFramewo
         return { ok: false, status: 401, reason: "token_not_yet_valid" };
       }
       const claimedServiceUrl = serviceUrlClaim(claims);
-      if (claimedServiceUrl === undefined || claimedServiceUrl !== activity.serviceUrl) {
-        return { ok: false, status: 403, reason: "token_service_url" };
-      }
-      const key = await keyFor(header.kid);
+      if (claimedServiceUrl === undefined) return { ok: false, status: 401, reason: "token_service_url" };
+      // The body is read only now, after the token's own claims passed.
+      const activity = typeof activitySource === "function" ? activitySource() : activitySource;
+      if (activity && claimedServiceUrl !== activity.serviceUrl) return { ok: false, status: 401, reason: "token_service_url" };
+      // Without a readable activity the token cannot pass the serviceUrl check, so it never causes a key refresh.
+      const key = activity ? await keyFor(header.kid) : keys.get(header.kid);
       if (key === "unavailable") return { ok: false, status: 503, reason: "signing_keys_unavailable" };
       if (!key) return { ok: false, status: 401, reason: "token_key_unknown" };
       const signature = Buffer.from(signaturePart, "base64url");
@@ -322,6 +333,7 @@ export function createBotFrameworkVerifier(runtime: ProviderRuntime): BotFramewo
         valid = false;
       }
       if (!valid) return { ok: false, status: 401, reason: "token_signature" };
+      if (!activity) return { ok: false, status: 400, reason: "activity_invalid" };
       // The key must be endorsed for the channel the activity claims to come from (docs: 403 otherwise).
       if (activity.channelId !== "msteams" || !key.endorsements.includes("msteams")) {
         return { ok: false, status: 403, reason: "token_endorsement" };

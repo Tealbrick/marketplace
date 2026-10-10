@@ -81,10 +81,10 @@ describe("Bot Framework JWT verification", () => {
     // The lowercase claim wins: a matching camel-case claim does not rescue a wrong lowercase one.
     expect(await verifier.verify({ authorization: token({ ...claims, serviceurl: "https://smba.trafficmanager.net/emea/", serviceUrl: SERVICE_URL }), appId: APP_ID, activity })).toEqual({
       ok: false,
-      status: 403,
+      status: 401,
       reason: "token_service_url",
     });
-    expect(await verifier.verify({ authorization: token(rest), appId: APP_ID, activity })).toEqual({ ok: false, status: 403, reason: "token_service_url" });
+    expect(await verifier.verify({ authorization: token(rest), appId: APP_ID, activity })).toEqual({ ok: false, status: 401, reason: "token_service_url" });
   });
 
   it("rejects missing, malformed, wrong-algorithm, wrong-issuer, wrong-audience and expired tokens", async () => {
@@ -111,13 +111,35 @@ describe("Bot Framework JWT verification", () => {
     expect((await verifier.verify({ authorization: token({ ...claims, exp: nowSeconds - 200 }), appId: APP_ID, activity })).ok).toBe(true);
   });
 
-  it("rejects a serviceUrl claim that differs from the activity (403)", async () => {
+  it("rejects a serviceUrl claim that differs from the activity (401, before the signature is checked)", async () => {
     const { verifier, claims, activity } = setup();
     expect(await verifier.verify({ authorization: token(claims), appId: APP_ID, activity: { ...activity, serviceUrl: "https://smba.trafficmanager.net/emea/" } })).toEqual({
       ok: false,
-      status: 403,
+      status: 401,
       reason: "token_service_url",
     });
+  });
+
+  it("reads the activity lazily, only after issuer, audience and validity pass, and answers 400 only for a validly signed token", async () => {
+    const { verifier, claims, requests } = setup();
+    let reads = 0;
+    const unreadable = () => {
+      reads += 1;
+      return undefined;
+    };
+    // Claim failures never read the body.
+    expect(await verifier.verify({ authorization: token({ ...claims, iss: "x" }), appId: APP_ID, activity: unreadable })).toEqual({ ok: false, status: 401, reason: "token_issuer" });
+    expect(reads).toBe(0);
+    // An unreadable activity with a forged signature, an unknown kid or cold keys: 401, and no key refresh.
+    expect(await verifier.verify({ authorization: token(claims, { key: stranger.privateKey }), appId: APP_ID, activity: unreadable })).toEqual({ ok: false, status: 401, reason: "token_key_unknown" });
+    expect(requests).toEqual([]);
+    expect(await verifier.verify({ authorization: token(claims), appId: APP_ID, activity: { serviceUrl: SERVICE_URL, channelId: "msteams" } })).toMatchObject({ ok: true });
+    expect(await verifier.verify({ authorization: token(claims, { key: stranger.privateKey }), appId: APP_ID, activity: unreadable })).toEqual({ ok: false, status: 401, reason: "token_signature" });
+    expect(await verifier.verify({ authorization: token(claims, { kid: "key-9" }), appId: APP_ID, activity: unreadable })).toEqual({ ok: false, status: 401, reason: "token_key_unknown" });
+    expect(requests).toHaveLength(2);
+    // A valid token with an unreadable activity is the only 400.
+    expect(await verifier.verify({ authorization: token(claims), appId: APP_ID, activity: unreadable })).toEqual({ ok: false, status: 400, reason: "activity_invalid" });
+    expect(reads).toBe(4);
   });
 
   it("rejects a forged signature and an unknown key", async () => {

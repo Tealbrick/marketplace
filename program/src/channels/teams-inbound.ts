@@ -75,78 +75,95 @@ export function registerTeamsInboundRoute(deps: TeamsInboundDeps): void {
   const sourceOf = createSourceResolver(deps.trustedProxies ?? null);
   const take = (source: string) => budget.take(source);
 
-  deps.app.post(
-    TEAMS_MESSAGES_PATH,
-    {
-      bodyLimit: MAX_BODY_BYTES,
-      // Cheap rejects before the body is read or parsed, and without waiting for Marketplace start-up.
-      onRequest: async (request, reply) => {
-        reply.header("cache-control", "no-store");
-        if (!take(sourceOf(request))) {
-          await reply.code(429).header("retry-after", "30").send({ error: "teams_rate_limited" });
-          return reply;
-        }
-        const header = request.headers.authorization;
-        if (typeof header !== "string" || !BEARER_JWT.test(header)) {
-          await reply.code(401).send({ error: "teams_auth_invalid", reason: "token_missing" });
-          return reply;
-        }
-        return undefined;
+  // The body is read as bytes in this route's own scope and parsed only after the bearer is verified, so a
+  // malformed body never gets an answer of its own before authentication.
+  deps.app.register(async (scope) => {
+    scope.removeAllContentTypeParsers();
+    scope.addContentTypeParser("*", { parseAs: "buffer", bodyLimit: MAX_BODY_BYTES }, (_request, body, done) => done(null, body));
+    scope.post(
+      TEAMS_MESSAGES_PATH,
+      {
+        bodyLimit: MAX_BODY_BYTES,
+        // Cheap rejects before the body is read or parsed, and without waiting for Marketplace start-up.
+        onRequest: async (request, reply) => {
+          reply.header("cache-control", "no-store");
+          if (!take(sourceOf(request))) {
+            await reply.code(429).header("retry-after", "30").send({ error: "teams_rate_limited" });
+            return reply;
+          }
+          const header = request.headers.authorization;
+          if (typeof header !== "string" || !BEARER_JWT.test(header)) {
+            await reply.code(401).send({ error: "teams_auth_invalid", reason: "token_missing" });
+            return reply;
+          }
+          return undefined;
+        },
       },
-    },
-    async (request, reply) => {
-      await deps.ready;
-      const identity = deps.identity();
-      if (!identity) return reply.code(503).send({ error: "channels_teams_not_configured" });
-      const activity = asRecord(request.body);
-      if (!activity) return reply.code(400).send({ error: "activity_invalid" });
-      const header = request.headers.authorization;
-      const verified = await deps.verifier.verify({
-        authorization: Array.isArray(header) ? header[0] : header,
-        appId: identity.appId,
-        activity: { serviceUrl: activity.serviceUrl, channelId: activity.channelId },
-      });
-      if (!verified.ok) {
-        // The reason is a fixed code; the token is never echoed or logged.
-        return reply.code(verified.status).send({ error: verified.status === 503 ? "teams_auth_unavailable" : "teams_auth_invalid", reason: verified.reason });
-      }
-      if (!isAllowedServiceUrl(activity.serviceUrl)) return reply.code(403).send({ error: "teams_service_url_not_allowed" });
-
-      // Replay check (after authentication, before any state change): an activity id is required, and one id per
-      // conversation is processed once while its token is valid. A repeat is acknowledged and does nothing.
-      const activityId = typeof activity.id === "string" && ACTIVITY_ID.test(activity.id) ? activity.id : null;
-      if (!activityId) return reply.code(200).send({});
-      const conversationId = String(asRecord(activity.conversation)?.id ?? "").slice(0, 320);
-      const ttlMs = Math.max(TEAMS_ACTIVITY_DEDUPE.minTtlMs, (verified.claims.exp + JWT_CLOCK_SKEW_SECONDS) * 1000 - clock());
-      if (!replays.firstSeen(`${conversationId}\u0000${activityId}`, ttlMs)) return reply.code(200).send({});
-
-      const event = parseTeamsActivity(activity, identity);
-      const now = deps.now();
-      if (event.kind === "install") {
-        deps.store.upsert(deps.organizationId, event.ref, now);
-        deps.audit("marketplace.channels.teams.installed", {
-          conversationType: event.ref.type,
-          membership: event.ref.membership,
-          ...(event.ref.teamId ? { teamId: event.ref.teamId } : {}),
-          conversationId: event.ref.conversationId,
+      async (request, reply) => {
+        await deps.ready;
+        const identity = deps.identity();
+        if (!identity) return reply.code(503).send({ error: "channels_teams_not_configured" });
+        const body: { activity?: Record<string, unknown> } = {};
+        const readActivity = () => {
+          try {
+            body.activity = Buffer.isBuffer(request.body) ? asRecord(JSON.parse(request.body.toString("utf8"))) : undefined;
+          } catch {
+            body.activity = undefined;
+          }
+          return body.activity ? { serviceUrl: body.activity.serviceUrl, channelId: body.activity.channelId } : undefined;
+        };
+        const header = request.headers.authorization;
+        const verified = await deps.verifier.verify({
+          authorization: Array.isArray(header) ? header[0] : header,
+          appId: identity.appId,
+          activity: readActivity,
         });
-      } else if (event.kind === "uninstall") {
-        const removed = deps.store.markRemoved(deps.organizationId, event, now);
-        if (removed > 0) {
-          deps.audit("marketplace.channels.teams.removed", {
-            removed,
-            ...(event.teamId ? { teamId: event.teamId } : {}),
-            ...(event.conversationId ? { conversationId: event.conversationId } : {}),
+        if (!verified.ok) {
+          // The reason is a fixed code; the token is never echoed or logged.
+          if (verified.status === 400) return reply.code(400).send({ error: "activity_invalid" });
+          return reply.code(verified.status).send({ error: verified.status === 503 ? "teams_auth_unavailable" : "teams_auth_invalid", reason: verified.reason });
+        }
+        if (!body.activity) readActivity();
+        const activity = body.activity;
+        if (!activity) return reply.code(400).send({ error: "activity_invalid" });
+        if (!isAllowedServiceUrl(activity.serviceUrl)) return reply.code(403).send({ error: "teams_service_url_not_allowed" });
+
+        // Replay check (after authentication, before any state change): an activity id is required, and one id per
+        // conversation is processed once while its token is valid. A repeat is acknowledged and does nothing.
+        const activityId = typeof activity.id === "string" && ACTIVITY_ID.test(activity.id) ? activity.id : null;
+        if (!activityId) return reply.code(200).send({});
+        const conversationId = String(asRecord(activity.conversation)?.id ?? "").slice(0, 320);
+        const ttlMs = Math.max(TEAMS_ACTIVITY_DEDUPE.minTtlMs, (verified.claims.exp + JWT_CLOCK_SKEW_SECONDS) * 1000 - clock());
+        if (!replays.firstSeen(`${conversationId}\u0000${activityId}`, ttlMs)) return reply.code(200).send({});
+
+        const event = parseTeamsActivity(activity, identity);
+        const now = deps.now();
+        if (event.kind === "install") {
+          deps.store.upsert(deps.organizationId, event.ref, now);
+          deps.audit("marketplace.channels.teams.installed", {
+            conversationType: event.ref.type,
+            membership: event.ref.membership,
+            ...(event.ref.teamId ? { teamId: event.ref.teamId } : {}),
+            conversationId: event.ref.conversationId,
           });
+        } else if (event.kind === "uninstall") {
+          const removed = deps.store.markRemoved(deps.organizationId, event, now);
+          if (removed > 0) {
+            deps.audit("marketplace.channels.teams.removed", {
+              removed,
+              ...(event.teamId ? { teamId: event.teamId } : {}),
+              ...(event.conversationId ? { conversationId: event.conversationId } : {}),
+            });
+          }
+        } else if (event.kind === "message" && deps.onMessage) {
+          try {
+            deps.onMessage(event.message);
+          } catch {
+            // The pipeline never blocks the acknowledgement; Bot Framework would only retry the same activity.
+          }
         }
-      } else if (event.kind === "message" && deps.onMessage) {
-        try {
-          deps.onMessage(event.message);
-        } catch {
-          // The pipeline never blocks the acknowledgement; Bot Framework would only retry the same activity.
-        }
-      }
-      return reply.code(200).send({});
-    },
-  );
+        return reply.code(200).send({});
+      },
+    );
+  });
 }

@@ -71,6 +71,29 @@ describe("Teams messaging endpoint pre-auth", () => {
     expect(verifiedCount()).toBe(0);
   });
 
+  it("answers 401, never 400, for a malformed body with a missing, invalid or unverifiable token, and 400 only after a valid token", async () => {
+    const { app } = await route();
+    const send = (authorization: string | undefined, payload: string, contentType = "application/json") =>
+      app.inject({ method: "POST", url: TEAMS_MESSAGES_PATH, headers: { "content-type": contentType, ...(authorization ? { authorization } : {}) }, payload });
+    const invalid = "Bearer eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJmYWtlIn0.aW52YWxpZC1zaWduYXR1cmU";
+    for (const payload of ["{ this is not json", "[1,2]", "null", '"text"', "", "{}"]) {
+      for (const authorization of [undefined, "Bearer a.b.c", invalid]) {
+        const response = await send(authorization, payload);
+        expect(response.statusCode, `${payload} / ${authorization}`).toBe(401);
+        expect(response.json()).toMatchObject({ error: "teams_auth_invalid" });
+      }
+    }
+    // Another content type does not open a 415 or 400 oracle either.
+    expect((await send(invalid, "{ nope", "text/plain")).statusCode).toBe(401);
+    // A valid token with an unreadable body: 400.
+    for (const payload of ["{ this is not json", "[1,2]", "null"]) {
+      const response = await send(GOOD, payload);
+      expect(response.statusCode, payload).toBe(400);
+      expect(response.json()).toEqual({ error: "activity_invalid" });
+    }
+    expect((await send(GOOD, JSON.stringify(activity))).statusCode).toBe(200);
+  });
+
   it("refuses a body over 128 KB", async () => {
     const { app } = await route();
     const response = await app.inject({
