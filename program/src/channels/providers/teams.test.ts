@@ -664,11 +664,13 @@ describe("teams discovery titles and the wired filter", () => {
     });
   });
 
-  it("exposes no edit, delete, mentions or DM to agents until their operations ship; inbound and replies are wired", () => {
+  it("exposes edit, delete and mentions (routes v2), DMs only with Graph, and never reactions; inbound and replies are wired", () => {
     const effective = wiredCapabilities(createTeamsProvider({ graphEnabled: true }).capabilities);
-    for (const feature of ["edit", "delete", "mentions.users", "dm"]) expect(capabilitySupports(effective, feature), feature).toBe(false);
-    for (const feature of ["inbound", "thread.replies"]) expect(capabilitySupports(effective, feature), feature).toBe(true);
-    expect(effective.edit).toEqual({ own: false });
-    expect(effective.dm).toEqual({ open: false, maxMembers: 0 });
+    for (const feature of ["edit", "delete", "mentions.users", "dm", "inbound", "thread.replies"]) expect(capabilitySupports(effective, feature), feature).toBe(true);
+    for (const feature of ["reactions.add", "reactions.remove", "poll"]) expect(capabilitySupports(effective, feature), feature).toBe(false);
+    expect(effective.edit).toEqual({ own: true });
+    expect(effective.dm).toEqual({ open: true, maxMembers: 1 });
+    // Without the Graph flag the adapter declares no DMs, so none are offered.
+    expect(wiredCapabilities(createTeamsProvider({ graphEnabled: false }).capabilities).dm).toEqual({ open: false, maxMembers: 0 });
   });
 });

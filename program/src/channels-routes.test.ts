@@ -97,16 +97,17 @@ describe("channels: post with a standing grant (§10 item 1)", () => {
         text: { maxChars: 4096 },
         voice: { native: true, types: ["audio/ogg"] },
         video: false,
-        // Telegram declares reactions, edit, delete, polls and markdown-v2, but no agent operation uses them yet:
-        // the wired filter keeps them out. Replies are wired (marketplace.channels.reply), and so is inbound.
+        // Telegram's reactions, edit, delete (48 h window), polls and markdown-v2 are wired (routes v2); it declares
+        // no named mentions and no DMs. Replies are wired (marketplace.channels.reply), and so is inbound.
         markup: "plain",
+        markupOptions: ["markdown-v2"],
         mentions: { users: false, broadcast: "suppressed" },
         dm: { open: false, maxMembers: 0 },
         thread: { replies: true, topics: true, forum: false },
-        reactions: { add: false, remove: false, custom: false },
-        edit: { own: false },
-        delete: { own: false },
-        poll: false,
+        reactions: { add: true, remove: true, custom: false },
+        edit: { own: true },
+        delete: { own: true, windowSeconds: 48 * 3600 },
+        poll: { questionMaxChars: 300, minOptions: 2, maxOptions: 12, optionMaxChars: 100, multiple: true },
         canvas: false,
         presence: { typing: false, status: false },
         ephemeral: false,
@@ -114,7 +115,6 @@ describe("channels: post with a standing grant (§10 item 1)", () => {
         inbound: { mode: "webhook", dedupe: true },
       },
     });
-    expect(channels[0]!.capabilities).not.toHaveProperty("markupOptions");
     expect(list.body).not.toContain("-1001234");
     const foreign = await f.agent("GET", `/api/marketplace/v1/agent/channels/${other.id}`);
     const unknown = await f.agent("GET", "/api/marketplace/v1/agent/channels/chn_unknown");
@@ -127,29 +127,37 @@ describe("channels: post with a standing grant (§10 item 1)", () => {
 
   it("never exposes a declared feature that no agent operation uses (wired filter)", async () => {
     const f = await setup();
-    // The adapter declares reactions, edit, delete, DMs, mentions and inbound, but no route performs them.
+    // The adapter declares canvas, presence, live voice, forum posts, buttons and events: no route performs them.
     const provider = f.telegram.provider as { capabilities: ChannelCapabilities };
     provider.capabilities = {
       ...provider.capabilities,
-      reactions: { add: true, remove: true, custom: true },
-      edit: { own: true, windowSeconds: 900 },
-      delete: { own: true },
-      dm: { open: true, maxMembers: 8 },
-      mentions: { users: true, broadcast: "suppressed" },
+      canvas: true,
+      presence: { typing: true, status: true },
+      live: { join: true, listen: true, speak: true, transcript: true, maxSessionMinutes: 60 },
+      thread: { replies: true, topics: true, forum: true },
+      buttons: { url: true, callback: true },
+      events: { create: true },
+      schedule: { native: true },
       inbound: { mode: "webhook", dedupe: true },
     };
     const channel = await f.createChannel({ slug: "community" });
     f.consentFor("agent-1", channel);
     const hidden = {
-      reactions: { add: false, remove: false, custom: false },
-      edit: { own: false },
-      delete: { own: false },
-      dm: { open: false, maxMembers: 0 },
-      mentions: { users: false, broadcast: "suppressed" },
+      canvas: false,
+      presence: { typing: false, status: false },
+      live: false,
+      schedule: { native: false },
     };
     const list = await f.agent("GET", "/api/marketplace/v1/agent/channels");
-    // Inbound and reply to source are wired (marketplace.channels.inbound / .reply).
-    expect(list.json().channels[0].capabilities).toMatchObject({ ...hidden, inbound: { mode: "webhook", dedupe: true }, thread: { topics: true, replies: true }, voice: { native: true } });
+    // Inbound, reply to source and the routes v2 operations are wired.
+    expect(list.json().channels[0].capabilities).toMatchObject({
+      ...hidden,
+      inbound: { mode: "webhook", dedupe: true },
+      thread: { topics: true, replies: true, forum: false },
+      voice: { native: true },
+      reactions: { add: true, remove: true },
+      edit: { own: true },
+    });
     const one = await f.agent("GET", `/api/marketplace/v1/agent/channels/${channel.id}`);
     expect(one.json().channel.capabilities).toMatchObject(hidden);
     const browse = await f.owner("GET", "/api/marketplace/channels");

@@ -69,15 +69,15 @@ describe("channels: Slack provider through the runtime", () => {
       connections: { slack: { state: "connected", botUsername: "marketplace", credentialRef: "provider-env:MARKETPLACE_CHANNELS_SLACK_BOT_TOKEN" } },
     });
     const slackEntry = (browse.json().providers as Array<{ id: string; kinds?: string[]; capabilities?: Record<string, unknown> }>).find((entry) => entry.id === "slack");
-    // Only wired features: the adapter declares DM, reactions, edit, delete, mentions and native schedule, but no
-    // agent operation performs them yet, so the answer shows them as not available.
+    // Only wired features: DM, reactions, edit, delete and mentions are wired (routes v2); native schedule is
+    // declared by the adapter but no agent operation performs it, so the answer shows it as not available.
     const hidden = {
       markup: "mrkdwn",
-      mentions: { users: false, broadcast: "suppressed" },
-      dm: { open: false, maxMembers: 0 },
-      reactions: { add: false, remove: false, custom: false },
-      edit: { own: false },
-      delete: { own: false },
+      mentions: { users: true, broadcast: "suppressed" },
+      dm: { open: true, maxMembers: 1 },
+      reactions: { add: true, remove: true, custom: true },
+      edit: { own: true },
+      delete: { own: true },
       // Reply to source (marketplace.channels.reply) and inbound are wired.
       thread: { replies: true, topics: false, forum: false },
       inbound: { mode: "webhook", dedupe: true },

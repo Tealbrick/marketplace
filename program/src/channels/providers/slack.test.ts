@@ -837,10 +837,13 @@ describe("slack inbound: team binding, event_id dedupe and the full check", () =
 });
 
 describe("slack capabilities exposed to agents (wired filter)", () => {
-  it("hides DM, reactions, edit, delete, mentions and native schedule until their operations ship; inbound and replies are wired", () => {
+  it("shows DM, reactions, edit, delete and mentions (routes v2); hides native schedule; inbound and replies are wired", () => {
     const effective = wiredCapabilities(createSlackProvider().capabilities);
-    for (const feature of ["inbound", "thread.replies"]) expect(capabilitySupports(effective, feature), feature).toBe(true);
-    for (const feature of ["dm", "reactions.add", "reactions.remove", "reactions.custom", "edit", "delete", "mentions.users", "schedule.native"]) {
+    for (const feature of ["inbound", "thread.replies", "dm", "reactions.add", "reactions.remove", "reactions.custom", "edit", "delete", "mentions.users"]) {
+      expect(AGENT_WIRED_FEATURES.has(feature as never), feature).toBe(true);
+      expect(capabilitySupports(effective, feature), feature).toBe(true);
+    }
+    for (const feature of ["schedule.native", "presence.typing"]) {
       expect(AGENT_WIRED_FEATURES.has(feature as never), feature).toBe(false);
       expect(capabilitySupports(effective, feature), feature).toBe(false);
     }
