@@ -1,7 +1,7 @@
 import type { FastifyRequest } from "fastify";
 import { describe, expect, it } from "vitest";
 
-import { createSourceBudget, createSourceResolver, parseTrustedProxies } from "./inbound-http.js";
+import { createSourceBudget, createSourceResolver, parseTrustedProxies, trustedProxiesWarning } from "./inbound-http.js";
 
 const request = (remoteAddress: string, forwarded?: string) =>
   ({ socket: { remoteAddress }, raw: { socket: { remoteAddress } }, headers: forwarded === undefined ? {} : { "x-forwarded-for": forwarded } }) as unknown as FastifyRequest;
@@ -59,5 +59,20 @@ describe("inbound source resolution (review F2)", () => {
     expect(budget.take("b")).toBe(false);
     expect(budget.take("d")).toBe(false);
     now += 1;
+  });
+});
+
+describe("trusted proxies startup warning", () => {
+  const none = { slack: false, telegram: false, teams: false };
+
+  it("warns, naming the receivers and the variable only, when a receiver is configured and no proxy is trusted", () => {
+    const warning = trustedProxiesWarning(parseTrustedProxies(undefined), { slack: true, telegram: false, teams: true });
+    expect(warning).toMatchObject({ event: "marketplace.channels.inbound_trusted_proxies_unset", receivers: ["slack", "teams"], env: "MARKETPLACE_TRUSTED_PROXIES" });
+    expect(trustedProxiesWarning(parseTrustedProxies("not-an-ip"), { ...none, telegram: true })?.receivers).toEqual(["telegram"]);
+  });
+
+  it("stays quiet with trusted proxies or without any configured receiver", () => {
+    expect(trustedProxiesWarning(parseTrustedProxies("100.64.0.0/10"), { slack: true, telegram: true, teams: true })).toBeNull();
+    expect(trustedProxiesWarning(null, none)).toBeNull();
   });
 });

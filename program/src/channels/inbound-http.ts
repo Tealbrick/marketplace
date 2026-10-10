@@ -37,6 +37,27 @@ export function parseTrustedProxies(value: string | null | undefined): BlockList
   return count > 0 ? list : null;
 }
 
+/** Which public inbound receivers are configured (booleans only; never a secret). */
+export type InboundReceivers = { slack: boolean; telegram: boolean; teams: boolean };
+
+/**
+ * The startup warning for a receiver without trusted proxies, or null. Behind a reverse proxy (Railway's edge)
+ * every request arrives from the proxy's socket address, so without `MARKETPLACE_TRUSTED_PROXIES` all senders
+ * share one pre-auth budget per route and an anonymous flood can starve real deliveries. Names the receivers
+ * and the variable only (structured, no secrets).
+ */
+export function trustedProxiesWarning(trusted: BlockList | null, receivers: InboundReceivers): { event: string; receivers: string[]; env: string; detail: string } | null {
+  if (trusted) return null;
+  const configured = (Object.keys(receivers) as Array<keyof InboundReceivers>).filter((name) => receivers[name]);
+  if (configured.length === 0) return null;
+  return {
+    event: "marketplace.channels.inbound_trusted_proxies_unset",
+    receivers: configured,
+    env: TRUSTED_PROXIES_ENV,
+    detail: `${TRUSTED_PROXIES_ENV} is unset or has no valid entry: behind a reverse proxy all senders share one pre-auth request budget per inbound route. Set it to the proxy address range.`,
+  };
+}
+
 const isTrusted = (trusted: BlockList | null, address: string) => {
   if (!trusted) return false;
   const plain = unmap(address);
