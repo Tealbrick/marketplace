@@ -5,7 +5,7 @@ import { Button, Tag } from "@tealbrick/ui";
 
 import type { ConfirmState } from "./Catalog";
 import { cancelChannelPost, exportChannelReceipts, listChannelPosts, purgeChannelReceipts, resolveChannelPost } from "./channels-api";
-import { digestPrefix, providerLabel, RECEIPT_STATUS_LABEL, receiptTone, safeHttpsUrl } from "./channels-model";
+import { actionTitle, digestPrefix, providerLabel, RECEIPT_STATUS_LABEL, receiptTone, safeHttpsUrl } from "./channels-model";
 import { DestinationTitle } from "./ChannelForms";
 import { UNCERTAIN_RESOLVE_HINT } from "./copy";
 import type { ChannelPostSummary, ChannelReceipt, ChannelReceiptExport, ChannelView, UncertainChannelPost } from "./types";
@@ -81,7 +81,7 @@ function WaitingPostRow({ post, channel, onConfirm, onNotice }: { post: ChannelP
     <div>
       <div className="receipt-row__head">
         <Tag tone={held ? "warning" : "accent"}>{held ? "Waiting for approval" : "Scheduled"}</Tag>
-        <strong>{label}</strong>
+        <strong>{post.action ? actionTitle(post.action, label) : label}</strong>
         <span className="muted-detail">{providerLabel(post.channel?.provider ?? channel?.provider ?? "")}</span>
       </div>
       <p>{post.mode === "scheduled" ? `Sends ${formatWhen(post.sendAt)}` : "Sends when approved"} · from <code>{post.agentId}</code> · digest <code>{post.digestPrefix}</code>{post.attachments ? ` · ${post.attachments} ${post.attachments === 1 ? "attachment" : "attachments"}` : ""}{post.authority ? <> · <code>{post.authority}</code></> : null}</p>

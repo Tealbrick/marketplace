@@ -602,6 +602,85 @@ function buzzView(overrides: Partial<BuzzIdentityView> = {}): BuzzIdentityView {
   };
 }
 
+describe("Routes v2 owner views", () => {
+  const held = (action: NonNullable<CompanyBoxApproval["channel"]>["action"], id: string): CompanyBoxApproval => ({
+    id,
+    pluginId: "channels-slack",
+    app: "channels-slack",
+    actionKey: `channel.${action?.op ?? "post"}`,
+    operation: { title: "channel", method: null, path: null },
+    capability: "connector.dispatch",
+    agentId: "agent-henry",
+    argumentsPreview: "{}",
+    state: "pending",
+    createdAt: "2026-10-09T10:00:00.000Z",
+    expiresAt: "2026-10-16T10:00:00.000Z",
+    decidedAt: null,
+    decidedBy: null,
+    error: null,
+    channel: { channelId: "ch-1", label: "Eng", provider: "slack", postId: `post-${id}`, postStatus: "held", mode: "immediate", sendAt: null, digest: DIGEST, digestPrefix: DIGEST.slice(0, 12), action },
+  });
+
+  it("renders reactions with the emoji and target excerpt, edits with the old and new text, and DMs with the person", async () => {
+    const reaction = held({ op: "react", emoji: "tada", remove: false, targetMessageId: "1800.0001", targetExcerpt: "Meetup on <b>Friday</b>" }, "a-react");
+    const edit = held({ op: "edit", targetMessageId: "1800.0001", targetExcerpt: "Meetup on Friday" }, "a-edit");
+    const dm = held({ op: "dm", person: { personRef: "prs_1", displayName: "Alice Example", approved: false } }, "a-dm");
+    const payload = (text: string) => ({ ok: true, approval: reaction, arguments: {}, payloadView: { digest: DIGEST, matchesHeldDigest: true, text, canonical: "{}", files: [], fallbacks: [] } });
+    mockApi({
+      "GET /api/marketplace/channels": () => browse({ channels: [channel({ provider: "slack", label: "Eng" })] }),
+      "GET /api/marketplace/company-box/approvals": () => ({ ok: true, workspaceSlug: "ws", pendingCount: 3, approvals: [reaction, edit, dm] }),
+      "GET /api/marketplace/company-box/approvals/a-react": () => payload(""),
+      "GET /api/marketplace/company-box/approvals/a-edit": () => payload("Meetup on Saturday"),
+      "GET /api/marketplace/company-box/approvals/a-dm": () => payload("Welcome!"),
+    });
+    renderWithClient(createElement(ApprovalsPanel, { onNotice: () => undefined, only: "channel" }));
+    const react = await screen.findByLabelText("React in Eng");
+    expect(within(react).getByText("tada")).toBeTruthy();
+    expect(within(react).getByText("Meetup on <b>Friday</b>")).toBeTruthy();
+    expect(document.querySelector("b")).toBeNull();
+    const editing = await screen.findByLabelText("Edit a message in Eng");
+    await waitFor(() => expect(within(editing).getByText("Meetup on Saturday")).toBeTruthy());
+    expect(within(editing).getByText("Meetup on Friday")).toBeTruthy();
+    expect(within(editing).getByText(/New text/u)).toBeTruthy();
+    const direct = await screen.findByLabelText("Direct message to Alice Example");
+    expect(within(direct).getByText("Alice Example")).toBeTruthy();
+    expect(within(direct).getByText(/first message/u)).toBeTruthy();
+  });
+
+  it("sets the people policy of a DM-capable connection and revokes an approved person", async () => {
+    const slackCaps = { ...TELEGRAM_CAPS, markup: "mrkdwn", dm: { open: true, maxMembers: 1 } };
+    const base = browse();
+    const answer = browse({
+      providers: [...base.providers, { id: "slack", readiness: "available", capabilities: slackCaps, kinds: ["chat"] }],
+      readiness: { ...base.readiness, slack: "available" },
+      connections: { ...base.connections, slack: { connectionId: "conn-slack", state: "connected", botUsername: "marketplace", verifiedAt: null, peoplePolicy: { mode: "none", people: [], domains: [], updatedBy: null, updatedAt: null } } },
+    });
+    const person = { personRef: "prs_1", provider: "slack", displayName: "Alice Example", platformUserId: "U0ALICE", lookup: { kind: "email", value: "alice@example.com" }, approved: true, approvedAt: "2026-10-09T10:00:00.000Z", approvedPostId: "post-1", revokedAt: null, updatedAt: "2026-10-09T10:00:00.000Z" };
+    let saved: unknown = null;
+    const fetchMock = mockApi({
+      "GET /api/marketplace/channels": () => answer,
+      "GET /api/marketplace/channels/connections/conn-slack/people": () => ({ ok: true, connectionId: "conn-slack", provider: "slack", policy: answer.connections.slack!.peoplePolicy, people: [person] }),
+      "PUT /api/marketplace/channels/connections/conn-slack/people-policy": (init) => {
+        saved = JSON.parse(String(init?.body));
+        return { ok: true, connectionId: "conn-slack", provider: "slack", policy: { mode: "allowlist", people: ["alice@example.com"], domains: ["example.com"], updatedBy: "operator-1", updatedAt: "2026-10-10T00:00:00.000Z" } };
+      },
+      "POST /api/marketplace/channels/connections/conn-slack/people/prs_1/revoke": () => ({ ok: true, person: { ...person, approved: false, revokedAt: "2026-10-10T00:00:00.000Z" } }),
+    });
+    renderPage();
+    const panel = await screen.findByLabelText("Slack people");
+    // Telegram declares no DMs: no people panel for it.
+    expect(screen.queryByLabelText("Telegram people")).toBeNull();
+    fireEvent.click(within(panel).getByLabelText(/Only listed people/u));
+    fireEvent.change(within(panel).getByLabelText(/Emails or handles/u), { target: { value: "Alice@Example.com" } });
+    fireEvent.change(within(panel).getByLabelText(/Email domains/u), { target: { value: "example.com" } });
+    fireEvent.click(within(panel).getByRole("button", { name: /Save/u }));
+    await waitFor(() => expect(saved).toEqual({ mode: "allowlist", people: ["Alice@Example.com"], domains: ["example.com"] }));
+    expect(await within(panel).findByText("Alice Example")).toBeTruthy();
+    fireEvent.click(within(panel).getByRole("button", { name: "Revoke Alice Example" }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/people/prs_1/revoke") && init?.method === "POST")).toBe(true));
+  });
+});
+
 describe("Buzz identity", () => {
   it("summarises the NIP-OA tag state and spots a pasted secret key", () => {
     expect(buzzTagSummary(buzzView({ key: { present: false, npub: null, pubkeyHex: null, createdAt: null } }))).toEqual({ text: "No agent key yet", tone: "warning" });

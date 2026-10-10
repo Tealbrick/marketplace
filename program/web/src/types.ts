@@ -588,7 +588,10 @@ export interface ChannelEffectiveCapabilities {
 
 export interface GrantCaps { perDay: number; perHour?: number; minIntervalSeconds: number; onePerPhase: boolean }
 export type GrantFileScope = false | { types?: string[]; maxBytes?: number; maxCount?: number };
-export interface GrantScope {
+/** Optional grant scope flags: absent or false = not covered (the operation waits for the owner). */
+export type GrantScopeFlag = "replies" | "reactions" | "edits" | "deletes" | "polls" | "dms";
+
+export interface GrantScope extends Partial<Record<GrantScopeFlag, boolean>> {
   phases?: GrantPhase[];
   campaignRefs?: string[];
   files: GrantFileScope;
@@ -654,6 +657,48 @@ export interface ChannelConnectionView {
   state: string;
   botUsername: string | null;
   verifiedAt: string | null;
+  /** Routes v2: who agents may send direct messages to on this connection. */
+  peoplePolicy?: PeoplePolicyView;
+}
+
+export type PeoplePolicyMode = "none" | "allowlist" | "workspace";
+
+export interface PeoplePolicyView {
+  mode: PeoplePolicyMode;
+  /** Exact emails or handles (lowercase). */
+  people: string[];
+  /** Email domains. */
+  domains: string[];
+  updatedBy: string | null;
+  updatedAt: string | null;
+}
+
+/** A person an agent found on a connection (owner view only). */
+export interface ChannelPersonView {
+  personRef: string;
+  provider: string;
+  displayName: string;
+  platformUserId: string;
+  lookup: { kind: "email" | "handle"; value: string };
+  approved: boolean;
+  approvedAt: string | null;
+  approvedPostId: string | null;
+  revokedAt: string | null;
+  updatedAt: string;
+}
+
+/** What a routes v2 post does (owner views): a reaction, edit, delete, DM, poll, or a post with mentions or markup. */
+export interface ChannelActionView {
+  op: "post" | "poll" | "react" | "edit" | "delete" | "dm";
+  mentions?: string[];
+  markup?: string;
+  poll?: { question: string; options: string[] };
+  targetMessageId?: string;
+  /** The first 200 characters of the target message (from its kept receipt), or null when it is gone. */
+  targetExcerpt?: string | null;
+  emoji?: string;
+  remove?: boolean;
+  person?: { personRef: string; displayName: string; approved: boolean } | null;
 }
 
 export interface UncertainChannelPost {
@@ -677,6 +722,8 @@ export interface ChannelProviderCapabilities {
   audio: ChannelMediaDeclaration | false;
   voice: (ChannelMediaDeclaration & ({ native: true; maxSeconds?: number } | { fallback: string })) | false;
   video: ChannelMediaDeclaration | false;
+  /** v2: direct messages (the people panel shows for providers that offer them). */
+  dm?: { open: boolean; maxMembers: number };
 }
 
 export interface ChannelProviderEntry {
@@ -764,6 +811,7 @@ export interface ChannelPostSummary {
   reason: string | null;
   attachments: number;
   approval?: { id: string; state: string; expiresAt: string };
+  action?: ChannelActionView;
   createdAt: string;
 }
 
@@ -829,6 +877,8 @@ export interface ChannelApprovalSummary {
   sendAt: string | null;
   digest: string;
   digestPrefix: string;
+  /** Routes v2: the operation kind with its emoji, target excerpt or person. Null for a plain post. */
+  action?: ChannelActionView | null;
 }
 
 /** The exact payload the digest covers, on the owner detail view of a channel hold. */
@@ -840,5 +890,7 @@ export type ChannelPayloadView =
       canonical: string;
       files: Array<{ name: string; sha256: string; contentType: string; kind: string; bytes: number }>;
       fallbacks: string[];
+      op?: string;
+      action?: ChannelActionView | null;
     }
   | { error: string };

@@ -12,6 +12,7 @@ import { GrantInbox } from "./ChannelGrants";
 import { ReceiptsSection, ReceiptSummary, UncertainPosts, WaitingPosts } from "./ChannelPosts";
 import { ApprovalsPanel } from "./CompanyBox";
 import { BuzzIdentityPanel } from "./BuzzIdentity";
+import { PeoplePanels } from "./ChannelPeople";
 import { CHANNEL_TOKEN_HINT, SLACK_SETUP_STEPS, TEAMS_SETUP_STEPS } from "./copy";
 import type { AgentGrantRequestResponse, ChannelProviderEntry, ChannelProviderId, ChannelReadiness, ChannelsBrowseAnswer, ChannelStatus, ChannelView } from "./types";
 import { formatWhen, InlineError, StatePanel } from "./ui";
@@ -256,6 +257,7 @@ export function ChannelsPage({ workspaceSlug }: { workspaceSlug: string }) {
     <UncertainPosts posts={data.uncertainPosts} channels={channels} onNotice={announce} />
     <WaitingPosts channels={channels} onConfirm={setConfirm} onNotice={announce} />
     <GrantInbox channels={channels} onNotice={announce} />
+    <PeoplePanels browse={data} onNotice={announce} />
     <section className="channel-section" aria-labelledby="channel-list-heading">
       <div className="section-heading"><div><p className="eyebrow">Destinations</p><h2 id="channel-list-heading">Your channels</h2></div>{!creating && <Button size="small" tone="primary" disabled={!anyReady} title={anyReady ? undefined : "Add a bot token in Teal Brick Portal first"} onClick={() => setCreating(true)}><Plus size={14} />Add channel</Button>}</div>
       {creating && <CreateChannelPanel browse={data} onCancel={() => setCreating(false)} onCreated={(channel) => { setCreating(false); setSelectedId(channel.id); announce(`Created ${channel.label}.`); }} />}

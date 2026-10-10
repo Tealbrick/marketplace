@@ -10,8 +10,11 @@ import type {
   ChannelPostStatus,
   ChannelPostSummary,
   ChannelsBrowseAnswer,
+  ChannelPersonView,
   ChannelView,
   GrantTerms,
+  PeoplePolicyMode,
+  PeoplePolicyView,
   StandingGrantView,
 } from "./types";
 
@@ -103,3 +106,17 @@ export const updateBuzzIdentity = (input: { relayUrl?: string; authTag?: string 
   api<BuzzIdentityResponse>(BUZZ_IDENTITY, { method: "PUT", body: JSON.stringify(input) });
 
 export const revokeBuzzTag = () => api<BuzzIdentityResponse>(`${BUZZ_IDENTITY}/auth-tag`, { method: "DELETE" });
+
+// ----- People policy and approved people (routes v2). Per connection; agents never see these lists.
+const connectionRoute = (connectionId: string, suffix: string) => `${ROOT}/connections/${encodeURIComponent(connectionId)}${suffix}`;
+
+export type PeoplePolicyAnswer = { ok: true; connectionId: string; provider: ChannelProviderId; policy: PeoplePolicyView };
+
+export const updatePeoplePolicy = (connectionId: string, input: { mode: PeoplePolicyMode; people?: string[]; domains?: string[] }) =>
+  api<PeoplePolicyAnswer>(connectionRoute(connectionId, "/people-policy"), { method: "PUT", body: JSON.stringify(input) });
+
+export const listChannelPeople = (connectionId: string) =>
+  api<PeoplePolicyAnswer & { people: ChannelPersonView[] }>(connectionRoute(connectionId, "/people"));
+
+export const revokeChannelPerson = (connectionId: string, personRef: string) =>
+  api<{ ok: true; person: ChannelPersonView; replayed?: boolean }>(connectionRoute(connectionId, `/people/${encodeURIComponent(personRef)}/revoke`), { method: "POST", body: JSON.stringify({}) });

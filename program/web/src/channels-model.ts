@@ -1,5 +1,6 @@
 import type {
   BuzzIdentityView,
+  ChannelActionView,
   ChannelEffectiveCapabilities,
   ChannelPolicy,
   ChannelPolicyInput,
@@ -8,6 +9,7 @@ import type {
   ChannelProviderId,
   ChannelReceiptStatus,
   GrantPhase,
+  GrantScopeFlag,
   GrantTerms,
   StandingGrantView,
 } from "./types";
@@ -323,6 +325,12 @@ export const GRANT_FIELD_LABEL: Record<string, string> = {
   "scope.immediate": "Immediate posts",
   "scope.scheduled": "Scheduled posts",
   "scope.mode": "Post modes",
+  "scope.replies": "Replies",
+  "scope.reactions": "Reactions",
+  "scope.edits": "Edits",
+  "scope.deletes": "Deletes",
+  "scope.polls": "Polls",
+  "scope.dms": "Direct messages",
   expires: "Expiry",
   notBefore: "Start",
   standingGrants: "Standing grants",
@@ -375,6 +383,9 @@ export function wideningFields(current: GrantTerms, proposed: GrantTerms): strin
       if (s.files.maxCount !== undefined && (t.files.maxCount === undefined || t.files.maxCount > s.files.maxCount)) fields.push("scope.files.maxCount");
     }
   }
+  for (const [flag] of GRANT_SCOPE_FLAGS) {
+    if (t[flag] === true && s[flag] !== true) fields.push(`scope.${flag}`);
+  }
   if (t.immediate && !s.immediate) fields.push("scope.immediate");
   if (t.scheduled && !s.scheduled) fields.push("scope.scheduled");
   if (!t.immediate && !t.scheduled) fields.push("scope.mode");
@@ -394,6 +405,39 @@ export function grantTerms(grant: StandingGrantView): GrantTerms {
 }
 
 /** Exactly the keys the server's strict grant terms schema accepts. */
+/** The optional grant flags, in display order, with their owner labels. */
+export const GRANT_SCOPE_FLAGS: ReadonlyArray<readonly [GrantScopeFlag, string]> = [
+  ["replies", "Replies to received messages"],
+  ["reactions", "Reactions"],
+  ["edits", "Edits of its own messages"],
+  ["deletes", "Deletes of its own messages"],
+  ["polls", "Polls"],
+  ["dms", "Direct messages to approved people"],
+];
+
+/** The flags a grant covers (true only). */
+export function grantFlags(scope: GrantTerms["scope"]): GrantScopeFlag[] {
+  return GRANT_SCOPE_FLAGS.map(([flag]) => flag).filter((flag) => scope[flag] === true);
+}
+
+/** A short owner label for a routes v2 operation. */
+export function actionTitle(action: ChannelActionView | null | undefined, label: string): string {
+  switch (action?.op) {
+    case "react":
+      return action.remove ? `Remove a reaction in ${label}` : `React in ${label}`;
+    case "edit":
+      return `Edit a message in ${label}`;
+    case "delete":
+      return `Delete a message in ${label}`;
+    case "dm":
+      return `Direct message to ${action.person?.displayName ?? "a person"}`;
+    case "poll":
+      return `Poll in ${label}`;
+    default:
+      return `Post to ${label}`;
+  }
+}
+
 export function cleanTerms(terms: GrantTerms): GrantTerms {
   const { caps, scope } = terms;
   return {
@@ -411,6 +455,7 @@ export function cleanTerms(terms: GrantTerms): GrantTerms {
       ...(scope.maxChars !== undefined ? { maxChars: scope.maxChars } : {}),
       immediate: scope.immediate,
       scheduled: scope.scheduled,
+      ...Object.fromEntries(grantFlags(scope).map((flag) => [flag, true])),
     },
     notBefore: terms.notBefore ?? null,
     expires: terms.expires,
