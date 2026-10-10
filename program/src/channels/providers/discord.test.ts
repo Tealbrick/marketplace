@@ -62,7 +62,7 @@ describe("discord capabilities", () => {
       schedule: { native: false },
       events: { create: false },
       discover: "list",
-      inbound: { mode: "none", dedupe: false },
+      inbound: { mode: "socket", dedupe: true },
       audience: { count: false },
       limits: { perChatPerSecond: 1, perChatPerMinute: 60, retryAfter: "honoured" },
     });

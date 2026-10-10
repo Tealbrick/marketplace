@@ -77,7 +77,8 @@ const INBOUND_MAX_FILES = 10;
 /**
  * Declared only for what this adapter does today. Files go through the upload v2 flow (one message with the
  * text as `initial_comment`); Slack has no bot voice message, so voice is an audio file plus its transcript.
- * Inbound is `none`: the signature and event helpers below are pure, with no route or worker yet.
+ * Inbound is `webhook` (Events API, de-duplicated): the route in `channels/inbound-routes.ts` uses the pure
+ * signature and event helpers below.
  */
 const CAPABILITIES: ChannelCapabilities = {
   channelCapabilities: CHANNEL_CAPABILITIES_VERSION,
@@ -103,7 +104,7 @@ const CAPABILITIES: ChannelCapabilities = {
   schedule: { native: true },
   events: { create: false },
   discover: "list",
-  inbound: { mode: "none", dedupe: false },
+  inbound: { mode: "webhook", dedupe: true },
   audience: { count: false },
   limits: { perChatPerSecond: 1, retryAfter: "honoured" },
 };
@@ -716,7 +717,7 @@ function scheduleFailure(failure: Pick<Failure, "status" | "errorCode" | "detail
   };
 }
 
-// ---------------------------------------------------------------- Inbound helpers (pure; no route yet)
+// ---------------------------------------------------------------- Inbound helpers (pure; used by the Events API route)
 
 export type SlackSignatureCheck = { ok: true } | { ok: false; reason: "secret_missing" | "header_missing" | "malformed" | "stale" | "mismatch" };
 

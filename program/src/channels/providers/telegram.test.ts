@@ -4,7 +4,9 @@ import {
   createTelegramProvider,
   escapeMarkdownV2,
   parseTelegramUpdate,
+  TELEGRAM_WEBHOOK_UPDATES,
   renderTelegramMarkdownV2,
+  telegramChatsFromUpdate,
   telegramMessageUrl,
   verifyTelegramSecretToken,
 } from "./telegram.js";
@@ -69,7 +71,7 @@ describe("telegram capabilities", () => {
       schedule: { native: false },
       events: { create: false },
       discover: "updates",
-      inbound: { mode: "none", dedupe: false },
+      inbound: { mode: "webhook", dedupe: true },
       audience: { count: false },
       limits: { perChatPerSecond: 1, perChatPerMinute: 20, retryAfter: "honoured" },
     });
@@ -911,5 +913,51 @@ describe("telegram inbound helpers", () => {
     expect(parseTelegramUpdate({ update_id: 1, message: { message_id: 1, chat, from: { id: 5 }, new_chat_members: [] } })).toEqual({ kind: "ignored", reason: "no_content" });
     expect(parseTelegramUpdate("{")).toEqual({ kind: "ignored", reason: "malformed" });
     expect(parseTelegramUpdate({ message: {} })).toEqual({ kind: "ignored", reason: "malformed" });
+  });
+});
+
+describe("telegram inbound webhook management", () => {
+  it("sets, inspects and deletes the webhook; the URL and secret never appear in a result", async () => {
+    const url = "https://marketplace.example/api/marketplace/channels/telegram/webhook/SEGMENTsegmentSEGMENTsegmentSEGMENTsegment1";
+    const secretToken = "S3cret-token_value";
+    const { fake, provider } = make([
+      jsonResponse(200, { ok: true, result: true }),
+      jsonResponse(200, { ok: true, result: { url, pending_update_count: 0 } }),
+      jsonResponse(200, { ok: true, result: true }),
+    ]);
+    const set = await provider.setWebhook!(TOKEN, { url, secretToken, allowedUpdates: TELEGRAM_WEBHOOK_UPDATES });
+    expect(set).toEqual({ status: "sent" });
+    expect(telegramMethod(fake.requests[0]!, TOKEN)).toBe("setWebhook");
+    expect(JSON.parse(String(fake.requests[0]!.body))).toEqual({
+      url,
+      secret_token: secretToken,
+      allowed_updates: ["message", "channel_post", "edited_message", "my_chat_member"],
+      drop_pending_updates: false,
+    });
+    expect(await provider.webhookInfo!(TOKEN)).toEqual({ ok: true, url });
+    expect(await provider.deleteWebhook!(TOKEN)).toEqual({ status: "sent" });
+    expect(telegramMethod(fake.requests[2]!, TOKEN)).toBe("deleteWebhook");
+  });
+
+  it("refuses a non-https URL or a malformed secret without a request, and classifies refusals", async () => {
+    const { fake, provider } = make([jsonResponse(401, { ok: false, description: "Unauthorized" }), jsonResponse(400, { ok: false, description: "bad webhook: HTTPS url must be provided for webhook" })]);
+    expect(await provider.setWebhook!(TOKEN, { url: "http://insecure.example/hook", secretToken: "abc", allowedUpdates: [] })).toMatchObject({ status: "failed", errorCode: "channel_webhook_invalid" });
+    expect(await provider.setWebhook!(TOKEN, { url: "https://ok.example/hook", secretToken: "has space", allowedUpdates: [] })).toMatchObject({ status: "failed", errorCode: "channel_webhook_invalid" });
+    expect(fake.requests).toHaveLength(0);
+    const unauthorized = await provider.setWebhook!(TOKEN, { url: "https://ok.example/hook", secretToken: "abc", allowedUpdates: [] });
+    expect(unauthorized).toMatchObject({ status: "failed", errorCode: "credential_invalid" });
+    const rejected = await provider.deleteWebhook!(TOKEN);
+    expect(rejected).toMatchObject({ status: "failed", errorCode: "provider_rejected" });
+    noToken([unauthorized, rejected]);
+    expect(JSON.stringify([unauthorized, rejected])).not.toContain("ok.example");
+  });
+
+  it("maps webhook updates to chats seen: groups, channels and topics, and the chat the bot left", () => {
+    expect(telegramChatsFromUpdate({ update_id: 1, message: { message_id: 3, chat: { id: -100555, type: "supergroup", title: "Builders\u202e", username: "builders" }, text: "hi" } })).toEqual({
+      destinations: [{ type: "group", externalId: "-100555", title: "Builders", url: "https://t.me/builders" }],
+    });
+    expect(telegramChatsFromUpdate({ update_id: 2, message: { message_id: 4, chat: { id: 77, type: "private", first_name: "Ada" }, text: "hi" } })).toEqual({ destinations: [] });
+    expect(telegramChatsFromUpdate({ update_id: 3, my_chat_member: { chat: { id: -100555, type: "supergroup" }, new_chat_member: { status: "kicked" } } })).toEqual({ destinations: [], leftChatId: "-100555" });
+    expect(telegramChatsFromUpdate("not an update")).toEqual({ destinations: [] });
   });
 });

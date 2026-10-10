@@ -40,6 +40,8 @@ import {
   type OutboundPoll,
   type SendResult,
   type VerifyResult,
+  type WebhookInfoResult,
+  type WebhookRegistration,
 } from "./types.js";
 
 // Telegram Bot API adapter: https://api.telegram.org/bot<token>/<method>
@@ -97,7 +99,7 @@ const CAPABILITIES: ChannelCapabilities = {
   schedule: { native: false },
   events: { create: false },
   discover: "updates",
-  inbound: { mode: "none", dedupe: false },
+  inbound: { mode: "webhook", dedupe: true },
   audience: { count: false },
   limits: { perChatPerSecond: 1, perChatPerMinute: 20, retryAfter: "honoured" },
 };
@@ -766,7 +768,71 @@ export function createTelegramProvider(options: ChannelProviderOptions = {}): Ch
         detail: "unexpected adapter error; the edit is unknown",
       }),
     remove: (credential, destination, messageId) => guard(() => remove(credential, destination, messageId), actionFallback),
+    setWebhook: (credential, registration) => guard(() => setWebhook(credential, registration), actionFallback),
+    webhookInfo: (credential) => guard(() => webhookInfo(credential), { ok: false, errorCode: "provider_internal_error", detail: "unexpected adapter error" }),
+    deleteWebhook: (credential) => guard(() => deleteWebhook(credential), actionFallback),
   };
+
+  // ----- inbound webhook (P2 scope 2.2) ---------------------------------------
+  // The URL (it carries the random path segment) and the secret token are never part of a result or a detail.
+
+  async function webhookCall(credential: string | null | undefined, method: string, body: Record<string, unknown>): Promise<ActionResult> {
+    const token = tokenOf(credential);
+    if (!token) return { status: "failed", errorCode: "credential_missing", detail: "no Telegram bot token is configured" };
+    if (!TOKEN_SHAPE.test(token)) return { status: "failed", errorCode: "credential_invalid", detail: "the Telegram bot token has an invalid shape" };
+    const result = await call(token, method, () => jsonBody(body));
+    if (result.kind !== "response") return { status: "uncertain", errorCode: "provider_unavailable", detail: `${method} did not answer` };
+    if (result.status === 401 || result.status === 403 || result.status === 404) return { status: "failed", errorCode: "credential_invalid", detail: `${method} refused the token` };
+    if (!isSuccess(result) || asRecord(result.json)?.ok !== true) {
+      return { status: "failed", errorCode: "provider_rejected", detail: `${method} refused (${result.status})` };
+    }
+    return { status: "sent" };
+  }
+
+  async function setWebhook(credential: string | null | undefined, registration: WebhookRegistration): Promise<ActionResult> {
+    if (!/^https:\/\/[^\s]{1,2000}$/u.test(registration.url) || !SECRET_TOKEN_SHAPE.test(registration.secretToken)) {
+      return { status: "failed", errorCode: "channel_webhook_invalid", detail: "the webhook URL must be https and the secret token 1-256 of A-Z a-z 0-9 _ -" };
+    }
+    return webhookCall(credential, "setWebhook", {
+      url: registration.url,
+      secret_token: registration.secretToken,
+      allowed_updates: [...registration.allowedUpdates],
+      drop_pending_updates: false,
+    });
+  }
+
+  async function deleteWebhook(credential: string | null | undefined): Promise<ActionResult> {
+    return webhookCall(credential, "deleteWebhook", { drop_pending_updates: false });
+  }
+
+  async function webhookInfo(credential: string | null | undefined): Promise<WebhookInfoResult> {
+    const token = tokenOf(credential);
+    if (!token || !TOKEN_SHAPE.test(token)) return { ok: false, errorCode: token ? "credential_invalid" : "credential_missing", detail: "no usable Telegram bot token" };
+    const result = await call(token, "getWebhookInfo", () => jsonBody({}));
+    if (result.kind !== "response") return { ok: false, errorCode: "provider_unavailable", detail: "getWebhookInfo did not answer" };
+    const info = asRecord(asRecord(result.json)?.result);
+    if (!isSuccess(result) || !info) return { ok: false, errorCode: result.status === 401 || result.status === 404 ? "credential_invalid" : "provider_rejected", detail: `getWebhookInfo refused (${result.status})` };
+    return { ok: true, url: typeof info.url === "string" ? info.url : "" };
+  }
+}
+
+/** Updates the inbound webhook asks Telegram for (P2 scope 2.2): messages, channel posts, edits, membership changes. */
+export const TELEGRAM_WEBHOOK_UPDATES: readonly string[] = ["message", "channel_post", "edited_message", "my_chat_member"];
+
+/**
+ * Discovery input from one webhook update (chats seen while a webhook is set, when getUpdates answers 409): the
+ * group, supergroup, channel and forum-topic destinations it shows, and the chat id the bot left or was removed
+ * from. Titles are untrusted text, cleaned like discovery.
+ */
+export function telegramChatsFromUpdate(update: unknown): { destinations: ChannelDestination[]; leftChatId?: string } {
+  const record = asRecord(update);
+  const member = asRecord(record?.my_chat_member);
+  const status = asRecord(member?.new_chat_member)?.status;
+  const chat = asRecord(member?.chat);
+  if (member && (status === "left" || status === "kicked") && typeof chat?.id === "number" && Number.isSafeInteger(chat.id)) {
+    return { destinations: [], leftChatId: String(chat.id) };
+  }
+  return { destinations: record ? destinationsFromUpdates([record]) : [] };
 }
 
 // ---------------------------------------------------------------- Discovery mapping
@@ -849,7 +915,7 @@ function destinationsFromUpdates(updates: unknown[]): ChannelDestination[] {
   return [...entries.values()].sort((a, b) => a.order - b.order).map((entry) => entry.destination);
 }
 
-// ---------------------------------------------------------------- Inbound helpers (pure; no route yet)
+// ---------------------------------------------------------------- Inbound helpers (pure; used by the webhook route)
 
 export type TelegramSecretCheck = { ok: true } | { ok: false; reason: "secret_missing" | "header_missing" | "malformed" | "mismatch" };
 

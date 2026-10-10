@@ -38,13 +38,15 @@ describe("capability model v2", () => {
   it("declares only what the adapters do today", () => {
     const declared = (caps: ChannelCapabilities) =>
       CHANNEL_FEATURES.filter((feature) => !["image", "file", "audio", "voice", "video"].includes(feature) && capabilitySupports(caps, feature));
-    expect(declared(telegram)).toEqual(["thread.replies", "thread.topics", "reactions.add", "reactions.remove", "edit", "delete", "poll", "markup.markdown-v2"]);
-    expect(declared(discord)).toEqual(["dm", "thread.replies", "mentions.users", "reactions.add", "reactions.remove", "reactions.custom", "edit", "delete", "poll"]);
+    expect(declared(telegram)).toEqual(["thread.replies", "thread.topics", "reactions.add", "reactions.remove", "edit", "delete", "poll", "markup.markdown-v2", "inbound"]);
+    expect(declared(discord)).toEqual(["dm", "thread.replies", "mentions.users", "reactions.add", "reactions.remove", "reactions.custom", "edit", "delete", "poll", "inbound"]);
     for (const caps of [telegram, discord]) {
       expect(caps.live).toBe(false);
       expect(caps.events).toEqual({ create: false });
-      expect(caps.inbound).toEqual({ mode: "none", dedupe: false });
     }
+    // The inbound worker receives for every adapter: Telegram by webhook, Discord over the gateway socket.
+    expect(telegram.inbound).toEqual({ mode: "webhook", dedupe: true });
+    expect(discord.inbound).toEqual({ mode: "socket", dedupe: true });
     expect(telegram.thread).toEqual({ replies: true, topics: true, forum: false });
     expect(discord.thread).toEqual({ replies: true, topics: false, forum: false });
   });

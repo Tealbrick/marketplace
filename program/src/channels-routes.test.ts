@@ -111,7 +111,7 @@ describe("channels: post with a standing grant (§10 item 1)", () => {
         presence: { typing: false, status: false },
         ephemeral: false,
         live: false,
-        inbound: { mode: "none", dedupe: false },
+        inbound: { mode: "webhook", dedupe: true },
       },
     });
     expect(channels[0]!.capabilities).not.toHaveProperty("markupOptions");

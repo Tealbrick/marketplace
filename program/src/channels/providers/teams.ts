@@ -180,7 +180,7 @@ export function teamsCapabilities(graphEnabled: boolean): ChannelCapabilities {
     events: { create: false },
     discover: "list",
     // The messaging endpoint stores conversation references; received messages reach no agent yet.
-    inbound: { mode: "none", dedupe: false },
+    inbound: { mode: "webhook", dedupe: true },
     audience: { count: false },
     limits: { perChatPerSecond: 7, perChatPerMinute: 120, retryAfter: "honoured" },
   };

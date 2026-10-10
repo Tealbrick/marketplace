@@ -84,15 +84,15 @@ describe("slack capabilities", () => {
       schedule: { native: true },
       events: { create: false },
       discover: "list",
-      inbound: { mode: "none", dedupe: false },
+      inbound: { mode: "webhook", dedupe: true },
       audience: { count: false },
       limits: { perChatPerSecond: 1, retryAfter: "honoured" },
     });
     expect(capabilityForKind(provider.capabilities, "voice")).toBe("fallback");
-    for (const feature of ["dm", "thread.replies", "mentions.users", "reactions.add", "reactions.remove", "edit", "delete", "schedule.native"]) {
+    for (const feature of ["dm", "thread.replies", "mentions.users", "reactions.add", "reactions.remove", "edit", "delete", "schedule.native", "inbound"]) {
       expect(capabilitySupports(provider.capabilities, feature), feature).toBe(true);
     }
-    for (const feature of ["inbound", "live.join", "canvas", "ephemeral", "poll", "thread.topics"]) {
+    for (const feature of ["live.join", "canvas", "ephemeral", "poll", "thread.topics"]) {
       expect(capabilitySupports(provider.capabilities, feature), feature).toBe(false);
     }
   });

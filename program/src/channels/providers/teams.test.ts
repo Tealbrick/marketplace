@@ -137,7 +137,7 @@ describe("teams capabilities", () => {
       schedule: { native: false },
       events: { create: false },
       discover: "list",
-      inbound: { mode: "none", dedupe: false },
+      inbound: { mode: "webhook", dedupe: true },
       audience: { count: false },
       limits: { perChatPerSecond: 7, perChatPerMinute: 120, retryAfter: "honoured" },
     });

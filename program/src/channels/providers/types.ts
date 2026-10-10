@@ -91,7 +91,7 @@ export type ChannelCapabilities = {
   schedule: { native: boolean };
   events: { create: boolean };
   discover: "updates" | "list" | "manual";
-  /** How the provider delivers messages to agents (`none` today for every adapter) and whether events are de-duplicated. */
+  /** How the inbound worker receives messages for agents (`none` when it does not) and whether events are de-duplicated. */
   inbound: { mode: InboundMode; dedupe: boolean };
   audience: { count: boolean };
   limits: {
@@ -232,6 +232,12 @@ export type ScheduleNativeResult =
   | { status: "scheduled"; scheduledMessageId: string; postAt: string }
   | { status: "failed" | "uncertain"; errorCode: string; detail: string };
 
+/** Inbound webhook registration (Telegram setWebhook): the URL carries a random path segment, the header a secret. */
+export type WebhookRegistration = { url: string; secretToken: string; allowedUpdates: readonly string[] };
+
+/** The webhook the provider has registered for this bot: its URL (empty when none). Never logged; compared only. */
+export type WebhookInfoResult = { ok: true; url: string } | { ok: false; errorCode: string; detail: string };
+
 export type ChannelProvider = {
   readonly id: ChannelProviderId;
   readonly capabilities: ChannelCapabilities;
@@ -274,6 +280,10 @@ export type ChannelProvider = {
     destination: ChannelDestination,
     input: ScheduleNativeInput,
   ): Promise<ScheduleNativeResult>;
+  /** Inbound webhook (inbound `mode: "webhook"` where the provider registers it by API): set, inspect, delete. */
+  setWebhook?(credential: string | null | undefined, registration: WebhookRegistration): Promise<ActionResult>;
+  webhookInfo?(credential: string | null | undefined): Promise<WebhookInfoResult>;
+  deleteWebhook?(credential: string | null | undefined): Promise<ActionResult>;
 };
 
 /**
