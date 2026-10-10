@@ -356,7 +356,7 @@ describe("tealbrick.app.json", () => {
     const manifest = JSON.parse(await readFile(path.join(repoRoot, "tealbrick.app.json"), "utf8")) as { app: { version: string } };
     const program = JSON.parse(await readFile(path.join(repoRoot, "program/package.json"), "utf8")) as { version: string; dependencies: Record<string, string> };
     expect(manifest.app.version).toBe(program.version);
-    expect(program.dependencies["@tealbrick/contract"]).toBe("0.1.0-alpha.7");
+    expect(program.dependencies["@tealbrick/contract"]).toBe("0.1.0-alpha.8");
   });
 
   it("resolves launch routes against the manifest", () => {

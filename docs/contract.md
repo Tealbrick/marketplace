@@ -1,12 +1,12 @@
 # Teal Brick miniapp contract
 
 Marketplace follows the Teal Brick miniapp contract (`tealbrick.miniapp/v1`,
-kit `@tealbrick/contract` pinned at `0.1.0-alpha.7`). The manifest is
+kit `@tealbrick/contract` pinned at `0.1.0-alpha.8`). The manifest is
 `tealbrick.app.json` at the repository root. It is validated at start-up and
 served at `/.well-known/tealbrick/manifest`. Validate it in CI with:
 
 ```sh
-npx -y @tealbrick/contract@0.1.0-alpha.7 validate tealbrick.app.json
+npx -y @tealbrick/contract@0.1.0-alpha.8 validate tealbrick.app.json
 ```
 
 The Portal launch hand-off, the runtime lease receiver, connector secret
@@ -85,7 +85,7 @@ claim handler (`createContractHandler` with `identity`, `claim` and
 (`program/src/manifest-claim.ts`):
 
 * `GET` → `{instanceId, publicJwk}`, with the answer header
-  `x-tealbrick-contract: 0.1.0-alpha.7` (the kit version). Portal Core sends
+  `x-tealbrick-contract: 0.1.0-alpha.8` (the kit version). Portal Core sends
   `ownerSubject` only when this header says alpha.7 or newer.
 * `POST {portalIssuer, nonce, companyId, jwksUri?, grantKids?, ownerSubject?,
   claimIssuedAt?}` → `{proof}`, an EdDSA `tealbrick-app-claim` v1 JWT with

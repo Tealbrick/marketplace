@@ -251,11 +251,11 @@ describe("manifest claim (tealbrick.miniapp/v1) on /.well-known/tealbrick/claim"
 });
 
 describe("contract alpha.7: version header and owner pin (ownerSubject)", () => {
-  it("GET answers with x-tealbrick-contract = the installed kit version (0.1.0-alpha.7); the legacy GET does not", async () => {
+  it("GET answers with x-tealbrick-contract = the installed kit version (0.1.0-alpha.8); the legacy GET does not", async () => {
     const dir = await tempDir();
     const app = await build(dir);
     expect(CONTRACT_VERSION_HEADER).toBe("x-tealbrick-contract");
-    expect(CONTRACT_VERSION).toBe("0.1.0-alpha.7");
+    expect(CONTRACT_VERSION).toBe("0.1.0-alpha.8");
     const ok = await app.app.inject({ method: "GET", url: MANIFEST_CLAIM_PATH, headers: coreHeaders });
     expect(ok.statusCode).toBe(200);
     expect(ok.headers[CONTRACT_VERSION_HEADER]).toBe(CONTRACT_VERSION);
