@@ -13,7 +13,7 @@ export type ErrorCopy = {
 export const SESSION_ENDED_COPY = "Your session ended — relaunch Marketplace from Teal Brick Portal.";
 
 /** Bot tokens are entered only in Portal (spec §8); Marketplace never shows a token field. */
-export const CHANNEL_TOKEN_HINT = "Add the bot token under Account Connections in Teal Brick Portal. Marketplace never asks for the token here.";
+export const CHANNEL_TOKEN_HINT = "Add the bot token (or, for Microsoft Teams, the app ID, client secret and tenant ID) under Account Connections in Teal Brick Portal. Marketplace never asks for the token here.";
 
 export const TELEGRAM_DISCOVER_HINT = "Add the bot to the chat and send one message, then press Discover.";
 
@@ -33,6 +33,20 @@ export const SLACK_SETUP_STEPS: readonly string[] = [
   "Copy the Bot User OAuth Token (it starts with xoxb-) and add it under Account Connections in Teal Brick Portal. Optional: add the Signing Secret from Basic Information for incoming messages later.",
   "Restart Marketplace, invite the app to each channel with /invite, then press Discover.",
 ];
+
+/**
+ * Owner setup for Microsoft Teams (Channels P2 scope §5): a single-tenant Azure Bot plus a Teams app package
+ * that a Teams admin uploads. Full guide: docs/channels-teams-setup.md.
+ */
+export const TEAMS_SETUP_STEPS: readonly string[] = [
+  "In the Azure portal, create an Azure Bot of type Single Tenant with a new Microsoft App ID. Set its messaging endpoint to <Marketplace address>/api/marketplace/channels/teams/messages and add the Microsoft Teams channel.",
+  "In the bot's Entra app registration, create a client secret. Write down its expiry date.",
+  "Add the Microsoft App ID, the client secret and the tenant ID under Account Connections in Teal Brick Portal, then restart Marketplace.",
+  "Fill in docs/channels-teams-app-manifest.json with the App ID, zip it with two icons, and ask a Teams admin to upload and allow the custom app.",
+  "Install the app in each team or chat, then press Discover. Private channels are not listed: Teams bots cannot post there.",
+];
+
+export const TEAMS_DISCOVER_HINT = "Upload the Teams app package (see docs/channels-teams-setup.md), install the app in each team or chat, then press Discover. Private channels are not listed: Teams bots cannot post there.";
 
 /** Owner Buzz approval key (Channels spec §6.3). */
 export const OWNER_KEY_SOURCE_COPY = {

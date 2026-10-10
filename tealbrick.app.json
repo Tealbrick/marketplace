@@ -77,7 +77,11 @@
         "MARKETPLACE_CHANNELS_TELEGRAM_BOT_TOKEN",
         "MARKETPLACE_CHANNELS_DISCORD_BOT_TOKEN",
         "MARKETPLACE_CHANNELS_SLACK_BOT_TOKEN",
-        "MARKETPLACE_CHANNELS_SLACK_SIGNING_SECRET"
+        "MARKETPLACE_CHANNELS_SLACK_SIGNING_SECRET",
+        "MARKETPLACE_CHANNELS_TEAMS_APP_ID",
+        "MARKETPLACE_CHANNELS_TEAMS_APP_SECRET",
+        "MARKETPLACE_CHANNELS_TEAMS_TENANT_ID",
+        "MARKETPLACE_CHANNELS_TEAMS_GRAPH_ENABLED"
       ]
     },
     "providers": [
@@ -822,6 +826,50 @@
             "source": "account",
             "destination": "provider-env",
             "env": "MARKETPLACE_CHANNELS_SLACK_SIGNING_SECRET",
+            "rotation": "update-credentials"
+          },
+          {
+            "key": "channels.teams.appId",
+            "label": "Microsoft Teams bot app ID",
+            "description": "Microsoft App ID of the single-tenant Azure Bot that agents post through (a GUID). Taken from the account connection and delivered to this service as an environment variable. Setup: docs/channels-teams-setup.md.",
+            "type": "secret",
+            "maxLength": 64,
+            "source": "account",
+            "destination": "provider-env",
+            "env": "MARKETPLACE_CHANNELS_TEAMS_APP_ID",
+            "rotation": "update-credentials"
+          },
+          {
+            "key": "channels.teams.appSecret",
+            "label": "Microsoft Teams bot client secret",
+            "description": "Client secret of the bot's Microsoft Entra app registration. Taken from the account connection and delivered to this service as an environment variable.",
+            "type": "secret",
+            "maxLength": 512,
+            "source": "account",
+            "destination": "provider-env",
+            "env": "MARKETPLACE_CHANNELS_TEAMS_APP_SECRET",
+            "rotation": "update-credentials"
+          },
+          {
+            "key": "channels.teams.tenantId",
+            "label": "Microsoft Teams tenant ID",
+            "description": "Directory (tenant) ID of the Microsoft Entra tenant where the single-tenant bot is registered (a GUID).",
+            "type": "secret",
+            "maxLength": 64,
+            "source": "account",
+            "destination": "provider-env",
+            "env": "MARKETPLACE_CHANNELS_TEAMS_TENANT_ID",
+            "rotation": "update-credentials"
+          },
+          {
+            "key": "channels.teams.graphEnabled",
+            "label": "Microsoft Teams person lookup (optional)",
+            "description": "Reserved for a later version: agents cannot find people or start 1:1 chats yet. Leave it empty and do not grant User.Read.All for it now.",
+            "type": "secret",
+            "maxLength": 8,
+            "source": "account",
+            "destination": "provider-env",
+            "env": "MARKETPLACE_CHANNELS_TEAMS_GRAPH_ENABLED",
             "rotation": "update-credentials"
           }
         ]

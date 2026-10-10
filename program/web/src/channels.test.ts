@@ -255,6 +255,20 @@ describe("Channels page", () => {
     cleanup();
   });
 
+  it("shows the Microsoft Teams card with setup steps when the server lists Teams", async () => {
+    const withTeams = browse({ readiness: { telegram: "available", discord: "credential_missing", teams: "credential_missing" } });
+    withTeams.providers = [...withTeams.providers, { id: "teams", readiness: "credential_missing" }];
+    mockApi({ "GET /api/marketplace/channels": () => withTeams });
+    renderPage();
+    const teams = await screen.findByLabelText("Microsoft Teams readiness");
+    expect(within(teams).getByText("Credential missing")).toBeTruthy();
+    expect(within(teams).getByText("Set up the Microsoft Teams bot")).toBeTruthy();
+    expect(within(teams).getByText(/channels-teams-app-manifest\.json/u)).toBeTruthy();
+    expect(within(teams).getByText(/\/api\/marketplace\/channels\/teams\/messages/u)).toBeTruthy();
+    expect(within(screen.getByLabelText("Telegram readiness")).queryByText("Set up the Microsoft Teams bot")).toBeNull();
+    cleanup();
+  });
+
   it("shows provider readiness and never asks for or echoes a bot token", async () => {
     mockApi({ "GET /api/marketplace/channels": () => browse({ readiness: { telegram: "available", discord: "credential_invalid" } }) });
     renderPage();
@@ -273,7 +287,7 @@ describe("Channels page", () => {
     renderPage();
     const missing = await screen.findByLabelText("Telegram readiness");
     expect(within(missing).getByText("Credential missing")).toBeTruthy();
-    expect(within(missing).getByText("Add the bot token under Account Connections in Teal Brick Portal. Marketplace never asks for the token here.")).toBeTruthy();
+    expect(within(missing).getByText("Add the bot token (or, for Microsoft Teams, the app ID, client secret and tenant ID) under Account Connections in Teal Brick Portal. Marketplace never asks for the token here.")).toBeTruthy();
     expect((screen.getByRole("button", { name: /Add channel/u }) as HTMLButtonElement).disabled).toBe(true);
   });
 
@@ -427,7 +441,7 @@ describe("Channels page", () => {
     expect(await screen.findByText("Channels aren't set up yet")).toBeTruthy();
     expect(within(screen.getByLabelText("Telegram readiness")).getByText("Credential missing")).toBeTruthy();
     expect(within(screen.getByLabelText("Discord readiness")).getByText("Credential missing")).toBeTruthy();
-    expect(screen.getAllByText(/Add the bot token under Account Connections in Teal Brick Portal/u).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/under Account Connections in Teal Brick Portal/u).length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: /Add channel|Discover/u })).toBeNull();
     expect(screen.queryByText("Standing grants")).toBeNull();
     expect(screen.queryByText("Receipts")).toBeNull();

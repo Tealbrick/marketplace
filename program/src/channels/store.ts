@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
 import { sha256Hex } from "./canonical-json.js";
+import { TEAMS_CONVERSATION_DDL, TeamsConversationStore } from "./teams-store.js";
 import {
   effectiveCaps,
   validatePolicy,
@@ -35,6 +36,7 @@ export const CHANNEL_TABLES = [
   "marketplace_used_approval_proof",
   "channel_owner_key",
   "channel_approval_owner",
+  "channel_teams_conversation",
 ] as const;
 
 const HOUR_MS = 3_600_000;
@@ -190,6 +192,8 @@ export function migrateChannelTables(db: DatabaseSync): void {
     CREATE INDEX IF NOT EXISTS idx_channel_approval_owner_scope
     ON channel_approval_owner(workspace_slug, key_status);
   `);
+  // Teams conversation references (P2): captured by the Teams messaging endpoint at install.
+  db.exec(TEAMS_CONVERSATION_DDL);
 }
 
 // ---------------------------------------------------------------------------
@@ -832,6 +836,14 @@ export function readAttachmentBytes(rootDir: string, sha256: string): Buffer {
 
 export class ChannelStore {
   constructor(private readonly db: DatabaseSync) {}
+
+  private teamsStore: TeamsConversationStore | undefined;
+
+  /** Teams conversation references (P2), on the same connection. */
+  get teams(): TeamsConversationStore {
+    this.teamsStore ??= new TeamsConversationStore(this.db);
+    return this.teamsStore;
+  }
 
   /** Runs `fn` inside `BEGIN IMMEDIATE`, rolling back on any throw. */
   private immediate<T>(fn: () => T): T {

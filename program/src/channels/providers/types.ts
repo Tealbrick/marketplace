@@ -2,7 +2,7 @@
 // Adapters never throw for provider or network problems. They return a typed result.
 // A credential (bot token) is never part of any returned value.
 
-export type ChannelProviderId = "telegram" | "discord" | "slack";
+export type ChannelProviderId = "telegram" | "discord" | "slack" | "teams";
 
 /**
  * Version of the closed capability vocabulary (spec 3.1; P2 scope 2.1). New keys need a contract minor bump.
@@ -48,7 +48,7 @@ export type InboundMode = "socket" | "webhook" | "poll" | "none";
 export type ChannelCapabilities = {
   channelCapabilities: typeof CHANNEL_CAPABILITIES_VERSION;
   text: { maxChars: number; captionMaxChars?: number };
-  markup: "plain" | "markdown-v2" | "discord-markdown" | "mrkdwn" | "html";
+  markup: "plain" | "markdown-v2" | "discord-markdown" | "mrkdwn" | "html" | "teams-markdown";
   /** Mention named users; broadcast mentions never ping (`suppressed`) in every version. */
   mentions: { users: boolean; broadcast: "suppressed" };
   /** Direct messages to named people: `open` when the adapter can start one, up to `maxMembers` people. */
@@ -94,7 +94,7 @@ export type ChannelDestination = {
   /** Untrusted provider text: capped at 128 characters, control characters removed. */
   title: string;
   url?: string;
-  /** Discord guild id, Telegram forum topic thread id, or the Slack thread root `ts` of a `thread` destination. */
+  /** Discord guild id, Telegram forum topic thread id, the Slack thread root `ts` of a `thread` destination, or the Teams team id of a channel. */
   parentId?: string;
   /** Platform user id of the other person, only on a `person` destination. */
   personId?: string;
@@ -116,7 +116,14 @@ export type OutboundAttachment = {
 };
 
 /** A named person to mention, by platform user id. Broadcast mentions (channel, here, everyone) never ping. */
-export type OutboundMention = { userId: string };
+export type OutboundMention = {
+  userId: string;
+  /**
+   * Plain display name, at most 80 characters. Required by Teams, where the mention is the text `<at>name</at>`
+   * plus a mention entity; ignored by providers that render mentions from the user id alone (Slack).
+   */
+  name?: string;
+};
 
 export type OutboundMessage = {
   text: string;
@@ -159,7 +166,8 @@ export type VerifyResult =
 export type DiscoverFailureReason = VerifyFailureReason | "consumer_conflict";
 
 export type DiscoverResult =
-  | { ok: true; destinations: ChannelDestination[] }
+  /** `notes`: short owner-facing remarks written by the adapter, e.g. destinations left out because the bot cannot post there. */
+  | { ok: true; destinations: ChannelDestination[]; notes?: string[] }
   | { ok: false; reason: DiscoverFailureReason };
 
 /** Outcome of a reaction or a delete: no new message, so no result ids. Same status rules as `SendResult`. */

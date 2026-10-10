@@ -170,7 +170,7 @@ Without Rules, Marketplace stays in owner approval mode.
 
 Spec: `docs/channels-spec.md` v0.2 (branch `claude/channels-spec`). A channel is
 an owner-registered outward destination (P1: a Telegram chat or a Discord
-channel; P2: a Slack channel). Every send goes through `executeConsentedCall` (C1): the shared head
+channel; P2: a Slack channel, a Microsoft Teams channel or chat). Every send goes through `executeConsentedCall` (C1): the shared head
 verifies the Portal consent, the channel path resolves the post (§6 3a channel
 and capability, 3b content, 3c authority, 3d caps), and the shared tail runs
 governance, the `channel-native` execution target, idempotency
@@ -506,6 +506,90 @@ and named mentions in `send`, and the opt-in `scheduleNative`
 channel). Marketplace's own scheduler stays the default,
 because it re-checks authority and caps at send time. Limits: one message per
 second per channel; HTTP 429 `Retry-After` is honoured once (≤ 30 s).
+
+### Microsoft Teams (Channels P2)
+
+Adapter: `program/src/channels/providers/teams.ts` (Bot Framework REST, the
+transport under the Teams SDK; not Graph `chatMessage` send, which is
+migration-only for applications). One single-tenant Azure Bot per customer
+(new multi-tenant bot registrations ended 2025-07-31). Credentials:
+`MARKETPLACE_CHANNELS_TEAMS_APP_ID`, `MARKETPLACE_CHANNELS_TEAMS_APP_SECRET`,
+`MARKETPLACE_CHANNELS_TEAMS_TENANT_ID` (all three, or self-hosted connector
+secrets `appId`, `appSecret`, `tenantId` under `channels-teams`; a partial set
+is `credential_missing`), composed into one opaque credential at start; the
+secret is redacted on its own. Readiness = a client-credentials token from
+`login.microsoftonline.com/<tenant>/oauth2/v2.0/token`
+(`https://api.botframework.com/.default`), cached until five minutes before
+expiry and never logged. Owner setup: `docs/channels-teams-setup.md`, app
+package template `docs/channels-teams-app-manifest.json` (bot scopes only, no
+resource-specific consent: Teams then delivers only mentions and 1:1 messages).
+`docs/channels-teams-app-manifest.inbound.json` adds the RSC permissions
+`ChannelMessage.Read.Group` and `ChatMessage.Read.Chat` (every message of each
+installed team and chat); it is for when the owner turns on Teams inbound, which
+does not exist yet, so customer messages are never pushed with no use.
+
+Messaging endpoint: `POST /api/marketplace/channels/teams/messages` (the Azure
+Bot's messaging endpoint). It is a public path at the Marketplace level (like
+the Composio OAuth callback), not a manifest operation: agents never call it,
+the grant guard only sees `tbag_` bearers, and the contract test maps
+operations to routes, not routes to operations. Every request needs a Bot
+Framework JWT (a missing or non-JWT bearer is refused before the body is
+parsed; body limit 128 KB; a per-source budget of 60 requests burst, 2/s,
+answers 429): RS256 with a key from
+`login.botframework.com/v1/.well-known/openidconfiguration` (keys cached 24 h;
+at most one fetch per 5 min whatever the outcome, stale keys stay usable while
+a refresh fails; `jwks_uri` pinned to `login.botframework.com`), `iss`
+`https://api.botframework.com`, `aud` = app id, `exp`/`nbf` with 5 min skew,
+the `serviceurl` claim (lowercase, `serviceUrl` accepted as a fallback) =
+activity `serviceUrl`,
+key endorsed for `msteams`. The `serviceUrl` must be https on
+`smba.trafficmanager.net` or `smba.infra.gcc.teams.microsoft.com` (GCC High,
+DoD and 21Vianet are not supported). `installationUpdate` /
+`conversationUpdate` (bot added or removed, team or channel deleted) store or
+remove the conversation reference in `channel_teams_conversation` (additive
+table: workspace, conversation id and type, team and channel id, cleaned team
+name and title, membership, serviceUrl, tenant, installed/removed/updated at).
+Activities for another tenant or bot are ignored, and so are messages from
+any other bot (`from.role` `bot`, or a `28:` sender). Replays: an activity
+needs an `id`; each conversation + activity id is processed once while its
+token is valid (kept until `exp` + 5 min, at least 1 min, at most 24 h; at most
+20,000 ids in memory), because a Bot Framework token is not bound to the body.
+An activity without an id, or a repeat, is answered 200 and changes nothing.
+Message activities are parsed into the normalized inbound shape and not stored
+yet (the Buzz bridge comes later), so `inbound.mode` stays `none`.
+
+1:1 references are capped at 5,000 per tenant (removed rows go first, then
+the oldest). Discovery reads each kind (team channels, group chats, 1:1 chats)
+with its own limit of 1,000, so no kind crowds out another, and a chat title
+always starts with its kind (`Group chat: …`, `Direct chat: …`) so a chat name
+cannot pass for a team channel (`Team / #channel`); the picker also shows the
+destination type.
+
+Discovery: standard channels of each installed team (live
+`GET {serviceUrl}/v3/teams/{teamId}/conversations`, falling back to the stored
+channels), group chats and 1:1 chats. Private and shared channels are left
+out and named in `notes`: bots cannot post there. Sending:
+`POST {serviceUrl}/v3/conversations/{id}/activities` (`type: message`,
+`textFormat: markdown`), thread replies on `.../activities/{replyToId}`
+(channels only). Text over 28,000 characters (or an activity over 100,000
+bytes) is refused. Mentions: `<at>name</at>` plus a mention entity, only for a
+Teams user id (`29:…`) or an Entra object id that the caller lists (with its
+`name`); an undeclared `<at>` tag is refused, so a team, channel or tag is
+never mentioned. No files, images, cards or reactions in this version.
+`edit` = `PUT .../activities/{id}`, `remove` = `DELETE`. Thread replies,
+mentions, `edit`, `remove`, `findPerson` and `openDirect` are adapter-level
+only: no agent operation uses them yet, so the wired filter keeps them out of
+the agent capability answer (agents see text posts and Marketplace scheduling). `findPerson` (Graph
+`users?$filter=mail eq … or userPrincipalName eq …`, User.Read.All
+application permission) and `openDirect` (`POST {serviceUrl}/v3/conversations`,
+1:1, the app must already be installed for that person) exist only when
+`MARKETPLACE_CHANNELS_TEAMS_GRAPH_ENABLED` is `true`, which also declares
+`dm.open`; otherwise `channel_capability_unavailable`. Proactive install for a
+person (Graph `TeamsAppInstallation`) is a later step. Limits: per
+conversation 7/1 s, 8/2 s, 60/30 s, 1800/h and 50 requests/s per tenant
+(local token buckets). 429 honours `Retry-After` once (≤ 30 s); 412 is retried
+once with jittered backoff; 502/504 are retried once only for idempotent calls
+(PUT, DELETE, create-conversation) and a send is never retried (`uncertain`).
 
 ### Inert mode
 

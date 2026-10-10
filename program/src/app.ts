@@ -76,9 +76,14 @@ import {
 import { currentOwnerKeyView, registerOwnerKeyRoutes } from "./channels/owner-key-routes.js";
 import { NO_OWNER_PIN, readAttestedOwnerNostrPubkey, readOwnerPin, type OwnerKeyAttestation, type OwnerPinSource } from "./channels/owner-pin.js";
 import { CHANNEL_AGENT_OPERATION, registerChannelRoutes } from "./channels/routes.js";
+import { resolveRuntime } from "./channels/providers/common.js";
+import { createBotFrameworkVerifier, type BotFrameworkVerifier } from "./channels/providers/teams-auth.js";
+import { TEAMS_MESSAGES_PATH, registerTeamsInboundRoute } from "./channels/teams-inbound.js";
 import {
   CHANNEL_SLACK_SIGNING_SECRET_ENV,
   CHANNEL_TOKEN_ENV,
+  TEAMS_CREDENTIAL_ENV,
+  teamsGraphEnabled,
   MARKETPLACE_PORTAL_CLASS_CONTRACT_VERSION,
   channelClassSelection,
   channelResourceKind,
@@ -633,6 +638,8 @@ export type BuildMarketplaceAppOptions = {
   companyBoxFetch?: typeof fetch;
   /** Channel provider adapters (tests inject fakes); default: Telegram, Discord and Slack on `fetch`. */
   channelProviders?: ChannelProviderRegistry;
+  /** Teams messaging endpoint JWT verifier (tests inject a fake; default: Bot Framework OpenID keys). */
+  teamsVerifier?: BotFrameworkVerifier;
   /** The in-process channel scheduler (30 s ticker). `false` disables it; tests drive `tick(now)` directly. */
   channelScheduler?: boolean;
   /** Channels clock (caps windows, schedule checks); tests inject one. */
@@ -874,7 +881,7 @@ function agentGuidance() {
     "",
     "## Channels",
     "",
-    "Channels are owner-registered destinations (a Telegram chat, a Discord or Slack channel) that you may post to under a",
+    "Channels are owner-registered destinations (a Telegram chat, a Discord or Slack channel, a Microsoft Teams channel or chat) that you may post to under a",
     "Portal consent for that channel.",
     "",
     "1. `GET /api/marketplace/v1/agent/channels` (marketplace.channels.list): your channels with their effective",
@@ -948,7 +955,9 @@ function marketplacePublicPath(pathname: string) {
     pathname === "/auth/launch" ||
     pathname === "/api/marketplace/auth/session" ||
     pathname.startsWith("/assets/") ||
-    /^\/api\/marketplace\/plugins\/[^/]+\/oauth\/composio\/callback$/u.test(pathname)
+    /^\/api\/marketplace\/plugins\/[^/]+\/oauth\/composio\/callback$/u.test(pathname) ||
+    // Teams messaging endpoint: authenticated inside the route by the Bot Framework JWT only.
+    pathname === TEAMS_MESSAGES_PATH
   );
 }
 
@@ -2922,6 +2931,10 @@ export async function buildMarketplaceApp(
         "channels.discord.botToken": { set: Boolean(environment[CHANNEL_TOKEN_ENV.discord]?.trim()) },
         "channels.slack.botToken": { set: Boolean(environment[CHANNEL_TOKEN_ENV.slack]?.trim()) },
         "channels.slack.signingSecret": { set: Boolean(environment[CHANNEL_SLACK_SIGNING_SECRET_ENV]?.trim()) },
+        "channels.teams.appId": { set: Boolean(environment[TEAMS_CREDENTIAL_ENV.appId]?.trim()) },
+        "channels.teams.appSecret": { set: Boolean(environment[TEAMS_CREDENTIAL_ENV.appSecret]?.trim()) },
+        "channels.teams.tenantId": { set: Boolean(environment[TEAMS_CREDENTIAL_ENV.tenantId]?.trim()) },
+        "channels.teams.graphEnabled": { set: Boolean(environment[TEAMS_CREDENTIAL_ENV.graphEnabled]?.trim()) },
       },
     };
   };
@@ -8092,7 +8105,12 @@ export async function buildMarketplaceApp(
     organizationId,
     dataDir: path.dirname(runtimePath),
     environment,
-    providers: options.channelProviders ?? defaultChannelProviders(),
+    providers:
+      options.channelProviders ??
+      defaultChannelProviders({}, {
+        conversations: options.store.channels.teams.source(organizationId, () => channelClock()),
+        graphEnabled: teamsGraphEnabled(environment),
+      }),
     now: channelClock,
     eventFetch: options.channelEventFetch,
     instanceId: channelInstanceId,
@@ -8239,6 +8257,23 @@ export async function buildMarketplaceApp(
     executeConsentedCall: async (call) => (await executeConsentedCall(call)) as Record<string, unknown>,
     dispatch: async (input) => (await dispatchConsentedCall(input)) as Record<string, unknown>,
     traceIdFrom,
+  });
+  // Teams messaging endpoint (public path, Bot Framework JWT): captures conversation references at install.
+  registerTeamsInboundRoute({
+    app,
+    store: options.store.channels.teams,
+    organizationId,
+    identity: () => channelService.teamsIdentity(),
+    verifier: options.teamsVerifier ?? createBotFrameworkVerifier(resolveRuntime({ fetchImpl: options.providerFetch })),
+    ready: channelsReady,
+    now: channelClock,
+    audit: (eventType, metadata) => {
+      try {
+        options.store.recordAudit({ workspaceSlug: organizationId, pluginId: "channels-teams", eventType, actorId: "teams:bot-framework", metadata });
+      } catch {
+        // Audit is best effort here; the conversation reference is already stored.
+      }
+    },
   });
 
   app.route({

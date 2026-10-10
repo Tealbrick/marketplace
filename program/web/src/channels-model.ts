@@ -14,8 +14,8 @@ import type {
 // Pure helpers for the Channels owner UI. The server validates everything
 // again; these only keep the forms honest and explain refusals early.
 
-export const CHANNEL_PROVIDERS: readonly ChannelProviderId[] = ["telegram", "discord", "slack"];
-export const PROVIDER_LABEL: Record<ChannelProviderId, string> = { telegram: "Telegram", discord: "Discord", slack: "Slack" };
+export const CHANNEL_PROVIDERS: readonly ChannelProviderId[] = ["telegram", "discord", "slack", "teams"];
+export const PROVIDER_LABEL: Record<ChannelProviderId, string> = { telegram: "Telegram", discord: "Discord", slack: "Slack", teams: "Microsoft Teams" };
 export const GRANT_PHASES: readonly GrantPhase[] = ["announce", "reminder", "recap", "update"];
 export const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 export const MIB = 1024 * 1024;
@@ -567,4 +567,18 @@ export function fromLocalInput(value: string) {
   if (!value) return null;
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+const DESTINATION_TYPE_LABEL: Readonly<Record<string, string>> = {
+  channel: "Channel",
+  group: "Group chat",
+  person: "Direct chat",
+  chat: "Chat",
+  topic: "Forum topic",
+  thread: "Thread",
+};
+
+/** The destination kind shown next to the untrusted title in the picker (a chat name cannot pass for a channel). */
+export function destinationTypeLabel(type: string): string {
+  return DESTINATION_TYPE_LABEL[type] ?? "Destination";
 }

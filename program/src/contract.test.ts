@@ -322,6 +322,10 @@ describe("tealbrick.app.json", () => {
       ["channels.discord.botToken", "MARKETPLACE_CHANNELS_DISCORD_BOT_TOKEN"],
       ["channels.slack.botToken", "MARKETPLACE_CHANNELS_SLACK_BOT_TOKEN"],
       ["channels.slack.signingSecret", "MARKETPLACE_CHANNELS_SLACK_SIGNING_SECRET"],
+      ["channels.teams.appId", "MARKETPLACE_CHANNELS_TEAMS_APP_ID"],
+      ["channels.teams.appSecret", "MARKETPLACE_CHANNELS_TEAMS_APP_SECRET"],
+      ["channels.teams.tenantId", "MARKETPLACE_CHANNELS_TEAMS_TENANT_ID"],
+      ["channels.teams.graphEnabled", "MARKETPLACE_CHANNELS_TEAMS_GRAPH_ENABLED"],
     ]);
     expect(channels?.fields.every((field) => field.source === "account" && field.destination === "provider-env")).toBe(true);
     expect(MARKETPLACE_MANIFEST.runtime.env?.allow).toEqual(expect.arrayContaining([
@@ -329,6 +333,10 @@ describe("tealbrick.app.json", () => {
       "MARKETPLACE_CHANNELS_DISCORD_BOT_TOKEN",
       "MARKETPLACE_CHANNELS_SLACK_BOT_TOKEN",
       "MARKETPLACE_CHANNELS_SLACK_SIGNING_SECRET",
+      "MARKETPLACE_CHANNELS_TEAMS_APP_ID",
+      "MARKETPLACE_CHANNELS_TEAMS_APP_SECRET",
+      "MARKETPLACE_CHANNELS_TEAMS_TENANT_ID",
+      "MARKETPLACE_CHANNELS_TEAMS_GRAPH_ENABLED",
     ]));
   });
 
@@ -651,6 +659,10 @@ describe("control endpoints", () => {
       "channels.discord.botToken": { set: false, source: "account" },
       "channels.slack.botToken": { set: false, source: "account" },
       "channels.slack.signingSecret": { set: false, source: "account" },
+      "channels.teams.appId": { set: false, source: "account" },
+      "channels.teams.appSecret": { set: false, source: "account" },
+      "channels.teams.graphEnabled": { set: false, source: "account" },
+      "channels.teams.tenantId": { set: false, source: "account" },
       "channels.telegram.botToken": { set: false, source: "account" },
       "composio.apiKey": { source: "account", set: true } });
     expect(read.body).not.toContain("test-composio-key");

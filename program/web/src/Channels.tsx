@@ -11,7 +11,7 @@ import { CreateChannelPanel, DestinationTitle, EditChannelPanel } from "./Channe
 import { GrantInbox } from "./ChannelGrants";
 import { ReceiptsSection, ReceiptSummary, UncertainPosts, WaitingPosts } from "./ChannelPosts";
 import { ApprovalsPanel } from "./CompanyBox";
-import { CHANNEL_TOKEN_HINT, SLACK_SETUP_STEPS } from "./copy";
+import { CHANNEL_TOKEN_HINT, SLACK_SETUP_STEPS, TEAMS_SETUP_STEPS } from "./copy";
 import type { AgentGrantRequestResponse, ChannelProviderEntry, ChannelProviderId, ChannelReadiness, ChannelsBrowseAnswer, ChannelStatus, ChannelView } from "./types";
 import { formatWhen, InlineError, StatePanel } from "./ui";
 
@@ -48,6 +48,10 @@ function ProviderReadiness({ browse }: { browse: ChannelsBrowseAnswer }) {
         {provider === "slack" && readiness !== "available" && <details className="provider-setup">
           <summary>Set up the Slack app</summary>
           <ol>{SLACK_SETUP_STEPS.map((step) => <li key={step}>{step}</li>)}</ol>
+        </details>}
+        {provider === "teams" && readiness !== "available" && <details className="provider-setup">
+          <summary>Set up the Microsoft Teams bot</summary>
+          <ol>{TEAMS_SETUP_STEPS.map((step) => <li key={step}>{step}</li>)}</ol>
         </details>}
       </article>;
     })}
@@ -253,7 +257,7 @@ export function ChannelsPage({ workspaceSlug }: { workspaceSlug: string }) {
           </button>)}
         </nav>
         {selected && <ChannelDetail channel={selected} providers={data.providers} workspaceSlug={workspaceSlug} onConfirm={setConfirm} onNotice={announce} onChanged={changed} />}
-      </div> : !creating && <div className="collection-empty compact"><Megaphone /><h3>No channels yet</h3><p>{anyReady ? "Add a Telegram chat, or a Discord or Slack channel, your agents may post to." : CHANNEL_TOKEN_HINT}</p></div>}
+      </div> : !creating && <div className="collection-empty compact"><Megaphone /><h3>No channels yet</h3><p>{anyReady ? "Add a Telegram chat, a Discord or Slack channel, or a Microsoft Teams channel or chat your agents may post to." : CHANNEL_TOKEN_HINT}</p></div>}
     </section>
     <ReceiptsSection channels={channels} onConfirm={(state) => setConfirm(state)} onNotice={announce} />
     <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} onSuccess={(result) => confirm?.after?.(result)} />
