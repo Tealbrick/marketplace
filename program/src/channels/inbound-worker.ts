@@ -1,0 +1,237 @@
+import { createHash, randomBytes } from "node:crypto";
+
+import { createDiscordGateway, type DiscordGateway, type DiscordGatewayStatus, type GatewaySocketFactory, type Timers } from "./discord-gateway.js";
+import { sha256Hex } from "./inbound-http.js";
+import { TELEGRAM_WEBHOOK_PREFIX } from "./inbound-routes.js";
+import { INBOUND_TEXT_RETENTION_BOUNDS, type InboundRouteRecord, type InboundSettings, type InboundStore } from "./inbound-store.js";
+import { TELEGRAM_WEBHOOK_UPDATES } from "./providers/telegram.js";
+import type { ChannelProviderId, InboundMessage } from "./providers/types.js";
+import type { ChannelProviderRegistry } from "./runtime.js";
+import type { ChannelRecord } from "./store.js";
+
+/**
+ * The inbound worker's long-lived parts (Channels P2 scope 2.2 item 1) and the owner's inbound switches.
+ *
+ * - Discord: one gateway connection per bot token, started only while at least one Discord channel has an
+ *   enabled route and the bot credential is available; restarted when the owner changes the Message Content
+ *   setting; stopped when the last route goes. Consumer lease per token (`discord:<sha256 prefix>`).
+ * - Telegram: the owner's first enabled Telegram route sets the webhook (random path segment + secret token,
+ *   only their SHA-256 is stored; allowed updates message, channel_post, edited_message, my_chat_member); the
+ *   last disabled route deletes it. Before setting, getWebhookInfo must show no webhook of another host/path
+ *   (another consumer of the same bot): else `channel_consumer_conflict`.
+ * - Slack and Teams receive on their public routes; a route needs the Slack signing secret / the Teams app.
+ *
+ * Inert mode: without credentials nothing starts (the worker is never reconciled) and the switches refuse.
+ */
+
+export const DISCORD_LEASE_TTL_MS = 60_000;
+export const DISCORD_LEASE_RENEW_MS = 20_000;
+
+export type InboundSwitchResult =
+  | { ok: true; route: InboundRouteRecord; receiver: Record<string, unknown> }
+  | { ok: false; status: number; error: string; detail?: string };
+
+export type InboundWorkerDeps = {
+  organizationId: string;
+  inbound: InboundStore;
+  providers: ChannelProviderRegistry;
+  now: () => Date;
+  instanceId: string;
+  /** Credential value while the provider is available, else null (never logged). */
+  credential: (provider: ChannelProviderId) => string | null;
+  connectionId: (provider: ChannelProviderId) => string | null;
+  slackSigningSecretSet: () => boolean;
+  teamsConfigured: () => boolean;
+  /** `MARKETPLACE_PUBLIC_ORIGIN` (https), for the Telegram webhook URL. */
+  publicOrigin: string | null;
+  agentConsented: (agentId: string, channel: ChannelRecord) => boolean;
+  ingest: (message: InboundMessage) => void;
+  /** The id of the pipeline's current sink (`null` until the Buzz bridge plugs in). */
+  sinkId?: () => string;
+  audit: (eventType: string, actorId: string, metadata: Record<string, unknown>) => void;
+  socketFactory?: GatewaySocketFactory;
+  timers?: Timers;
+  random?: () => number;
+};
+
+export type InboundWorker = ReturnType<typeof createInboundWorker>;
+
+const consumerKey = (provider: string, credential: string) => `${provider}:${createHash("sha256").update(credential, "utf8").digest("hex").slice(0, 32)}`;
+
+export function createInboundWorker(deps: InboundWorkerDeps) {
+  const org = deps.organizationId;
+  let gateway: DiscordGateway | null = null;
+  let gatewayKey: string | null = null;
+  let gatewayStatus: { status: DiscordGatewayStatus; detail?: string } = { status: "stopped" };
+  let stopped = false;
+
+  const publicOrigin = (() => {
+    try {
+      const url = new URL(deps.publicOrigin ?? "");
+      return url.protocol === "https:" ? url.origin : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  // ----- Discord ---------------------------------------------------------------
+
+  const stopGateway = () => {
+    gateway?.stop();
+    gateway = null;
+    gatewayKey = null;
+  };
+
+  const reconcileDiscord = () => {
+    if (stopped) return;
+    const credential = deps.credential("discord");
+    const wanted = credential !== null && deps.inbound.enabledRoutesFor(org, "discord").length > 0;
+    if (!wanted) {
+      stopGateway();
+      gatewayStatus = { status: "stopped" };
+      return;
+    }
+    const settings = deps.inbound.getSettings(org);
+    const key = consumerKey("discord", credential);
+    if (gateway && gatewayKey === key && gateway.messageContent === settings.discordMessageContent && gateway.status !== "failed") return;
+    stopGateway();
+    gatewayKey = key;
+    gateway = createDiscordGateway({
+      token: credential,
+      messageContent: settings.discordMessageContent,
+      lease: {
+        acquire: () => deps.inbound.acquireLease({ consumerKey: key, holder: deps.instanceId, now: deps.now(), ttlMs: DISCORD_LEASE_TTL_MS }),
+        release: () => deps.inbound.releaseLease(key, deps.instanceId),
+      },
+      onMessage: deps.ingest,
+      onStatus: (status, detail) => {
+        const previous = gatewayStatus.status;
+        gatewayStatus = { status, ...(detail ? { detail } : {}) };
+        if (status !== previous && (status === "ready" || status === "failed" || status === "waiting_lease")) {
+          deps.audit("marketplace.channels.inbound.discord_gateway", "marketplace:inbound", { status, ...(detail ? { detail } : {}) });
+        }
+      },
+      leaseRenewMs: DISCORD_LEASE_RENEW_MS,
+      ...(deps.socketFactory ? { socketFactory: deps.socketFactory } : {}),
+      ...(deps.timers ? { timers: deps.timers } : {}),
+      ...(deps.random ? { random: deps.random } : {}),
+    });
+    gateway.start();
+  };
+
+  // ----- Telegram webhook ----------------------------------------------------------
+
+  const telegramWebhookPrefix = () => (publicOrigin ? `${publicOrigin}${TELEGRAM_WEBHOOK_PREFIX}` : null);
+
+  const ensureTelegramWebhook = async (): Promise<{ ok: true } | { ok: false; status: number; error: string; detail?: string }> => {
+    if (deps.inbound.activeWebhook(org, "telegram")) return { ok: true };
+    const adapter = deps.providers.telegram;
+    const credential = deps.credential("telegram");
+    const connectionId = deps.connectionId("telegram");
+    if (!adapter?.setWebhook || !adapter.webhookInfo || !credential || !connectionId) return { ok: false, status: 503, error: "channel_credential_unavailable" };
+    const prefix = telegramWebhookPrefix();
+    if (!prefix) return { ok: false, status: 409, error: "channel_inbound_public_origin_missing", detail: "MARKETPLACE_PUBLIC_ORIGIN must be an https origin" };
+    const info = await adapter.webhookInfo(credential);
+    if (!info.ok) return { ok: false, status: info.errorCode === "credential_invalid" ? 409 : 503, error: `channel_${info.errorCode}` };
+    // A webhook of another host or path means another consumer of this bot (a second Marketplace, a bot framework).
+    if (info.url !== "" && !info.url.startsWith(prefix)) return { ok: false, status: 409, error: "channel_consumer_conflict" };
+    const segment = randomBytes(32).toString("base64url");
+    const secretToken = randomBytes(32).toString("base64url");
+    const set = await adapter.setWebhook(credential, { url: `${prefix}${segment}`, secretToken, allowedUpdates: TELEGRAM_WEBHOOK_UPDATES });
+    if (set.status !== "sent") return { ok: false, status: set.status === "uncertain" ? 503 : 502, error: "channel_webhook_failed", ...(set.errorCode ? { detail: set.errorCode } : {}) };
+    deps.inbound.setWebhook({ workspaceSlug: org, provider: "telegram", connectionId, pathSha256: sha256Hex(segment), headerSha256: sha256Hex(secretToken), urlOrigin: publicOrigin!, now: deps.now() });
+    deps.audit("marketplace.channels.inbound.webhook_set", "marketplace:inbound", { provider: "telegram", origin: publicOrigin, allowedUpdates: TELEGRAM_WEBHOOK_UPDATES });
+    return { ok: true };
+  };
+
+  const removeTelegramWebhookIfUnused = async (): Promise<{ ok: true } | { ok: false; status: number; error: string }> => {
+    if (!deps.inbound.activeWebhook(org, "telegram")) return { ok: true };
+    if (deps.inbound.enabledRoutesFor(org, "telegram").length > 0) return { ok: true };
+    const adapter = deps.providers.telegram;
+    const credential = deps.credential("telegram");
+    if (!adapter?.deleteWebhook || !credential) return { ok: false, status: 503, error: "channel_credential_unavailable" };
+    const removed = await adapter.deleteWebhook(credential);
+    if (removed.status !== "sent") return { ok: false, status: 502, error: "channel_webhook_failed" };
+    deps.inbound.markWebhookDeleted(org, "telegram", deps.now());
+    deps.audit("marketplace.channels.inbound.webhook_deleted", "marketplace:inbound", { provider: "telegram" });
+    return { ok: true };
+  };
+
+  // ----- owner switches --------------------------------------------------------------
+
+  const receiverView = () => {
+    const telegram = deps.inbound.getWebhook(org, "telegram");
+    return {
+      sink: deps.sinkId?.() ?? "null",
+      slack: { signingSecret: deps.slackSigningSecretSet() },
+      telegram: telegram ? { webhook: telegram.status, origin: telegram.urlOrigin, setAt: telegram.setAt } : { webhook: "none" },
+      discord: { gateway: gatewayStatus.status, ...(gatewayStatus.detail ? { detail: gatewayStatus.detail } : {}), messageContent: deps.inbound.getSettings(org).discordMessageContent },
+      teams: { configured: deps.teamsConfigured() },
+    };
+  };
+
+  /** The owner's per-channel inbound switch. Enabling runs the provider's receiver set-up first; nothing is half-on. */
+  const setRoute = async (input: { channel: ChannelRecord; enabled: boolean; agentId: string | null; actor: string }): Promise<InboundSwitchResult> => {
+    const { channel } = input;
+    const provider = channel.provider as ChannelProviderId;
+    const current = deps.inbound.getRoute(org, channel.id);
+    if (!input.enabled) {
+      if (!current) return { ok: false, status: 404, error: "channel_inbound_route_not_found" };
+      const route = deps.inbound.setRoute({ workspaceSlug: org, channelId: channel.id, agentId: current.agentId, enabled: false, actor: input.actor, now: deps.now() });
+      deps.audit("marketplace.channels.inbound.route_disabled", input.actor, { channelId: channel.id, agentId: route.agentId, provider });
+      if (provider === "telegram") {
+        const removed = await removeTelegramWebhookIfUnused();
+        if (!removed.ok) return { ok: true, route, receiver: { ...receiverView(), warning: removed.error } };
+      }
+      if (provider === "discord") reconcileDiscord();
+      return { ok: true, route, receiver: receiverView() };
+    }
+    const agentId = input.agentId ?? current?.agentId ?? null;
+    if (!agentId) return { ok: false, status: 400, error: "channel_inbound_agent_required" };
+    if (channel.status !== "active") return { ok: false, status: 409, error: "channel_not_active" };
+    const adapter = deps.providers[provider];
+    if (!adapter || adapter.capabilities.inbound.mode === "none") return { ok: false, status: 422, error: "channel_capability_unavailable", detail: 'this provider does not declare "inbound"' };
+    if (!deps.agentConsented(agentId, channel)) return { ok: false, status: 409, error: "channel_inbound_agent_not_consented" };
+    if (provider === "slack" && !deps.slackSigningSecretSet()) return { ok: false, status: 409, error: "channel_inbound_signing_secret_missing" };
+    if (provider === "teams" && !deps.teamsConfigured()) return { ok: false, status: 409, error: "channel_credential_unavailable" };
+    if (provider === "discord" && !deps.credential("discord")) return { ok: false, status: 503, error: "channel_credential_unavailable" };
+    if (provider === "telegram") {
+      const ensured = await ensureTelegramWebhook();
+      if (!ensured.ok) return ensured;
+    }
+    const route = deps.inbound.setRoute({ workspaceSlug: org, channelId: channel.id, agentId, enabled: true, actor: input.actor, now: deps.now() });
+    deps.audit("marketplace.channels.inbound.route_enabled", input.actor, { channelId: channel.id, agentId, provider });
+    if (provider === "discord") reconcileDiscord();
+    return { ok: true, route, receiver: receiverView() };
+  };
+
+  const updateSettings = (input: { textRetentionDays?: number; discordMessageContent?: boolean; actor: string }): { ok: true; settings: InboundSettings } | { ok: false; status: number; error: string } => {
+    if (
+      input.textRetentionDays !== undefined &&
+      (!Number.isInteger(input.textRetentionDays) || input.textRetentionDays < INBOUND_TEXT_RETENTION_BOUNDS.min || input.textRetentionDays > INBOUND_TEXT_RETENTION_BOUNDS.max)
+    ) {
+      return { ok: false, status: 422, error: "channel_inbound_retention_invalid" };
+    }
+    const settings = deps.inbound.updateSettings({ workspaceSlug: org, ...input, now: deps.now() });
+    deps.audit("marketplace.channels.inbound.settings_updated", input.actor, { textRetentionDays: settings.textRetentionDays, discordMessageContent: settings.discordMessageContent });
+    reconcileDiscord();
+    return { ok: true, settings };
+  };
+
+  return {
+    /** Starts or stops the long-lived connections to match the routes (after boot and after each change). */
+    reconcile(): void {
+      reconcileDiscord();
+    },
+    setRoute,
+    updateSettings,
+    receiverView,
+    get discordGateway(): DiscordGateway | null {
+      return gateway;
+    },
+    stop(): void {
+      stopped = true;
+      stopGateway();
+    },
+  };
+}

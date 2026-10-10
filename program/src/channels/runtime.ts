@@ -281,6 +281,12 @@ export type ChannelPostBody = {
   attachments: ChannelPostAttachmentSpec[];
   campaign: PostCampaign;
   sendAt: string | null;
+  /**
+   * Provider message id to reply to (`marketplace.channels.reply`: the source thread or message of an inbound
+   * event). Part of the digest, so the owner approves the reply target with the text. Absent on plain posts
+   * (their digests are unchanged).
+   */
+  replyTo?: string;
 };
 
 export type ChannelPayload = {
@@ -291,6 +297,7 @@ export type ChannelPayload = {
   fallbacks: string[];
   campaign: PostCampaign;
   sendAt: string | null;
+  replyTo?: string;
   digest: string;
   canonical: string;
   files: Array<{ name: string; sha256: string; contentType: string; kind: string; bytes: number }>;
@@ -343,6 +350,9 @@ export function buildChannelPayload(input: {
   body: ChannelPostBody;
 }): { ok: true; payload: ChannelPayload } | { ok: false; refusal: ChannelRefusal } {
   const { channel, caps, body } = input;
+  if (body.replyTo !== undefined && (!caps.thread.replies || typeof body.replyTo !== "string" || body.replyTo.length === 0 || body.replyTo.length > 256)) {
+    return { ok: false, refusal: refusal("channel_capability_unavailable", 'this channel\'s provider does not declare "thread.replies"') };
+  }
   if (body.attachments.length > MAX_ATTACHMENTS_PER_MESSAGE) {
     return { ok: false, refusal: refusal("channel_too_many_files") };
   }
@@ -407,6 +417,7 @@ export function buildChannelPayload(input: {
     destination: channel.destination.externalId,
     ...(channel.destination.parentId ? { destinationParentId: channel.destination.parentId } : {}),
     op: input.op,
+    ...(body.replyTo !== undefined ? { replyTo: body.replyTo } : {}),
     text: applied.text,
     attachments: applied.attachments.map((attachment) => ({
       sha256: attachment.sha256,
@@ -428,6 +439,7 @@ export function buildChannelPayload(input: {
       fallbacks: applied.fallbacks,
       campaign: body.campaign,
       sendAt: body.sendAt,
+      ...(body.replyTo !== undefined ? { replyTo: body.replyTo } : {}),
       digest: channelPayloadDigest(digestInput),
       canonical: channelPayloadCanonical(digestInput),
       files,

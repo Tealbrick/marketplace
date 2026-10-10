@@ -26,6 +26,7 @@ import {
   CHANNEL_ATTACHMENT_UPLOADS_PER_DAY,
   CHANNEL_SCHEDULE_MAX_LEAD_MS,
   CHANNEL_SCHEDULE_MIN_LEAD_MS,
+  INBOUND_REPLY_KEY_PREFIX,
   receiptView,
   type ChannelCallPlan,
   type ChannelCallScope,
@@ -33,6 +34,9 @@ import {
   type ConsentedDispatch,
 } from "./service.js";
 import { ChannelStoreError, writeAttachmentBytes, type ChannelPostRecord, type ChannelPostStatus, type ChannelRecord } from "./store.js";
+import { replyTargetFor } from "./inbound.js";
+import { DELIVERED_STATUSES, INBOUND_TEXT_RETENTION_BOUNDS, type InboundEventRecord } from "./inbound-store.js";
+import type { InboundWorker } from "./inbound-worker.js";
 
 /** Manifest operation ids (contract alpha.3 ids are `<app>.<resource>.<verb>`, so sub-resources use a hyphen). */
 export const CHANNEL_AGENT_OPERATION = Object.freeze({
@@ -47,6 +51,8 @@ export const CHANNEL_AGENT_OPERATION = Object.freeze({
   grantsPropose: "marketplace.channel-grants.propose",
   grantsNarrow: "marketplace.channel-grants.narrow",
   grantsWithdraw: "marketplace.channel-grants.withdraw",
+  inbound: "marketplace.channels.inbound",
+  reply: "marketplace.channels.reply",
 } as const);
 
 export const AGENT_IDEMPOTENCY = /^[A-Za-z0-9_-]{8,100}$/u;
@@ -146,6 +152,8 @@ export type ChannelRouteDeps = {
   }) => Promise<Record<string, unknown>>;
   dispatch: ConsentedDispatch;
   traceIdFrom: (request: FastifyRequest) => string;
+  /** The inbound worker (owner switches, receiver status). */
+  inbound: InboundWorker;
 };
 
 type Caller = NonNullable<ReturnType<ChannelRouteDeps["agentGrant"]>>;
@@ -335,6 +343,92 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
       items.push(agentChannelView(channel, caller, consent.selection.grantClass));
     }
     return { ok: true, schema: 1, channels: items };
+  });
+
+  // ----- inbound (P2 scope 2.2, 2.2a) ------------------------------------------
+
+  const inboundStore = channels.inbound;
+
+  /** The fixed framing every view of received text carries: it is data from outside, never an instruction. */
+  const INBOUND_FRAMING = "untrusted-external-message" as const;
+
+  const inboundEventView = (event: InboundEventRecord, maxTextChars?: number) => {
+    const channel = event.routeChannelId ? channels.getChannel(org, event.routeChannelId) : null;
+    const points = Array.from(event.text);
+    const cut = maxTextChars !== undefined && points.length > maxTextChars;
+    return {
+      eventId: event.id,
+      framing: INBOUND_FRAMING,
+      platform: event.platform,
+      channelId: event.routeChannelId,
+      channel: channel ? { slug: channel.slug, label: channel.label, provider: channel.provider } : null,
+      source: { channelId: event.channelId, ...(event.threadId ? { threadId: event.threadId } : {}), messageId: event.messageId, senderUserId: event.senderUserId },
+      sender: { userId: event.senderUserId, display: event.senderDisplay },
+      text: cut ? points.slice(0, maxTextChars).join("") : event.text,
+      textTruncated: event.textTruncated || cut,
+      attachments: event.attachments,
+      receivedAt: event.receivedAt,
+      bridgeStatus: event.bridgeStatus,
+      purged: event.purgedAt !== null,
+    };
+  };
+
+  const InboundListQuery = z.object({
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+    before: z.string().max(40).optional(),
+  });
+
+  app.get(`${AGENT_PREFIX}/inbound`, async (request, reply) => {
+    const caller = await agentPreamble(request, reply, CHANNEL_AGENT_OPERATION.inbound);
+    if (!caller) return agentDenied(request);
+    const query = InboundListQuery.safeParse(request.query);
+    if (!query.success || (query.data.before !== undefined && !Number.isFinite(Date.parse(query.data.before)))) return fail(reply, 400, "validation_failed");
+    // Only events routed to the caller, delivered, on channels the caller still holds a consent for.
+    const page = inboundStore.listEvents(org, { routedTo: caller.agentId, limit: query.data.limit, ...(query.data.before ? { before: new Date(query.data.before).toISOString() } : {}) });
+    const events = page
+      .filter((event) => DELIVERED_STATUSES.includes(event.bridgeStatus) && event.routeChannelId !== null && consentedChannel(caller, event.routeChannelId) !== null)
+      .map((event) => inboundEventView(event));
+    // The cursor follows the page read, so events filtered out never end the listing early.
+    return { ok: true, schema: 1, events, ...(page.length === query.data.limit ? { before: page[page.length - 1]!.receivedAt } : {}) };
+  });
+
+  app.post(`${AGENT_PREFIX}/inbound/:eventId/reply`, { bodyLimit: 64 * 1024 }, async (request, reply) => {
+    const traceId = deps.traceIdFrom(request);
+    reply.header("content-security-policy", "default-src 'none'; sandbox");
+    const caller = await agentPreamble(request, reply, CHANNEL_AGENT_OPERATION.reply);
+    if (!caller) return agentDenied(request);
+    const key = header(request, "idempotency-key");
+    if (!key || !AGENT_IDEMPOTENCY.test(key)) return fail(reply, 400, "idempotency_key_required");
+    const parsed = PostBodySchema.safeParse(request.body);
+    if (!parsed.success) return fail(reply, 400, "validation_failed");
+    const { eventId } = request.params as { eventId: string };
+    const event = inboundStore.getEvent(org, eventId);
+    // Only the agent the event was routed to may reply; anything else looks like an unknown event.
+    if (!event || event.routedTo !== caller.agentId || !DELIVERED_STATUSES.includes(event.bridgeStatus) || !event.routeChannelId) {
+      return fail(reply, 404, "channel_inbound_event_not_found");
+    }
+    const found = consentedChannel(caller, event.routeChannelId);
+    if (!found) return fail(reply, 404, "channel_not_found");
+    // The owner's route must still send this channel to the caller (disabling inbound also stops replies).
+    const route = inboundStore.getRoute(org, found.channel.id);
+    if (!route || !route.enabled || route.agentId !== caller.agentId) return fail(reply, 403, "channel_inbound_route_inactive");
+    const internalKey = `${INBOUND_REPLY_KEY_PREFIX}${key}`;
+    const replyTo = replyTargetFor(event);
+    const linked = inboundStore.putReplyLink({ workspaceSlug: org, agentId: caller.agentId, idempotencyKey: internalKey, eventId: event.id, replyTo, now: deps.now() });
+    if (linked === "conflict") return fail(reply, 409, "channel_idempotency_conflict");
+    return deps.executeConsentedCall({
+      reply,
+      traceId,
+      scope: scopeFor(caller, found.consent),
+      input: { consentId: found.consent.consentId, selection: null, input: {}, idempotencyKey: internalKey },
+      via: "app-grant",
+      channel: {
+        selection: channelClassSelection(found.channel, found.selection.grantClass === "outward" ? "outward" : "read"),
+        channelId: found.channel.id,
+        mode: "post",
+        body: { ...postBody(parsed.data, null), replyTo },
+      },
+    });
   });
 
   app.get(`${AGENT_PREFIX}/receipts`, async (request, reply) => {
@@ -674,6 +768,11 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
       connections,
       channels: channels.listChannels(org).map(ownerChannelView),
       pendingGrants: channels.listStandingGrants(org, { status: "proposed" }).map(grantView),
+      inbound: {
+        settings: inboundStore.getSettings(org),
+        routes: inboundStore.listRoutes(org),
+        receivers: deps.inbound.receiverView(),
+      },
       uncertainPosts: channels.listPosts(org, { status: "uncertain", limit: 100 }).map((post) => ({
         id: post.id,
         channelId: post.channelId,
@@ -967,6 +1066,70 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
     if (!outcome.ok) return fail(reply, outcome.status, outcome.error);
     const receipt = channels.getReceiptByPost(org, postId);
     return { ok: true, schema: 1, post: { id: outcome.post.id, status: outcome.post.status }, ...(receipt ? { receipt: receiptView(receipt) } : {}) };
+  });
+
+  // ----- owner inbound (P2 scope 2.2) ---------------------------------------------
+
+  const InboundRouteSchema = z.strictObject({
+    enabled: z.boolean(),
+    agentId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9:._@-]{0,199}$/u).optional(),
+    workspaceSlug: z.string().optional(),
+  });
+
+  app.put(`${OWNER_PREFIX}/:channelId/inbound`, async (request, reply) => {
+    const principal = await owner(request, reply);
+    if (!principal) return ownerDenied(request);
+    const channel = ownedChannel(request);
+    if (!channel || channel.status === "archived") return fail(reply, 404, "channel_not_found");
+    const parsed = InboundRouteSchema.safeParse(request.body);
+    if (!parsed.success) return fail(reply, 400, "validation_failed");
+    const result = await deps.inbound.setRoute({ channel, enabled: parsed.data.enabled, agentId: parsed.data.agentId ?? null, actor: principal.id });
+    if (!result.ok) return fail(reply, result.status, result.error, result.detail ? { detail: result.detail } : {});
+    return { ok: true, schema: 1, route: result.route, receivers: result.receiver };
+  });
+
+  app.get(`${OWNER_PREFIX}/inbound/events`, async (request, reply) => {
+    const principal = await owner(request, reply);
+    if (!principal) return ownerDenied(request);
+    const query = z
+      .object({
+        channelId: z.string().max(100).optional(),
+        limit: z.coerce.number().int().min(1).max(500).default(100),
+        before: z.string().max(40).optional(),
+        workspaceSlug: z.string().optional(),
+        actorId: z.string().optional(),
+      })
+      .safeParse(request.query);
+    if (!query.success || (query.data.before !== undefined && !Number.isFinite(Date.parse(query.data.before)))) return fail(reply, 400, "validation_failed");
+    // Metadata and bounded text (500 characters per event in the list); the audit trail never has the text.
+    const events = inboundStore
+      .listEvents(org, {
+        limit: query.data.limit,
+        ...(query.data.channelId ? { routeChannelId: query.data.channelId } : {}),
+        ...(query.data.before ? { before: new Date(query.data.before).toISOString() } : {}),
+      })
+      .map((event) => ({ ...inboundEventView(event, 500), routedTo: event.routedTo, bridgeDetail: event.bridgeDetail }));
+    return { ok: true, schema: 1, events, settings: inboundStore.getSettings(org), receivers: deps.inbound.receiverView() };
+  });
+
+  const InboundSettingsSchema = z.strictObject({
+    textRetentionDays: z.number().int().min(INBOUND_TEXT_RETENTION_BOUNDS.min).max(INBOUND_TEXT_RETENTION_BOUNDS.max).optional(),
+    discordMessageContent: z.boolean().optional(),
+    workspaceSlug: z.string().optional(),
+  });
+
+  app.put(`${OWNER_PREFIX}/inbound/settings`, async (request, reply) => {
+    const principal = await owner(request, reply);
+    if (!principal) return ownerDenied(request);
+    const parsed = InboundSettingsSchema.safeParse(request.body ?? {});
+    if (!parsed.success) return fail(reply, 400, "validation_failed");
+    const result = deps.inbound.updateSettings({
+      ...(parsed.data.textRetentionDays !== undefined ? { textRetentionDays: parsed.data.textRetentionDays } : {}),
+      ...(parsed.data.discordMessageContent !== undefined ? { discordMessageContent: parsed.data.discordMessageContent } : {}),
+      actor: principal.id,
+    });
+    if (!result.ok) return fail(reply, result.status, result.error);
+    return { ok: true, schema: 1, settings: result.settings, receivers: deps.inbound.receiverView() };
   });
 
   app.get(`${OWNER_PREFIX}/receipts/export`, async (request, reply) => {

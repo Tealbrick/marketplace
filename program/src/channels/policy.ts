@@ -878,6 +878,8 @@ export type ChannelPayloadDigestInput = {
   destinationParentId?: string;
   /** Operation, e.g. `post`, `schedule`, `test`. */
   op: string;
+  /** Provider message id a reply goes to (`marketplace.channels.reply`); absent on plain posts (digest unchanged). */
+  replyTo?: string;
   text: string;
   /**
    * `kind` and `transcript` (spec 3.1) are part of the payload when given: the
@@ -920,6 +922,7 @@ export function channelPayloadCanonical(input: ChannelPayloadDigestInput): strin
     destination: input.destination,
     destinationParentId: input.destinationParentId || undefined,
     op: input.op,
+    replyTo: input.replyTo || undefined,
     text: input.text,
     attachments: input.attachments.map((file) => ({
       sha256: file.sha256,

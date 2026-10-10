@@ -267,6 +267,35 @@
       "summary": "Withdraw one of the caller's grants"
     },
     {
+      "id": "marketplace.channels.inbound",
+      "crud": [
+        "read"
+      ],
+      "method": "GET",
+      "path": "/api/marketplace/v1/agent/channels/inbound",
+      "output": "#/schemas/InboundEventList",
+      "idempotency": "none",
+      "effects": "read-only",
+      "review": "none",
+      "summary": "Inbound messages the owner routed to the caller (newest first, untrusted external text with its source ids); the fallback for agents without the Buzz bridge"
+    },
+    {
+      "id": "marketplace.channels.reply",
+      "crud": [
+        "create"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/v1/agent/channels/inbound/{eventId}/reply",
+      "input": "#/schemas/ChannelPostInput",
+      "output": "#/schemas/ChannelPostResult",
+      "idempotency": "required",
+      "effects": "external-effects",
+      "review": "allowed",
+      "summary": "Reply natively in the source thread of an inbound event routed to the caller (outward consent for that channel required): 200 receipt under a covering standing grant or an owner-approved digest, otherwise 202 approval_pending",
+      "approvalAuthority": "app",
+      "appHold": true
+    },
+    {
       "id": "marketplace.approvals.resolve",
       "crud": [
         "update"
@@ -734,6 +763,45 @@
       "effects": "writes-app-state",
       "review": "none",
       "summary": "Purge receipts older than the retention (default 90 days)",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channel-inbound-routes.update",
+      "crud": [
+        "update"
+      ],
+      "method": "PUT",
+      "path": "/api/marketplace/channels/{channelId}/inbound",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Turn inbound on or off for a channel and pick the agent that receives it (default off); Telegram sets or deletes the bot webhook, Discord starts or stops the gateway",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channel-inbound-events.list",
+      "crud": [
+        "read"
+      ],
+      "method": "GET",
+      "path": "/api/marketplace/channels/inbound/events",
+      "idempotency": "none",
+      "effects": "read-only",
+      "review": "none",
+      "summary": "Recent inbound events (metadata, route outcome and at most 500 characters of the untrusted text each) and the receiver status",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channel-inbound-settings.update",
+      "crud": [
+        "update"
+      ],
+      "method": "PUT",
+      "path": "/api/marketplace/channels/inbound/settings",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Inbound text retention (1-365 days, default 30) and the Discord Message Content intent (privileged, default off)",
       "audience": "owner"
     }
   ],
@@ -2427,6 +2495,139 @@
               }
             }
           ]
+        }
+      }
+    },
+    "InboundEventList": {
+      "type": "object",
+      "required": [
+        "ok",
+        "events"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "before": {
+          "type": "string"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "eventId",
+              "framing",
+              "platform",
+              "channelId",
+              "source",
+              "sender",
+              "text",
+              "receivedAt",
+              "bridgeStatus"
+            ],
+            "properties": {
+              "eventId": {
+                "type": "string"
+              },
+              "framing": {
+                "const": "untrusted-external-message"
+              },
+              "platform": {
+                "enum": [
+                  "slack",
+                  "telegram",
+                  "discord",
+                  "teams"
+                ]
+              },
+              "channelId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "channel": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "source": {
+                "type": "object",
+                "required": [
+                  "channelId",
+                  "messageId",
+                  "senderUserId"
+                ],
+                "properties": {
+                  "channelId": {
+                    "type": "string"
+                  },
+                  "threadId": {
+                    "type": "string"
+                  },
+                  "messageId": {
+                    "type": "string"
+                  },
+                  "senderUserId": {
+                    "type": "string"
+                  }
+                }
+              },
+              "sender": {
+                "type": "object",
+                "properties": {
+                  "userId": {
+                    "type": "string"
+                  },
+                  "display": {
+                    "type": "string"
+                  }
+                }
+              },
+              "text": {
+                "type": "string"
+              },
+              "textTruncated": {
+                "type": "boolean"
+              },
+              "attachments": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "contentType": {
+                      "type": "string"
+                    },
+                    "bytes": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              },
+              "receivedAt": {
+                "type": "string"
+              },
+              "bridgeStatus": {
+                "enum": [
+                  "queued",
+                  "pending-bridge",
+                  "bridged",
+                  "bridge-failed"
+                ]
+              },
+              "purged": {
+                "type": "boolean"
+              }
+            }
+          }
         }
       }
     }

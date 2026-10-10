@@ -89,6 +89,11 @@ describe("channels inert mode (no credentials)", () => {
       await agent("POST", "/api/marketplace/v1/agent/channels/chn_x/grants", {}),
       await agent("POST", "/api/marketplace/v1/agent/channels/grants/chg_x/narrow", {}),
       await agent("POST", "/api/marketplace/v1/agent/channels/grants/chg_x/withdraw", {}),
+      await agent("GET", "/api/marketplace/v1/agent/channels/inbound"),
+      await agent("POST", "/api/marketplace/v1/agent/channels/inbound/cie_x/reply", { text: "hi" }),
+      await f.app.inject({ method: "PUT", url: "/api/marketplace/channels/chn_x/inbound", payload: { enabled: true, agentId: "agent-1" } }),
+      await f.owner("GET", "/api/marketplace/channels/inbound/events"),
+      await f.app.inject({ method: "PUT", url: "/api/marketplace/channels/inbound/settings", payload: { textRetentionDays: 7 } }),
       await f.owner("GET", "/api/marketplace/channels/discover?provider=telegram"),
       await f.owner("POST", "/api/marketplace/channels", { provider: "telegram" }, { "idempotency-key": "inert-key-0002" }),
       await f.owner("PATCH", "/api/marketplace/channels/chn_x", {}),
@@ -112,6 +117,29 @@ describe("channels inert mode (no credentials)", () => {
     });
     expect(upload.statusCode).toBe(409);
     expect(f.store.getConnection(TENANT, "channels-telegram")).toBeNull();
+  });
+
+  it("starts no inbound receiver: the public inbound routes refuse after their cheap checks and nothing is stored", async () => {
+    const f = await inert({ environment: { MARKETPLACE_CHANNELS_SLACK_SIGNING_SECRET: "slack-signing-secret-0000" } });
+    expect(f.runtime.inbound.worker.discordGateway).toBeNull();
+    const timestamp = String(Math.floor(f.now / 1000));
+    const slack = await f.app.inject({
+      method: "POST",
+      url: "/api/marketplace/channels/slack/events",
+      headers: { "content-type": "application/json", "x-slack-request-timestamp": timestamp, "x-slack-signature": `v0=${"0".repeat(64)}` },
+      payload: { type: "url_verification", challenge: "abc" },
+    });
+    expect(slack.statusCode).toBe(503);
+    expect(slack.json()).toEqual({ error: "channels_slack_inbound_not_configured" });
+    const telegram = await f.app.inject({
+      method: "POST",
+      url: `/api/marketplace/channels/telegram/webhook/${"A".repeat(43)}`,
+      headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "secret" },
+      payload: { update_id: 1 },
+    });
+    expect(telegram.statusCode).toBe(404);
+    expect(f.store.channels.inbound.listEvents(TENANT, { limit: 10 })).toEqual([]);
+    expect(f.store.channels.inbound.listRoutes(TENANT)).toEqual([]);
   });
 });
 

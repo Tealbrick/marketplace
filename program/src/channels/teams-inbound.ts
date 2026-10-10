@@ -1,8 +1,10 @@
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance } from "fastify";
 
+import { createSourceBudget, sourceOf } from "./inbound-http.js";
 import { asRecord, createReplayGuard } from "./providers/common.js";
 import { JWT_CLOCK_SKEW_SECONDS, isAllowedServiceUrl, type BotFrameworkVerifier } from "./providers/teams-auth.js";
 import { parseTeamsActivity } from "./providers/teams.js";
+import type { InboundMessage } from "./providers/types.js";
 import type { TeamsConversationStore } from "./teams-store.js";
 
 /**
@@ -13,8 +15,10 @@ import type { TeamsConversationStore } from "./teams-store.js";
  *
  * What it does: installationUpdate / conversationUpdate store or remove the conversation reference that
  * proactive sends need. An activity without an id, or an id already processed while its token is valid
- * (a replay: the token is not bound to the body), is acknowledged with 200 and changes nothing. Message activities are parsed into the normalized inbound shape and nothing is
- * stored yet (the Buzz bridge comes later). It answers 200 quickly; activity text is untrusted data.
+ * (a replay: the token is not bound to the body), is acknowledged with 200 and changes nothing. Message
+ * activities are parsed into the normalized inbound shape and handed to the inbound pipeline (`onMessage`:
+ * dedupe, loop breaker, owner route, sink) after the replay check and the bot filter. It answers 200 quickly;
+ * activity text is untrusted data.
  */
 export const TEAMS_MESSAGES_PATH = "/api/marketplace/channels/teams/messages";
 
@@ -51,18 +55,11 @@ export type TeamsInboundDeps = {
   rate?: { capacity: number; refillPerSecond: number };
   /** Milliseconds clock for the request budget. */
   clock?: () => number;
+  /** The inbound pipeline: a parsed message activity (untrusted). Absent: messages are parsed and dropped. */
+  onMessage?: (message: InboundMessage) => void;
 };
 
-/** The address the one trusted proxy appended (last X-Forwarded-For entry), else the socket address. */
-function sourceOf(request: FastifyRequest): string {
-  const forwarded = request.headers["x-forwarded-for"];
-  const value = Array.isArray(forwarded) ? forwarded[forwarded.length - 1] : forwarded;
-  const last = value?.split(",").pop()?.trim();
-  return last && last.length <= 64 ? last : request.ip;
-}
-
 export function registerTeamsInboundRoute(deps: TeamsInboundDeps): void {
-  const rate = deps.rate ?? TEAMS_INBOUND_RATE;
   const clock = deps.clock ?? (() => Date.now());
   const replays = createReplayGuard({
     ttlMs: TEAMS_ACTIVITY_DEDUPE.minTtlMs,
@@ -70,21 +67,8 @@ export function registerTeamsInboundRoute(deps: TeamsInboundDeps): void {
     maxEntries: TEAMS_ACTIVITY_DEDUPE.maxEntries,
     now: clock,
   });
-  const buckets = new Map<string, { tokens: number; at: number }>();
-  const take = (source: string): boolean => {
-    const now = clock();
-    if (buckets.size > 10_000) {
-      for (const [key, bucket] of buckets) if (now - bucket.at > 10 * 60_000) buckets.delete(key);
-      if (buckets.size > 10_000) buckets.clear();
-    }
-    const bucket = buckets.get(source) ?? { tokens: rate.capacity, at: now };
-    bucket.tokens = Math.min(rate.capacity, bucket.tokens + (Math.max(0, now - bucket.at) / 1000) * rate.refillPerSecond);
-    bucket.at = now;
-    buckets.set(source, bucket);
-    if (bucket.tokens < 1) return false;
-    bucket.tokens -= 1;
-    return true;
-  };
+  const budget = createSourceBudget(deps.rate ?? TEAMS_INBOUND_RATE, deps.clock);
+  const take = (source: string) => budget.take(source);
 
   deps.app.post(
     TEAMS_MESSAGES_PATH,
@@ -150,8 +134,13 @@ export function registerTeamsInboundRoute(deps: TeamsInboundDeps): void {
             ...(event.conversationId ? { conversationId: event.conversationId } : {}),
           });
         }
+      } else if (event.kind === "message" && deps.onMessage) {
+        try {
+          deps.onMessage(event.message);
+        } catch {
+          // The pipeline never blocks the acknowledgement; Bot Framework would only retry the same activity.
+        }
       }
-      // A message is parsed (normalized, untrusted) but not stored or forwarded in this version.
       return reply.code(200).send({});
     },
   );

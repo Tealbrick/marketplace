@@ -2,7 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 
 import { describe, expect, it } from "vitest";
 
-import { INBOUND_LIMITS, NULL_INBOUND_SINK, channelForMessage, createInboundPipeline, replyTargetFor, type InboundSink } from "./inbound.js";
+import { INBOUND_LIMITS, NULL_INBOUND_SINK, channelForMessage, createInboundPipeline, replyTargetFor, type InboundLimits, type InboundSink } from "./inbound.js";
 import { INBOUND_TEXT_MAX_CHARS, InboundStore } from "./inbound-store.js";
 import type { InboundMessage } from "./providers/types.js";
 import { ChannelStore, migrateChannelTables, type ChannelRecord } from "./store.js";
@@ -10,7 +10,7 @@ import { ChannelStore, migrateChannelTables, type ChannelRecord } from "./store.
 const WS = "org-1";
 const T0 = Date.parse("2026-10-10T00:00:00.000Z");
 
-function setup(input: { sink?: InboundSink; consented?: (agentId: string) => boolean; limits?: typeof INBOUND_LIMITS } = {}) {
+function setup(input: { sink?: InboundSink; consented?: (agentId: string) => boolean; limits?: InboundLimits } = {}) {
   const db = new DatabaseSync(":memory:");
   migrateChannelTables(db);
   const channels = new ChannelStore(db);
