@@ -52,11 +52,7 @@ function cherokee(): Record<string, string> {
   return out;
 }
 
-/**
- * Skeleton map for forbidden-term matching: Unicode UTS #39 confusables (generated, confusables-data.ts) win;
- * the hand tables above add only lookalikes UTS #39 does not list (small capitals, some Latin, Greek, Cyrillic and
- * Cherokee letters). Over-matching is accepted for forbidden terms; a hand entry never overrides UTS #39.
- */
+/** Unicode UTS #39 entries win; hand entries fill only letters UTS #39 does not list. */
 export const CONFUSABLE_SKELETON: Readonly<Record<string, string>> = Object.freeze({
   ...LATIN_EXTENSIONS,
   ...GREEK,
@@ -65,5 +61,17 @@ export const CONFUSABLE_SKELETON: Readonly<Record<string, string>> = Object.free
   ...UTS39_SKELETON,
 });
 
-/** Characters that render as nothing but are letters (Lo), so Cf/Mn removal misses them: Hangul fillers, braille blank. */
+/**
+ * The same tables with the hand entries winning. Forbidden-term matching tries BOTH maps (and the text both as
+ * written and lowercased), so a letter whose UTS #39 prototype differs from how it is commonly read (lowercase
+ * Greek mu reads as "u") cannot slip through either table. Over-matching is accepted.
+ */
+export const HAND_FIRST_SKELETON: Readonly<Record<string, string>> = Object.freeze({
+  ...UTS39_SKELETON,
+  ...LATIN_EXTENSIONS,
+  ...GREEK,
+  ...CYRILLIC,
+  ...cherokee(),
+});
+
 export const INVISIBLE_LETTERS = /[ᅟᅠㅤﾠ⠀]/gu;

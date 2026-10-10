@@ -10,7 +10,7 @@ import { createHuddleSession, type HuddleSession } from "../huddle/session.js";
 import { SPEAK_TEXT_MAX_CHARS } from "../huddle/speak.js";
 import type { SpeechProvider } from "../huddle/speech.js";
 import type { ChannelRecord } from "../store.js";
-import { CONFUSABLE_SKELETON, INVISIBLE_LETTERS } from "./confusables.js";
+import { CONFUSABLE_SKELETON, HAND_FIRST_SKELETON, INVISIBLE_LETTERS } from "./confusables.js";
 import { modesOf, type LiveGrant, type LiveGrantService } from "./grants.js";
 import type { LiveGrantRecord, LiveModes, LiveSessionRecord, LiveStore } from "./store.js";
 
@@ -98,20 +98,29 @@ export function sha256Hex(value: string | Uint8Array): string {
  * confusables subset (`confusables.ts`: Latin extensions and small capitals, Greek, Cyrillic, Cherokee), then letters
  * and digits only (spaces and punctuation cannot split a term).
  */
-export function forbiddenSkeleton(value: string): string {
-  const folded = value.normalize("NFKC").toLowerCase().normalize("NFD").replace(/[\p{Mn}\p{Cf}]/gu, "").replace(INVISIBLE_LETTERS, "");
+export function forbiddenSkeleton(value: string, table: Readonly<Record<string, string>> = CONFUSABLE_SKELETON, lower = true): string {
+  const nfkc = value.normalize("NFKC");
+  const folded = (lower ? nfkc.toLowerCase() : nfkc).normalize("NFD").replace(/[\p{Mn}\p{Cf}]/gu, "").replace(INVISIBLE_LETTERS, "");
   let out = "";
-  for (const char of folded) out += CONFUSABLE_SKELETON[char] ?? char;
-  return out.normalize("NFD").replace(/\p{Mn}/gu, "").replace(/[^\p{L}\p{N}]/gu, "");
+  for (const char of folded) out += table[char] ?? char;
+  return out.toLowerCase().normalize("NFD").replace(/\p{Mn}/gu, "").replace(/[^\p{L}\p{N}]/gu, "");
 }
 
-/** Forbidden terms (owner-approved) whose skeleton occurs in the skeleton of `text`. Over-matching is accepted. */
+/** Every comparison skeleton of a value: both tables, as written and lowercased. */
+export function forbiddenSkeletons(value: string): string[] {
+  const out = new Set<string>();
+  for (const table of [CONFUSABLE_SKELETON, HAND_FIRST_SKELETON]) {
+    for (const lower of [false, true]) out.add(forbiddenSkeleton(value, table, lower));
+  }
+  return [...out];
+}
+
+/** Forbidden terms (owner-approved) any of whose skeletons occurs in any skeleton of `text`. Over-matching is accepted. */
 export function forbiddenTermsIn(text: string, terms: readonly string[]): string[] {
-  const haystack = forbiddenSkeleton(text);
-  return terms.filter((term) => {
-    const needle = forbiddenSkeleton(term);
-    return needle.length > 0 && haystack.includes(needle);
-  });
+  const haystacks = forbiddenSkeletons(text);
+  return terms.filter((term) =>
+    forbiddenSkeletons(term).some((needle) => needle.length > 0 && haystacks.some((haystack) => haystack.includes(needle))),
+  );
 }
 
 /** A fixed server template (review L2); the agent's topic follows on its own, labelled line. */

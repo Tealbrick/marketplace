@@ -2,7 +2,7 @@
 // Usage: pnpm exec tsx scripts/generate-confusables.ts <path/to/confusables.txt>
 // Keeps single-code-point sources (not ASCII) whose prototype is ASCII letters/digits after removing combining
 // marks (forbiddenSkeleton strips them too) and lowercasing,
-// keyed by the source and by its lowercase form (forbiddenSkeleton lowercases before the lookup).
+// keyed by the source, plus a lowercase alias only where Unicode has no direct entry for the lowercase letter.
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -14,7 +14,7 @@ const version = /# Version: (\S+)/u.exec(text)?.[1] ?? "unknown";
 const date = /# Date: ([^\n]+)/u.exec(text)?.[1]?.trim() ?? "unknown";
 const sha256 = createHash("sha256").update(text).digest("hex");
 
-const map = new Map<string, string>();
+const direct = new Map<string, string>();
 for (const line of text.split("\n")) {
   const body = line.split("#")[0]?.trim();
   if (!body) continue;
@@ -30,10 +30,15 @@ for (const line of text.split("\n")) {
     .replace(/\p{M}/gu, "")
     .toLowerCase();
   if (!/^[a-z0-9]+$/u.test(to)) continue;
-  for (const key of new Set([from, from.toLowerCase()])) {
-    if (key.codePointAt(0)! < 0x80 || [...key].length !== 1) continue;
-    if (!map.has(key)) map.set(key, to);
-  }
+  if (!direct.has(from)) direct.set(from, to);
+}
+// Direct entries first; a lowercase alias only where Unicode has no direct entry for that lowercase letter
+// (otherwise a capital's prototype would replace the lowercase letter's own, e.g. Greek capital Eta -> h over eta -> n).
+const map = new Map(direct);
+for (const [from, to] of direct) {
+  const lower = from.toLowerCase();
+  if ([...lower].length !== 1 || lower.codePointAt(0)! < 0x80 || map.has(lower)) continue;
+  map.set(lower, to);
 }
 
 const escape = (value: string) => [...value].map((char) => `\\u{${char.codePointAt(0)!.toString(16)}}`).join("");

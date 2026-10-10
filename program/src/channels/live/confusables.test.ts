@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { CONFUSABLE_SKELETON } from "./confusables.js";
+import { CONFUSABLE_SKELETON, HAND_FIRST_SKELETON } from "./confusables.js";
 import { UTS39_SKELETON } from "./confusables-data.js";
 import { forbiddenTermsIn } from "./sessions.js";
 
@@ -15,9 +15,23 @@ describe("forbidden-term confusables", () => {
     expect(Object.keys(UTS39_SKELETON).length).toBeGreaterThan(1500);
   });
 
-  it("lets UTS #39 win over the hand tables where both have an entry", () => {
-    for (const [char, skeleton] of [["η", "h"], ["μ", "m"], ["ν", "n"], ["б", "6"]] as const) {
-      expect(CONFUSABLE_SKELETON[char], char).toBe(skeleton);
+  it("keeps Unicode's direct lowercase entries (a capital never overwrites its lowercase letter)", () => {
+    for (const [char, skeleton] of [["η", "n"], ["ν", "v"], ["Η", "h"], ["Ν", "n"], ["Μ", "m"], ["б", "6"]] as const) {
+      expect(UTS39_SKELETON[char], char).toBe(skeleton);
+    }
+  });
+
+  it("catches Greek and Cyrillic capitals and lowercase letters both ways (dual skeleton)", () => {
+    const cases: Array<[string, string]> = [
+      ["Μoney", "money"], ["μoney", "uoney"], ["ΗELLO", "hello"], ["ηame", "name"], ["Νew", "new"], ["νery", "very"],
+      ["Υes", "yes"], ["υse", "use"], ["Вig", "big"], ["Нome", "home"], ["Мap", "map"], ["Тop", "top"], ["Сat", "cat"],
+    ];
+    for (const [text, term] of cases) expect(forbiddenTermsIn(text, [term]), `${text} vs ${term}`).toEqual([term]);
+  });
+
+  it("keeps every hand Greek/Cyrillic reading reachable through the hand-first table", () => {
+    for (const [char, skeleton] of Object.entries({ μ: "u", η: "n", ν: "v", б: "b" })) {
+      expect(HAND_FIRST_SKELETON[char], char).toBe(skeleton);
     }
   });
 
