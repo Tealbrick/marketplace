@@ -26,6 +26,28 @@ describe("inbound source resolution (review F2)", () => {
     expect(parseTrustedProxies("garbage, 1.2.3.4/99")).toBeNull();
   });
 
+  it("strips ip:port and [v6]:port from forwarded entries before the IP check", () => {
+    const sourceOf = createSourceResolver(parseTrustedProxies("10.0.0.0/8, fd00::/8"));
+    // A proxy that appends client:port: the client entry wins, not the attacker-chosen entry to its left.
+    expect(sourceOf(request("10.1.2.3", "6.6.6.6, 198.51.100.7:51234"))).toBe("198.51.100.7");
+    expect(sourceOf(request("10.1.2.3", "6.6.6.6, [2001:db8::9]:443"))).toBe("2001:db8::9");
+    expect(sourceOf(request("10.1.2.3", "6.6.6.6, [2001:db8::9]"))).toBe("2001:db8::9");
+    expect(sourceOf(request("10.1.2.3", "6.6.6.6, 2001:db8::9"))).toBe("2001:db8::9");
+    expect(sourceOf(request("10.1.2.3", "6.6.6.6, 198.51.100.7:51234, 10.9.9.9:80"))).toBe("198.51.100.7");
+    expect(sourceOf(request("fd00::5", "6.6.6.6, [fd00::7]:80, [2001:db8::9]:1"))).toBe("2001:db8::9");
+    expect(sourceOf(request("10.1.2.3", "6.6.6.6, ::ffff:198.51.100.7"))).toBe("198.51.100.7");
+  });
+
+  it("stops the walk at an entry that is not an IP and falls back to the socket address", () => {
+    const sourceOf = createSourceResolver(parseTrustedProxies("10.0.0.0/8"));
+    for (const garbage of ["unknown", "198.51.100.7:99999999", "198.51.100.7:", "[198.51.100.7", "999.1.1.1", "1.2.3.4:5:6", "_hidden", ""]) {
+      expect(sourceOf(request("10.1.2.3", `6.6.6.6, ${garbage}`)), garbage).toBe("10.1.2.3");
+      // A trusted hop to the right of the garbage does not skip it.
+      expect(sourceOf(request("10.1.2.3", `6.6.6.6, ${garbage}, 10.9.9.9`)), garbage).toBe("10.1.2.3");
+    }
+    expect(sourceOf(request("10.1.2.3", "6.6.6.6, , 198.51.100.7"))).toBe("198.51.100.7");
+  });
+
   it("evicts the least recently seen source instead of resetting every bucket", () => {
     let now = 0;
     const budget = createSourceBudget({ capacity: 1, refillPerSecond: 0 }, () => now, 3);

@@ -44,20 +44,33 @@ const isTrusted = (trusted: BlockList | null, address: string) => {
   return family !== 0 && trusted.check(plain, family === 4 ? "ipv4" : "ipv6");
 };
 
+/** One `X-Forwarded-For` entry as an IP: `ip:port` and `[v6]:port` lose the port; null when it is not an IP. */
+function forwardedAddress(entry: string): string | null {
+  const text = entry.trim();
+  const bracketed = /^\[([^\]]+)\](?::[0-9]{1,5})?$/u.exec(text);
+  const v4Port = /^([0-9.]+):[0-9]{1,5}$/u.exec(text);
+  const candidate = unmap(bracketed ? bracketed[1]! : v4Port && isIP(v4Port[1]!) === 4 ? v4Port[1]! : text);
+  return isIP(candidate) === 0 ? null : candidate;
+}
+
 /**
  * The request's source for the per-source budget (review F2). The socket's remote address, unless that address
  * is a configured trusted proxy: then the right-most `X-Forwarded-For` entry that is not itself a trusted proxy.
- * Without trusted proxies the header is ignored, so a client cannot pick its own budget key. Channels-local:
- * Fastify's app-wide `trustProxy` is not changed.
+ * Entries may carry a port (`ip:port`, `[v6]:port`); it is dropped before the IP check. The walk goes from the
+ * right and stops at the first entry that is still not an IP: everything left of it is client-controlled, so the
+ * source is then the socket address. Without trusted proxies the header is ignored, so a client cannot pick its
+ * own budget key. Channels-local: Fastify's app-wide `trustProxy` is not changed.
  */
 export function createSourceResolver(trusted: BlockList | null) {
   return (request: FastifyRequest): string => {
     const remote = unmap(request.socket?.remoteAddress ?? request.raw.socket?.remoteAddress ?? "unknown");
     if (!isTrusted(trusted, remote)) return remote;
     const header = request.headers["x-forwarded-for"];
-    const entries = (Array.isArray(header) ? header.join(",") : header ?? "").split(",").map((entry) => unmap(entry.trim())).filter((entry) => isIP(entry) !== 0);
+    const entries = (Array.isArray(header) ? header.join(",") : header ?? "").split(",");
     for (let index = entries.length - 1; index >= 0; index -= 1) {
-      if (!isTrusted(trusted, entries[index]!)) return entries[index]!;
+      const address = forwardedAddress(entries[index]!);
+      if (address === null) return remote;
+      if (!isTrusted(trusted, address)) return address;
     }
     return remote;
   };
