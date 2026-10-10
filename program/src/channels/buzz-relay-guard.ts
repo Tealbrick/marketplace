@@ -69,6 +69,9 @@ export function isBlockedRelayAddress(address: string): boolean {
   const family = isIP(bare);
   if (family === 0) return true;
   if (family === 4) return isForbiddenMcpAddress(bare) || cgnat(bare);
+  // Local-use NAT64 64:ff9b:1::/48 (RFC 8215) is never a public relay, whatever the embedding layout.
+  const groups = expandIpv6(bare);
+  if (groups && groups[0] === 0x64 && groups[1] === 0xff9b && groups[2] === 1) return true;
   // IPv6 carrying an IPv4 address (mapped, compatible, NAT64, 6to4, Teredo): every IPv4 rule applies to it.
   const embedded = embeddedIpv4(bare);
   if (embedded !== null && isBlockedRelayAddress(embedded)) return true;

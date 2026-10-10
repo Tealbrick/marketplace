@@ -58,6 +58,13 @@ describe("buzz relay egress guard", () => {
       expect(isBlockedRelayAddress(address), address).toBe(false);
     }
     expect(embeddedIpv4(PUBLIC_V6)).toBeNull();
+  });
+
+  it("refuses the whole local-use NAT64 prefix 64:ff9b:1::/48, in every embedding layout", () => {
+    // /64 layout (RFC 6052): IPv4 in bits 72–103, around the reserved u octet.
+    for (const address of ["64:ff9b:1:0:a:0:100:0", "64:ff9b:1:0:7f:0:100:0", "64:ff9b:1::6810:84e5", "64:ff9b:1:ffff::1"]) {
+      expect(isBlockedRelayAddress(address), address).toBe(true);
+    }
     expect(normalizeRelayUrl("wss://[::ffff:100.64.0.1]")?.host).toBe("[::ffff:6440:1]");
   });
 
