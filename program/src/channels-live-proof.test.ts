@@ -71,11 +71,12 @@ describe("channels live proof: dry run (default)", () => {
     }
     expect(statusOf(report, "§10.8")).toEqual(["PASS"]);
     expect(report.steps.filter((step) => step.status === "SKIP").map((step) => `${step.provider} ${step.spec}`)).toEqual(["discord §10.6"]);
-    // Telegram voice uses sendVoice; Discord posts the @everyone text with allowed_mentions.parse = [] and the voice fallback.
+    // Telegram voice uses sendVoice; Discord posts the @everyone text with allowed_mentions.parse = [] and a native voice message.
     const text = JSON.stringify(report.steps);
     expect(text).toContain("sendVoice");
     expect(text).toContain('"allowedMentionsParse":[]');
-    expect(text).toContain("voice→audio+transcript");
+    expect(text).toContain('"discordVoice":{"flags":8192,"hasContent":false,"attachments":1');
+    expect(text).not.toContain("voice→audio+transcript");
     expect(text).toContain("channel_cap_per_day");
     expect(text).toContain("channel_min_interval");
     expect(text).toContain("channel_phase_duplicate");

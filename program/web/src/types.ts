@@ -575,12 +575,15 @@ export interface ChannelEffectiveCapabilities {
   dm?: { open: boolean; maxMembers: number };
   reactions?: { add: boolean; remove: boolean; custom: boolean } | boolean;
   edit?: { own: boolean; windowSeconds?: number } | boolean;
-  delete?: { own: boolean } | boolean;
+  delete?: { own: boolean; windowSeconds?: number } | boolean;
   canvas?: boolean;
   presence?: { typing: boolean; status: boolean };
   ephemeral?: boolean;
   live?: { join: boolean; listen: boolean; speak: boolean; transcript: boolean; maxSessionMinutes: number } | false;
   inbound?: { mode: "socket" | "webhook" | "poll" | "none"; dedupe: boolean } | string;
+  /** Markups a post may ask for besides `markup` (Telegram: markdown-v2). */
+  markupOptions?: string[];
+  poll?: { questionMaxChars: number; minOptions: number; maxOptions: number; optionMaxChars: number; multiple: boolean; durationHours?: { min: number; max: number; default: number } } | false;
 }
 
 export interface GrantCaps { perDay: number; perHour?: number; minIntervalSeconds: number; onePerPhase: boolean }

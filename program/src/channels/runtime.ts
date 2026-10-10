@@ -15,7 +15,7 @@ import {
   wiredCapabilities,
 } from "./providers/capabilities.js";
 import { scrubSecrets, validateOutbound } from "./providers/common.js";
-import { createDiscordProvider } from "./providers/discord.js";
+import { buildDiscordVoicePayload, createDiscordProvider } from "./providers/discord.js";
 import { createSlackProvider } from "./providers/slack.js";
 import { createTeamsProvider, encodeTeamsCredential, type TeamsConversationSource } from "./providers/teams.js";
 import { createTelegramProvider } from "./providers/telegram.js";
@@ -228,6 +228,7 @@ export function effectiveCapabilities(declared: ChannelCapabilities, policy: Cha
       ...(caps.text.captionMaxChars ? { captionMaxChars: caps.text.captionMaxChars } : {}),
     },
     markup: caps.markup,
+    ...(caps.markupOptions?.length ? { markupOptions: [...caps.markupOptions] } : {}),
     mentions: caps.mentions,
     dm: caps.dm,
     ...media,
@@ -242,6 +243,7 @@ export function effectiveCapabilities(declared: ChannelCapabilities, policy: Cha
     ephemeral: caps.ephemeral,
     live: caps.live,
     inbound: caps.inbound,
+    poll: caps.poll,
     schedule: caps.schedule,
     limits: caps.limits,
   };
@@ -315,6 +317,8 @@ const REFUSAL_STATUS: Record<string, number> = {
   channel_file_type_not_allowed: 422,
   channel_file_too_large: 422,
   channel_file_digest_mismatch: 409,
+  channel_voice_invalid: 422,
+  channel_voice_alone: 422,
 };
 
 export function refusal(error: string, detail?: string): ChannelRefusal {
@@ -375,6 +379,20 @@ export function buildChannelPayload(input: {
   if ("error" in applied) {
     return { ok: false, refusal: refusal(applied.error.errorCode, applied.error.detail) };
   }
+  // Discord native voice: the duration and waveform the adapter sends are computed here, so the digest (and the
+  // owner's approval) covers them. The text and transcript go in the second message, already in the digest.
+  let voiceMessage: { flags: number; durationSecs: number; waveform: string } | undefined;
+  const voice = applied.attachments.find((attachment) => attachment.kind === "voice");
+  if (channel.provider === "discord" && voice && caps.voice && "native" in caps.voice) {
+    if (applied.attachments.length > 1) {
+      return { ok: false, refusal: refusal("channel_voice_alone", "a Discord voice message carries one voice file and no other attachment") };
+    }
+    const built = buildDiscordVoicePayload({ attachment: voice, text: applied.text });
+    if (!built.ok) {
+      return { ok: false, refusal: refusal(built.error.errorCode, built.error.detail) };
+    }
+    voiceMessage = { flags: built.payload.voice.flags, durationSecs: built.payload.durationSecs, waveform: built.payload.waveform };
+  }
   const files = applied.attachments.map((attachment) => ({
     name: attachment.name,
     sha256: attachment.sha256,
@@ -396,6 +414,7 @@ export function buildChannelPayload(input: {
       name: attachment.name,
       kind: attachment.kind,
       ...(attachment.transcript !== undefined ? { transcript: attachment.transcript } : {}),
+      ...(attachment.kind === "voice" && voiceMessage ? { voiceMessage } : {}),
     })),
     campaign: body.campaign,
     sendAt: body.sendAt,

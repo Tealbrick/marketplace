@@ -1,6 +1,8 @@
 import {
   type AttachmentKind,
   type ChannelCapabilities,
+  type ChannelMarkup,
+  type OutboundPoll,
   type ImageCapability,
   type MediaCapability,
   type OutboundAttachment,
@@ -157,6 +159,7 @@ export const CHANNEL_FEATURES = [
   "live.speak",
   "live.transcript",
   "poll",
+  "markup.markdown-v2",
   "buttons.url",
   "buttons.callback",
   "events.create",
@@ -214,7 +217,9 @@ export function capabilitySupports(caps: ChannelCapabilities, feature: ChannelFe
     case "live.transcript":
       return caps.live !== false && caps.live[feature.slice("live.".length) as "join" | "listen" | "speak" | "transcript"];
     case "poll":
-      return caps.poll;
+      return caps.poll !== false;
+    case "markup.markdown-v2":
+      return markupSupported(caps, "markdown-v2");
     case "buttons.url":
       return caps.buttons.url;
     case "buttons.callback":
@@ -270,8 +275,10 @@ export function wiredCapabilities(
   const liveOn = live !== false && (["live.join", "live.listen", "live.speak", "live.transcript"] as const).some(on);
   const dmOn = on("dm");
   const editOn = on("edit");
+  // No route lets a post choose another markup yet, so `markupOptions` is not part of the effective answer.
+  const { markupOptions: _unwiredMarkup, ...declared } = caps;
   return {
-    ...caps,
+    ...declared,
     mentions: { ...caps.mentions, users: on("mentions.users") },
     dm: { open: dmOn, maxMembers: dmOn ? caps.dm.maxMembers : 0 },
     image: on("image") ? caps.image : false,
@@ -282,9 +289,9 @@ export function wiredCapabilities(
     thread: { replies: on("thread.replies"), topics: on("thread.topics"), forum: on("thread.forum") },
     reactions: { add: on("reactions.add"), remove: on("reactions.remove"), custom: on("reactions.custom") },
     buttons: { url: on("buttons.url"), callback: on("buttons.callback") },
-    poll: on("poll"),
+    poll: on("poll") ? caps.poll : false,
     edit: editOn ? caps.edit : { own: false },
-    delete: { own: on("delete") },
+    delete: on("delete") ? caps.delete : { own: false },
     canvas: on("canvas"),
     presence: { typing: on("presence.typing"), status: on("presence.status") },
     ephemeral: on("ephemeral"),
@@ -302,4 +309,70 @@ export function wiredCapabilities(
     events: { create: on("events.create") },
     inbound: on("inbound") ? caps.inbound : { mode: "none", dedupe: false },
   };
+}
+
+/** Pure: may a post ask for this markup? The default markup always; another one only when listed in `markupOptions`. */
+export function markupSupported(caps: ChannelCapabilities, markup: ChannelMarkup | (string & {})): boolean {
+  return markup === caps.markup || (caps.markupOptions ?? []).includes(markup as ChannelMarkup);
+}
+
+// Control characters (newline included: a poll question and option are one line), bidi overrides, zero-width marks.
+const UNSAFE_POLL_TEXT = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\u061c\ufeff]/u;
+
+/**
+ * Pure: refuses a poll the provider would not send exactly as given (never cuts or drops an option).
+ * Checks: `poll` declared, question and options are one line of plain text within the provider's limits,
+ * the option count, no duplicate option, `allowsMultiple` only where declared, and `durationHours` only where
+ * declared and inside its range. Lengths are in code points.
+ */
+export function pollProblem(caps: ChannelCapabilities, poll: OutboundPoll | undefined): SendError | undefined {
+  if (poll === undefined) {
+    return undefined;
+  }
+  const limits = caps.poll;
+  if (!limits) {
+    return { errorCode: "channel_capability_unavailable", detail: 'this provider does not declare "poll"' };
+  }
+  const invalid = (detail: string): SendError => ({ errorCode: "channel_poll_invalid", detail });
+  if (!poll || typeof poll !== "object") {
+    return invalid("a poll needs a question and options");
+  }
+  const lineProblem = (value: unknown, max: number, what: string): string | undefined => {
+    if (typeof value !== "string" || value.trim().length === 0 || UNSAFE_POLL_TEXT.test(value)) {
+      return `the ${what} must be one non-empty line of plain text`;
+    }
+    return Array.from(value).length > max ? `the ${what} is longer than ${max} characters` : undefined;
+  };
+  const question = lineProblem(poll.question, limits.questionMaxChars, "poll question");
+  if (question) {
+    return invalid(question);
+  }
+  if (!Array.isArray(poll.options) || poll.options.length < limits.minOptions || poll.options.length > limits.maxOptions) {
+    return invalid(`a poll needs ${limits.minOptions}-${limits.maxOptions} options`);
+  }
+  for (const option of poll.options) {
+    const problem = lineProblem(option, limits.optionMaxChars, "poll option");
+    if (problem) {
+      return invalid(problem);
+    }
+  }
+  if (new Set(poll.options.map((option) => option.trim().toLowerCase())).size !== poll.options.length) {
+    return invalid("two poll options are the same");
+  }
+  if (poll.allowsMultiple !== undefined && typeof poll.allowsMultiple !== "boolean") {
+    return invalid("allowsMultiple must be true or false");
+  }
+  if (poll.allowsMultiple === true && !limits.multiple) {
+    return invalid("this provider does not allow multiple answers");
+  }
+  if (poll.durationHours !== undefined) {
+    const range = limits.durationHours;
+    if (!range) {
+      return invalid("this provider does not take a poll duration");
+    }
+    if (!Number.isInteger(poll.durationHours) || poll.durationHours < range.min || poll.durationHours > range.max) {
+      return invalid(`the poll duration must be ${range.min}-${range.max} whole hours`);
+    }
+  }
+  return undefined;
 }

@@ -227,10 +227,14 @@ operation adds its feature to that set in the same change.
 Post body: `{text, attachments?: [{attachmentId, kind, transcript?}],
 campaign?: {ref?, phase?}}` (`schedule` adds `sendAt`, now + 60 s to now + 30
 days). `kind` is `image|file|audio|voice|video` and must be declared by the
-channel's provider. Declared fallbacks (Discord voice → audio + `Transcript:`
+channel's provider. Declared fallbacks (Slack voice → audio + `Transcript:`
 line) are applied before the content rules and before the digest, so a
 transcript passes the same deny patterns and the owner approves exactly what is
-sent. Attachments must be the caller's own uploads; unknown or foreign ids are
+sent. A Discord voice note is native: its digest also covers the
+`voiceMessage` metadata (`flags` 8192, `durationSecs`, `waveform`) computed
+from the OGG file before approval; a file that is not a usable Ogg/Opus stream
+is refused `422 channel_voice_invalid`, and a voice note with other
+attachments `422 channel_voice_alone`. Attachments must be the caller's own uploads; unknown or foreign ids are
 refused, never dropped.
 
 Answers:
@@ -414,7 +418,7 @@ provider-env or account field.
 
 | Operation | Route |
 | --- | --- |
-| `marketplace.channels.browse` | `GET /api/marketplace/channels` (`configured`, `providers` with each configured provider's effective capabilities (`channelCapabilities: 2`: v1 keys plus `dm`, `thread`, `mentions`, `reactions`, `edit`, `delete`, `canvas`, `presence`, `ephemeral`, `live`, `inbound`; the declaration narrowed to the wired features, so a feature no agent operation uses reads `false` or `none`) and kinds, channels, readiness, connections, pending grants, uncertain posts) |
+| `marketplace.channels.browse` | `GET /api/marketplace/channels` (`configured`, `providers` with each configured provider's effective capabilities (`channelCapabilities: 2`: v1 keys plus `dm`, `thread`, `mentions`, `reactions`, `edit`, `delete` (with an optional `windowSeconds`), `canvas`, `presence`, `ephemeral`, `live`, `inbound`, `poll` (`false` or the provider's limits) and the optional `markupOptions` (markups a post may ask for besides `markup`); the declaration narrowed to the wired features, so a feature no agent operation uses reads `false` or `none` and `markupOptions` is left out) and kinds, channels, readiness, connections, pending grants, uncertain posts) |
 | `marketplace.channels.discover` | `GET /api/marketplace/channels/discover?provider=` |
 | `marketplace.channels.create` | `POST /api/marketplace/channels` (Idempotency-Key; destination from discovery only; optional `kind`, only kinds the provider serves, else `422 channel_kind_unsupported`) |
 | `marketplace.channels.update` | `PATCH /api/marketplace/channels/{channelId}` (bumps `revision`, re-checks grants) |
@@ -506,6 +510,56 @@ and named mentions in `send`, and the opt-in `scheduleNative`
 channel). Marketplace's own scheduler stays the default,
 because it re-checks authority and caps at send time. Limits: one message per
 second per channel; HTTP 429 `Retry-After` is honoured once (≤ 30 s).
+
+### Telegram and Discord additions (Channels P2)
+
+Adapter methods only (the agent routes for reply, react, edit, delete, polls and
+DMs come later); the declarations say exactly what they do.
+
+Telegram (`telegram.ts`, Bot API 10.3): replies use `reply_parameters`
+`{message_id, allow_sending_without_reply: false}` on the first message of a
+post. `markup` stays `plain`; a post may ask for `markdown-v2`
+(`markupOptions`): the agent text is escaped for every MarkdownV2 special
+character, and only a safe subset stays live (`*bold*`, `_italic_`, `` `code` ``,
+`[label](https://…)`, one line, not nested, bold and italic not inside a word);
+user mentions, spoilers, quotes and custom emoji can never be formed. Reactions:
+`setMessageReaction` with one emoji from Telegram's fixed list (bots set at most
+one; remove sends an empty list). `edit` = `editMessageText`, or
+`editMessageCaption` (≤ 1024) when Telegram answers that the message has no
+text; "message is not modified" counts as sent. `remove` = `deleteMessage`
+(`delete.windowSeconds` 172800: Telegram deletes only messages younger than 48
+h). Polls: `sendPoll` (question ≤ 300, 2–12 options ≤ 100, anonymous,
+`allows_multiple_answers` on request; a non-empty text goes first as its own
+message, so a failure between them is `uncertain` + `partial`). No DMs:
+Telegram bots cannot start a conversation, so `dm.open` is false and
+`findPerson`/`openDirect` are absent. Pure inbound helpers:
+`verifyTelegramSecretToken` (`X-Telegram-Bot-Api-Secret-Token`, constant
+time) and `parseTelegramUpdate` (`message`, `edited_message`, `channel_post`,
+`edited_channel_post`).
+
+Discord (`discord.ts`, REST v10): voice is a native voice message (flag
+`IS_VOICE_MESSAGE` 8192, one `audio/ogg` attachment with `duration_secs` and a
+base64 `waveform` of at most 256 bytes, no content). The duration is the last
+Ogg granule position minus the Opus pre-skip; the waveform is approximated from
+the Opus packet sizes (no decoder; Discord calls the waveform an implementation
+detail). `buildDiscordVoicePayload()` is pure and feeds the digest. The post
+text and the transcript follow as a second message replying to the voice
+message; a failure of that message is `uncertain` + `partial`. Replies:
+`message_reference {message_id, fail_if_not_exists: true}` with
+`allowed_mentions.replied_user: false`. Mentions: a `<@id>` pings only when the
+id is listed (`allowed_mentions.users`, `parse` always empty, ≤ 20). Active
+threads under listed channels are discovered as `thread` destinations. Reactions:
+`PUT`/`DELETE …/reactions/{url-encoded emoji}/@me` (Unicode or custom
+`name:id`). `edit` = `PATCH` own message, `remove` = `DELETE`. Polls: the
+Discord poll object (question ≤ 300, 1–10 answers ≤ 55, `duration` 1–768 h,
+default 24). DMs: `findPerson` by handle only (Search Guild Members, ≤ 5 per
+guild, ≤ 10 guilds, exact match on username, global name or nickname, else
+`not_found` or `ambiguous`; no email lookup exists for bots) and `openDirect`
+(`POST /users/@me/channels`). Scheduled events stay `events.create: false`.
+Pure inbound helper: `parseDiscordMessageCreate` (gateway `MESSAGE_CREATE`;
+content is empty without the privileged Message Content intent except DMs and
+mentions). Bot permissions for these features: Send Voice Messages, Send Polls,
+Add Reactions, Read Message History, Send Messages in Threads.
 
 ### Microsoft Teams (Channels P2)
 

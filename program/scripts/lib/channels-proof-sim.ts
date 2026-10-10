@@ -125,6 +125,13 @@ export function createSimulatedApi(options: SimOptions) {
         }
       }
       const content = typeof payload?.content === "string" ? payload.content : "";
+      // Voice messages (IS_VOICE_MESSAGE): one audio attachment with duration_secs and waveform, and no content.
+      if (typeof payload?.flags === "number" && (payload.flags & (1 << 13)) !== 0) {
+        const meta = Array.isArray(payload.attachments) ? (payload.attachments[0] as Record<string, unknown> | undefined) : undefined;
+        if (content || attachments.length !== 1 || typeof meta?.duration_secs !== "number" || typeof meta?.waveform !== "string" || !attachments[0]!.content_type.startsWith("audio/")) {
+          return json(400, { message: "Invalid Form Body", code: 50035 });
+        }
+      }
       const parse = (payload?.allowed_mentions as { parse?: unknown } | undefined)?.parse;
       // Discord pings @everyone only when the message text has it and allowed_mentions does not suppress it.
       const pings = content.includes("@everyone") && !(Array.isArray(parse) && !parse.includes("everyone"));

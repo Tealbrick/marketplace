@@ -97,18 +97,23 @@ describe("slack capabilities", () => {
     }
   });
 
-  it("is registered; Telegram and Discord leave the P2 methods undefined", () => {
+  it("is registered; each P2 method exists exactly where its feature is declared", () => {
     expect(CHANNEL_PROVIDER_IDS).toContain("slack");
     expect(CHANNEL_TOKEN_ENV.slack).toBe("MARKETPLACE_CHANNELS_SLACK_BOT_TOKEN");
     expect(defaultChannelProviders().slack?.id).toBe("slack");
-    for (const other of [createTelegramProvider(), createDiscordProvider()]) {
-      expect(other.react).toBeUndefined();
-      expect(other.edit).toBeUndefined();
-      expect(other.remove).toBeUndefined();
-      expect(other.findPerson).toBeUndefined();
-      expect(other.openDirect).toBeUndefined();
+    const telegram = createTelegramProvider();
+    const discord = createDiscordProvider();
+    for (const other of [telegram, discord]) {
+      expect(typeof other.react).toBe("function");
+      expect(typeof other.edit).toBe("function");
+      expect(typeof other.remove).toBe("function");
       expect(other.scheduleNative).toBeUndefined();
     }
+    // Telegram bots cannot start a conversation with a person; Discord opens a DM by user id.
+    expect(telegram.findPerson).toBeUndefined();
+    expect(telegram.openDirect).toBeUndefined();
+    expect(typeof discord.findPerson).toBe("function");
+    expect(typeof discord.openDirect).toBe("function");
   });
 
   it("reads the signing secret from env first, then the connector secret", () => {

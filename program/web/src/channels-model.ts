@@ -439,6 +439,8 @@ function v2Rows(caps: ChannelEffectiveCapabilities): CapabilityRow[] {
   const reactions = typeof caps.reactions === "object" ? listOf([[caps.reactions.add, "add"], [caps.reactions.remove, "remove"], [caps.reactions.custom, "custom emoji"]]) : null;
   const edit = typeof caps.edit === "object" && caps.edit.own ? caps.edit : null;
   const remove = typeof caps.delete === "object" && caps.delete.own;
+  const removeWindow = typeof caps.delete === "object" ? caps.delete.windowSeconds : undefined;
+  const poll = typeof caps.poll === "object" && caps.poll !== null ? caps.poll : null;
   const presence = caps.presence ? listOf([[caps.presence.typing, "typing"], [caps.presence.status, "status"]]) : null;
   const live = caps.live ? listOf([[caps.live.join, "join"], [caps.live.listen, "listen"], [caps.live.speak, "speak"], [caps.live.transcript, "transcript"]]) : null;
   const inbound = typeof caps.inbound === "object" && caps.inbound.mode !== "none" ? caps.inbound : null;
@@ -449,7 +451,13 @@ function v2Rows(caps: ChannelEffectiveCapabilities): CapabilityRow[] {
     { key: "thread", label: "Threads", value: sentence(thread), available: thread !== null },
     { key: "reactions", label: "Reactions", value: sentence(reactions), available: reactions !== null },
     { key: "edit", label: "Edit own messages", value: edit ? (edit.windowSeconds ? `Within ${formatSeconds(edit.windowSeconds)}` : "Yes") : "Not available", available: edit !== null },
-    { key: "delete", label: "Delete own messages", value: remove ? "Yes" : "Not available", available: remove },
+    { key: "delete", label: "Delete own messages", value: remove ? (removeWindow ? `Within ${formatSeconds(removeWindow)}` : "Yes") : "Not available", available: remove },
+    {
+      key: "poll",
+      label: "Polls",
+      value: poll ? `${poll.minOptions}-${poll.maxOptions} options${poll.multiple ? " · multiple answers allowed" : ""}${poll.durationHours ? ` · open up to ${poll.durationHours.max} hours` : ""}` : "Not available",
+      available: poll !== null,
+    },
     { key: "canvas", label: "Canvas", value: caps.canvas === true ? "Shared document per channel" : "Not available", available: caps.canvas === true },
     { key: "presence", label: "Typing and status", value: sentence(presence), available: presence !== null },
     { key: "ephemeral", label: "Private or expiring messages", value: caps.ephemeral === true ? "Yes" : "Not available", available: caps.ephemeral === true },
@@ -462,7 +470,7 @@ function v2Rows(caps: ChannelEffectiveCapabilities): CapabilityRow[] {
 export function capabilityRows(caps: ChannelEffectiveCapabilities): CapabilityRow[] {
   const voice = caps.voice;
   return [
-    { key: "text", label: "Text", value: `Up to ${caps.text.maxChars.toLocaleString()} characters${caps.text.captionMaxChars ? ` (${caps.text.captionMaxChars.toLocaleString()} as a caption with media)` : ""} · ${caps.markup === "plain" ? "plain text" : caps.markup}`, available: true },
+    { key: "text", label: "Text", value: `Up to ${caps.text.maxChars.toLocaleString()} characters${caps.text.captionMaxChars ? ` (${caps.text.captionMaxChars.toLocaleString()} as a caption with media)` : ""} · ${caps.markup === "plain" ? "plain text" : caps.markup}${caps.markupOptions?.length ? ` (${caps.markupOptions.join(", ")} on request)` : ""}`, available: true },
     { key: "mentions", label: "Mentions", value: mentionsUsers(caps) ? "Named people can be mentioned · broadcast mentions never ping anyone" : "Broadcast mentions never ping anyone", available: true },
     { key: "image", label: "Images", value: mediaValue(caps.image), available: caps.image !== false },
     { key: "file", label: "Files", value: mediaValue(caps.file), available: caps.file !== false },

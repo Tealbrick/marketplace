@@ -1,6 +1,8 @@
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { buildSilenceOpus } from "../scripts/lib/ogg-opus.js";
+
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -95,12 +97,16 @@ describe("channels: post with a standing grant (§10 item 1)", () => {
         text: { maxChars: 4096 },
         voice: { native: true, types: ["audio/ogg"] },
         video: false,
+        // Telegram declares replies, reactions, edit, delete, polls and markdown-v2, but no agent operation uses
+        // them yet: the wired filter keeps them out of the agent answer.
+        markup: "plain",
         mentions: { users: false, broadcast: "suppressed" },
         dm: { open: false, maxMembers: 0 },
         thread: { replies: false, topics: true, forum: false },
         reactions: { add: false, remove: false, custom: false },
         edit: { own: false },
         delete: { own: false },
+        poll: false,
         canvas: false,
         presence: { typing: false, status: false },
         ephemeral: false,
@@ -108,6 +114,7 @@ describe("channels: post with a standing grant (§10 item 1)", () => {
         inbound: { mode: "none", dedupe: false },
       },
     });
+    expect(channels[0]!.capabilities).not.toHaveProperty("markupOptions");
     expect(list.body).not.toContain("-1001234");
     const foreign = await f.agent("GET", `/api/marketplace/v1/agent/channels/${other.id}`);
     const unknown = await f.agent("GET", "/api/marketplace/v1/agent/channels/chn_unknown");
@@ -502,10 +509,10 @@ describe("channels: native features and fallbacks (§10 item 6)", () => {
       method: "POST",
       url: "/api/marketplace/v1/agent/channels/attachments?name=note.ogg",
       headers: { authorization: `Bearer ${token}`, "idempotency-key": key("upload"), "content-type": "audio/ogg" },
-      payload: Buffer.from("OggS voice bytes"),
+      payload: Buffer.from(buildSilenceOpus()),
     });
 
-  it("sends voice natively on Telegram and as audio + transcript on Discord, naming the fallback", async () => {
+  it("sends voice natively on Telegram and on Discord (no fallback); the Discord digest covers duration and waveform", async () => {
     const f = await setup();
     const telegram = await f.createChannel({ slug: "tg" });
     const discord = await f.createChannel({ slug: "dc", provider: "discord" });
@@ -521,9 +528,27 @@ describe("channels: native features and fallbacks (§10 item 6)", () => {
     expect(tg.json().receipt.fallback).toBeUndefined();
     const dc = await f.post(discord.id, body, key());
     expect(dc.statusCode, dc.body).toBe(200);
-    expect(f.discord.sends[0]!.message).toMatchObject({ text: "Voice note\nTranscript: Hello everyone" });
-    expect(f.discord.sends[0]!.message.attachments![0]).toMatchObject({ kind: "audio" });
-    expect(dc.json().receipt.fallback).toBe("voice→audio+transcript");
+    expect(f.discord.sends[0]!.message).toMatchObject({ text: "Voice note" });
+    expect(f.discord.sends[0]!.message.attachments![0]).toMatchObject({ kind: "voice", contentType: "audio/ogg", transcript: "Hello everyone" });
+    expect(dc.json().receipt.fallback).toBeUndefined();
+  });
+
+  it("refuses a Discord voice note that is not a usable Ogg/Opus file, before any digest", async () => {
+    const f = await setup();
+    const discord = await f.createChannel({ slug: "dc", provider: "discord" });
+    f.consentFor("agent-1", discord);
+    const bad = (
+      await f.app.inject({
+        method: "POST",
+        url: "/api/marketplace/v1/agent/channels/attachments?name=bad.ogg",
+        headers: { authorization: `Bearer ${GRANT_A}`, "idempotency-key": key("upload"), "content-type": "audio/ogg" },
+        payload: Buffer.from("OggS voice bytes"),
+      })
+    ).json();
+    const refused = await f.post(discord.id, { text: "x", attachments: [{ attachmentId: bad.attachmentId, kind: "voice" }] }, key());
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json()).toMatchObject({ error: "channel_voice_invalid" });
+    expect(f.discord.sends).toHaveLength(0);
   });
 
   it("applies the fallback before the content rules: a forbidden term only in the transcript is refused (8b(iii))", async () => {
@@ -538,10 +563,14 @@ describe("channels: native features and fallbacks (§10 item 6)", () => {
       expect(refused.statusCode, channel.slug).toBe(422);
       expect(refused.json()).toMatchObject({ error: "channel_content_denied" });
     }
-    // The held view (and digest) shows the post after the fallback.
+    // The held view (and digest) shows exactly what Discord gets: the native voice message with its duration and
+    // waveform, and the transcript that goes in the second message.
     const held = await f.post(discord.id, { text: "Clean text", attachments: [{ attachmentId: voice.attachmentId, kind: "voice", transcript: "all good" }] }, key());
     expect(held.statusCode).toBe(202);
-    expect(JSON.parse(held.json().payloadView.canonical)).toMatchObject({ text: "Clean text\nTranscript: all good", attachments: [{ kind: "audio" }] });
+    const canonical = JSON.parse(held.json().payloadView.canonical);
+    expect(canonical).toMatchObject({ text: "Clean text", attachments: [{ kind: "voice", transcript: "all good", voiceMessage: { flags: 8192 } }] });
+    expect(canonical.attachments[0].voiceMessage.durationSecs).toBeCloseTo(1.01, 2);
+    expect(Buffer.from(canonical.attachments[0].voiceMessage.waveform, "base64").length).toBeLessThanOrEqual(256);
     expect(f.discord.sends).toHaveLength(0);
   });
 

@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { createTelegramProvider, telegramMessageUrl } from "./telegram.js";
+import {
+  TELEGRAM_REACTION_EMOJI,
+  createTelegramProvider,
+  escapeMarkdownV2,
+  parseTelegramUpdate,
+  renderTelegramMarkdownV2,
+  telegramMessageUrl,
+  verifyTelegramSecretToken,
+} from "./telegram.js";
 import {
   attachment,
   createFakeClock,
@@ -40,6 +48,7 @@ describe("telegram capabilities", () => {
       channelCapabilities: 2,
       text: { maxChars: 4096, captionMaxChars: 1024 },
       markup: "plain",
+      markupOptions: ["markdown-v2"],
       mentions: { users: false, broadcast: "suppressed" },
       dm: { open: false, maxMembers: 0 },
       image: { types: ["image/png", "image/jpeg", "image/webp"], maxBytes: 10 * MiB, albumMax: 4 },
@@ -47,12 +56,12 @@ describe("telegram capabilities", () => {
       audio: { types: ["audio/mpeg", "audio/mp4"], maxBytes: 50 * MiB },
       voice: { native: true, types: ["audio/ogg"], maxBytes: MiB },
       video: { types: ["video/mp4"], maxBytes: 50 * MiB },
-      thread: { replies: false, topics: true, forum: false },
-      reactions: { add: false, remove: false, custom: false },
+      thread: { replies: true, topics: true, forum: false },
+      reactions: { add: true, remove: true, custom: false },
       buttons: { url: false, callback: false },
-      poll: false,
-      edit: { own: false },
-      delete: { own: false },
+      poll: { questionMaxChars: 300, minOptions: 2, maxOptions: 12, optionMaxChars: 100, multiple: true },
+      edit: { own: true },
+      delete: { own: true, windowSeconds: 172800 },
       canvas: false,
       presence: { typing: false, status: false },
       ephemeral: false,
@@ -621,5 +630,286 @@ describe("telegram kind and type validation", () => {
     const failed = await provider.send(TOKEN, group, { text: "x", attachments: [attachment("n.ogg", "audio/ogg", "n", { kind: "voice" })] });
     expect(failed.status).toBe("failed");
     noToken(failed);
+  });
+});
+
+// ---------------------------------------------------------------- P2: markup, replies, polls, reactions, edits, deletes, inbound
+
+const okTrue = () => jsonResponse(200, { ok: true, result: true });
+const body = (request: { body: unknown }) => JSON.parse(request.body as string);
+
+describe("telegram MarkdownV2", () => {
+  it("escapes every MarkdownV2 special character and the backslash", () => {
+    expect(escapeMarkdownV2("_*[]()~`>#+-=|{}.!\\")).toBe("\\_\\*\\[\\]\\(\\)\\~\\`\\>\\#\\+\\-\\=\\|\\{\\}\\.\\!\\\\");
+    expect(escapeMarkdownV2("plain words, 123")).toBe("plain words, 123");
+    // Round trip over every ASCII character: removing one backslash before each escaped char gives the input back.
+    const ascii = Array.from({ length: 126 }, (_, i) => String.fromCharCode(i + 1)).join("");
+    expect(escapeMarkdownV2(ascii).replace(/\\(.)/gsu, "$1")).toBe(ascii);
+  });
+
+  it("keeps only the safe subset (bold, italic, code, https links) and escapes everything else", () => {
+    expect(renderTelegramMarkdownV2("*bold* and _it_ and `a\\b` and [site](https://x.y/a_b)")).toBe(
+      "*bold* and _it_ and `a\\\\b` and [site](https://x.y/a_b)",
+    );
+    expect(renderTelegramMarkdownV2("snake_case_name and 2 * 3 * 4 = 24.")).toBe("snake\\_case\\_name and 2 \\* 3 \\* 4 \\= 24\\.");
+    expect(renderTelegramMarkdownV2("[me](tg://user?id=1)")).toBe("\\[me\\]\\(tg://user?id\\=1\\)");
+    expect(renderTelegramMarkdownV2("||spoiler|| >quote ~strike~ __under__")).toBe("\\|\\|spoiler\\|\\| \\>quote \\~strike\\~ \\_\\_under\\_\\_");
+    expect(renderTelegramMarkdownV2("*not closed")).toBe("\\*not closed");
+    expect(renderTelegramMarkdownV2("*bold _x_ inside*")).toBe("*bold \\_x\\_ inside*");
+    expect(renderTelegramMarkdownV2("[a [b]](https://x.y)")).toBe("\\[a \\[b\\]\\]\\(https://x\\.y\\)");
+    expect(renderTelegramMarkdownV2("*multi\nline*")).toBe("\\*multi\nline\\*");
+  });
+
+  it("sends markdown-v2 only when the post asks for it, on text and captions", async () => {
+    const { provider, fake } = make([okMessage(1), okMessage(2), okMessage(3)]);
+    await provider.send(TOKEN, group, { text: "*hi* there." });
+    expect(body(fake.requests[0]!)).toEqual({ chat_id: "-1001234567890", text: "*hi* there." });
+    await provider.send(TOKEN, group, { text: "*hi* there.", markup: "markdown-v2" });
+    expect(body(fake.requests[1]!)).toEqual({ chat_id: "-1001234567890", text: "*hi* there\\.", parse_mode: "MarkdownV2" });
+    await provider.send(TOKEN, group, { text: "_cap_!", markup: "markdown-v2", attachments: [attachment("p.png", "image/png")] });
+    const form = fake.requests[2]!.body as FormData;
+    expect(form.get("caption")).toBe("_cap_\\!");
+    expect(form.get("parse_mode")).toBe("MarkdownV2");
+  });
+
+  it("puts parse_mode inside the album item that carries the caption", async () => {
+    const { provider, fake } = make([jsonResponse(200, { ok: true, result: [{ message_id: 1 }, { message_id: 2 }] })]);
+    await provider.send(TOKEN, group, { text: "a.b", markup: "markdown-v2", attachments: [attachment("1.png", "image/png"), attachment("2.png", "image/png")] });
+    expect(JSON.parse((fake.requests[0]!.body as FormData).get("media") as string)[0]).toEqual({
+      type: "photo",
+      media: "attach://file0",
+      caption: "a\\.b",
+      parse_mode: "MarkdownV2",
+    });
+  });
+
+  it("refuses an undeclared markup and named mentions before any request", async () => {
+    const { provider, fake } = make();
+    expect((await provider.send(TOKEN, group, { text: "x", markup: "html" })).errorCode).toBe("channel_capability_unavailable");
+    expect((await provider.send(TOKEN, group, { text: "x", mentions: [{ userId: "1" }] })).errorCode).toBe("channel_capability_unavailable");
+    expect(fake.requests).toHaveLength(0);
+  });
+});
+
+describe("telegram reply-to", () => {
+  it("sets reply_parameters (allow_sending_without_reply false) on the first message only", async () => {
+    const { provider, fake } = make([okMessage(1), okMessage(2), okMessage(3)]);
+    await provider.send(TOKEN, group, { text: "re", replyTo: "42" });
+    expect(body(fake.requests[0]!)).toEqual({
+      chat_id: "-1001234567890",
+      text: "re",
+      reply_parameters: { message_id: 42, allow_sending_without_reply: false },
+    });
+    // Media without caption (long text) then the text: the reply is on the media message.
+    const result = await provider.send(TOKEN, group, { text: "t".repeat(1025), replyTo: "42", attachments: [attachment("a.pdf", "application/pdf")] });
+    expect(result.status).toBe("sent");
+    const form = fake.requests[1]!.body as FormData;
+    expect(JSON.parse(form.get("reply_parameters") as string)).toEqual({ message_id: 42, allow_sending_without_reply: false });
+    expect(body(fake.requests[2]!)).not.toHaveProperty("reply_parameters");
+  });
+
+  it("refuses a malformed reply id before any request", async () => {
+    const { provider, fake } = make();
+    expect((await provider.send(TOKEN, group, { text: "x", replyTo: "4 2" })).errorCode).toBe("channel_reply_invalid");
+    expect(fake.requests).toHaveLength(0);
+  });
+});
+
+describe("telegram polls", () => {
+  it("sends text then an anonymous sendPoll, reserving both, with the reply on the first step", async () => {
+    const { provider, fake, clock } = make([okMessage(1), okMessage(2)]);
+    const result = await provider.send(TOKEN, group, { text: "Vote:", replyTo: "9", poll: { question: "Lunch?", options: ["Pizza", "Sushi"], allowsMultiple: true } });
+    expect(result).toMatchObject({ status: "sent", resultIds: ["1", "2"] });
+    expect(fake.requests.map((r) => telegramMethod(r, TOKEN))).toEqual(["sendMessage", "sendPoll"]);
+    expect(body(fake.requests[0]!)).toMatchObject({ text: "Vote:", reply_parameters: { message_id: 9, allow_sending_without_reply: false } });
+    expect(body(fake.requests[1]!)).toEqual({
+      chat_id: "-1001234567890",
+      question: "Lunch?",
+      options: [{ text: "Pizza" }, { text: "Sushi" }],
+      is_anonymous: true,
+      allows_multiple_answers: true,
+    });
+    expect(clock.sleeps).toEqual([1000]);
+  });
+
+  it("sends only sendPoll for an empty text, and is uncertain + partial when the poll fails after the text", async () => {
+    const solo = make([okMessage(5)]);
+    await solo.provider.send(TOKEN, group, { text: "", poll: { question: "Q", options: ["a", "b"] } });
+    expect(solo.fake.requests.map((r) => telegramMethod(r, TOKEN))).toEqual(["sendPoll"]);
+    expect(body(solo.fake.requests[0]!)).toMatchObject({ allows_multiple_answers: false, is_anonymous: true });
+    const half = make([okMessage(6), jsonResponse(400, { ok: false, description: "Bad Request: poll can't be sent" })]);
+    const result = await half.provider.send(TOKEN, group, { text: "intro", poll: { question: "Q", options: ["a", "b"] } });
+    expect(result).toMatchObject({ status: "uncertain", partial: true, resultIds: ["6"] });
+  });
+
+  it("validates against Telegram's limits before any request", async () => {
+    const { provider, fake } = make();
+    const code = async (poll: unknown, extra: Record<string, unknown> = {}) =>
+      (await provider.send(TOKEN, group, { text: "x", poll: poll as never, ...extra })).errorCode;
+    expect(await code({ question: "q".repeat(301), options: ["a", "b"] })).toBe("channel_poll_invalid");
+    expect(await code({ question: "q", options: ["a"] })).toBe("channel_poll_invalid");
+    expect(await code({ question: "q", options: Array.from({ length: 13 }, (_, i) => `o${i}`) })).toBe("channel_poll_invalid");
+    expect(await code({ question: "q", options: ["a".repeat(101), "b"] })).toBe("channel_poll_invalid");
+    expect(await code({ question: "q", options: ["a", "b"], durationHours: 2 })).toBe("channel_poll_invalid");
+    expect(await code({ question: " ", options: ["a", "b"] })).toBe("channel_poll_invalid");
+    expect(await code({ question: "q", options: ["a", "b"] }, { attachments: [attachment("p.png", "image/png")] })).toBe("channel_poll_invalid");
+    expect(await code({ question: "q", options: ["a", "b"] }, { text: "x".repeat(4097) })).toBe("channel_text_too_long");
+    expect(fake.requests).toHaveLength(0);
+  });
+});
+
+describe("telegram reactions", () => {
+  it("sets one emoji reaction, and an empty list to remove", async () => {
+    const { provider, fake } = make([okTrue(), okTrue()]);
+    await expect(provider.react!(TOKEN, group, "77", "👍")).resolves.toEqual({ status: "sent" });
+    await expect(provider.react!(TOKEN, group, "77", "👍", { remove: true })).resolves.toEqual({ status: "sent" });
+    expect(fake.requests.map((r) => telegramMethod(r, TOKEN))).toEqual(["setMessageReaction", "setMessageReaction"]);
+    expect(body(fake.requests[0]!)).toEqual({ chat_id: "-1001234567890", message_id: 77, reaction: [{ type: "emoji", emoji: "👍" }] });
+    expect(body(fake.requests[1]!)).toEqual({ chat_id: "-1001234567890", message_id: 77, reaction: [] });
+  });
+
+  it("accepts an emoji with a variation selector and refuses one outside Telegram's list", async () => {
+    const { provider, fake } = make([okTrue()]);
+    expect(TELEGRAM_REACTION_EMOJI).toHaveLength(73);
+    await provider.react!(TOKEN, group, "77", "❤️");
+    expect(body(fake.requests[0]!).reaction).toEqual([{ type: "emoji", emoji: "❤" }]);
+    expect(await provider.react!(TOKEN, group, "77", "🦖")).toMatchObject({ status: "failed", errorCode: "channel_reaction_invalid" });
+    expect(await provider.react!(TOKEN, group, "77", ":thumbsup:")).toMatchObject({ status: "failed", errorCode: "channel_reaction_invalid" });
+    expect(await provider.react!(TOKEN, group, "7x", "👍")).toMatchObject({ status: "failed", errorCode: "channel_message_id_invalid" });
+    expect(await provider.react!(TOKEN, { ...group, externalId: "../x" }, "7", "👍")).toMatchObject({ errorCode: "channel_destination_invalid" });
+    expect(await provider.react!("", group, "7", "👍")).toMatchObject({ errorCode: "credential_missing" });
+    expect(fake.requests).toHaveLength(1);
+  });
+
+  it("classifies reaction failures and never leaks the token", async () => {
+    const { provider } = make([jsonResponse(400, { ok: false, description: `Bad Request: REACTION_INVALID ${TOKEN}` }), new Error(`boom ${TOKEN}`), jsonResponse(200, { ok: false })]);
+    const rejected = await provider.react!(TOKEN, group, "77", "👍");
+    expect(rejected).toMatchObject({ status: "failed", errorCode: "provider_rejected" });
+    noToken(rejected);
+    const network = await provider.react!(TOKEN, group, "77", "👍");
+    expect(network).toMatchObject({ status: "uncertain", errorCode: "provider_timeout" });
+    noToken(network);
+    expect(await provider.react!(TOKEN, group, "77", "👍")).toMatchObject({ status: "uncertain", errorCode: "provider_bad_response" });
+  });
+});
+
+describe("telegram edits and deletes", () => {
+  it("edits text with editMessageText (markdown-v2 on request)", async () => {
+    const { provider, fake } = make([okMessage(77), okMessage(77)]);
+    const result = await provider.edit!(TOKEN, group, "77", { text: "fixed." });
+    expect(result).toEqual({ status: "sent", resultIds: ["77"], resultUrls: ["https://t.me/c/1234567890/77"] });
+    expect(telegramMethod(fake.requests[0]!, TOKEN)).toBe("editMessageText");
+    expect(body(fake.requests[0]!)).toEqual({ chat_id: "-1001234567890", message_id: 77, text: "fixed." });
+    await provider.edit!(TOKEN, group, "77", { text: "*fixed*.", markup: "markdown-v2" });
+    expect(body(fake.requests[1]!)).toEqual({ chat_id: "-1001234567890", message_id: 77, text: "*fixed*\\.", parse_mode: "MarkdownV2" });
+  });
+
+  it("falls back to editMessageCaption for a media message, and treats 'not modified' as sent", async () => {
+    const { provider, fake } = make([
+      jsonResponse(400, { ok: false, description: "Bad Request: there is no text in the message to edit" }),
+      okMessage(77),
+      jsonResponse(400, { ok: false, description: "Bad Request: message is not modified: specified new message content is the same" }),
+    ]);
+    expect(await provider.edit!(TOKEN, group, "77", { text: "new caption" })).toMatchObject({ status: "sent", resultIds: ["77"] });
+    expect(fake.requests.map((r) => telegramMethod(r, TOKEN))).toEqual(["editMessageText", "editMessageCaption"]);
+    expect(body(fake.requests[1]!)).toEqual({ chat_id: "-1001234567890", message_id: 77, caption: "new caption" });
+    expect(await provider.edit!(TOKEN, group, "77", { text: "same" })).toMatchObject({ status: "sent", detail: "the message already had this text" });
+  });
+
+  it("refuses bad edits before any request and classifies failures", async () => {
+    const tooLongCaption = make([jsonResponse(400, { ok: false, description: "Bad Request: there is no text in the message to edit" })]);
+    expect(await tooLongCaption.provider.edit!(TOKEN, group, "77", { text: "c".repeat(1025) })).toMatchObject({ status: "failed", errorCode: "channel_text_too_long" });
+    expect(tooLongCaption.fake.requests).toHaveLength(1);
+    const { provider, fake } = make([jsonResponse(400, { ok: false, description: "Bad Request: message to edit not found" }), "hang"], { timeoutMs: 15 });
+    expect((await provider.edit!(TOKEN, group, "77", { text: "" })).errorCode).toBe("channel_message_empty");
+    expect((await provider.edit!(TOKEN, group, "77", { text: "x".repeat(4097) })).errorCode).toBe("channel_text_too_long");
+    expect((await provider.edit!(TOKEN, group, "77", { text: "x", markup: "html" })).errorCode).toBe("channel_capability_unavailable");
+    expect((await provider.edit!(TOKEN, group, "77", { text: "x", mentions: [{ userId: "1" }] })).errorCode).toBe("channel_capability_unavailable");
+    expect(fake.requests).toHaveLength(0);
+    expect(await provider.edit!(TOKEN, group, "77", { text: "x" })).toMatchObject({ status: "failed", errorCode: "provider_rejected" });
+    expect(await provider.edit!(TOKEN, group, "77", { text: "x" })).toMatchObject({ status: "uncertain", errorCode: "provider_timeout" });
+  });
+
+  it("deletes its own message with deleteMessage and reports Telegram's 48 h refusal", async () => {
+    const { provider, fake } = make([okTrue(), jsonResponse(400, { ok: false, description: "Bad Request: message can't be deleted" })]);
+    await expect(provider.remove!(TOKEN, group, "77")).resolves.toEqual({ status: "sent" });
+    expect(telegramMethod(fake.requests[0]!, TOKEN)).toBe("deleteMessage");
+    expect(body(fake.requests[0]!)).toEqual({ chat_id: "-1001234567890", message_id: 77 });
+    expect(await provider.remove!(TOKEN, group, "77")).toMatchObject({ status: "failed", errorCode: "provider_rejected", detail: "Bad Request: message can't be deleted" });
+  });
+
+  it("does not offer direct messages: findPerson and openDirect stay undefined", () => {
+    const { provider } = make();
+    expect(provider.findPerson).toBeUndefined();
+    expect(provider.openDirect).toBeUndefined();
+    expect(provider.capabilities.dm).toEqual({ open: false, maxMembers: 0 });
+  });
+});
+
+describe("telegram inbound helpers", () => {
+  it("verifies the webhook secret token in constant time", () => {
+    expect(verifyTelegramSecretToken({ expected: "s3cret_token-1", header: "s3cret_token-1" })).toEqual({ ok: true });
+    expect(verifyTelegramSecretToken({ expected: "s3cret_token-1", header: "s3cret_token-2" })).toEqual({ ok: false, reason: "mismatch" });
+    expect(verifyTelegramSecretToken({ expected: "s3cret_token-1", header: "s3cret" })).toEqual({ ok: false, reason: "mismatch" });
+    expect(verifyTelegramSecretToken({ expected: "s3cret_token-1", header: undefined })).toEqual({ ok: false, reason: "header_missing" });
+    expect(verifyTelegramSecretToken({ expected: "", header: "x" })).toEqual({ ok: false, reason: "secret_missing" });
+    expect(verifyTelegramSecretToken({ expected: "has space", header: "has space" })).toEqual({ ok: false, reason: "malformed" });
+    expect(verifyTelegramSecretToken({ expected: "x".repeat(257), header: "x".repeat(257) })).toEqual({ ok: false, reason: "malformed" });
+  });
+
+  it("parses message, edited_message and channel_post updates", () => {
+    const message = {
+      message_id: 10,
+      chat: { id: -1001234567890, type: "supergroup", is_forum: true },
+      from: { id: 55, is_bot: false, first_name: "Martin", last_name: "A" },
+      is_topic_message: true,
+      message_thread_id: 3,
+      text: "hello\u0000 there",
+    };
+    expect(parseTelegramUpdate({ update_id: 1, message })).toEqual({
+      kind: "message",
+      updateId: 1,
+      edited: false,
+      message: { platform: "telegram", channelId: "-1001234567890", threadId: "3", messageId: "10", senderUserId: "55", senderDisplay: "Martin A", text: "hello there", attachments: [] },
+    });
+    expect(parseTelegramUpdate(JSON.stringify({ update_id: 2, edited_message: message }))).toMatchObject({ kind: "message", edited: true });
+    const post = parseTelegramUpdate({
+      update_id: 3,
+      channel_post: {
+        message_id: 11,
+        chat: { id: -100999, type: "channel", title: "News" },
+        sender_chat: { id: -100999, type: "channel", title: "News" },
+        caption: "photo caption",
+        photo: [{ file_id: "small", file_size: 10 }, { file_id: "big_one", file_size: 999 }],
+        document: { file_id: "doc-1", file_name: "../r.pdf", mime_type: "application/pdf", file_size: 5 },
+      },
+    });
+    expect(post).toEqual({
+      kind: "message",
+      updateId: 3,
+      edited: false,
+      message: {
+        platform: "telegram",
+        channelId: "-100999",
+        messageId: "11",
+        senderUserId: "-100999",
+        senderDisplay: "News",
+        text: "photo caption",
+        attachments: [
+          { id: "big_one", name: "photo.jpg", contentType: "image/jpeg", bytes: 999 },
+          { id: "doc-1", name: "_r.pdf", contentType: "application/pdf", bytes: 5 },
+        ],
+      },
+    });
+  });
+
+  it("ignores bots, its own messages, other update types, empty service messages and junk", () => {
+    const chat = { id: -1, type: "group" };
+    expect(parseTelegramUpdate({ update_id: 1, message: { message_id: 1, chat, from: { id: 777, is_bot: true }, text: "x" } }, { botId: "777" })).toEqual({ kind: "ignored", reason: "own_message" });
+    expect(parseTelegramUpdate({ update_id: 1, message: { message_id: 1, chat, from: { id: 8, is_bot: true }, text: "x" } })).toEqual({ kind: "ignored", reason: "bot_message" });
+    expect(parseTelegramUpdate({ update_id: 1, my_chat_member: { chat } })).toEqual({ kind: "ignored", reason: "unsupported_update" });
+    expect(parseTelegramUpdate({ update_id: 1, message: { message_id: 1, chat, from: { id: 5 }, new_chat_members: [] } })).toEqual({ kind: "ignored", reason: "no_content" });
+    expect(parseTelegramUpdate("{")).toEqual({ kind: "ignored", reason: "malformed" });
+    expect(parseTelegramUpdate({ message: {} })).toEqual({ kind: "ignored", reason: "malformed" });
   });
 });

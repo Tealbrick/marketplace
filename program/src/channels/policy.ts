@@ -882,9 +882,17 @@ export type ChannelPayloadDigestInput = {
   /**
    * `kind` and `transcript` (spec 3.1) are part of the payload when given: the
    * digest covers the post after fallbacks, so the owner approves exactly what
-   * is sent. Absent fields are dropped by the canonical form.
+   * is sent. Absent fields are dropped by the canonical form. `voiceMessage` is the native voice message metadata
+   * the provider sends (Discord: flags, duration and waveform), computed before the digest.
    */
-  attachments: Array<{ sha256: string; contentType: string; name: string; kind?: string; transcript?: string }>;
+  attachments: Array<{
+    sha256: string;
+    contentType: string;
+    name: string;
+    kind?: string;
+    transcript?: string;
+    voiceMessage?: { flags: number; durationSecs: number; waveform: string };
+  }>;
   campaign?: PostCampaign | null;
   sendAt?: string | null;
 };
@@ -919,6 +927,7 @@ export function channelPayloadCanonical(input: ChannelPayloadDigestInput): strin
       name: file.name,
       kind: file.kind,
       transcript: file.transcript,
+      voiceMessage: file.voiceMessage,
     })),
     campaign,
     sendAt: input.sendAt ? new Date(input.sendAt).toISOString() : undefined,

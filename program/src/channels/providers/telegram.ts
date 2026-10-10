@@ -1,10 +1,12 @@
-import { applyFallbacks } from "./capabilities.js";
+import { createHash, timingSafeEqual } from "node:crypto";
+import { applyFallbacks, markupSupported, pollProblem } from "./capabilities.js";
 import {
   asRecord,
   classifyFailure,
   httpRequest,
   isSuccess,
   guard,
+  normalizeContentType,
   refuse,
   resolveRuntime,
   sanitizeFilename,
@@ -23,14 +25,19 @@ import {
 } from "./rate.js";
 import {
   CHANNEL_CAPABILITIES_VERSION,
+  type ActionResult,
   type AttachmentKind,
   type ChannelCapabilities,
   type ChannelDestination,
+  type ChannelMarkup,
   type ChannelProvider,
   type ChannelProviderOptions,
   type DiscoverResult,
+  type InboundMessage,
   type OutboundAttachment,
+  type OutboundMention,
   type OutboundMessage,
+  type OutboundPoll,
   type SendResult,
   type VerifyResult,
 } from "./types.js";
@@ -42,6 +49,20 @@ const MiB = 1024 * 1024;
 
 export const TELEGRAM_MAX_TEXT_CHARS = 4096;
 export const TELEGRAM_MAX_CAPTION_CHARS = 1024;
+/** deleteMessage: "A message can only be deleted if it was sent less than 48 hours ago." */
+export const TELEGRAM_DELETE_WINDOW_SECONDS = 48 * 3600;
+const INBOUND_MAX_FILES = 10;
+
+/**
+ * Emoji a bot can set with setMessageReaction (ReactionTypeEmoji, Bot API 10.3). The variation selector U+FE0F
+ * is removed from the caller's emoji before the lookup, so "❤️" and "❤" are the same reaction.
+ */
+export const TELEGRAM_REACTION_EMOJI: readonly string[] = [
+  "❤", "👍", "👎", "🔥", "🥰", "👏", "😁", "🤔", "🤯", "😱", "🤬", "😢", "🎉", "🤩", "🤮", "💩", "🙏", "👌", "🕊",
+  "🤡", "🥱", "🥴", "😍", "🐳", "❤\u200d🔥", "🌚", "🌭", "💯", "🤣", "⚡", "🍌", "🏆", "💔", "🤨", "😐", "🍓", "🍾",
+  "💋", "🖕", "😈", "😴", "😭", "🤓", "👻", "👨\u200d💻", "👀", "🎃", "🙈", "😇", "😨", "🤝", "✍", "🤗", "🫡", "🎅",
+  "🎄", "☃", "💅", "🤪", "🗿", "🆒", "💘", "🙉", "🦄", "😘", "💊", "🙊", "😎", "👾", "🤷\u200d♂", "🤷", "🤷\u200d♀", "😡",
+];
 
 // The explicit document allow-list. Anything else is refused (never sniffed, never converted).
 const FILE_TYPES = ["application/pdf", "text/plain", "application/zip", "application/octet-stream"];
@@ -55,6 +76,7 @@ const CAPABILITIES: ChannelCapabilities = {
   channelCapabilities: CHANNEL_CAPABILITIES_VERSION,
   text: { maxChars: TELEGRAM_MAX_TEXT_CHARS, captionMaxChars: TELEGRAM_MAX_CAPTION_CHARS },
   markup: "plain",
+  markupOptions: ["markdown-v2"],
   mentions: { users: false, broadcast: "suppressed" },
   dm: { open: false, maxMembers: 0 },
   image: { types: ["image/png", "image/jpeg", "image/webp"], maxBytes: 10 * MiB, albumMax: 4 },
@@ -62,12 +84,12 @@ const CAPABILITIES: ChannelCapabilities = {
   audio: { types: ["audio/mpeg", "audio/mp4"], maxBytes: 50 * MiB },
   voice: { native: true, types: ["audio/ogg"], maxBytes: 1 * MiB },
   video: { types: ["video/mp4"], maxBytes: 50 * MiB },
-  thread: { replies: false, topics: true, forum: false },
-  reactions: { add: false, remove: false, custom: false },
+  thread: { replies: true, topics: true, forum: false },
+  reactions: { add: true, remove: true, custom: false },
   buttons: { url: false, callback: false },
-  poll: false,
-  edit: { own: false },
-  delete: { own: false },
+  poll: { questionMaxChars: 300, minOptions: 2, maxOptions: 12, optionMaxChars: 100, multiple: true },
+  edit: { own: true },
+  delete: { own: true, windowSeconds: TELEGRAM_DELETE_WINDOW_SECONDS },
   canvas: false,
   presence: { typing: false, status: false },
   ephemeral: false,
@@ -84,6 +106,58 @@ const TOKEN_SHAPE = /^[0-9]+:[A-Za-z0-9_-]+$/u;
 const CHAT_ID_SHAPE = /^(-?[0-9]{1,20}|@[A-Za-z][A-Za-z0-9_]{3,31})$/u;
 const THREAD_ID_SHAPE = /^[0-9]{1,12}$/u;
 const USERNAME_SHAPE = /^[A-Za-z][A-Za-z0-9_]{3,31}$/u;
+const MESSAGE_ID_SHAPE = /^[0-9]{1,12}$/u;
+const FILE_ID_SHAPE = /^[A-Za-z0-9_-]{1,200}$/u;
+const SECRET_TOKEN_SHAPE = /^[A-Za-z0-9_-]{1,256}$/u;
+// Control characters other than newline and tab, bidirectional overrides and zero-width marks.
+const UNSAFE_INBOUND = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\u061c\ufeff]/gu;
+
+// ---------------------------------------------------------------- MarkdownV2
+
+/** Every character MarkdownV2 reserves outside entities (core.telegram.org/bots/api#markdownv2-style), plus `\`. */
+const MARKDOWN_V2_SPECIAL = /[_*[\]()~`>#+\-=|{}.!\\]/gu;
+
+/** Escapes text so Telegram shows it literally under parse_mode MarkdownV2: no entity can come from it. */
+export function escapeMarkdownV2(text: string): string {
+  return text.replace(MARKDOWN_V2_SPECIAL, (char) => `\\${char}`);
+}
+
+/**
+ * The safe subset an agent may use with `markup: "markdown-v2"`, scanned left to right, one line each, never nested:
+ * `code`, [label](https://url), *bold*, _italic_. Bold and italic markers must touch a non-space character and must
+ * not be inside a word (so snake_case and 2 * 3 stay literal). Everything else, including the inside of each entity,
+ * is escaped: user mentions (tg:// links), spoilers, quotes, underline and custom emoji can never be formed.
+ */
+const MARKDOWN_V2_SUBSET =
+  /`([^`\n]+)`|\[([^[\]\n]{1,256})\]\((https?:\/\/[^\s()<>\\]{1,2048})\)|(?<![\p{L}\p{N}_*])\*([^*\s](?:[^*\n]*[^*\s])?)\*(?![\p{L}\p{N}_*])|(?<![\p{L}\p{N}_])_([^_\s](?:[^_\n]*[^_\s])?)_(?![\p{L}\p{N}_])/gu;
+
+/** Pure: agent text to MarkdownV2 with only the safe subset live (see `MARKDOWN_V2_SUBSET`). */
+export function renderTelegramMarkdownV2(text: string): string {
+  let out = "";
+  let last = 0;
+  for (const match of text.matchAll(MARKDOWN_V2_SUBSET)) {
+    const index = match.index ?? 0;
+    out += escapeMarkdownV2(text.slice(last, index));
+    const [, code, label, url, bold, italic] = match;
+    if (code !== undefined) {
+      out += `\`${code.replace(/[`\\]/gu, (char) => `\\${char}`)}\``;
+    } else if (label !== undefined && url !== undefined) {
+      out += `[${escapeMarkdownV2(label)}](${url.replace(/[)\\]/gu, (char) => `\\${char}`)})`;
+    } else if (bold !== undefined) {
+      out += `*${escapeMarkdownV2(bold)}*`;
+    } else if (italic !== undefined) {
+      out += `_${escapeMarkdownV2(italic)}_`;
+    }
+    last = index + match[0].length;
+  }
+  return out + escapeMarkdownV2(text.slice(last));
+}
+
+type Rendered = { text: string; parse_mode?: "MarkdownV2" };
+
+function renderer(markup: ChannelMarkup | undefined): (text: string) => Rendered {
+  return markup === "markdown-v2" ? (text) => ({ text: renderTelegramMarkdownV2(text), parse_mode: "MarkdownV2" }) : (text) => ({ text });
+}
 
 type TelegramChat = {
   id?: unknown;
@@ -169,23 +243,67 @@ const SINGLE_METHOD: Record<AttachmentKind, { method: string; field: string }> =
 // so each kind is its own batch. Audio, video and voice go one request each.
 const ALBUM_TYPE: Partial<Record<AttachmentKind, "photo" | "document">> = { image: "photo", file: "document" };
 
+type PlanOptions = {
+  render: (text: string) => Rendered;
+  /** Message id the FIRST step replies to (reply_parameters, allow_sending_without_reply false). */
+  replyTo?: string;
+  poll?: OutboundPoll;
+};
+
+function replyParameters(replyTo: string | undefined): { message_id: number; allow_sending_without_reply: false } | undefined {
+  return replyTo === undefined ? undefined : { message_id: Number(replyTo), allow_sending_without_reply: false };
+}
+
 /**
  * Plan: batches in the order image, file, audio, video, voice (attachment order inside a kind).
  * The caption (text of at most 1024 characters) rides on the first media step; longer text is sent after the media.
+ * A poll post is the text (when there is one) as sendMessage, then sendPoll. The reply goes on the first step only.
  */
-function planSteps(destination: ChannelDestination, text: string, attachments: readonly OutboundAttachment[]): Step[] {
+function planSteps(destination: ChannelDestination, text: string, attachments: readonly OutboundAttachment[], options: PlanOptions): Step[] {
   const chatId = destination.externalId;
   const thread = destination.parentId;
-  const base = (): Record<string, string | undefined> => ({ chat_id: chatId, message_thread_id: thread });
+  const firstReply = replyParameters(options.replyTo);
+  const replyFor = (index: number) => (index === 0 ? firstReply : undefined);
+  const threadField = thread ? { message_thread_id: Number(thread) } : {};
+  const base = (index: number): Record<string, string | undefined> => {
+    const reply = replyFor(index);
+    return { chat_id: chatId, message_thread_id: thread, ...(reply ? { reply_parameters: JSON.stringify(reply) } : {}) };
+  };
+  const textStep = (index: number, value: string): Step => ({
+    method: "sendMessage",
+    cost: 1,
+    build: () => {
+      const reply = replyFor(index);
+      return jsonBody({ chat_id: chatId, ...threadField, ...options.render(value), ...(reply ? { reply_parameters: reply } : {}) });
+    },
+  });
+
+  if (options.poll) {
+    const poll = options.poll;
+    const steps: Step[] = text.trim().length > 0 ? [textStep(0, text)] : [];
+    const index = steps.length;
+    steps.push({
+      method: "sendPoll",
+      cost: 1,
+      build: () => {
+        const reply = replyFor(index);
+        // Anonymous by default (Telegram's default too): voters are not shown, and channels accept it.
+        return jsonBody({
+          chat_id: chatId,
+          ...threadField,
+          question: poll.question,
+          options: poll.options.map((option) => ({ text: option })),
+          is_anonymous: true,
+          allows_multiple_answers: poll.allowsMultiple === true,
+          ...(reply ? { reply_parameters: reply } : {}),
+        });
+      },
+    });
+    return steps;
+  }
 
   if (attachments.length === 0) {
-    return [
-      {
-        method: "sendMessage",
-        cost: 1,
-        build: () => jsonBody({ chat_id: chatId, ...(thread ? { message_thread_id: Number(thread) } : {}), text }),
-      },
-    ];
+    return [textStep(0, text)];
   }
 
   // A caption is at most 1024 characters. A longer text is never cut or split:
@@ -208,14 +326,15 @@ function planSteps(destination: ChannelDestination, text: string, attachments: r
   }
 
   const steps: Step[] = batches.map(({ kind, items }, index) => {
-    const batchCaption = index === 0 ? caption : undefined;
+    const rendered = index === 0 && caption !== undefined ? options.render(caption) : undefined;
     const single = SINGLE_METHOD[kind];
     if (items.length === 1) {
       const attachment = items[0] as OutboundAttachment;
       return {
         method: single.method,
         cost: 1,
-        build: () => formBody({ ...base(), caption: batchCaption }, [{ field: single.field, attachment }]),
+        build: () =>
+          formBody({ ...base(index), caption: rendered?.text, parse_mode: rendered?.parse_mode }, [{ field: single.field, attachment }]),
       };
     }
     return {
@@ -224,12 +343,12 @@ function planSteps(destination: ChannelDestination, text: string, attachments: r
       build: () =>
         formBody(
           {
-            ...base(),
+            ...base(index),
             media: JSON.stringify(
               items.map((_, i) => ({
                 type: ALBUM_TYPE[kind],
                 media: `attach://file${i}`,
-                ...(i === 0 && batchCaption ? { caption: batchCaption } : {}),
+                ...(i === 0 && rendered ? { caption: rendered.text, ...(rendered.parse_mode ? { parse_mode: rendered.parse_mode } : {}) } : {}),
               })),
             ),
           },
@@ -239,11 +358,7 @@ function planSteps(destination: ChannelDestination, text: string, attachments: r
   });
 
   if (trailingText !== undefined) {
-    steps.push({
-      method: "sendMessage",
-      cost: 1,
-      build: () => jsonBody({ chat_id: chatId, ...(thread ? { message_thread_id: Number(thread) } : {}), text: trailingText }),
-    });
+    steps.push(textStep(steps.length, trailingText));
   }
   return steps;
 }
@@ -269,6 +384,49 @@ function parseSentMessages(json: unknown): SentMessage[] | undefined {
 }
 
 const TELEGRAM_STEP_SPACING_MS = 1000;
+
+/**
+ * Refuses what this adapter does not declare, before any request: named mentions, an undeclared markup,
+ * a malformed reply-to id, and a poll outside Telegram's limits.
+ */
+function sendOptionsProblem(message: {
+  replyTo?: unknown;
+  mentions?: readonly OutboundMention[];
+  markup?: unknown;
+  poll?: OutboundPoll;
+}): { render: (text: string) => Rendered } | { refusal: SendResult } {
+  if (message.mentions !== undefined && (!Array.isArray(message.mentions) || message.mentions.length > 0)) {
+    return { refusal: refuse("channel_capability_unavailable", 'this provider does not declare "mentions.users"') };
+  }
+  if (message.markup !== undefined && (typeof message.markup !== "string" || !markupSupported(CAPABILITIES, message.markup))) {
+    return { refusal: refuse("channel_capability_unavailable", `this provider does not declare the markup "${String(message.markup)}"`) };
+  }
+  if (message.replyTo !== undefined && (typeof message.replyTo !== "string" || !MESSAGE_ID_SHAPE.test(message.replyTo))) {
+    return { refusal: refuse("channel_reply_invalid", "replyTo must be a Telegram message id (digits)") };
+  }
+  const poll = pollProblem(CAPABILITIES, message.poll);
+  if (poll) {
+    return { refusal: refuse(poll.errorCode, poll.detail) };
+  }
+  return { render: renderer(message.markup as ChannelMarkup | undefined) };
+}
+
+function reactionEmoji(emoji: unknown): string | undefined {
+  if (typeof emoji !== "string") {
+    return undefined;
+  }
+  const normalized = emoji.trim().replace(/\ufe0f/gu, "");
+  return TELEGRAM_REACTION_EMOJI.includes(normalized) ? normalized : undefined;
+}
+
+function actionOf(failure: Pick<Failure, "status" | "errorCode" | "detail"> | SendResult): ActionResult {
+  return { status: failure.status, ...(failure.errorCode ? { errorCode: failure.errorCode } : {}), ...(failure.detail ? { detail: failure.detail } : {}) };
+}
+
+function descriptionOf(result: HttpResult): string {
+  const description = result.kind === "response" ? telegramMessage(result.json) : undefined;
+  return typeof description === "string" ? description.toLowerCase() : "";
+}
 
 export function createTelegramProvider(options: ChannelProviderOptions = {}): ChannelProvider {
   const runtime = resolveRuntime(options);
@@ -353,19 +511,31 @@ export function createTelegramProvider(options: ChannelProviderOptions = {}): Ch
     if (!CHAT_ID_SHAPE.test(destination.externalId) || (destination.parentId !== undefined && !THREAD_ID_SHAPE.test(destination.parentId))) {
       return refuse("channel_destination_invalid", "the Telegram chat or topic id is invalid");
     }
+    const options = sendOptionsProblem(message);
+    if ("refusal" in options) {
+      return options.refusal;
+    }
+    if (message.poll !== undefined) {
+      if ((message.attachments ?? []).length > 0) {
+        return refuse("channel_poll_invalid", "a poll post carries no attachments");
+      }
+      if (message.text.length > TELEGRAM_MAX_TEXT_CHARS) {
+        return refuse("channel_text_too_long", `text is ${message.text.length} characters; this provider allows ${TELEGRAM_MAX_TEXT_CHARS}`);
+      }
+    }
     // Telegram declares native voice, so no fallback changes the post; the call also checks kinds and transcripts.
     const post = applyFallbacks(CAPABILITIES, { text: message.text, attachments: message.attachments ?? [] });
     if ("error" in post) {
       return refuse(post.error.errorCode, post.error.detail);
     }
     const { attachments } = post;
-    const refusal = validateOutbound({ text: post.text, attachments, caps: CAPABILITIES });
+    const refusal = message.poll === undefined ? validateOutbound({ text: post.text, attachments, caps: CAPABILITIES }) : undefined;
     if (refusal) {
       return refusal;
     }
 
     const secrets = secretsFor(token);
-    const steps = planSteps(destination, post.text, attachments);
+    const steps = planSteps(destination, post.text, attachments, { render: options.render, replyTo: message.replyTo, poll: message.poll });
     const rules = destination.type === "chat" ? [TELEGRAM_CHAT_RULE] : [TELEGRAM_CHAT_RULE, TELEGRAM_GROUP_RULE];
     const resultIds: string[] = [];
     const resultUrls: string[] = [];
@@ -430,6 +600,145 @@ export function createTelegramProvider(options: ChannelProviderOptions = {}): Ch
     return { status: "sent", resultIds, resultUrls };
   }
 
+  /** Token and chat checks shared by react, edit and remove. */
+  function target(
+    credential: string | null | undefined,
+    destination: ChannelDestination,
+    messageId: unknown,
+  ): { token: string } | { refusal: SendResult } {
+    const token = tokenOf(credential);
+    if (!token) {
+      return { refusal: refuse("credential_missing", "no Telegram bot token is configured") };
+    }
+    if (!TOKEN_SHAPE.test(token)) {
+      return { refusal: refuse("credential_invalid", "the Telegram bot token has an invalid shape") };
+    }
+    if (!CHAT_ID_SHAPE.test(destination?.externalId ?? "")) {
+      return { refusal: refuse("channel_destination_invalid", "the Telegram chat id is invalid") };
+    }
+    if (typeof messageId !== "string" || !MESSAGE_ID_SHAPE.test(messageId)) {
+      return { refusal: refuse("channel_message_id_invalid", "a Telegram message id is digits") };
+    }
+    return { token };
+  }
+
+  function messageUrl(destination: ChannelDestination, messageId: string): string[] {
+    const username = usernameFromUrl(destination.url) ?? (destination.externalId.startsWith("@") ? destination.externalId.slice(1) : undefined);
+    const url = telegramMessageUrl({ chatId: destination.externalId, username, topicId: destination.parentId, messageId });
+    return url ? [url] : [];
+  }
+
+  /**
+   * setMessageReaction: the bot's one reaction (bots set at most one per message) from Telegram's fixed emoji list.
+   * Remove sends an empty list, which clears the bot's reaction whatever it was.
+   */
+  async function react(
+    credential: string | null | undefined,
+    destination: ChannelDestination,
+    messageId: string,
+    emoji: string,
+    reactOptions: { remove?: boolean } = {},
+  ): Promise<ActionResult> {
+    const checked = target(credential, destination, messageId);
+    if ("refusal" in checked) {
+      return actionOf(checked.refusal);
+    }
+    const name = reactionEmoji(emoji);
+    if (!name) {
+      return actionOf(refuse("channel_reaction_invalid", "a Telegram reaction is one emoji from Telegram's reaction list"));
+    }
+    const remove = reactOptions?.remove === true;
+    const result = await call(checked.token, "setMessageReaction", () =>
+      jsonBody({ chat_id: destination.externalId, message_id: Number(messageId), reaction: remove ? [] : [{ type: "emoji", emoji: name }] }),
+    );
+    if (isSuccess(result) && asRecord(result.json)?.ok === true) {
+      return { status: "sent" };
+    }
+    if (isSuccess(result)) {
+      return { status: "uncertain", errorCode: "provider_bad_response", detail: "the provider answered success but the reply was not understood" };
+    }
+    return actionOf(classifyFailure(result, { secrets: secretsFor(checked.token), message: telegramMessage, notFound: "credential_invalid" }));
+  }
+
+  /**
+   * editMessageText; a media message has a caption instead of text, so Telegram's "there is no text in the message
+   * to edit" (a rejection, nothing changed) is followed by editMessageCaption (at most 1024 characters).
+   * "message is not modified" is the asked end state, so it counts as sent.
+   */
+  async function edit(
+    credential: string | null | undefined,
+    destination: ChannelDestination,
+    messageId: string,
+    input: { text: string; mentions?: readonly OutboundMention[]; markup?: ChannelMarkup },
+  ): Promise<SendResult> {
+    const checked = target(credential, destination, messageId);
+    if ("refusal" in checked) {
+      return checked.refusal;
+    }
+    const text = typeof input?.text === "string" ? input.text : "";
+    if (text.trim().length === 0) {
+      return refuse("channel_message_empty", "an edit needs text");
+    }
+    if (text.length > TELEGRAM_MAX_TEXT_CHARS) {
+      return refuse("channel_text_too_long", `text is ${text.length} characters; this provider allows ${TELEGRAM_MAX_TEXT_CHARS}`);
+    }
+    const options = sendOptionsProblem({ mentions: input.mentions, markup: input.markup });
+    if ("refusal" in options) {
+      return options.refusal;
+    }
+    const slot = await limiter.acquire(`telegram:${destination.externalId}`, [TELEGRAM_CHAT_RULE]);
+    if (!slot.ok) {
+      return refuse("provider_rate_limited", `local rate limit; next free slot in ${Math.ceil(slot.waitMs / 1000)}s`);
+    }
+    const secrets = secretsFor(checked.token);
+    const rendered = options.render(text);
+    const base = { chat_id: destination.externalId, message_id: Number(messageId) };
+    let result = await call(checked.token, "editMessageText", () => jsonBody({ ...base, ...rendered }));
+    if (result.kind === "response" && result.status === 400 && descriptionOf(result).includes("there is no text in the message to edit")) {
+      if (text.length > TELEGRAM_MAX_CAPTION_CHARS) {
+        return refuse("channel_text_too_long", `the message is a media caption, which allows ${TELEGRAM_MAX_CAPTION_CHARS} characters`);
+      }
+      result = await call(checked.token, "editMessageCaption", () =>
+        jsonBody({ ...base, caption: rendered.text, ...(rendered.parse_mode ? { parse_mode: rendered.parse_mode } : {}) }),
+      );
+    }
+    if (result.kind === "response" && result.status === 400 && descriptionOf(result).includes("message is not modified")) {
+      return { status: "sent", resultIds: [messageId], resultUrls: messageUrl(destination, messageId), detail: "the message already had this text" };
+    }
+    if (!isSuccess(result)) {
+      const failure = classifyFailure(result, { secrets, message: telegramMessage, notFound: "credential_invalid" });
+      return { status: failure.status, resultIds: [], resultUrls: [], errorCode: failure.errorCode, detail: failure.detail };
+    }
+    if (asRecord(result.json)?.ok !== true) {
+      return {
+        status: "uncertain",
+        resultIds: [],
+        resultUrls: [],
+        errorCode: "provider_bad_response",
+        detail: "the provider answered success but the reply was not understood; the edit is unknown",
+      };
+    }
+    return { status: "sent", resultIds: [messageId], resultUrls: messageUrl(destination, messageId) };
+  }
+
+  /** deleteMessage: the bot's own message, within 48 hours of sending (Telegram refuses older ones). */
+  async function remove(credential: string | null | undefined, destination: ChannelDestination, messageId: string): Promise<ActionResult> {
+    const checked = target(credential, destination, messageId);
+    if ("refusal" in checked) {
+      return actionOf(checked.refusal);
+    }
+    const result = await call(checked.token, "deleteMessage", () => jsonBody({ chat_id: destination.externalId, message_id: Number(messageId) }));
+    if (isSuccess(result) && asRecord(result.json)?.ok === true) {
+      return { status: "sent" };
+    }
+    if (isSuccess(result)) {
+      return { status: "uncertain", errorCode: "provider_bad_response", detail: "the provider answered success but the reply was not understood" };
+    }
+    return actionOf(classifyFailure(result, { secrets: secretsFor(checked.token), message: telegramMessage, notFound: "credential_invalid" }));
+  }
+
+  const actionFallback: ActionResult = { status: "uncertain", errorCode: "provider_internal_error", detail: "unexpected adapter error; the outcome is unknown" };
+
   return {
     id: "telegram",
     capabilities: structuredClone(CAPABILITIES),
@@ -446,6 +755,17 @@ export function createTelegramProvider(options: ChannelProviderOptions = {}): Ch
           detail: "unexpected adapter error; delivery is unknown",
         },
       ),
+    react: (credential, destination, messageId, emoji, reactOptions) =>
+      guard(() => react(credential, destination, messageId, emoji, reactOptions), actionFallback),
+    edit: (credential, destination, messageId, input) =>
+      guard(() => edit(credential, destination, messageId, input), {
+        status: "uncertain",
+        resultIds: [],
+        resultUrls: [],
+        errorCode: "provider_internal_error",
+        detail: "unexpected adapter error; the edit is unknown",
+      }),
+    remove: (credential, destination, messageId) => guard(() => remove(credential, destination, messageId), actionFallback),
   };
 }
 
@@ -527,4 +847,117 @@ function destinationsFromUpdates(updates: unknown[]): ChannelDestination[] {
     }
   }
   return [...entries.values()].sort((a, b) => a.order - b.order).map((entry) => entry.destination);
+}
+
+// ---------------------------------------------------------------- Inbound helpers (pure; no route yet)
+
+export type TelegramSecretCheck = { ok: true } | { ok: false; reason: "secret_missing" | "header_missing" | "malformed" | "mismatch" };
+
+/**
+ * Verifies a webhook request: the `X-Telegram-Bot-Api-Secret-Token` header must equal the `secret_token` given to
+ * setWebhook (1-256 characters of A-Z, a-z, 0-9, `_`, `-`). Both sides are hashed first, so the compare is
+ * constant-time whatever the lengths.
+ */
+export function verifyTelegramSecretToken(input: { expected: string | null | undefined; header: string | null | undefined }): TelegramSecretCheck {
+  const expected = input.expected?.trim();
+  if (!expected) return { ok: false, reason: "secret_missing" };
+  if (!SECRET_TOKEN_SHAPE.test(expected)) return { ok: false, reason: "malformed" };
+  if (typeof input.header !== "string" || input.header.length === 0) return { ok: false, reason: "header_missing" };
+  const left = createHash("sha256").update(expected, "utf8").digest();
+  const right = createHash("sha256").update(input.header, "utf8").digest();
+  return timingSafeEqual(left, right) ? { ok: true } : { ok: false, reason: "mismatch" };
+}
+
+export type TelegramUpdateParse =
+  | { kind: "message"; updateId: number; edited: boolean; message: InboundMessage }
+  | { kind: "ignored"; reason: string };
+
+function inboundText(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const text = value.replace(UNSAFE_INBOUND, "");
+  const points = Array.from(text);
+  return points.length > TELEGRAM_MAX_TEXT_CHARS ? points.slice(0, TELEGRAM_MAX_TEXT_CHARS).join("") : text;
+}
+
+function inboundFile(raw: unknown, fallbackName: string, fallbackType: string): InboundMessage["attachments"][number] | undefined {
+  const file = asRecord(raw);
+  if (!file || typeof file.file_id !== "string" || !FILE_ID_SHAPE.test(file.file_id)) return undefined;
+  return {
+    id: file.file_id,
+    name: sanitizeFilename(typeof file.file_name === "string" ? file.file_name : fallbackName),
+    contentType: normalizeContentType(typeof file.mime_type === "string" ? file.mime_type : "") || fallbackType,
+    bytes: typeof file.file_size === "number" && Number.isSafeInteger(file.file_size) && file.file_size >= 0 ? file.file_size : 0,
+  };
+}
+
+/**
+ * Parses a verified webhook update (`message`, `edited_message`, `channel_post`, `edited_channel_post`) into the
+ * normalised inbound shape. Call it only after `verifyTelegramSecretToken` passed. Ignores other update types,
+ * private-chat-less shapes, bots (the bot's own messages included: `self.botId` from verify) and service messages
+ * without text or files. `threadId` is the forum topic id. `edited` marks an edit of an earlier message (same
+ * `messageId`); `updateId` de-duplicates Telegram's retries. Files are metadata only (file_id, never bytes).
+ * The text (or caption) is untrusted data: control characters removed, at most 4096 characters.
+ */
+export function parseTelegramUpdate(body: unknown, self: { botId?: string } = {}): TelegramUpdateParse {
+  let update = body;
+  if (typeof body === "string") {
+    try {
+      update = JSON.parse(body);
+    } catch {
+      return { kind: "ignored", reason: "malformed" };
+    }
+  }
+  const record = asRecord(update);
+  const updateId = record?.update_id;
+  if (!record || typeof updateId !== "number" || !Number.isSafeInteger(updateId)) return { kind: "ignored", reason: "malformed" };
+  const key = (["message", "edited_message", "channel_post", "edited_channel_post"] as const).find((name) => asRecord(record[name]) !== undefined);
+  if (!key) return { kind: "ignored", reason: "unsupported_update" };
+  const message = asRecord(record[key]) as Record<string, unknown>;
+  const chat = asRecord(message.chat);
+  const messageId = message.message_id;
+  if (!chat || typeof chat.id !== "number" || !Number.isSafeInteger(chat.id) || typeof messageId !== "number" || !Number.isSafeInteger(messageId)) {
+    return { kind: "ignored", reason: "malformed" };
+  }
+  const from = asRecord(message.from);
+  const senderChat = asRecord(message.sender_chat);
+  if (from?.is_bot === true) {
+    const own = self.botId !== undefined && String(from.id) === self.botId;
+    return { kind: "ignored", reason: own ? "own_message" : "bot_message" };
+  }
+  // Channel posts and anonymous admins are sent on behalf of a chat; that chat is the sender.
+  const sender = from && typeof from.id === "number" ? from : senderChat;
+  if (!sender || typeof sender.id !== "number" || !Number.isSafeInteger(sender.id)) return { kind: "ignored", reason: "malformed" };
+  const senderDisplay =
+    sanitizeText([from === sender ? from.first_name : sender.title, from === sender ? from.last_name : undefined].filter((part) => typeof part === "string").join(" "), 80) ||
+    sanitizeText(sender.username, 80) ||
+    String(sender.id);
+  const photos = Array.isArray(message.photo) ? message.photo : [];
+  // A photo arrives in several sizes; the last one is the largest.
+  const files = [
+    inboundFile(photos[photos.length - 1], "photo.jpg", "image/jpeg"),
+    inboundFile(message.document, "file", "application/octet-stream"),
+    inboundFile(message.audio, "audio", "audio/mpeg"),
+    inboundFile(message.voice, "voice.ogg", "audio/ogg"),
+    inboundFile(message.video, "video.mp4", "video/mp4"),
+  ].filter((file): file is InboundMessage["attachments"][number] => file !== undefined).slice(0, INBOUND_MAX_FILES);
+  const text = inboundText(typeof message.text === "string" ? message.text : message.caption);
+  if (text.length === 0 && files.length === 0) return { kind: "ignored", reason: "no_content" };
+  const threadId = message.is_topic_message === true && typeof message.message_thread_id === "number" && Number.isSafeInteger(message.message_thread_id)
+    ? String(message.message_thread_id)
+    : undefined;
+  return {
+    kind: "message",
+    updateId,
+    edited: key.startsWith("edited_"),
+    message: {
+      platform: "telegram",
+      channelId: String(chat.id),
+      ...(threadId ? { threadId } : {}),
+      messageId: String(messageId),
+      senderUserId: String(sender.id),
+      senderDisplay,
+      text,
+      attachments: files,
+    },
+  };
 }
