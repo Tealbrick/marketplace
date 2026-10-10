@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
 import { sha256Hex } from "./canonical-json.js";
+import { ACTIONS_TABLES, ActionsStore, migrateActionsTables } from "./actions-store.js";
 import { BUZZ_TABLES, BuzzStore, migrateBuzzTables } from "./buzz-store.js";
 import { INBOUND_TABLES, InboundStore, migrateInboundTables } from "./inbound-store.js";
 import { TEAMS_CONVERSATION_DDL, TeamsConversationStore } from "./teams-store.js";
@@ -41,6 +42,7 @@ export const CHANNEL_TABLES = [
   "channel_teams_conversation",
   ...INBOUND_TABLES,
   ...BUZZ_TABLES,
+  ...ACTIONS_TABLES,
 ] as const;
 
 const HOUR_MS = 3_600_000;
@@ -202,6 +204,8 @@ export function migrateChannelTables(db: DatabaseSync): void {
   migrateInboundTables(db);
   // Buzz (P2): public identity and owner settings (never the secret key), bridge routes, bridged messages.
   migrateBuzzTables(db);
+  // Routes v2 (P2): post ops, the sent-message ledger, people policy and people.
+  migrateActionsTables(db);
 }
 
 // ---------------------------------------------------------------------------
@@ -848,6 +852,13 @@ export class ChannelStore {
   private teamsStore: TeamsConversationStore | undefined;
   private inboundStore: InboundStore | undefined;
   private buzzStore: BuzzStore | undefined;
+  private actionsStore: ActionsStore | undefined;
+
+  /** Routes v2 state (post ops, sent messages, people policy, people), on the same connection. */
+  get actions(): ActionsStore {
+    this.actionsStore ??= new ActionsStore(this.db);
+    return this.actionsStore;
+  }
 
   /** Buzz identity, bridge routes and bridged messages (P2), on the same connection. */
   get buzz(): BuzzStore {
