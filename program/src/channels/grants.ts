@@ -49,6 +49,12 @@ export const GrantScopeSchema = z.strictObject({
   immediate: z.boolean(),
   scheduled: z.boolean(),
   replies: z.boolean().optional(),
+  // Routes v2 (review R4): default false, `true` is wider.
+  reactions: z.boolean().optional(),
+  edits: z.boolean().optional(),
+  deletes: z.boolean().optional(),
+  polls: z.boolean().optional(),
+  dms: z.boolean().optional(),
 });
 
 export const GrantTermsSchema = z.strictObject({

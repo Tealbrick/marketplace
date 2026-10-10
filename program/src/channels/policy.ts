@@ -145,7 +145,28 @@ export type GrantScope = {
    * wider than false and needs `immediate`.
    */
   replies?: boolean;
+  /**
+   * Channels P2 routes v2 (review R4): each flag lets the grant cover one more kind of outward operation. Absent or
+   * false (the default): never covered, so the operation holds for the owner's approval of the exact payload. `true`
+   * is wider than false, needs `immediate`, and is part of the grant digest only when true (old digests unchanged).
+   * `reactions`: add or remove the bot's reaction on a message Marketplace posted. `edits` / `deletes`: change or
+   * delete a message Marketplace posted to this channel. `polls`: a post with a native poll. `dms`: a direct message
+   * to a person the owner already approved on this connection (the first message to a person is never covered).
+   */
+  reactions?: boolean;
+  edits?: boolean;
+  deletes?: boolean;
+  polls?: boolean;
+  dms?: boolean;
 };
+
+/** Optional `true`-is-wider grant scope flags (review M1 `replies`; routes v2 R4). Absent = false. */
+export const GRANT_SCOPE_FLAGS = ["replies", "reactions", "edits", "deletes", "polls", "dms"] as const;
+export type GrantScopeFlag = (typeof GRANT_SCOPE_FLAGS)[number];
+
+/** Outward operations other than a plain post (routes v2). Each needs its own grant flag. */
+export type ChannelAction = "react" | "edit" | "delete" | "dm";
+const ACTION_FLAG: Readonly<Record<ChannelAction, GrantScopeFlag>> = { react: "reactions", edit: "edits", delete: "deletes", dm: "dms" };
 
 /** The parts of a standing grant that define what it authorises. */
 export type StandingGrantTerms = {
@@ -171,6 +192,15 @@ export type PostFacts = {
   mode: "immediate" | "scheduled";
   /** A reply to an inbound message: covered only by a grant with `scope.replies: true`. */
   reply?: boolean;
+  /** A reaction, edit, delete or direct message (routes v2): covered only by the matching scope flag. */
+  action?: ChannelAction;
+  /** A post with a native poll: covered only by `scope.polls: true`. */
+  poll?: boolean;
+  /**
+   * A direct message: whether the owner already approved this person on this connection. The first message to a
+   * person is never covered by a grant (review R5), whatever `scope.dms` says.
+   */
+  personApproved?: boolean;
   sendAt?: string | null;
   text: string;
   attachments: PostAttachmentFacts[];
@@ -512,8 +542,10 @@ export function grantWithinCeiling(
   }
   if (scope.phases !== undefined && !isSubset(scope.phases, GRANT_PHASES)) fields.push("scope.phases");
   if (!scope.immediate && !scope.scheduled) fields.push("scope.mode");
-  // Replies are immediate posts: a reply scope without immediate authorises nothing coherent.
-  if (scope.replies === true && !scope.immediate) fields.push("scope.replies");
+  // Replies, reactions, edits, deletes, polls and DMs are immediate: such a flag without immediate authorises nothing coherent.
+  for (const flag of GRANT_SCOPE_FLAGS) {
+    if (scope[flag] === true && !scope.immediate) fields.push(`scope.${flag}`);
+  }
 
   const expires = parseTime(grant.expires);
   const notBefore = parseTime(grant.notBefore);
@@ -574,7 +606,9 @@ export function isNarrowing(
   }
   if (t.immediate && !s.immediate) fields.push("scope.immediate");
   if (t.scheduled && !s.scheduled) fields.push("scope.scheduled");
-  if (t.replies === true && s.replies !== true) fields.push("scope.replies");
+  for (const flag of GRANT_SCOPE_FLAGS) {
+    if (t[flag] === true && s[flag] !== true) fields.push(`scope.${flag}`);
+  }
 
   const currentExpires = parseTime(current.expires);
   const proposedExpires = parseTime(proposed.expires);
@@ -652,6 +686,10 @@ export function grantCoversPost(
   if (post.mode === "immediate" && !scope.immediate) reasons.push("mode_immediate_not_covered");
   if (post.mode === "scheduled" && !scope.scheduled) reasons.push("mode_scheduled_not_covered");
   if (post.reply === true && scope.replies !== true) reasons.push("reply_not_covered");
+  if (post.action !== undefined && scope[ACTION_FLAG[post.action]] !== true) reasons.push(`${post.action}_not_covered`);
+  // Review R5: the first message to a person always needs the owner's approval of the exact payload.
+  if (post.action === "dm" && post.personApproved !== true) reasons.push("person_first_contact");
+  if (post.poll === true && scope.polls !== true) reasons.push("poll_not_covered");
 
   const phase = post.campaign?.phase;
   if (scope.phases !== undefined && (!phase || !(scope.phases as readonly string[]).includes(phase))) {
@@ -892,6 +930,21 @@ export type ChannelPayloadDigestInput = {
   op: string;
   /** Provider message id a reply goes to (`marketplace.channels.reply`); absent on plain posts (digest unchanged). */
   replyTo?: string;
+  /**
+   * Routes v2 (review R2). Every field below is part of the digest only when present, so the digests of plain posts
+   * are unchanged. `personId` / `personName`: the person of a direct message (the platform user id and the display
+   * name the owner approves). `targetMessageId`: the message a reaction, edit or delete acts on. `emoji` / `remove`:
+   * a reaction. `markup`: a markup other than the provider default. `mentions`: named people (sorted by user id).
+   * `poll`: the native poll (question, options in order, flags).
+   */
+  personId?: string;
+  personName?: string;
+  targetMessageId?: string;
+  emoji?: string;
+  remove?: boolean;
+  markup?: string;
+  mentions?: Array<{ userId: string; name?: string }>;
+  poll?: { question: string; options: readonly string[]; allowsMultiple?: boolean; durationHours?: number };
   text: string;
   /**
    * `kind` and `transcript` (spec 3.1) are part of the payload when given: the
@@ -935,6 +988,26 @@ export function channelPayloadCanonical(input: ChannelPayloadDigestInput): strin
     destinationParentId: input.destinationParentId || undefined,
     op: input.op,
     replyTo: input.replyTo || undefined,
+    personId: input.personId || undefined,
+    personName: input.personId ? input.personName : undefined,
+    targetMessageId: input.targetMessageId || undefined,
+    emoji: input.emoji || undefined,
+    remove: input.remove === true ? true : undefined,
+    markup: input.markup || undefined,
+    mentions:
+      input.mentions && input.mentions.length > 0
+        ? [...input.mentions]
+            .map((mention) => ({ userId: mention.userId, name: mention.name || undefined }))
+            .sort((a, b) => (a.userId < b.userId ? -1 : a.userId > b.userId ? 1 : 0))
+        : undefined,
+    poll: input.poll
+      ? {
+          question: input.poll.question,
+          options: [...input.poll.options],
+          allowsMultiple: input.poll.allowsMultiple === true ? true : undefined,
+          durationHours: input.poll.durationHours,
+        }
+      : undefined,
     text: input.text,
     attachments: input.attachments.map((file) => ({
       sha256: file.sha256,
@@ -967,8 +1040,12 @@ export function standingGrantDigest(input: {
       consentId: input.consentId,
       purpose: input.purpose,
       caps: input.terms.caps,
-      // `replies` is part of the digest only when true, so the digests of existing grants are unchanged.
-      scope: { ...input.terms.scope, replies: input.terms.scope.replies === true ? true : undefined },
+      // Each optional flag (`replies`, and the routes v2 flags) is part of the digest only when true, so the digests of
+      // existing grants are unchanged and an explicit `false` digests the same as an absent flag.
+      scope: {
+        ...input.terms.scope,
+        ...Object.fromEntries(GRANT_SCOPE_FLAGS.map((flag) => [flag, input.terms.scope[flag] === true ? true : undefined])),
+      },
       notBefore: input.terms.notBefore ? new Date(input.terms.notBefore).toISOString() : undefined,
       expires: new Date(input.terms.expires).toISOString(),
     }),
