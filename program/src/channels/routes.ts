@@ -39,6 +39,7 @@ import { DELIVERED_STATUSES, INBOUND_TEXT_RETENTION_BOUNDS, type InboundEventRec
 import type { InboundWorker } from "./inbound-worker.js";
 import type { BuzzIdentity } from "./buzz-identity.js";
 import { registerBuzzIdentityRoutes } from "./buzz-identity-routes.js";
+import type { OwnerWriterGateResult } from "./owner-key-routes.js";
 import { npubEncode } from "./providers/nostr.js";
 
 /** Manifest operation ids (contract alpha.3 ids are `<app>.<resource>.<verb>`, so sub-resources use a hyphen). */
@@ -159,7 +160,12 @@ export type ChannelRouteDeps = {
   /** The inbound worker (owner switches, receiver status). */
   inbound: InboundWorker;
   /** The Buzz connection identity and the hook that applies a change (provider re-verify, socket, bridge sink). */
-  buzz?: { identity: BuzzIdentity; onChanged: () => Promise<void> };
+  buzz?: {
+    identity: BuzzIdentity;
+    onChanged: () => Promise<void>;
+    /** The strict owner gate (launch session + CSRF + pinned owner) for Buzz writes. */
+    ownerWriter: (request: FastifyRequest, reply: FastifyReply) => Promise<OwnerWriterGateResult>;
+  };
 };
 
 type Caller = NonNullable<ReturnType<ChannelRouteDeps["agentGrant"]>>;
@@ -743,8 +749,10 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
     return store.channels.buzz.listRoutes(org).map((route) => ({
       channelId: route.channelId,
       agentNpub: npubEncode(route.agentPubkey),
-      relayUrl: route.relayUrl,
+      relayUrl: route.relayUrl || null,
       relayChanged: relayUrl !== route.relayUrl,
+      /** The owner must save the route again (relay changed since it was confirmed). */
+      needsConfirmation: route.relayUrl === "" || relayUrl !== route.relayUrl,
       bridgeChannel: route.groupId ? { groupId: route.groupId, memberAdded: route.memberAdded, createdAt: route.groupCreatedAt } : null,
     }));
   };
@@ -755,6 +763,7 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
       identity: deps.buzz.identity,
       owner: (request, reply) => owner(request, reply, true),
       ownerDenied,
+      ownerWriter: deps.buzz.ownerWriter,
       fail,
       onChanged: deps.buzz.onChanged,
       configured: deps.configured,
@@ -1133,6 +1142,12 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
     if (!channel || channel.status === "archived") return fail(reply, 404, "channel_not_found");
     const parsed = InboundRouteSchema.safeParse(request.body);
     if (!parsed.success) return fail(reply, 400, "validation_failed");
+    // The routed agent's Buzz key decides who receives bridged messages: the strict owner gate, like the identity.
+    if (parsed.data.agentBuzzPubkey !== undefined) {
+      if (!deps.buzz) return fail(reply, 409, "buzz_bridge_unavailable");
+      const gate = await deps.buzz.ownerWriter(request, reply);
+      if (!gate.ok) return { ok: false, schema: 1, error: gate.error === "marketplace_operator_required" ? "owner_session_required" : gate.error };
+    }
     const result = await deps.inbound.setRoute({
       channel,
       enabled: parsed.data.enabled,

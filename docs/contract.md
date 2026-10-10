@@ -687,18 +687,24 @@ a backup); loss of the store means a new key and a new tag. Public state lives
 in the additive table `channel_buzz_identity` (agent public key, relay URL,
 tag JSON, its SHA-256, owner key, conditions, end date). Owner operations
 (audience owner; they work in inert mode, where a first identity takes effect
-after the next start and the answer says `appliesAfterRestart: true`):
+after the next start and the answer says `appliesAfterRestart: true`). Reads
+need any operator session; every WRITE (key generate/rotate, relay URL, tag,
+revoke, and a route's `agentBuzzPubkey`) needs the strict owner gate of the
+owner-key routes: the owner's own Portal launch session with its CSRF token
+and the pinned `ownerSubject` equal to the session user (`403
+owner_session_required`; without a pin `409 approval_owner_unbound`), so no
+other operator can point the bridge at another relay or agent key.
 
 | Operation | Route | Effect |
 | --- | --- | --- |
 | `marketplace.channel-buzz-identity.get` | `GET /api/marketplace/channels/buzz/identity` | npub, relay URL, tag status (`missing`, `valid`, `invalid`, `expired`) with reason, end date, days left, `renewalDue` (< 14 days), tag SHA-256, pinned owner fingerprint, and `signing.preimage`: the exact NIP-OA text to sign for a 90-day tag. Also in the owner browse (`buzz`). |
 | `marketplace.channel-buzz-key.generate` | `POST /api/marketplace/channels/buzz/identity/key` `{rotate?}` | Generate the key (`409 buzz_key_exists` when one exists), or rotate it: the old secret is overwritten and the tag cleared (it named the old key). |
-| `marketplace.channel-buzz-identity.update` | `PUT /api/marketplace/channels/buzz/identity` `{relayUrl?, authTag?}` | Relay: `wss://host[:port]` only (`422 buzz_relay_url_invalid`). Tag: `["auth", ownerHex, conditions, sig]`, verified: BIP-340 by `ownerHex` over SHA-256 of `nostr:agent-auth:<agent hex>:<conditions>` (conditions verbatim), owner ≠ agent, the NIP-OA conditions grammar, `ownerHex` = the pinned owner Buzz key (`approvals.ownerNostrPubkey`) when one is set, a `created_at<T` end with now < T ≤ now + 90 days, at most one `kind=` value. Refusals `422 buzz_auth_tag_<reason>`; a pasted `nsec` is refused and never echoed. |
+| `marketplace.channel-buzz-identity.update` | `PUT /api/marketplace/channels/buzz/identity` `{relayUrl?, authTag?}` | Relay: `wss://host[:port]` only (`422 buzz_relay_url_invalid`). A change clears the tag (readiness `credential_missing` until the owner pastes a tag again) and unconfirms every bridge route (bridge paused, `buzz_relay_changed`, until the owner saves the route again); audit `relay_changed` `{oldRelayHost, newRelayHost, actor, pausedRoutes}`. Tag: `["auth", ownerHex, conditions, sig]`, verified: BIP-340 by `ownerHex` over SHA-256 of `nostr:agent-auth:<agent hex>:<conditions>` (conditions verbatim), owner ≠ agent, the NIP-OA conditions grammar, `ownerHex` = the pinned owner Buzz key (`approvals.ownerNostrPubkey`; none set → `409 buzz_owner_key_required`), a `created_at<T` end with now < T ≤ now + 90 days, at most one `kind=` value. Refusals `422 buzz_auth_tag_<reason>`; a pasted `nsec` is refused and never echoed. |
 | `marketplace.channel-buzz-auth-tag.revoke` | `DELETE /api/marketplace/channels/buzz/identity/auth-tag` | Clear the tag: Marketplace stops publishing and receiving at once. The tag stays valid on the relay until its end date; rotation ends it for good. |
 
 Readiness: `credential_missing` (no key, relay or tag), `credential_invalid`
-(a tag that ended, no longer names the pinned owner key or no longer
-verifies; re-checked on every readiness read), `available` after `verify`
+(a tag that ended, no longer names the pinned owner key, has no pinned owner
+key to name, or no longer verifies; re-checked on every readiness read), `available` after `verify`
 (NIP-11, then an authenticated `/query` for the agent's own profile).
 `connections.buzz.botUsername` is the short npub. Audit
 (`marketplace.channels.buzz.key_generated | key_rotated | relay_changed |

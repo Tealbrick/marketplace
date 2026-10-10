@@ -53,7 +53,7 @@ export function BuzzIdentityPanel({ view, onChanged }: { view: BuzzIdentityView;
       <dt>Tag owner</dt><dd>{view.authTag.ownerNpub ? <code>{view.authTag.ownerNpub}</code> : "—"}</dd>
       <dt>Tag ends</dt><dd>{formatWhen(view.authTag.expiresAt)}</dd>
       <dt>Tag digest</dt><dd>{view.authTag.sha256 ? <code>{view.authTag.sha256.slice(0, 16)}…</code> : "—"}</dd>
-      <dt>Pinned owner key</dt><dd>{view.pinnedOwner.set ? <code>{view.pinnedOwner.fingerprint}</code> : "Not pinned (any owner key is accepted)"}</dd>
+      <dt>Pinned owner key</dt><dd>{view.pinnedOwner.set ? <code>{view.pinnedOwner.fingerprint}</code> : "Not set. Set your owner Buzz key under Approvals first: the tag must be signed by it."}</dd>
     </dl>
 
     {!view.key.present && <div className="buzz-step">

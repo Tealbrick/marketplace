@@ -256,6 +256,18 @@ export class BuzzStore {
     return this.getRoute(input.workspaceSlug, input.channelId)!;
   }
 
+  /**
+   * After a relay change: every route needs the owner's confirmation again (relay cleared, bridge channel
+   * forgotten, since it lived on the old relay). The bridge refuses (`buzz_relay_changed`) until then.
+   */
+  unconfirmRoutes(workspaceSlug: string, actor: string, now: Date): number {
+    return Number(
+      this.db
+        .prepare("UPDATE channel_buzz_route SET relay_url = '', group_id = NULL, member_added = 0, group_created_at = NULL, updated_by = ?, updated_at = ? WHERE workspace_slug = ?")
+        .run(actor, now.toISOString(), workspaceSlug).changes,
+    );
+  }
+
   setRouteGroup(input: { workspaceSlug: string; channelId: string; groupId: string; now: Date }): void {
     this.db
       .prepare("UPDATE channel_buzz_route SET group_id = ?, member_added = 0, group_created_at = ?, updated_at = ? WHERE workspace_slug = ? AND channel_id = ?")

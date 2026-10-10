@@ -73,7 +73,7 @@ import {
   type OwnerApprovalBinding,
   type OwnerApprovalVerifier,
 } from "./channels/approvals.js";
-import { currentOwnerKeyView, registerOwnerKeyRoutes } from "./channels/owner-key-routes.js";
+import { createOwnerWriterGate, currentOwnerKeyView, registerOwnerKeyRoutes } from "./channels/owner-key-routes.js";
 import { NO_OWNER_PIN, readAttestedOwnerNostrPubkey, readOwnerPin, type OwnerKeyAttestation, type OwnerPinSource } from "./channels/owner-pin.js";
 import { CHANNEL_AGENT_OPERATION, registerChannelRoutes } from "./channels/routes.js";
 import { resolveRuntime } from "./channels/providers/common.js";
@@ -8457,7 +8457,22 @@ export async function buildMarketplaceApp(
     dispatch: async (input) => (await dispatchConsentedCall(input)) as Record<string, unknown>,
     traceIdFrom,
     inbound: inboundWorker,
-    ...(buzzProvider ? { buzz: { identity: buzzIdentity, onChanged: onBuzzIdentityChanged } } : {}),
+    ...(buzzProvider
+      ? {
+          buzz: {
+            identity: buzzIdentity,
+            onChanged: onBuzzIdentityChanged,
+            // Called per request (after the app is built), so the pin source declared below is initialised.
+            ownerWriter: (request, reply) =>
+              createOwnerWriterGate({
+                organizationId,
+                pinSource: ownerPinSource,
+                requireOperator,
+                ownerLaunchSession: (launch) => operatorSessions.ownerLaunchSession(launch.headers.cookie, launch.headers["x-csrf-token"]),
+              })(request, reply),
+          },
+        }
+      : {}),
   });
   // Teams messaging endpoint (public path, Bot Framework JWT): captures conversation references at install.
   registerTeamsInboundRoute({

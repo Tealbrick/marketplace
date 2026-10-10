@@ -24,8 +24,9 @@ import type { ChannelCredential, ChannelReadiness } from "./runtime.js";
  *   the at-rest key (which is never in a backup). Loss of the store means a new key and a new tag.
  * - The owner screen shows the npub. The owner enters the relay URL (wss://; no default) and pastes the NIP-OA tag
  *   they signed on their own device for the agent key. The tag is verified (BIP-340 by its owner key over the
- *   exact NIP-OA preimage), must name the pinned owner Buzz key when one is set (`approvals.ownerNostrPubkey`),
- *   and must end (`created_at<T`) within 90 days. The tag and its SHA-256 are stored; audit records the npub and
+ *   exact NIP-OA preimage), MUST name the pinned owner Buzz key (`approvals.ownerNostrPubkey`; none set →
+ *   `buzz_owner_key_required`), and must end (`created_at<T`) within 90 days. A relay change clears the tag.
+ *   Every write is gated by the strict owner gate (buzz-identity-routes.ts). The tag and its SHA-256 are stored; audit records the npub and
  *   the tag digest only.
  * - Rotation generates a new key (the old one is overwritten and gone) and clears the tag (it named the old key).
  *   Revoke clears the tag: Marketplace stops using the identity at once.
@@ -41,7 +42,7 @@ export type BuzzIdentityView = {
   relay: { url: string | null; httpBase: string | null };
   authTag: {
     status: BuzzTagStatus;
-    reason?: AuthTagFailure | "key_changed";
+    reason?: AuthTagFailure | "owner_key_required";
     sha256: string | null;
     ownerNpub: string | null;
     ownerFingerprint: string | null;
@@ -103,7 +104,10 @@ export function createBuzzIdentity(deps: BuzzIdentityDeps) {
   const tagState = () => {
     const identity = buzz.getIdentity(org);
     if (!identity?.agentPubkey || !identity.authTagJson) return { identity, status: "missing" as BuzzTagStatus };
-    const checked = verifyAuthTag({ tag: identity.authTagJson, agentPubkey: identity.agentPubkey, pinnedOwner: pinnedOwner(), nowSeconds: nowSeconds() });
+    // The tag must name the pinned owner Buzz key; without one no tag is valid (fail closed).
+    const pin = pinnedOwner();
+    if (!pin) return { identity, status: "invalid" as BuzzTagStatus, reason: "owner_key_required" as const };
+    const checked = verifyAuthTag({ tag: identity.authTagJson, agentPubkey: identity.agentPubkey, pinnedOwner: pin, nowSeconds: nowSeconds() });
     if (checked.ok) return { identity, status: "valid" as BuzzTagStatus, checked: checked.value };
     return { identity, status: (checked.reason === "auth_tag_expired" ? "expired" : "invalid") as BuzzTagStatus, reason: checked.reason };
   };
@@ -170,10 +174,22 @@ export function createBuzzIdentity(deps: BuzzIdentityDeps) {
     if (input.relayUrl !== undefined) {
       const endpoint = normalizeRelayUrl(input.relayUrl);
       if (!endpoint) return { ok: false, status: 422, error: "buzz_relay_url_invalid", detail: "enter the relay as wss://host (no path, query or user info)" };
-      const previous = buzz.getIdentity(org)?.relayUrl ?? null;
+      const current = buzz.getIdentity(org);
+      const previous = current?.relayUrl ?? null;
       if (previous !== endpoint.relayUrl) {
         buzz.setRelayUrl({ workspaceSlug: org, relayUrl: endpoint.relayUrl, actor: input.actor, now: deps.now() });
-        audit("marketplace.channels.buzz.relay_changed", input.actor, { relayUrl: endpoint.relayUrl, previousRelayUrl: previous });
+        // A changed relay forces re-confirmation: the tag is cleared (readiness credential_missing until the owner
+        // pastes a tag again) and the bridge stays paused for every route until the owner saves it again.
+        const clearedTag = previous !== null && current?.authTagSha256 ? current.authTagSha256 : null;
+        if (clearedTag) buzz.clearAuthTag({ workspaceSlug: org, actor: input.actor, now: deps.now() });
+        const pausedRoutes = previous !== null ? buzz.unconfirmRoutes(org, input.actor, deps.now()) : 0;
+        audit("marketplace.channels.buzz.relay_changed", input.actor, {
+          oldRelayHost: previous ? normalizeRelayUrl(previous)?.host ?? null : null,
+          newRelayHost: endpoint.host,
+          actor: input.actor,
+          pausedRoutes,
+          ...(clearedTag ? { clearedTagSha256: clearedTag } : {}),
+        });
         changed = true;
       }
     }
@@ -185,7 +201,10 @@ export function createBuzzIdentity(deps: BuzzIdentityDeps) {
         return { ok: false, status: 422, error: "buzz_auth_tag_malformed", detail: "paste the auth tag, never a secret key" };
       }
       if (!parseAuthTag(input.authTag)) return { ok: false, status: 422, error: "buzz_auth_tag_malformed", detail: 'paste the tag as ["auth", "<owner hex>", "<conditions>", "<signature hex>"]' };
-      const checked = verifyAuthTag({ tag: input.authTag, agentPubkey: identity.agentPubkey, pinnedOwner: pinnedOwner(), nowSeconds: nowSeconds() });
+      // The tag's owner key MUST be the pinned owner Buzz key (approvals.ownerNostrPubkey); none set → refused.
+      const pin = pinnedOwner();
+      if (!pin) return { ok: false, status: 409, error: "buzz_owner_key_required", detail: "set the owner Buzz key (approvals.ownerNostrPubkey) first" };
+      const checked = verifyAuthTag({ tag: input.authTag, agentPubkey: identity.agentPubkey, pinnedOwner: pin, nowSeconds: nowSeconds() });
       if (!checked.ok) return { ok: false, status: 422, error: `buzz_${checked.reason}` };
       if (identity.authTagSha256 !== checked.value.sha256) {
         buzz.setAuthTag({

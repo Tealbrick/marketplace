@@ -599,7 +599,12 @@ export function buzzTagSummary(view: BuzzIdentityView): { text: string; tone: "s
   if (tag.status === "missing") return { text: "Waiting for your signed NIP-OA tag", tone: "warning" };
   if (tag.status === "expired") return { text: "The NIP-OA tag has ended. Sign a new one.", tone: "danger" };
   if (tag.status === "invalid") {
-    const why = tag.reason === "auth_tag_wrong_owner" ? "it is not signed by your pinned Buzz key" : "it no longer verifies";
+    const why =
+      tag.reason === "auth_tag_wrong_owner"
+        ? "it is not signed by your pinned Buzz key"
+        : tag.reason === "owner_key_required"
+          ? "set your owner Buzz key under Approvals first"
+          : "it no longer verifies";
     return { text: `The NIP-OA tag is not valid: ${why}.`, tone: "danger" };
   }
   const days = tag.daysLeft ?? 0;

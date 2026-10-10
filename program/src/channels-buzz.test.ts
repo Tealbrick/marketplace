@@ -3,7 +3,8 @@ import { DatabaseSync } from "node:sqlite";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { DISCORD_TOKEN, TELEGRAM_TOKEN, TENANT, channelFixture, fakeProvider, type ChannelFixture } from "./channels/app-fixture.js";
+import { seededPin } from "./channels/approval-test-support.js";
+import { DISCORD_TOKEN, PORTAL, TELEGRAM_TOKEN, TENANT, channelFixture, fakeProvider, type ChannelFixture } from "./channels/app-fixture.js";
 import { BUZZ_IDENTITY_ROUTE } from "./channels/buzz-identity-routes.js";
 import type { Timers } from "./channels/discord-gateway.js";
 import { ownerKeyFingerprint } from "./channels/owner-key.js";
@@ -29,12 +30,18 @@ function fakeTimers(): Timers {
   return { setTimeout: () => 0, clearTimeout: () => undefined };
 }
 
-async function buzzFixture(input: { inert?: boolean; keys?: Uint8Array[] } = {}) {
+const ORIGIN = "https://marketplace.fixture.invalid";
+/** A browser origin the test environment allows for operator mutations. */
+const BROWSER = "http://localhost:5173";
+let ticketCounter = 0;
+
+async function buzzFixture(input: { inert?: boolean; keys?: Uint8Array[]; pinned?: boolean; ownerKey?: boolean } = {}) {
   const relay: FakeBuzzRelay = createFakeBuzzRelay({ members: [OWNER] });
   const buzz = createBuzzProvider({ fetchImpl: relay.fetchImpl });
   const keys = [...(input.keys ?? [SENTINEL_BYTES, ROTATED_BYTES])];
   const telegram = fakeProvider("telegram", TELEGRAM_TOKEN);
   const discord = fakeProvider("discord", DISCORD_TOKEN);
+  const pin = seededPin({ portalIssuer: PORTAL });
   const f = await channelFixture({
     ...(input.inert ? { environment: { MARKETPLACE_CHANNELS_TELEGRAM_BOT_TOKEN: undefined, MARKETPLACE_CHANNELS_DISCORD_BOT_TOKEN: undefined } } : {}),
     options: {
@@ -42,16 +49,60 @@ async function buzzFixture(input: { inert?: boolean; keys?: Uint8Array[] } = {})
       buzzKeyRandom: () => Uint8Array.from(keys.shift() ?? SENTINEL_BYTES),
       buzzSocketFactory: relay.socketFactory,
       buzzSocketTimers: fakeTimers(),
+      ...(input.pinned === false ? {} : { ownerPinSource: pin }),
     },
   });
   fixtures.push(f);
+  f.portalReplies.set("/api/deployment-browser/redeem", () =>
+    new Response(
+      JSON.stringify({
+        schema: 1,
+        authorized: true,
+        product: "marketplace",
+        deploymentId: "deployment-1",
+        workspaceId: TENANT,
+        orgId: "portal-org-1",
+        productTenantId: TENANT,
+        userId: "owner-1",
+        endpoint: ORIGIN,
+        session: "s".repeat(43),
+        expiresAt: Date.now() + 3_600_000,
+      }),
+      { status: 200 },
+    ),
+  );
+  // The pinned owner Buzz key (approvals.ownerNostrPubkey): a pasted tag must be signed by it.
+  if (input.ownerKey !== false) f.store.channels.setOwnerKey({ workspaceSlug: TENANT, pubkey: OWNER, fingerprint: ownerKeyFingerprint(OWNER), actor: "operator-1" });
+  /** The owner's own Marketplace session from a real Portal launch ticket (cookie + CSRF). */
+  let session: { cookie: string; csrf: string } | null = null;
+  const ownerSession = async () => {
+    if (session) return session;
+    const launched = await f.app.inject({
+      method: "POST",
+      url: "/auth/launch",
+      headers: { origin: PORTAL, "content-type": "application/x-www-form-urlencoded" },
+      payload: `ticket=${String(++ticketCounter).padStart(6, "0")}${"t".repeat(37)}`,
+    });
+    if (launched.statusCode !== 303) throw new Error(launched.body);
+    const cookie = String(launched.headers["set-cookie"]).split(";", 1)[0]!;
+    const current = await f.app.inject({ method: "GET", url: "/api/marketplace/auth/session", headers: { cookie } });
+    session = { cookie, csrf: current.json().session.csrfToken as string };
+    return session;
+  };
   const responses: string[] = [];
-  const call = async (method: "GET" | "POST" | "PUT" | "DELETE", url: string, payload?: unknown) => {
-    const response = await f.app.inject({ method, url, ...(payload !== undefined ? { payload: payload as Record<string, unknown> } : {}) });
+  /** Reads as a plain operator; writes as the pinned owner's launch session unless `plain`. */
+  const call = async (method: "GET" | "POST" | "PUT" | "DELETE", url: string, payload?: unknown, options: { plain?: boolean } = {}) => {
+    const owner = method !== "GET" && !options.plain ? await ownerSession() : null;
+    const response = await f.app.inject({
+      method,
+      url,
+      ...(owner ? { headers: { origin: BROWSER, cookie: owner.cookie, "x-csrf-token": owner.csrf } } : {}),
+      ...(payload !== undefined ? { payload: payload as Record<string, unknown> } : {}),
+    });
     responses.push(response.body);
     return response;
   };
-  return { f, relay, buzz, call, responses };
+  return { f, relay, buzz, call, responses, pin };
 }
 
 const nowSeconds = () => Math.floor(Date.now() / 1000);
@@ -69,7 +120,7 @@ describe("Buzz identity owner ops", () => {
     expect(empty.json().buzz).toMatchObject({ key: { present: false }, readiness: "credential_missing", authTag: { status: "missing" }, signing: null });
 
     const generated = await call("POST", `${BUZZ_IDENTITY_ROUTE}/key`, {});
-    expect(generated.statusCode).toBe(200);
+    expect(generated.statusCode, generated.body).toBe(200);
     expect(generated.json().buzz.key).toMatchObject({ present: true, npub: npubEncode(agent), pubkeyHex: agent });
     expect(generated.json().buzz.signing.preimage).toMatch(new RegExp(`^nostr:agent-auth:${agent}:created_at<\\d+$`, "u"));
     expect((await call("POST", `${BUZZ_IDENTITY_ROUTE}/key`, {})).json()).toMatchObject({ ok: false, error: "buzz_key_exists" });
@@ -82,7 +133,7 @@ describe("Buzz identity owner ops", () => {
     const end = nowSeconds() + 60 * 86_400;
     const stranger = generateSecretKey();
     expect((await call("PUT", BUZZ_IDENTITY_ROUTE, { authTag: JSON.stringify(signAuthTag(stranger, agent, `created_at<${end}`)) })).json()).toMatchObject({ error: "buzz_auth_tag_wrong_owner" });
-    expect((await call("PUT", BUZZ_IDENTITY_ROUTE, { authTag: signAuthTag(OWNER_SECRET, agent, `created_at<${nowSeconds() - 5}`) })).json()).toMatchObject({ error: "buzz_auth_tag_expired" });
+    expect((await call("PUT", BUZZ_IDENTITY_ROUTE, { authTag: signAuthTag(OWNER_SECRET, agent, `created_at<${Math.floor(f.now / 1000) - 5}`) })).json()).toMatchObject({ error: "buzz_auth_tag_expired" });
     expect((await call("PUT", BUZZ_IDENTITY_ROUTE, { authTag: signAuthTag(OWNER_SECRET, agent, `created_at<${nowSeconds() + 91 * 86_400}`) })).json()).toMatchObject({ error: "buzz_auth_tag_too_long" });
     expect((await call("PUT", BUZZ_IDENTITY_ROUTE, { authTag: signAuthTag(OWNER_SECRET, agent, "kind=9") })).json()).toMatchObject({ error: "buzz_auth_tag_end_missing" });
     const pastedNsec = "nsec1vl029mgpspedva04g90vltkh6fvh240zqtv9k0t9af8935ke9laqsnlfe5";
@@ -202,7 +253,7 @@ describe("Buzz end to end: native send, inbound socket and the bridge", () => {
 
     // Route inbound to agent-1 with its Buzz key: the relay socket starts and subscribes to the channel.
     f.consentFor("agent-1", channel);
-    const routed = await f.app.inject({ method: "PUT", url: `/api/marketplace/channels/${channel.id}/inbound`, payload: { enabled: true, agentId: "agent-1", agentBuzzPubkey: npubEncode(agentKey) } });
+    const routed = await call("PUT", `/api/marketplace/channels/${channel.id}/inbound`, { enabled: true, agentId: "agent-1", agentBuzzPubkey: npubEncode(agentKey) });
     expect(routed.statusCode).toBe(200);
     expect(routed.json().receivers.buzzBridge).toMatchObject({ agentNpub: npubEncode(agentKey), relayUrl: relay.relayUrl });
     await new Promise((resolve) => setImmediate(resolve));
@@ -236,10 +287,120 @@ describe("Buzz end to end: native send, inbound socket and the bridge", () => {
   it("refuses an invalid agent Buzz key on the route and a route before the relay is set", async () => {
     const { f, call } = await buzzFixture();
     const channel = await f.createChannel({ slug: "tg-community" });
-    const noRelay = await f.app.inject({ method: "PUT", url: `/api/marketplace/channels/${channel.id}/inbound`, payload: { enabled: false, agentBuzzPubkey: npubEncode(publicKeyOf(generateSecretKey())!) } });
+    const noRelay = await call("PUT", `/api/marketplace/channels/${channel.id}/inbound`, { enabled: false, agentBuzzPubkey: npubEncode(publicKeyOf(generateSecretKey())!) });
     expect(noRelay.json()).toMatchObject({ ok: false, error: "buzz_relay_missing" });
     await call("PUT", BUZZ_IDENTITY_ROUTE, { relayUrl: "wss://relay.buzz.test" });
-    const bad = await f.app.inject({ method: "PUT", url: `/api/marketplace/channels/${channel.id}/inbound`, payload: { enabled: false, agentBuzzPubkey: "nsec1vl029mgpspedva04g90vltkh6fvh240zqtv9k0t9af8935ke9laqsnlfe5" } });
+    const bad = await call("PUT", `/api/marketplace/channels/${channel.id}/inbound`, { enabled: false, agentBuzzPubkey: "nsec1vl029mgpspedva04g90vltkh6fvh240zqtv9k0t9af8935ke9laqsnlfe5" });
     expect(bad.json()).toMatchObject({ ok: false, error: "buzz_agent_key_invalid" });
+  });
+});
+
+describe("Buzz identity security (strict owner gate, pinned owner key, relay change)", () => {
+  const auditOf = (f: ChannelFixture, eventType: string) =>
+    (f.store.listAudit({ workspaceSlug: TENANT, limit: 500 }) as Array<Record<string, unknown>>)
+      .filter((row) => row.event_type === eventType)
+      .map((row) => ({ actor: row.actor_id, metadata: JSON.parse(String(row.metadata)) as Record<string, unknown> }));
+
+  it("refuses every write from a non-owner operator, from a launched user who is not the pinned owner, and without a pin", async () => {
+    const t = await buzzFixture();
+    const channel = await t.f.createChannel({ slug: "tg-guarded" });
+    const writes: Array<["POST" | "PUT" | "DELETE", string, unknown]> = [
+      ["POST", `${BUZZ_IDENTITY_ROUTE}/key`, {}],
+      ["POST", `${BUZZ_IDENTITY_ROUTE}/key`, { rotate: true }],
+      ["PUT", BUZZ_IDENTITY_ROUTE, { relayUrl: "wss://attacker.relay.test" }],
+      ["PUT", BUZZ_IDENTITY_ROUTE, { authTag: '["auth","' + OWNER + '","created_at<1","' + "a".repeat(128) + '"]' }],
+      ["DELETE", `${BUZZ_IDENTITY_ROUTE}/auth-tag`, undefined],
+      ["PUT", `/api/marketplace/channels/${channel.id}/inbound`, { enabled: false, agentBuzzPubkey: npubEncode(publicKeyOf(generateSecretKey())!) }],
+    ];
+    // A plain operator session (not the owner's Portal launch session).
+    for (const [method, url, payload] of writes) {
+      const refused = await t.call(method, url, payload, { plain: true });
+      expect(refused.statusCode, `${method} ${url}`).toBe(403);
+      expect(refused.json()).toMatchObject({ ok: false, error: "owner_session_required" });
+    }
+    // A launched Portal user who is not the pinned owner.
+    t.pin.current = { ...t.pin.current, ownerSubject: "tealbrick-user:someone-else" };
+    for (const [method, url, payload] of writes) {
+      const refused = await t.call(method, url, payload);
+      expect(refused.statusCode, `${method} ${url}`).toBe(403);
+    }
+    expect(t.f.store.channels.buzz.getIdentity(TENANT)).toBeNull();
+    expect(t.f.store.channels.buzz.listRoutes(TENANT)).toEqual([]);
+    expect(t.f.store.listConnectorSecrets({ workspaceSlug: TENANT, pluginId: "channels-buzz" })).toEqual([]);
+    // Reads stay open to any operator.
+    expect((await t.call("GET", BUZZ_IDENTITY_ROUTE)).statusCode).toBe(200);
+
+    const unpinned = await buzzFixture({ pinned: false });
+    for (const [method, url, payload] of writes.slice(0, 5)) {
+      const refused = await unpinned.call(method, url, payload);
+      expect(refused.statusCode, `${method} ${url}`).toBe(409);
+      expect(refused.json()).toMatchObject({ error: "approval_owner_unbound" });
+    }
+  });
+
+  it("refuses a tag when no owner Buzz key is set, and a tag signed by a different owner key", async () => {
+    const t = await buzzFixture({ ownerKey: false });
+    const agent = (await t.call("POST", `${BUZZ_IDENTITY_ROUTE}/key`, {})).json().buzz.key.pubkeyHex as string;
+    await t.call("PUT", BUZZ_IDENTITY_ROUTE, { relayUrl: t.relay.relayUrl });
+    const good = signAuthTag(OWNER_SECRET, agent, `created_at<${nowSeconds() + 86_400}`);
+    const noOwnerKey = await t.call("PUT", BUZZ_IDENTITY_ROUTE, { authTag: good });
+    expect(noOwnerKey.statusCode).toBe(409);
+    expect(noOwnerKey.json()).toMatchObject({ ok: false, error: "buzz_owner_key_required" });
+    t.f.store.channels.setOwnerKey({ workspaceSlug: TENANT, pubkey: OWNER, fingerprint: ownerKeyFingerprint(OWNER), actor: "operator-1" });
+    const other = await t.call("PUT", BUZZ_IDENTITY_ROUTE, { authTag: signAuthTag(generateSecretKey(), agent, `created_at<${nowSeconds() + 86_400}`) });
+    expect(other.json()).toMatchObject({ ok: false, error: "buzz_auth_tag_wrong_owner" });
+    expect((await t.call("PUT", BUZZ_IDENTITY_ROUTE, { authTag: good })).json().buzz.readiness).toBe("available");
+    // Clearing the owner key later makes the stored tag invalid (no tag is valid without a pinned owner key).
+    t.f.store.channels.setOwnerKey({ workspaceSlug: TENANT, pubkey: null, fingerprint: null, actor: "operator-1" });
+    expect((await t.call("GET", BUZZ_IDENTITY_ROUTE)).json().buzz).toMatchObject({ readiness: "credential_invalid", authTag: { status: "invalid", reason: "owner_key_required" } });
+    expect((await t.call("GET", "/api/marketplace/channels")).json().readiness.buzz).toBe("credential_invalid");
+  });
+
+  it("a relay change clears the tag (needs re-signing) and pauses the bridge until the owner confirms each route again", async () => {
+    const t = await buzzFixture();
+    await t.call("POST", `${BUZZ_IDENTITY_ROUTE}/key`, {});
+    await t.call("PUT", BUZZ_IDENTITY_ROUTE, { relayUrl: t.relay.relayUrl });
+    const bridgeKey = publicKeyOf(SENTINEL_HEX)!;
+    const tag = signAuthTag(OWNER_SECRET, bridgeKey, `created_at<${nowSeconds() + 30 * 86_400}`);
+    await t.call("PUT", BUZZ_IDENTITY_ROUTE, { authTag: tag });
+    const aliceSecret = generateSecretKey();
+    const group = t.relay.createGroup({ name: "community", members: [publicKeyOf(aliceSecret)!, bridgeKey] });
+    const channel = await t.f.createChannel({ provider: "buzz", slug: "buzz-relay-change", externalId: group, policy: { standingGrants: "allowed", caps: { perDay: 6, minIntervalSeconds: 0, onePerPhase: true }, content: { files: { types: ["png"] } } } });
+    t.f.consentFor("agent-1", channel);
+    const agentKey = publicKeyOf(generateSecretKey())!;
+    const route = { enabled: true, agentId: "agent-1", agentBuzzPubkey: npubEncode(agentKey) };
+    expect((await t.call("PUT", `/api/marketplace/channels/${channel.id}/inbound`, route)).statusCode).toBe(200);
+    await new Promise((resolve) => setImmediate(resolve));
+    t.relay.inject(aliceSecret, { kind: 9, tags: [["h", group]], content: "before the change" });
+    await t.f.runtime.inbound.pipeline.settled();
+    const eventWith = (text: string) => t.f.store.channels.inbound.listEvents(TENANT, { limit: 10 }).find((event) => event.text === text);
+    expect(eventWith("before the change")).toMatchObject({ bridgeStatus: "bridged" });
+
+    // Relay change: the tag is cleared, readiness is credential_missing, routes need confirmation; audited with hosts.
+    const moved = await t.call("PUT", BUZZ_IDENTITY_ROUTE, { relayUrl: "wss://moved.relay.test" });
+    expect(moved.json().buzz).toMatchObject({ readiness: "credential_missing", authTag: { status: "missing" }, relay: { url: "wss://moved.relay.test" } });
+    expect((await t.call("GET", "/api/marketplace/channels")).json().readiness.buzz).toBe("credential_missing");
+    expect(auditOf(t.f, "marketplace.channels.buzz.relay_changed").at(0)).toMatchObject({
+      actor: "operator:owner-1",
+      metadata: { oldRelayHost: t.relay.host, newRelayHost: "moved.relay.test", actor: "operator:owner-1", pausedRoutes: 1, clearedTagSha256: expect.stringMatching(/^[0-9a-f]{64}$/u) },
+    });
+    expect((await t.call("GET", "/api/marketplace/channels")).json().inbound.buzzBridge).toEqual([
+      expect.objectContaining({ channelId: channel.id, relayUrl: null, needsConfirmation: true, bridgeChannel: null }),
+    ]);
+
+    // Back on the original relay with a re-signed tag: the identity works, but the bridge stays paused for the route.
+    await t.call("PUT", BUZZ_IDENTITY_ROUTE, { relayUrl: t.relay.relayUrl });
+    expect((await t.call("PUT", BUZZ_IDENTITY_ROUTE, { authTag: tag })).json().buzz.readiness).toBe("available");
+    await new Promise((resolve) => setImmediate(resolve));
+    t.relay.inject(aliceSecret, { kind: 9, tags: [["h", group]], content: "after the change" });
+    await t.f.runtime.inbound.pipeline.settled();
+    expect(eventWith("after the change")).toMatchObject({ bridgeStatus: "bridge-failed", bridgeDetail: "buzz_relay_changed" });
+
+    // The owner confirms the route again: bridging resumes (in a new bridge channel on this relay).
+    expect((await t.call("PUT", `/api/marketplace/channels/${channel.id}/inbound`, route)).statusCode).toBe(200);
+    t.relay.inject(aliceSecret, { kind: 9, tags: [["h", group]], content: "confirmed again" });
+    await t.f.runtime.inbound.pipeline.settled();
+    expect(eventWith("confirmed again")).toMatchObject({ bridgeStatus: "bridged" });
+    expect(t.relay.eventsOfKind(9007).filter((event) => event.pubkey === bridgeKey)).toHaveLength(2);
   });
 });
