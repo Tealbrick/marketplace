@@ -41,40 +41,7 @@ import { marketplaceSecretMatches } from "./operator-auth.js";
  * to Marketplace's existing identity. It adds no execution logic: the agent operations call the same
  * consented-call implementation as the Portal runtime receiver.
  */
-export const MARKETPLACE_MANIFEST: Manifest = assertManifestCompat(manifestJson);
-
-/**
- * Contract alpha.9 fields (#59 tool files): `audience: "harness"`, `inputBinary` and `inputFileRefs`.
- * The pinned contract (alpha.7) rejects them. Until alpha.9 is pinned, a manifest that fails validation
- * only because of these fields is validated and served without them (the upload operation reads as an
- * agent operation, which the grant gate already handles). Any other error still fails closed. With a
- * contract that accepts the fields, the raw manifest validates and this is a no-op.
- */
-export function assertManifestCompat(raw: unknown): Manifest {
-  try {
-    return assertManifest(raw);
-  } catch (error) {
-    const stripped = withoutAlpha9OperationFields(raw);
-    if (stripped === raw) throw error;
-    return assertManifest(stripped);
-  }
-}
-
-function withoutAlpha9OperationFields(raw: unknown): unknown {
-  const manifest = raw as { operations?: unknown } | null;
-  if (!manifest || typeof manifest !== "object" || !Array.isArray(manifest.operations)) return raw;
-  let changed = false;
-  const operations = manifest.operations.map((operation: unknown) => {
-    if (!operation || typeof operation !== "object") return operation;
-    const { inputBinary, inputFileRefs, ...rest } = operation as Record<string, unknown>;
-    const harness = rest.audience === "harness";
-    if (inputBinary === undefined && inputFileRefs === undefined && !harness) return operation;
-    changed = true;
-    if (harness) delete rest.audience;
-    return rest;
-  });
-  return changed ? { ...manifest, operations } : raw;
-}
+export const MARKETPLACE_MANIFEST: Manifest = assertManifest(manifestJson);
 
 export const MARKETPLACE_APP_ID = MARKETPLACE_MANIFEST.app.id;
 export const MARKETPLACE_APP_MAJOR = MARKETPLACE_MANIFEST.app.major;

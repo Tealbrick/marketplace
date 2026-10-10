@@ -9,7 +9,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import { buildMarketplaceApp, type BuildMarketplaceAppOptions } from "./app.js";
 import {
   AGENT_OPERATION,
-  assertManifestCompat,
   MARKETPLACE_MANIFEST,
   resolveLaunchRoute,
 } from "./contract.js";
@@ -364,10 +363,8 @@ describe("tealbrick.app.json", () => {
     expect((upload.inputBinary as { contentTypes: string[] }).contentTypes).toEqual([...TOOL_FILE_CONTENT_TYPES]);
     const tools = raw.operations.find((operation) => operation.id === AGENT_OPERATION.toolsCall)!;
     expect(tools.inputFileRefs).toEqual({ uploadOperation: AGENT_OPERATION.toolFilesUpload });
-    // Until the pinned contract knows these fields, the served manifest validates without them; nothing else is dropped.
-    const served = MARKETPLACE_MANIFEST.operations.map((operation) => operation.id);
-    expect(served).toEqual(raw.operations.map((operation) => operation.id));
-    expect(() => assertManifestCompat({ ...raw, operations: [...raw.operations, { id: "bad" }] })).toThrow();
+    // The app validates and serves exactly this file (no field is dropped).
+    expect(JSON.parse(JSON.stringify(MARKETPLACE_MANIFEST))).toEqual(raw);
   });
 
   it("maps every operation to a real route of the app", async () => {
