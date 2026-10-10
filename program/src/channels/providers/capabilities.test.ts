@@ -86,7 +86,7 @@ describe("capabilitySupports", () => {
 });
 
 describe("wired features (review of PR #43)", () => {
-  it("wires only what the routes really do: attachment kinds, forum topics, inbound, reply, and the routes v2 operations", () => {
+  it("wires only what the routes really do: attachment kinds, forum topics, inbound, reply, the routes v2 operations and live sessions", () => {
     expect([...AGENT_WIRED_FEATURES].sort()).toEqual([
       "audio",
       "delete",
@@ -95,6 +95,10 @@ describe("wired features (review of PR #43)", () => {
       "file",
       "image",
       "inbound",
+      "live.join",
+      "live.listen",
+      "live.speak",
+      "live.transcript",
       "markup.markdown-v2",
       "mentions.users",
       "poll",
@@ -117,14 +121,15 @@ describe("wired features (review of PR #43)", () => {
     }
   });
 
-  it("hides a declared feature with no operation behind it (live, canvas, presence) and shows the routes v2 ones", () => {
+  it("hides a declared feature with no operation behind it (canvas, presence) and shows the routes v2 and live ones", () => {
     const effective = wiredCapabilities(RICH);
     expect(effective.reactions).toEqual(RICH.reactions);
     expect(effective.edit).toEqual(RICH.edit);
     expect(effective.delete).toEqual(RICH.delete);
     expect(effective.dm).toEqual(RICH.dm);
     expect(effective.mentions).toEqual({ users: RICH.mentions.users, broadcast: "suppressed" });
-    expect(effective.live).toBe(false);
+    // Live sessions (P2 scope 2.3) are wired: the declaration passes through (speak stays as declared).
+    expect(effective.live).toEqual(RICH.live);
     expect(effective.canvas).toBe(false);
     expect(effective.presence).toEqual({ typing: false, status: false });
     expect(effective.inbound).toEqual(RICH.inbound);

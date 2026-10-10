@@ -249,8 +249,8 @@ export function featureRefusal(caps: ChannelCapabilities, feature: ChannelFeatur
  * whose operations now exist: reactions (`marketplace.channel-messages.react`, custom emoji passed through), edit
  * and delete of a message Marketplace posted (`.edit`, `.delete`), direct messages to a named person
  * (`marketplace.channel-people.find` / `.message`), native polls, named mentions and the declared markup options
- * on a post. Still no route: thread forum posts, buttons, events, native schedule (P1 scheduling is
- * Marketplace-side), presence, canvas, ephemeral messages and live voice.
+ * on a post. Live sessions add `live.*` (Buzz huddles). Still no route: thread forum posts, buttons, events,
+ * native schedule (P1 scheduling is Marketplace-side), presence, canvas and ephemeral messages.
  * Adapters keep declaring what they CAN do; a later change adds a feature here in the same change that ships its
  * operation. Agents and the owner UI only ever see `declaration ∩ wired` (see `wiredCapabilities`).
  */
@@ -275,6 +275,13 @@ export const AGENT_WIRED_FEATURES: ReadonlySet<ChannelFeature> = new Set<Channel
   "poll",
   "mentions.users",
   "markup.markdown-v2",
+  // Channels P2 live sessions (scope 2.3): Buzz huddles under a live-session grant (`marketplace.channel-live.*`).
+  // `live.speak` is speak-approved clips; speak-live (text-to-speech) is refused until @tealbrick/voice ships
+  // Ogg/Opus synthesis (rc.19), and `live.listen` needs a wired speech provider at run time.
+  "live.join",
+  "live.listen",
+  "live.speak",
+  "live.transcript",
 ]);
 
 /**

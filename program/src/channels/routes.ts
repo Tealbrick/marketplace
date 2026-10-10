@@ -44,6 +44,9 @@ import type { BuzzIdentity } from "./buzz-identity.js";
 import { registerBuzzIdentityRoutes } from "./buzz-identity-routes.js";
 import type { OwnerWriterGateResult } from "./owner-key-routes.js";
 import { npubEncode } from "./providers/nostr.js";
+import { LIVE_AGENT_OPERATION, registerLiveRoutes } from "./live/routes.js";
+import type { LiveGrantService } from "./live/grants.js";
+import type { LiveSessionManager } from "./live/sessions.js";
 
 /** Manifest operation ids (contract alpha.3 ids are `<app>.<resource>.<verb>`, so sub-resources use a hyphen). */
 export const CHANNEL_AGENT_OPERATION = Object.freeze({
@@ -66,6 +69,8 @@ export const CHANNEL_AGENT_OPERATION = Object.freeze({
   delete: "marketplace.channel-messages.delete",
   findPerson: "marketplace.channel-people.find",
   messagePerson: "marketplace.channel-people.message",
+  // Channels P2 live sessions (scope 2.3): live-session grants and Buzz huddle sessions.
+  ...LIVE_AGENT_OPERATION,
 } as const);
 
 export const AGENT_IDEMPOTENCY = /^[A-Za-z0-9_-]{8,100}$/u;
@@ -209,6 +214,8 @@ export type ChannelRouteDeps = {
     ownerWriter: (request: FastifyRequest, reply: FastifyReply) => Promise<OwnerWriterGateResult>;
     beforeRotate?: () => Promise<Record<string, unknown>>;
   };
+  /** Live sessions (P2 scope 2.3): live-session grants and Buzz huddle sessions. Absent: no live routes. */
+  live?: { grants: LiveGrantService; sessions: LiveSessionManager; buzzReady: () => boolean };
 };
 
 type Caller = NonNullable<ReturnType<ChannelRouteDeps["agentGrant"]>>;
@@ -1580,4 +1587,30 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
     });
     return { ok: true, schema: 1, purged, skipped, before: before.toISOString() };
   });
+
+  // ----- live sessions (P2 scope 2.3) ------------------------------------------------
+  if (deps.live) {
+    registerLiveRoutes({
+      app,
+      store,
+      organizationId: org,
+      now: deps.now,
+      grants: deps.live.grants,
+      sessions: deps.live.sessions,
+      attachmentsDir: service.attachmentsDir,
+      capabilitiesFor: (provider) => service.capabilitiesFor(provider),
+      agentPreamble,
+      agentDenied,
+      consentedChannel,
+      owner: (request, reply) => owner(request, reply),
+      ownerDenied,
+      strictOwner,
+      idempotent,
+      idempotencyKey: (request) => {
+        const key = header(request, "idempotency-key");
+        return key && AGENT_IDEMPOTENCY.test(key) ? key : null;
+      },
+      buzzReady: deps.live.buzzReady,
+    });
+  }
 }

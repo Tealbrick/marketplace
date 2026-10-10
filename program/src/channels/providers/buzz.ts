@@ -126,7 +126,8 @@ const CAPABILITIES: ChannelCapabilities = {
   canvas: false,
   presence: { typing: true, status: false },
   ephemeral: false,
-  live: false,
+  // Huddles (P2 scope 2.3): the Marketplace huddle client under a live-session grant, 2 h per session at most.
+  live: { join: true, listen: true, speak: true, transcript: true, maxSessionMinutes: 120 },
   schedule: { native: false },
   events: { create: false },
   discover: "list",

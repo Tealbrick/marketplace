@@ -1,0 +1,565 @@
+import { createHash } from "node:crypto";
+
+import type { BinarySocketFactory } from "../buzz-relay-guard.js";
+import type { Timers } from "../discord-gateway.js";
+import { HuddleError } from "../huddle/client.js";
+import type { TranscriptSegment } from "../huddle/listen.js";
+import { createHuddleSession, type HuddleSession } from "../huddle/session.js";
+import { SPEAK_TEXT_MAX_CHARS } from "../huddle/speak.js";
+import type { SpeechProvider } from "../huddle/speech.js";
+import type { ChannelRecord } from "../store.js";
+import { modesOf, type LiveGrant, type LiveGrantService } from "./grants.js";
+import type { LiveGrantRecord, LiveModes, LiveSessionRecord, LiveStore } from "./store.js";
+
+/**
+ * Live huddle sessions under a live-session grant (Channels P2 scope §2.3 and §3 "Huddles").
+ *
+ * `join` needs an ACTIVE grant of the caller for this channel's huddles that covers every requested mode, the
+ * caller's outward consent for the channel (checked by the route), the Buzz identity, and room under the grant's caps
+ * (joins per day/hour, interval, minutes per rolling day, provider minutes). With `consent.disclosureNotice` the
+ * notice is posted first (kind 9 in the huddle's parent channel, outward under the same grant); if it cannot be
+ * posted nothing joins. While joined, a tick (every 250 ms) re-reads the grant record, the owner switch, the consent
+ * and the channel, and stops the session (the client leaves within 5 s) on revoke, pause, expiry, narrowing, consent
+ * loss, channel pause, the session limit, the day minutes or the cost cap. Revoke/pause through Marketplace also
+ * push a stop at once.
+ *
+ * Receipts: the transcript of what the agent heard (other participants: untrusted, with the speaker key) and said
+ * (speak-live text; the SHA-256 of each approved clip), with times, plus join/leave times and minutes. Raw audio is
+ * never stored: frames stay in the huddle client's bounded memory buffers. Audit gets metadata and SHA-256 only.
+ */
+
+export const LIVE_TICK_MS = 250;
+const DAY_MS = 86_400_000;
+const HOUR_MS = 3_600_000;
+const HEARTBEAT_EVERY_TICKS = 8;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
+const HIDDEN = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu;
+
+export type LiveResult = { status: number; body: Record<string, unknown> };
+
+export type LiveSessionManagerDeps = {
+  live: LiveStore;
+  grants: LiveGrantService;
+  organizationId: string;
+  instanceId: string;
+  now: () => Date;
+  channel: (channelId: string) => ChannelRecord | null;
+  /** The Buzz connection identity: the full credential (agent key, relay, owner tag) and the pinned owner key. */
+  buzz: { credential: () => string | null; pinnedOwner: () => string | null } | null;
+  /** Speech-to-text / text-to-speech. Null: listen is refused (no provider wired). */
+  speech: SpeechProvider | null;
+  /** Text-to-speech in Ogg/Opus (needs @tealbrick/voice rc.19 `format: "opus"`). False: speak-live is refused. */
+  ttsAvailable: boolean;
+  /** Posts the disclosure notice (kind 9) in the huddle's parent channel; returns the event id. */
+  postNotice: (channel: ChannelRecord, text: string) => Promise<{ ok: true; eventId: string | null } | { ok: false; error: string }>;
+  retentionDays: () => number;
+  audit: (eventType: string, actorId: string, metadata: Record<string, unknown>) => void;
+  socketFactory?: BinarySocketFactory;
+  env?: Record<string, string | undefined>;
+  huddleTimers?: Timers;
+  joinTimeoutMs?: number;
+  closeGraceMs?: number;
+  tickMs?: number;
+};
+
+type Running = {
+  record: LiveSessionRecord;
+  huddle: HuddleSession;
+  grantId: string;
+  maxSessionMs: number;
+  joinedAtMs: number | null;
+  providerSeconds: number;
+  ttsActive: boolean;
+  stopping: Promise<void> | null;
+  forbidden: string[];
+  ticks: number;
+};
+
+export function sha256Hex(value: string | Uint8Array): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+/** Case-insensitive literal terms found in `text` (forbidden terms are owner-approved literal substrings). */
+export function forbiddenTermsIn(text: string, terms: readonly string[]): string[] {
+  const haystack = text.toLowerCase();
+  return terms.filter((term) => term && haystack.includes(term.toLowerCase()));
+}
+
+export function disclosureText(input: { agentId: string; modes: LiveModes; topic: string; retentionDays: number }): string {
+  const parts: string[] = [];
+  if (input.modes.listen) parts.push("transcribe what is said (speech-to-text)");
+  if (input.modes.speakApproved || input.modes.speakLive) parts.push("speak");
+  const topic = input.topic.replace(HIDDEN, " ").slice(0, 200);
+  return [
+    `Notice: an AI agent (${input.agentId}) is joining this huddle to ${parts.join(" and ")}.`,
+    input.modes.listen ? `A text transcript is kept for ${input.retentionDays} days; audio is never recorded.` : "Audio is never recorded.",
+    `Topic: ${topic}`,
+  ].join(" ");
+}
+
+export type LiveSessionManager = ReturnType<typeof createLiveSessionManager>;
+
+export function createLiveSessionManager(deps: LiveSessionManagerDeps) {
+  const { live } = deps;
+  const org = deps.organizationId;
+  const running = new Map<string, Running>();
+  const tickMs = Math.max(20, Math.min(1000, deps.tickMs ?? LIVE_TICK_MS));
+  let ticker: ReturnType<typeof setInterval> | null = null;
+
+  const ok = (status: number, body: Record<string, unknown>): LiveResult => ({ status, body: { ok: status < 400, schema: 1, ...body } });
+  const refuse = (status: number, error: string, extra: Record<string, unknown> = {}): LiveResult => ({ status, body: { ok: false, schema: 1, error, ...extra } });
+
+  /** Minutes of all sessions of this grant inside the rolling day (wall clock from join to leave or now). */
+  const dayMinutes = (grantId: string, nowMs: number) => {
+    const since = nowMs - DAY_MS;
+    let ms = 0;
+    for (const session of live.sessionsSince(org, grantId, new Date(since))) {
+      const start = Date.parse(session.joinedAt ?? session.startedAt);
+      const end = session.leftAt ? Date.parse(session.leftAt) : nowMs;
+      if (!session.joinedAt && session.status !== "joining") continue;
+      ms += Math.max(0, Math.min(end, nowMs) - Math.max(start, since));
+    }
+    return ms / 60_000;
+  };
+
+  const providerSecondsOf = (grantId: string) => live.getGrant(org, grantId)?.providerSeconds ?? 0;
+
+  /** The usage counters the owner and the agent see. */
+  const usageView = (record: LiveGrantRecord, grant: LiveGrant | null) => {
+    const nowMs = deps.now().getTime();
+    const current = live.listSessions(org, { grantId: record.id, live: true, limit: 1 })[0] ?? null;
+    const sessionMinutes = current?.joinedAt ? (nowMs - Date.parse(current.joinedAt)) / 60_000 : 0;
+    const round = (value: number) => Math.round(value * 100) / 100;
+    return {
+      minutesToday: round(dayMinutes(record.id, nowMs)),
+      maxDayMinutes: grant?.scope.maxDayMinutes ?? null,
+      minutesInSession: round(sessionMinutes),
+      maxSessionMinutes: grant?.scope.maxSessionMinutes ?? null,
+      providerMinutes: round(record.providerSeconds / 60),
+      providerMinutesCap: grant?.scope.costCap.providerMinutes ?? null,
+      activeSessionId: current?.id ?? null,
+    };
+  };
+
+  const usageOf = (run: Running) => ({ listenedSeconds: run.huddle.minutesListened * 60, spokenSeconds: run.huddle.minutesSpoken * 60, providerSeconds: run.providerSeconds });
+
+  const ensureTicker = () => {
+    if (ticker || running.size === 0) return;
+    ticker = setInterval(() => void tickAll(), tickMs);
+    (ticker as { unref?: () => void }).unref?.();
+  };
+  const maybeStopTicker = () => {
+    if (ticker && running.size === 0) {
+      clearInterval(ticker);
+      ticker = null;
+    }
+  };
+
+  /** The session ended (left, stopped, failed): end the row once, write the receipt digest to the audit. */
+  const finish = (run: Running, reason: string, failed = false) => {
+    running.delete(run.record.id);
+    maybeStopTicker();
+    const ended = live.endSession(org, run.record.id, { status: failed ? "failed" : "left", reason, usage: usageOf(run), now: deps.now() });
+    const lines = live.listTranscript(org, run.record.id, 5000);
+    deps.audit("marketplace.channels.live_session.ended", `agent:${run.record.agentId}`, {
+      sessionId: run.record.id,
+      grantId: run.grantId,
+      channelId: run.record.channelId,
+      reason,
+      joinedAt: ended?.joinedAt ?? run.record.joinedAt,
+      leftAt: ended?.leftAt ?? deps.now().toISOString(),
+      minutesListened: Math.round(run.huddle.minutesListened * 100) / 100,
+      minutesSpoken: Math.round(run.huddle.minutesSpoken * 100) / 100,
+      providerMinutes: Math.round((run.providerSeconds / 60) * 100) / 100,
+      transcriptLines: lines.length,
+      // Metadata and a SHA-256 only: the digest of the receipt lines, never their text.
+      transcriptSha256: sha256Hex(lines.map((line) => `${line.kind}|${line.speakerPubkey ?? ""}|${line.startedAt}|${line.textSha256}|${line.clipSha256 ?? ""}`).join("\n")),
+    });
+  };
+
+  const stopRun = (run: Running, reason: string): Promise<void> => {
+    if (run.stopping) return run.stopping;
+    run.stopping = (async () => {
+      try {
+        await run.huddle.stop(reason);
+      } finally {
+        if (running.has(run.record.id)) finish(run, reason);
+      }
+    })();
+    return run.stopping;
+  };
+
+  /** Why this session must stop now, or null. */
+  const stopReason = (run: Running): string | null => {
+    const row = live.getSession(org, run.record.id);
+    if (!row || (row.status !== "joining" && row.status !== "joined")) return row?.endReason ?? "session_ended";
+    const record = live.getGrant(org, run.grantId);
+    const usable = deps.grants.usable(record);
+    if (!usable.ok) return usable.reason;
+    if (usable.record.digest !== run.record.grantDigest) return "grant_changed";
+    const modes = usable.grant.scope.modes;
+    if ((run.record.modes.listen && !modes.listen) || (run.record.modes.speakApproved && !modes.speakApproved) || (run.record.modes.speakLive && !modes.speakLive)) return "grant_changed";
+    if (!deps.buzz?.credential()) return "buzz_identity_missing";
+    const nowMs = deps.now().getTime();
+    if (run.joinedAtMs !== null && nowMs - run.joinedAtMs >= Math.min(run.maxSessionMs, usable.grant.scope.maxSessionMinutes * 60_000)) return "max_session_minutes";
+    if (dayMinutes(run.grantId, nowMs) >= usable.grant.scope.maxDayMinutes) return "max_day_minutes";
+    if (usable.record.providerSeconds >= usable.grant.scope.costCap.providerMinutes * 60) return "cost_cap_reached";
+    return null;
+  };
+
+  const tickAll = async () => {
+    for (const run of [...running.values()]) {
+      if (run.stopping) continue;
+      let reason: string | null;
+      try {
+        reason = stopReason(run);
+      } catch {
+        reason = "live_check_failed";
+      }
+      if (reason) {
+        void stopRun(run, reason);
+        continue;
+      }
+      run.ticks += 1;
+      if (run.ticks % HEARTBEAT_EVERY_TICKS === 0) live.heartbeat(org, run.record.id, usageOf(run), deps.now());
+    }
+  };
+
+  /** Pushed by revoke / pause / narrow / withdraw (also caught by the next tick). */
+  const onGrantChanged = (grantId: string, reason: string) => {
+    for (const run of running.values()) if (run.grantId === grantId) void stopRun(run, reason);
+  };
+  const onControlChanged = (paused: boolean) => {
+    if (!paused) return;
+    for (const run of running.values()) void stopRun(run, "grants_paused");
+  };
+
+  const capsRefusal = (record: LiveGrantRecord, grant: LiveGrant, nowMs: number): LiveResult | null => {
+    const day = live.joinsSince(org, record.id, new Date(nowMs - DAY_MS));
+    if (day.length >= grant.caps.perDay) return refuse(429, "live_cap_reached", { cap: "caps.perDay" });
+    if (grant.caps.perHour !== undefined && day.filter((session) => Date.parse(session.startedAt) >= nowMs - HOUR_MS).length >= grant.caps.perHour) {
+      return refuse(429, "live_cap_reached", { cap: "caps.perHour" });
+    }
+    const last = day[0];
+    if (grant.caps.minIntervalSeconds !== undefined && last && nowMs - Date.parse(last.startedAt) < grant.caps.minIntervalSeconds * 1000) {
+      return refuse(429, "live_cap_reached", { cap: "caps.minIntervalSeconds", retryAfterSeconds: Math.ceil((Date.parse(last.startedAt) + grant.caps.minIntervalSeconds * 1000 - nowMs) / 1000) });
+    }
+    if (dayMinutes(record.id, nowMs) >= grant.scope.maxDayMinutes) return refuse(429, "live_cap_reached", { cap: "maxDayMinutes" });
+    if (record.providerSeconds >= grant.scope.costCap.providerMinutes * 60) return refuse(429, "live_cap_reached", { cap: "costCap.providerMinutes" });
+    return null;
+  };
+
+  const sessionView = (record: LiveSessionRecord) => ({
+    sessionId: record.id,
+    grantId: record.grantId,
+    channelId: record.channelId,
+    agentId: record.agentId,
+    huddleId: record.huddleId,
+    modes: record.modes,
+    status: record.status,
+    startedAt: record.startedAt,
+    joinedAt: record.joinedAt,
+    leftAt: record.leftAt,
+    endReason: record.endReason,
+    minutesListened: Math.round((record.listenedSeconds / 60) * 100) / 100,
+    minutesSpoken: Math.round((record.spokenSeconds / 60) * 100) / 100,
+    providerMinutes: Math.round((record.providerSeconds / 60) * 100) / 100,
+    disclosureEventId: record.disclosureEventId,
+    peers: running.get(record.id)?.huddle.peers.length ?? null,
+  });
+
+  /** `marketplace.channel-live.join`. The route already checked the caller's outward consent for `channel`. */
+  const join = async (input: { agentId: string; channel: ChannelRecord; grantId: string; huddleId: string; modes: LiveModes }): Promise<LiveResult> => {
+    const { channel } = input;
+    const credential = deps.buzz?.credential() ?? null;
+    if (!deps.buzz || !credential) return refuse(409, "live_buzz_identity_missing");
+    if (channel.provider !== "buzz" || channel.status !== "active") return refuse(409, "channel_not_active");
+    const parent = channel.destination.externalId;
+    if (!UUID.test(input.huddleId) || !UUID.test(parent)) return refuse(422, "live_target_invalid");
+    const requested = (["listen", "speakApproved", "speakLive"] as const).filter((mode) => input.modes[mode] === true);
+    if (requested.length === 0) return refuse(422, "live_modes_required");
+    const record = live.getGrant(org, input.grantId);
+    // Only the caller's own grant for this channel; anything else looks unknown.
+    if (!record || record.agentId !== input.agentId || record.channelId !== channel.id) return refuse(404, "live_grant_not_found");
+    const usable = deps.grants.usable(record);
+    if (!usable.ok) return refuse(409, "live_grant_not_active", { reason: usable.reason });
+    const grant = usable.grant;
+    const scope = grant.scope;
+    const target = scope.target;
+    if (target.huddleId ? target.huddleId !== input.huddleId : target.channelId !== parent) return refuse(403, "live_grant_target_mismatch");
+    const missing = requested.filter((mode) => !scope.modes[mode]);
+    if (missing.length > 0) return refuse(403, "live_mode_not_granted", { modes: missing });
+    if (input.modes.listen) {
+      // The grant asks for a per-participant consent gate that Marketplace cannot enforce yet: no listening.
+      if (scope.consent.perParticipantConsent) return refuse(409, "live_participant_consent_unavailable");
+      if (!deps.speech) return refuse(409, "live_speech_unavailable");
+    }
+    if (input.modes.speakLive && (!deps.speech || !deps.ttsAvailable)) return refuse(409, "live_tts_unavailable", { detail: "text-to-speech in Ogg/Opus needs @tealbrick/voice rc.19 (format opus)" });
+    const nowMs = deps.now().getTime();
+    const caps = capsRefusal(usable.record, grant, nowMs);
+    if (caps) return caps;
+    const modes: LiveModes = Object.fromEntries(requested.map((mode) => [mode, true])) as LiveModes;
+    const started = live.startSession({
+      workspaceSlug: org,
+      grantId: record.id,
+      grantDigest: record.digest,
+      channelId: channel.id,
+      agentId: input.agentId,
+      huddleId: input.huddleId,
+      modes,
+      instanceId: deps.instanceId,
+      now: deps.now(),
+    });
+    if (!started.ok) return refuse(409, started.error);
+    const session = started.session;
+    const remainingDayMs = (scope.maxDayMinutes - dayMinutes(record.id, nowMs)) * 60_000;
+    const maxSessionMs = Math.max(1000, Math.min(scope.maxSessionMinutes * 60_000, remainingDayMs));
+    deps.audit("marketplace.channels.live_session.joining", `agent:${input.agentId}`, { sessionId: session.id, grantId: record.id, digest: record.digest, channelId: channel.id, huddleId: input.huddleId, modes });
+
+    // Disclosure first: nothing is captured before the notice is out (scope §2.3 rule 4).
+    if (scope.consent.disclosureNotice) {
+      let notice: Awaited<ReturnType<LiveSessionManagerDeps["postNotice"]>>;
+      try {
+        notice = await deps.postNotice(channel, disclosureText({ agentId: input.agentId, modes, topic: scope.topic, retentionDays: deps.retentionDays() }));
+      } catch {
+        notice = { ok: false, error: "provider_internal_error" };
+      }
+      if (!notice.ok) {
+        live.endSession(org, session.id, { status: "failed", reason: "disclosure_failed", now: deps.now() });
+        return refuse(502, "live_disclosure_failed", { sessionId: session.id, detail: notice.error });
+      }
+      live.setDisclosure(org, session.id, notice.eventId);
+    }
+
+    let run: Running | null = null;
+    const huddle = createHuddleSession({
+      credential,
+      pinnedOwner: () => deps.buzz?.pinnedOwner() ?? null,
+      channelId: input.huddleId,
+      parentChannelId: parent,
+      speech: deps.speech ?? refusingSpeech,
+      modes: { listen: modes.listen === true, speakApproved: modes.speakApproved === true, speakLive: modes.speakLive === true },
+      maxSessionMs,
+      ...(deps.socketFactory ? { socketFactory: deps.socketFactory } : {}),
+      ...(deps.env ? { env: deps.env } : {}),
+      ...(deps.huddleTimers ? { timers: deps.huddleTimers } : {}),
+      ...(deps.joinTimeoutMs !== undefined ? { joinTimeoutMs: deps.joinTimeoutMs } : {}),
+      ...(deps.closeGraceMs !== undefined ? { closeGraceMs: deps.closeGraceMs } : {}),
+      usage: {
+        canSpend: (kind, seconds) => {
+          if (!run) return false;
+          // Approved clips cost no provider minutes; speech-to-text and text-to-speech do.
+          if (kind === "speak" && !run.ttsActive) return true;
+          const left = scope.costCap.providerMinutes * 60 - providerSecondsOf(run.grantId);
+          return left >= seconds;
+        },
+        onUsage: (usage) => {
+          if (!run) return;
+          if (usage.kind === "listen" || run.ttsActive) {
+            run.providerSeconds += usage.seconds;
+            live.addProviderSeconds(org, run.grantId, usage.seconds);
+          }
+        },
+      },
+      onTranscript: (segment) => {
+        if (run) recordHeard(run, segment);
+      },
+      onEnded: (reason) => {
+        if (run && running.has(run.record.id) && !run.stopping) finish(run, reason);
+      },
+    });
+    run = { record: session, huddle, grantId: record.id, maxSessionMs, joinedAtMs: null, providerSeconds: 0, ttsActive: false, stopping: null, forbidden: scope.forbiddenTerms, ticks: 0 };
+    running.set(session.id, run);
+    ensureTicker();
+    let peers: string[];
+    try {
+      peers = (await huddle.join()).peers;
+    } catch (error) {
+      const code = error instanceof HuddleError ? error.code : "huddle_join_failed";
+      running.delete(session.id);
+      maybeStopTicker();
+      live.endSession(org, session.id, { status: "failed", reason: code, now: deps.now() });
+      deps.audit("marketplace.channels.live_session.join_failed", `agent:${input.agentId}`, { sessionId: session.id, grantId: record.id, reason: code });
+      return refuse(502, "live_join_failed", { sessionId: session.id, reason: code });
+    }
+    run.joinedAtMs = deps.now().getTime();
+    live.markJoined(org, session.id, deps.now());
+    run.record = live.getSession(org, session.id) ?? session;
+    // The grant may have changed while joining: the first check runs now, not a tick later.
+    const reason = stopReason(run);
+    if (reason) {
+      await stopRun(run, reason);
+      return refuse(409, "live_grant_not_active", { sessionId: session.id, reason });
+    }
+    deps.audit("marketplace.channels.live_session.joined", `agent:${input.agentId}`, { sessionId: session.id, grantId: record.id, peers: peers.length });
+    return ok(201, { session: sessionView(run.record), peers: peers.length });
+  };
+
+  const recordHeard = (run: Running, segment: TranscriptSegment) => {
+    const text = segment.text.replace(HIDDEN, " ").trim().slice(0, 4000);
+    if (!text) return;
+    try {
+      live.addTranscript({
+        workspaceSlug: org,
+        sessionId: run.record.id,
+        grantId: run.grantId,
+        agentId: run.record.agentId,
+        kind: "heard",
+        speakerPubkey: segment.speakerPubkey,
+        text,
+        textSha256: sha256Hex(text),
+        // Forbidden terms in what others say are flagged only (never refused: we cannot unsay them).
+        flaggedTerms: forbiddenTermsIn(text, run.forbidden),
+        startedAt: new Date(segment.startedAt),
+        endedAt: new Date(segment.endedAt),
+        now: deps.now(),
+      });
+    } catch {
+      // A failed receipt write never breaks the session; the audit digest covers what was stored.
+    }
+  };
+
+  const ownRunning = (agentId: string, sessionId: string, channelId: string): Running | null => {
+    const run = running.get(sessionId);
+    return run && run.record.agentId === agentId && run.record.channelId === channelId ? run : null;
+  };
+
+  /** `marketplace.channel-live.leave` (agent: own session). */
+  const leave = async (input: { agentId: string; channelId: string; sessionId: string }): Promise<LiveResult> => {
+    const row = live.getSession(org, input.sessionId);
+    if (!row || row.agentId !== input.agentId || row.channelId !== input.channelId) return refuse(404, "live_session_not_found");
+    const run = ownRunning(input.agentId, input.sessionId, input.channelId);
+    if (run) await stopRun(run, "left_by_agent");
+    else live.endSession(org, row.id, { status: "left", reason: "left_by_agent", now: deps.now() });
+    return ok(200, { session: sessionView(live.getSession(org, row.id) ?? row) });
+  };
+
+  /** Owner Stop: any session (in this instance at once; another instance's tick sees the ended row). */
+  const stopByOwner = async (input: { sessionId: string; actorId: string }): Promise<LiveResult> => {
+    const row = live.getSession(org, input.sessionId);
+    if (!row) return refuse(404, "live_session_not_found");
+    const run = running.get(row.id);
+    deps.audit("marketplace.channels.live_session.stopped", input.actorId, { sessionId: row.id, grantId: row.grantId });
+    if (run) await stopRun(run, "stopped_by_owner");
+    else live.endSession(org, row.id, { status: "left", reason: "stopped_by_owner", now: deps.now() });
+    return ok(200, { session: sessionView(live.getSession(org, row.id) ?? row) });
+  };
+
+  /** speak-approved: plays an Ogg/Opus clip whose approval the route already confirmed (by digest). */
+  const speakClip = async (input: { agentId: string; channelId: string; sessionId: string; clip: Uint8Array; clipSha256: string }): Promise<LiveResult> => {
+    const run = ownRunning(input.agentId, input.sessionId, input.channelId);
+    if (!run || run.stopping) return refuse(409, "live_session_not_joined");
+    if (!run.record.modes.speakApproved) return refuse(403, "live_mode_not_granted", { modes: ["speakApproved"] });
+    const reason = stopReason(run);
+    if (reason) {
+      void stopRun(run, reason);
+      return refuse(409, "live_grant_not_active", { reason });
+    }
+    const startedAt = deps.now();
+    let result;
+    try {
+      result = await run.huddle.speak(input.clip);
+    } catch (error) {
+      return refuse(error instanceof HuddleError && error.code === "huddle_speak_busy" ? 409 : 422, error instanceof HuddleError ? error.code : "speak_failed");
+    }
+    live.addTranscript({
+      workspaceSlug: org,
+      sessionId: run.record.id,
+      grantId: run.grantId,
+      agentId: input.agentId,
+      kind: "said",
+      speakerPubkey: null,
+      text: "",
+      textSha256: sha256Hex(""),
+      clipSha256: result.sha256,
+      flaggedTerms: [],
+      startedAt,
+      endedAt: deps.now(),
+      now: deps.now(),
+    });
+    return ok(200, { spoken: { kind: "clip", sha256: result.sha256, seconds: result.seconds, aborted: result.aborted } });
+  };
+
+  /** speak-live: text → TTS under the grant's speakLive mode; forbidden terms refuse before any provider call. */
+  const speakText = async (input: { agentId: string; channelId: string; sessionId: string; text: string; voice?: string }): Promise<LiveResult> => {
+    const run = ownRunning(input.agentId, input.sessionId, input.channelId);
+    if (!run || run.stopping) return refuse(409, "live_session_not_joined");
+    if (!run.record.modes.speakLive) return refuse(403, "live_mode_not_granted", { modes: ["speakLive"] });
+    if (!deps.ttsAvailable || !deps.speech) return refuse(409, "live_tts_unavailable", { detail: "text-to-speech in Ogg/Opus needs @tealbrick/voice rc.19 (format opus)" });
+    const text = input.text.replace(HIDDEN, " ").trim();
+    if (!text || text.length > SPEAK_TEXT_MAX_CHARS) return refuse(422, "speak_text_invalid");
+    const hits = forbiddenTermsIn(text, run.forbidden);
+    if (hits.length > 0) {
+      deps.audit("marketplace.channels.live_session.speak_refused", `agent:${input.agentId}`, { sessionId: run.record.id, reason: "forbidden_term", terms: hits.length, textSha256: sha256Hex(text) });
+      return refuse(422, "live_forbidden_term");
+    }
+    const reason = stopReason(run);
+    if (reason) {
+      void stopRun(run, reason);
+      return refuse(409, "live_grant_not_active", { reason });
+    }
+    const startedAt = deps.now();
+    run.ttsActive = true;
+    let result;
+    try {
+      result = await run.huddle.speakText(text, input.voice ? { voice: input.voice } : {});
+    } catch (error) {
+      return refuse(error instanceof HuddleError && error.code === "huddle_speak_busy" ? 409 : 502, error instanceof HuddleError ? error.code : "speech_failed");
+    } finally {
+      run.ttsActive = false;
+    }
+    live.addTranscript({
+      workspaceSlug: org,
+      sessionId: run.record.id,
+      grantId: run.grantId,
+      agentId: input.agentId,
+      kind: "said",
+      speakerPubkey: null,
+      text,
+      textSha256: sha256Hex(text),
+      clipSha256: result.sha256,
+      flaggedTerms: [],
+      startedAt,
+      endedAt: deps.now(),
+      now: deps.now(),
+    });
+    return ok(200, { spoken: { kind: "text", sha256: result.sha256, seconds: result.seconds, aborted: result.aborted } });
+  };
+
+  /** Retention: transcript text after the inbound text retention. */
+  const purge = (now: Date) => live.purgeTranscripts(org, new Date(now.getTime() - deps.retentionDays() * DAY_MS), now);
+
+  /** Stops every running session (app close). */
+  const close = async () => {
+    await Promise.all([...running.values()].map((run) => stopRun(run, "marketplace_stopping")));
+    maybeStopTicker();
+  };
+
+  return {
+    join,
+    leave,
+    stopByOwner,
+    speakClip,
+    speakText,
+    onGrantChanged,
+    onControlChanged,
+    usageView,
+    sessionView,
+    purge,
+    close,
+    tick: tickAll,
+    isRunning: (sessionId: string) => running.has(sessionId),
+    runningCount: () => running.size,
+    modesOf,
+  };
+}
+
+/** Stand-in when no speech provider is wired: never called for listen (join refuses), refuses everything. */
+const refusingSpeech: SpeechProvider = {
+  async transcribe() {
+    throw new Error("live_speech_unavailable");
+  },
+  async synthesize() {
+    throw new Error("live_tts_unavailable");
+  },
+};
