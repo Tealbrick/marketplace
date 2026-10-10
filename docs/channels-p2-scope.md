@@ -102,7 +102,7 @@ Facts are from the Buzz source (`block/buzz`, desktop 0.5.25), the `buzz` CLI an
 | Workflows and workflow approvals | Experimental; approval gate not wired end to end | Not used. Owner approvals use the Tealbrick flow. | — |
 | Moderation | Yes (reports, ban, time-out) | Not for agents. Owner tools only. | — |
 | Approvals in channel | Owner approvals through Buzz already work (kit; contract alpha.7) | Unchanged | done |
-| Identity and auth | One Nostr key per agent identity. The owner signs a NIP-OA tag that limits what the key may publish. The relay must allow NIP-OA auth. | Marketplace holds one agent key per Buzz channel identity (encrypted, never shown). The owner signs its NIP-OA tag with limits (`kind=9`, end date). | P2 |
+| Identity and auth | One Nostr key per agent identity. The owner signs a NIP-OA tag that limits what the key may publish. The relay must allow NIP-OA auth. | **Approved by the Coordinator (2026-10-10):** Marketplace generates one agent keypair per Buzz connection; the private key is only in the encrypted `connector_secret` store, never shown or exported, never backed up (loss of the store = new key + new tag). The owner screen shows the npub. Martin signs a NIP-OA tag on his Mac (allowed kinds, end date ≤ 90 days, renewal reminder) and pastes it; Marketplace verifies it against the pinned owner key. Rotation and revoke are explained in the owner screen. Audit records the npub and the tag digest, never the key. Added to Lead · Portal's setup cookbook when it ships. | P2 |
 | Rate limits | Relay limits: agent 120 messages/min (default); configurable | Channel caps (Phase 1) under the relay limits | P2 |
 
 **Martin's setup for Buzz:**
