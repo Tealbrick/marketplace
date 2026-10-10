@@ -25,10 +25,19 @@ export const JWT_CLOCK_SKEW_SECONDS = 300;
 /** The Bot Framework keys document is refreshed at least once per day (docs: "at least once every 24 hours"). */
 export const JWKS_MAX_AGE_MS = 24 * 3_600_000;
 /**
- * Keys are fetched at most this often, whatever the outcome: an unknown `kid`, stale keys or a failed fetch never
- * let unauthenticated requests drive more than one metadata fetch per window.
+ * An unknown `kid` refreshes the keys at most once per `kid` in this window, and a fetch that failed blocks further
+ * unknown-`kid` refreshes for the same window. A forged token with a random `kid` (the app id is public) therefore
+ * only spends its own `kid`'s slot, never the slot of a real key rotation.
  */
 export const JWKS_MIN_REFRESH_MS = 5 * 60_000;
+/** Most unknown-`kid` refreshes in one `JWKS_MIN_REFRESH_MS` window, whatever the `kid`s are. */
+export const JWKS_MAX_REFRESHES_PER_WINDOW = 6;
+/** Keys older than this are refreshed on an unknown `kid` even when the per-`kid` and global limits are spent. */
+export const JWKS_FORCE_REFRESH_AGE_MS = 60 * 60_000;
+/** Whatever the reason, two fetch attempts are never closer than this (an outage never turns into one fetch per request). */
+export const JWKS_MIN_ATTEMPT_SPACING_MS = 30_000;
+/** Recently missed `kid`s remembered for the per-`kid` limit (least recently missed dropped first). */
+export const JWKS_MISSED_KIDS_MAX = 128;
 
 export const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
@@ -194,15 +203,21 @@ function toSigningKey(raw: unknown): [string, SigningKey] | undefined {
 
 /**
  * Bot Framework token verifier for the Teams messaging endpoint. Keys come from the Bot Framework OpenID
- * metadata (the `jwks_uri` must stay on login.botframework.com), cached for 24 hours; an unknown `kid`
- * refreshes them at most once per five minutes.
+ * metadata (the `jwks_uri` must stay on login.botframework.com), cached for 24 hours. An unknown `kid` refreshes
+ * them at most once per `kid` per five minutes and at most `JWKS_MAX_REFRESHES_PER_WINDOW` times per five
+ * minutes in all, and only after the token's issuer, audience, validity and `serviceUrl` checks passed. Keys
+ * older than 60 minutes are refreshed on an unknown `kid` regardless of those limits (but never closer than
+ * `JWKS_MIN_ATTEMPT_SPACING_MS` apart).
  */
 export function createBotFrameworkVerifier(runtime: ProviderRuntime): BotFrameworkVerifier {
   let keys = new Map<string, SigningKey>();
   let fetchedAt = Number.NEGATIVE_INFINITY;
-  // Every attempt counts, success or failure (F2): the minimum interval also applies after a failed fetch.
+  // Every attempt counts, success or failure (F2).
   let attemptedAt = Number.NEGATIVE_INFINITY;
+  let failedAt = Number.NEGATIVE_INFINITY;
   let refreshing: Promise<boolean> | null = null;
+  const missedKids = new Map<string, number>();
+  let windowAttempts: number[] = [];
 
   async function refresh(): Promise<boolean> {
     attemptedAt = runtime.now();
@@ -233,18 +248,41 @@ export function createBotFrameworkVerifier(runtime: ProviderRuntime): BotFramewo
   function refreshOnce(): Promise<boolean> {
     refreshing ??= refresh()
       .catch(() => false)
+      .then((ok) => {
+        if (!ok) failedAt = runtime.now();
+        return ok;
+      })
       .finally(() => {
         refreshing = null;
       });
     return refreshing;
   }
 
+  /** Decides whether this lookup may start a fetch, and records the attempt against the limits it used. */
+  function mayRefresh(kid: string, now: number): boolean {
+    const known = keys.has(kid);
+    const age = now - fetchedAt;
+    const spaced = now - attemptedAt >= JWKS_MIN_ATTEMPT_SPACING_MS;
+    if (known) return age > JWKS_MAX_AGE_MS && spaced;
+    const forced = age > JWKS_FORCE_REFRESH_AGE_MS && spaced;
+    const lastMiss = missedKids.get(kid);
+    windowAttempts = windowAttempts.filter((at) => now - at < JWKS_MIN_REFRESH_MS);
+    const limited =
+      spaced &&
+      now - failedAt >= JWKS_MIN_REFRESH_MS &&
+      (lastMiss === undefined || now - lastMiss >= JWKS_MIN_REFRESH_MS) &&
+      windowAttempts.length < JWKS_MAX_REFRESHES_PER_WINDOW;
+    if (!forced && !limited) return false;
+    if (!forced) windowAttempts.push(now);
+    missedKids.delete(kid);
+    missedKids.set(kid, now);
+    while (missedKids.size > JWKS_MISSED_KIDS_MAX) missedKids.delete(missedKids.keys().next().value as string);
+    return true;
+  }
+
   async function keyFor(kid: string): Promise<SigningKey | undefined | "unavailable"> {
-    const now = runtime.now();
-    const mayFetch = now - attemptedAt > JWKS_MIN_REFRESH_MS;
-    const stale = now - fetchedAt > JWKS_MAX_AGE_MS;
-    if (mayFetch && (stale || !keys.has(kid))) await refreshOnce();
-    else if (refreshing) await refreshing;
+    if (refreshing) await refreshing;
+    else if (mayRefresh(kid, runtime.now())) await refreshOnce();
     if (keys.size === 0) return "unavailable";
     // Stale keys stay usable while a refresh is failing; Microsoft rotates keys with overlap.
     return keys.get(kid);

@@ -129,15 +129,90 @@ describe("Bot Framework JWT verification", () => {
     expect(await verifier.verify({ authorization: token(claims, { kid: "key-9" }), appId: APP_ID, activity })).toEqual({ ok: false, status: 401, reason: "token_key_unknown" });
   });
 
-  it("refreshes the keys for an unknown kid at most once per five minutes", async () => {
+  it("refreshes the keys for an unknown kid at most once per kid per five minutes", async () => {
     const { verifier, claims, activity, requests, clock } = setup();
     await verifier.verify({ authorization: token(claims), appId: APP_ID, activity });
     clock.advance(60_000);
     await verifier.verify({ authorization: token(claims, { kid: "key-9" }), appId: APP_ID, activity });
-    expect(requests).toHaveLength(2);
-    clock.advance(5 * 60_000);
+    expect(requests).toHaveLength(4);
+    clock.advance(60_000);
     await verifier.verify({ authorization: token(claims, { kid: "key-9" }), appId: APP_ID, activity });
     expect(requests).toHaveLength(4);
+    clock.advance(5 * 60_000);
+    await verifier.verify({ authorization: token(claims, { kid: "key-9" }), appId: APP_ID, activity });
+    expect(requests).toHaveLength(6);
+  });
+
+  it("does not let forged random-kid tokens block a real key rotation", async () => {
+    const rotated = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    let keys = [jwk(signer.publicKey, "key-1")];
+    const clock = createFakeClock(1_800_000_000_000);
+    let fetches = 0;
+    const fetchImpl = (async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url === BOT_FRAMEWORK_OPENID_URL) return jsonResponse(200, { jwks_uri: JWKS_URL });
+      fetches += 1;
+      return jsonResponse(200, { keys });
+    }) as typeof fetch;
+    const verifier = createBotFrameworkVerifier(resolveRuntime({ fetchImpl, now: clock.now, sleep: clock.sleep }));
+    const nowSeconds = Math.floor(clock.now() / 1000);
+    const claims = { iss: "https://api.botframework.com", aud: APP_ID, serviceurl: SERVICE_URL, nbf: nowSeconds - 10, exp: nowSeconds + 3600 };
+    const activity = { serviceUrl: SERVICE_URL, channelId: "msteams" };
+    expect((await verifier.verify({ authorization: token(claims), appId: APP_ID, activity })).ok).toBe(true);
+    // The same forged kid, repeated: one refresh only.
+    clock.advance(40_000);
+    for (let index = 0; index < 10; index += 1) {
+      expect(await verifier.verify({ authorization: token(claims, { kid: "random-0", key: stranger.privateKey }), appId: APP_ID, activity })).toEqual({ ok: false, status: 401, reason: "token_key_unknown" });
+    }
+    expect(fetches).toBe(2);
+    // Many different forged kids: capped, and the real rotation right after still gets its refresh.
+    for (let index = 1; index < 4; index += 1) {
+      clock.advance(31_000);
+      await verifier.verify({ authorization: token(claims, { kid: `random-${index}`, key: stranger.privateKey }), appId: APP_ID, activity });
+    }
+    keys = [jwk(signer.publicKey, "key-1"), jwk(rotated.publicKey, "key-2")];
+    clock.advance(31_000);
+    const real = await verifier.verify({ authorization: token(claims, { kid: "key-2", key: rotated.privateKey }), appId: APP_ID, activity });
+    expect(real.ok).toBe(true);
+  });
+
+  it("caps unknown-kid refreshes per five minutes across all kids", async () => {
+    const { verifier, claims, activity, requests, clock } = setup();
+    await verifier.verify({ authorization: token(claims), appId: APP_ID, activity });
+    clock.advance(31_000);
+    const before = requests.length;
+    for (let index = 0; index < 20; index += 1) {
+      await verifier.verify({ authorization: token(claims, { kid: `random-${index}`, key: stranger.privateKey }), appId: APP_ID, activity });
+      clock.advance(1000);
+    }
+    // 20 kids in 20 s, 30 s apart at most: bounded by the attempt spacing and the global cap (6 per window).
+    expect((requests.length - before) / 2).toBeLessThanOrEqual(6);
+    expect(requests.length - before).toBeGreaterThan(0);
+  });
+
+  it("refreshes keys older than 60 minutes on an unknown kid even when the per-kid and global limits are spent", async () => {
+    const rotated = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    let keys = [jwk(signer.publicKey, "key-1")];
+    const clock = createFakeClock(1_800_000_000_000);
+    const fetchImpl = (async (input: string | URL | Request) =>
+      String(input) === BOT_FRAMEWORK_OPENID_URL ? jsonResponse(200, { jwks_uri: JWKS_URL }) : jsonResponse(200, { keys })) as typeof fetch;
+    const verifier = createBotFrameworkVerifier(resolveRuntime({ fetchImpl, now: clock.now, sleep: clock.sleep }));
+    const nowSeconds = Math.floor(clock.now() / 1000);
+    const claims = { iss: "https://api.botframework.com", aud: APP_ID, serviceurl: SERVICE_URL, nbf: nowSeconds - 10, exp: nowSeconds + 4 * 3600 };
+    const activity = { serviceUrl: SERVICE_URL, channelId: "msteams" };
+    await verifier.verify({ authorization: token(claims), appId: APP_ID, activity });
+    // Spend the global cap and the per-kid slot of the future real kid inside one five-minute window.
+    for (let index = 0; index < 8; index += 1) {
+      clock.advance(31_000);
+      await verifier.verify({ authorization: token(claims, { kid: index === 7 ? "key-2" : `random-${index}`, key: stranger.privateKey }), appId: APP_ID, activity });
+    }
+    keys = [jwk(signer.publicKey, "key-1"), jwk(rotated.publicKey, "key-2")];
+    clock.advance(10_000);
+    expect(await verifier.verify({ authorization: token(claims, { kid: "key-2", key: rotated.privateKey }), appId: APP_ID, activity })).toEqual({ ok: false, status: 401, reason: "token_key_unknown" });
+    clock.advance(61 * 60_000);
+    const fresh = Math.floor(clock.now() / 1000);
+    const later = { ...claims, nbf: fresh - 10, exp: fresh + 3600 };
+    expect((await verifier.verify({ authorization: token(later, { kid: "key-2", key: rotated.privateKey }), appId: APP_ID, activity })).ok).toBe(true);
   });
 
   it("fetches keys at most once per five minutes while the metadata fetch fails", async () => {
