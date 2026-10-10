@@ -12,24 +12,30 @@ import {
   applyFallbacks,
   capabilitySupports,
   kindLimits,
+  markupSupported,
+  pollProblem,
   wiredCapabilities,
 } from "./providers/capabilities.js";
 import { scrubSecrets, validateOutbound } from "./providers/common.js";
 import { buildDiscordVoicePayload, createDiscordProvider } from "./providers/discord.js";
 import { createBuzzProvider, type BuzzProvider } from "./providers/buzz.js";
 import { createSlackProvider } from "./providers/slack.js";
-import { createTeamsProvider, encodeTeamsCredential, type TeamsConversationSource } from "./providers/teams.js";
+import { createTeamsProvider, encodeTeamsCredential, teamsMentionEntities, type TeamsConversationSource } from "./providers/teams.js";
 import { createTelegramProvider } from "./providers/telegram.js";
 import type {
   AttachmentKind,
   ChannelCapabilities,
   ChannelDestination as ProviderDestination,
+  ChannelMarkup,
   ChannelProvider,
   ChannelProviderId,
   ChannelProviderOptions,
   MediaCapability,
   OutboundAttachment,
+  OutboundMention,
+  OutboundPoll,
 } from "./providers/types.js";
+import type { PersonRecord, PostOpSpec } from "./actions-store.js";
 import {
   ChannelStoreError,
   readAttachmentBytes,
@@ -270,6 +276,11 @@ export function largestAcceptedBytes(entries: Array<{ caps: ChannelCapabilities;
   return largest;
 }
 
+/** The channel destination as one key (external id and parent), for the sent-message ledger (review R3). */
+export function destinationKey(destination: { externalId: string; parentId?: string }): string {
+  return `${destination.externalId}|${destination.parentId ?? ""}`;
+}
+
 export function toProviderDestination(channel: ChannelRecord): ProviderDestination {
   return {
     type: channel.destination.type as ProviderDestination["type"],
@@ -295,7 +306,40 @@ export type ChannelPostBody = {
    * (their digests are unchanged).
    */
   replyTo?: string;
+  /**
+   * Routes v2: a reaction, edit or delete of a message Marketplace posted to this channel, or a direct message to a
+   * person found on this connection. Absent on posts.
+   */
+  action?: PostOpSpec["action"];
+  /** Named people to mention (platform user ids; Teams also needs each display name). */
+  mentions?: OutboundMention[];
+  /** A markup other than the provider default (only a declared option). */
+  markup?: ChannelMarkup;
+  /** A native poll (immediate posts only). */
+  poll?: OutboundPoll;
 };
+
+/** The routes v2 part of a post body, as stored in `channel_post_op` (undefined fields left out). */
+export function postOpSpecOf(body: ChannelPostBody): PostOpSpec {
+  return {
+    ...(body.action ? { action: body.action } : {}),
+    ...(body.mentions && body.mentions.length > 0 ? { mentions: body.mentions.map((mention) => ({ userId: mention.userId, ...(mention.name ? { name: mention.name } : {}) })) } : {}),
+    ...(body.markup ? { markup: body.markup } : {}),
+    ...(body.poll
+      ? {
+          poll: {
+            question: body.poll.question,
+            options: [...body.poll.options],
+            ...(body.poll.allowsMultiple !== undefined ? { allowsMultiple: body.poll.allowsMultiple } : {}),
+            ...(body.poll.durationHours !== undefined ? { durationHours: body.poll.durationHours } : {}),
+          },
+        }
+      : {}),
+  };
+}
+
+/** The operation a payload performs, as bound in its digest. */
+export type ChannelPayloadOp = "post" | "schedule" | "test" | "reply" | "poll" | "react" | "edit" | "delete" | "dm";
 
 export type ChannelPayload = {
   /** The text as it will be sent (after fallbacks). */
@@ -306,6 +350,13 @@ export type ChannelPayload = {
   campaign: PostCampaign;
   sendAt: string | null;
   replyTo?: string;
+  op: ChannelPayloadOp;
+  action?: PostOpSpec["action"];
+  /** The person of a direct message (resolved from the opaque reference on this connection). */
+  person?: Pick<PersonRecord, "personRef" | "platformUserId" | "displayName" | "approvedAt">;
+  mentions?: OutboundMention[];
+  markup?: ChannelMarkup;
+  poll?: OutboundPoll;
   digest: string;
   canonical: string;
   files: Array<{ name: string; sha256: string; contentType: string; kind: string; bytes: number }>;
@@ -334,10 +385,103 @@ const REFUSAL_STATUS: Record<string, number> = {
   channel_file_digest_mismatch: 409,
   channel_voice_invalid: 422,
   channel_voice_alone: 422,
+  channel_poll_invalid: 422,
+  channel_mention_invalid: 422,
+  channel_reaction_invalid: 422,
+  channel_action_invalid: 422,
+  channel_person_not_found: 404,
 };
 
 export function refusal(error: string, detail?: string): ChannelRefusal {
   return { status: REFUSAL_STATUS[error] ?? 422, error, ...(detail ? { detail } : {}) };
+}
+
+// Control characters, bidi overrides and zero-width marks: never part of an id, an emoji or a mention name.
+const UNSAFE_TOKEN = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\u061c\ufeff\s]/u;
+const MAX_MENTIONS = 20;
+
+const plainToken = (value: unknown, max: number): value is string => typeof value === "string" && value.length > 0 && value.length <= max && !UNSAFE_TOKEN.test(value);
+
+/**
+ * Routes v2 checks before anything else (spec 3.1: an undeclared feature is refused, never dropped): the action's
+ * capability and shape, the person of a direct message (on this channel's connection), mentions, markup and poll.
+ */
+function routesV2Problem(input: {
+  store: ChannelStore;
+  channel: ChannelRecord;
+  caps: ChannelCapabilities;
+  op: "post" | "schedule" | "test";
+  body: ChannelPostBody;
+}): { refusal: ChannelRefusal } | { person?: NonNullable<ChannelPayload["person"]> } {
+  const { caps, body, channel } = input;
+  const unavailable = (feature: string) => ({ refusal: refusal("channel_capability_unavailable", `this channel's provider does not declare "${feature}"`) });
+  const invalid = (code: string, detail: string) => ({ refusal: refusal(code, detail) });
+  const action = body.action;
+  let person: NonNullable<ChannelPayload["person"]> | undefined;
+  if (action) {
+    if (body.poll !== undefined || body.replyTo !== undefined || body.markup !== undefined) {
+      return invalid("channel_action_invalid", "a reaction, edit, delete or direct message takes no poll, reply target or markup");
+    }
+    if (action.op !== "dm") {
+      if (!plainToken(action.targetMessageId, 256)) return invalid("channel_action_invalid", "the message id is invalid");
+      if (body.attachments.length > 0 || (body.mentions?.length ?? 0) > 0) {
+        return invalid("channel_action_invalid", "a reaction, edit or delete takes no attachments or mentions");
+      }
+    }
+    switch (action.op) {
+      case "react":
+        if (!(action.remove === true ? caps.reactions.remove : caps.reactions.add)) return unavailable(action.remove === true ? "reactions.remove" : "reactions.add");
+        if (!plainToken(action.emoji, 64)) return invalid("channel_reaction_invalid", "a reaction is one emoji or emoji name");
+        if (body.text !== "") return invalid("channel_action_invalid", "a reaction has no text");
+        break;
+      case "edit":
+        if (!caps.edit.own) return unavailable("edit");
+        if (body.text.trim().length === 0) return invalid("channel_message_empty", "an edit needs text");
+        break;
+      case "delete":
+        if (!caps.delete.own) return unavailable("delete");
+        if (body.text !== "") return invalid("channel_action_invalid", "a delete has no text");
+        break;
+      case "dm": {
+        if (!caps.dm.open) return unavailable("dm");
+        const record = typeof action.personRef === "string" ? input.store.actions.getPerson(channel.workspaceSlug, action.personRef) : null;
+        if (!record || record.connectionId !== channel.connectionId || record.provider !== channel.provider) {
+          return invalid("channel_person_not_found", "the person reference is unknown on this channel's connection");
+        }
+        person = { personRef: record.personRef, platformUserId: record.platformUserId, displayName: record.displayName, approvedAt: record.approvedAt };
+        break;
+      }
+      default:
+        return invalid("channel_action_invalid", "unknown action");
+    }
+  }
+  if (body.mentions !== undefined && body.mentions.length > 0) {
+    if (!caps.mentions.users) return unavailable("mentions.users");
+    if (body.mentions.length > MAX_MENTIONS) return invalid("channel_mention_invalid", `at most ${MAX_MENTIONS} named mentions`);
+    const seen = new Set<string>();
+    for (const mention of body.mentions) {
+      if (!plainToken(mention?.userId, 128) || seen.has(mention.userId)) return invalid("channel_mention_invalid", "each mention is one distinct platform user id");
+      if (mention.name !== undefined && (typeof mention.name !== "string" || mention.name.length === 0 || mention.name.length > 80)) {
+        return invalid("channel_mention_invalid", "a mention name is 1-80 characters");
+      }
+      seen.add(mention.userId);
+    }
+    // Teams renders a mention from its text (`<at>name</at>`): checked here, before any hold, with the adapter's rule.
+    if (channel.provider === "teams") {
+      const entities = teamsMentionEntities(body.text, body.mentions);
+      if (!entities.ok) return invalid(entities.errorCode, entities.detail);
+    }
+  }
+  if (body.markup !== undefined && (typeof body.markup !== "string" || !markupSupported(caps, body.markup))) {
+    return unavailable(`markup.${String(body.markup)}`);
+  }
+  if (body.poll !== undefined) {
+    if (input.op !== "post" || body.replyTo !== undefined) return invalid("channel_poll_invalid", "a poll is sent only as an immediate post");
+    if (body.attachments.length > 0) return invalid("channel_poll_invalid", "a poll post carries no attachments");
+    const problem = pollProblem(caps, body.poll);
+    if (problem) return { refusal: refusal(problem.errorCode, problem.detail) };
+  }
+  return person ? { person } : {};
 }
 
 /**
@@ -361,6 +505,9 @@ export function buildChannelPayload(input: {
   if (body.replyTo !== undefined && (!caps.thread.replies || typeof body.replyTo !== "string" || body.replyTo.length === 0 || body.replyTo.length > 256)) {
     return { ok: false, refusal: refusal("channel_capability_unavailable", 'this channel\'s provider does not declare "thread.replies"') };
   }
+  const extras = routesV2Problem(input);
+  if ("refusal" in extras) return { ok: false, refusal: extras.refusal };
+  const { person } = extras;
   if (body.attachments.length > MAX_ATTACHMENTS_PER_MESSAGE) {
     return { ok: false, refusal: refusal("channel_too_many_files") };
   }
@@ -418,15 +565,26 @@ export function buildChannelPayload(input: {
     kind: attachment.kind,
     bytes: attachment.bytes.byteLength,
   }));
+  const action = body.action;
+  // A reply is its own operation (review M1), and so are the routes v2 operations (review R2): a digest or approval
+  // for one never stands for another.
+  const op: ChannelPayloadOp = action ? action.op : body.poll ? "poll" : body.replyTo !== undefined ? "reply" : input.op;
+  const mentions = body.mentions && body.mentions.length > 0 ? body.mentions : undefined;
   const digestInput = {
     workspace: channel.workspaceSlug,
     channelId: channel.id,
     provider: channel.provider,
-    destination: channel.destination.externalId,
-    ...(channel.destination.parentId ? { destinationParentId: channel.destination.parentId } : {}),
-    // A reply is its own operation (review M1): a digest or approval for a post never stands for a reply.
-    op: body.replyTo !== undefined ? "reply" : input.op,
+    // A direct message goes to the person, not to the channel destination.
+    destination: person ? `person:${person.platformUserId}` : channel.destination.externalId,
+    ...(!person && channel.destination.parentId ? { destinationParentId: channel.destination.parentId } : {}),
+    op,
     ...(body.replyTo !== undefined ? { replyTo: body.replyTo } : {}),
+    ...(person ? { personId: person.platformUserId, personName: person.displayName } : {}),
+    ...(action && action.op !== "dm" ? { targetMessageId: action.targetMessageId } : {}),
+    ...(action?.op === "react" ? { emoji: action.emoji, ...(action.remove === true ? { remove: true } : {}) } : {}),
+    ...(body.markup !== undefined ? { markup: body.markup } : {}),
+    ...(mentions ? { mentions: mentions.map((mention) => ({ userId: mention.userId, ...(mention.name ? { name: mention.name } : {}) })) } : {}),
+    ...(body.poll ? { poll: body.poll } : {}),
     text: applied.text,
     attachments: applied.attachments.map((attachment) => ({
       sha256: attachment.sha256,
@@ -449,6 +607,12 @@ export function buildChannelPayload(input: {
       campaign: body.campaign,
       sendAt: body.sendAt,
       ...(body.replyTo !== undefined ? { replyTo: body.replyTo } : {}),
+      op,
+      ...(action ? { action } : {}),
+      ...(person ? { person } : {}),
+      ...(mentions ? { mentions } : {}),
+      ...(body.markup !== undefined ? { markup: body.markup } : {}),
+      ...(body.poll ? { poll: body.poll } : {}),
       digest: channelPayloadDigest(digestInput),
       canonical: channelPayloadCanonical(digestInput),
       files,
@@ -469,6 +633,10 @@ export function checkChannelContent(input: {
   now: Date;
 }): ChannelRefusal | null {
   const { payload } = input;
+  // Routes v2: a reaction, edit, delete or direct message is not an event announcement, so the confirmed-event rule
+  // does not apply to it; every other content rule does (an edit's text, a DM's text and files).
+  const action = payload.action;
+  const policy: ChannelPolicy = action ? { ...input.policy, content: { ...input.policy.content, requireConfirmedEvent: false } } : input.policy;
   const content = evaluateContent(
     {
       mode: input.mode,
@@ -482,7 +650,7 @@ export function checkChannelContent(input: {
       })),
       campaign: payload.campaign,
     },
-    input.policy,
+    policy,
     policyCapabilities(input.caps),
     { now: input.now },
   );
@@ -491,12 +659,21 @@ export function checkChannelContent(input: {
   }
   // A transcript that stays on a native voice note is not posted, but it is
   // part of the approved payload, so it passes the same deny patterns.
-  const lowered = payload.attachments.map((attachment) => attachment.transcript?.toLowerCase() ?? "");
+  // So do a poll's question and options and a reaction's emoji.
+  const lowered = [
+    ...payload.attachments.map((attachment) => attachment.transcript?.toLowerCase() ?? ""),
+    ...(payload.poll ? [payload.poll.question, ...payload.poll.options].map((text) => text.toLowerCase()) : []),
+    ...(action?.op === "react" ? [action.emoji.toLowerCase()] : []),
+  ];
   if (input.policy.content.denyPatterns.some((pattern) => lowered.some((text) => text.includes(pattern.toLowerCase())))) {
     return { status: 422, error: "channel_content_denied", errors: ["channel_content_denied"] };
   }
+  // A reaction or delete has no message to validate; a poll post may have no text.
+  if (action?.op === "react" || action?.op === "delete") return null;
   const provider = validateOutbound({ text: payload.text, attachments: payload.attachments, caps: input.caps });
-  if (provider) return refusal(provider.errorCode ?? "channel_capability_unavailable", provider.detail);
+  if (provider && !(payload.poll && provider.errorCode === "channel_message_empty")) {
+    return refusal(provider.errorCode ?? "channel_capability_unavailable", provider.detail);
+  }
   return null;
 }
 
