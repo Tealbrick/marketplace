@@ -73,6 +73,20 @@ export function opusPacketSamples(packet: Uint8Array): number {
  * Never throws. Refuses anything else (a multiplexed or chained file, a missing header, a bad checksum, no audio).
  */
 export function readOggOpus(bytes: Uint8Array): OggOpusResult {
+  const parsed = parseOggOpus(bytes);
+  if (!parsed.ok) return parsed;
+  return { ok: true, info: parsed.info };
+}
+
+/** One Ogg/Opus file's audio packets (bytes, in order) with the reader's info; the same checks as `readOggOpus`. */
+export type OggOpusPacketsResult = { ok: true; info: OggOpusInfo; preSkip: number; packets: Uint8Array[] } | { ok: false; reason: string };
+
+/** Like `readOggOpus`, and also returns each audio packet's bytes (copies; the input is never changed). Never throws. */
+export function readOggOpusPackets(bytes: Uint8Array): OggOpusPacketsResult {
+  return parseOggOpus(bytes);
+}
+
+function parseOggOpus(bytes: Uint8Array): OggOpusPacketsResult {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const packets: Uint8Array[] = [];
   let pending: Uint8Array[] = [];
@@ -157,7 +171,7 @@ export function readOggOpus(bytes: Uint8Array): OggOpusResult {
   if (lastGranule < 0n || total <= 0n) return { ok: false, reason: "no usable granule position" };
   const durationSecs = Number(total) / OPUS_RATE;
   if (!Number.isFinite(durationSecs) || durationSecs <= 0) return { ok: false, reason: "no usable duration" };
-  return { ok: true, info: { durationSecs, channels, packets: described } };
+  return { ok: true, info: { durationSecs, channels, packets: described }, preSkip, packets: audio };
 }
 
 /**
@@ -189,4 +203,153 @@ export function opusWaveform(info: OggOpusInfo): Uint8Array {
   });
   const peak = Math.max(...levels);
   return Uint8Array.from(levels, (level) => (peak > 0 ? Math.round((level / peak) * 255) : 0));
+}
+
+// ---------------------------------------------------------------- Writer (RFC 3533 pages, RFC 7845 headers)
+
+/** Default pre-skip: 312 samples, the usual libopus encoder delay at 48 kHz (RFC 7845 section 4.2). */
+export const OPUS_DEFAULT_PRE_SKIP = 312;
+/** A page is closed after this many complete audio packets (one second of 20 ms packets) to keep pages small. */
+const WRITER_PACKETS_PER_PAGE = 50;
+/** Ogg allows at most 255 lacing values (segments) per page (RFC 3533 section 6). */
+const OGG_MAX_SEGMENTS = 255;
+/** Sanity cap per packet (an Opus packet is at most 120 ms; real ones are far smaller). Larger packets span pages. */
+const WRITER_MAX_PACKET_BYTES = 64 * 1024;
+
+export type OggOpusWriteOptions = {
+  channels?: number;
+  preSkip?: number;
+  /** Informational original sample rate written into OpusHead (default 48 000). */
+  inputSampleRate?: number;
+  /** Logical stream serial number (default: random). */
+  serial?: number;
+  /** OpusTags vendor string. */
+  vendor?: string;
+};
+
+/** One page from raw lacing values and body bytes (the caller splits packets into segments). */
+function writePage(input: { flags: number; granule: bigint; serial: number; sequence: number; lacing: readonly number[]; body: readonly Uint8Array[] }): Uint8Array {
+  if (input.lacing.length > OGG_MAX_SEGMENTS) throw new Error("ogg_page_too_many_segments");
+  const bodyLength = input.body.reduce((sum, part) => sum + part.length, 0);
+  const page = new Uint8Array(27 + input.lacing.length + bodyLength);
+  const view = new DataView(page.buffer);
+  page.set([0x4f, 0x67, 0x67, 0x53], 0); // "OggS"
+  page[4] = 0; // stream structure version
+  page[5] = input.flags;
+  view.setBigInt64(6, input.granule, true);
+  view.setUint32(14, input.serial >>> 0, true);
+  view.setUint32(18, input.sequence >>> 0, true);
+  // bytes 22..25: checksum, zero while computing it
+  page[26] = input.lacing.length;
+  page.set(input.lacing, 27);
+  let at = 27 + input.lacing.length;
+  for (const part of input.body) {
+    page.set(part, at);
+    at += part.length;
+  }
+  view.setUint32(22, oggPageCrc(page), true);
+  return page;
+}
+
+/** Lacing values of one packet: 255 per full segment, then the remainder (0 when the length is a multiple of 255). */
+function lacingOf(length: number): number[] {
+  const values = new Array<number>(Math.floor(length / 255)).fill(255);
+  values.push(length % 255);
+  return values;
+}
+
+/**
+ * Wraps raw Opus packets into one Ogg/Opus file (RFC 7845): page 0 = OpusHead alone (BOS, granule 0), page 1 =
+ * OpusTags alone (granule 0), then audio pages filled by segment count (at most 255 lacing values, and closed after
+ * 50 complete packets). A packet that does not fit continues on the next page (continued-packet flag 0x01). A
+ * page's granule position is the total samples (48 kHz, pre-skip included) of every packet that ENDS on it or
+ * before; a page on which no packet ends has granule -1 (RFC 3533 section 6). The last page carries EOS. Each page
+ * checksum is the Ogg CRC-32. Throws on an invalid packet (bad TOC, longer than 120 ms, over 64 KiB) or an empty
+ * packet list. The result is a new in-memory buffer; nothing is written anywhere.
+ */
+export function writeOggOpus(packets: readonly Uint8Array[], options: OggOpusWriteOptions = {}): Uint8Array {
+  if (packets.length === 0) throw new Error("ogg_opus_no_packets");
+  const channels = options.channels ?? 1;
+  const preSkip = options.preSkip ?? OPUS_DEFAULT_PRE_SKIP;
+  if (!Number.isInteger(channels) || channels < 1 || channels > 2) throw new Error("ogg_opus_channels_unsupported");
+  if (!Number.isInteger(preSkip) || preSkip < 0 || preSkip > 0xffff) throw new Error("ogg_opus_pre_skip_invalid");
+  const serial = options.serial ?? (Math.floor(Math.random() * 0x1_0000_0000) >>> 0);
+
+  const head = new Uint8Array(19);
+  const headView = new DataView(head.buffer);
+  head.set(Array.from("OpusHead", (char) => char.charCodeAt(0)), 0);
+  head[8] = 1; // version
+  head[9] = channels;
+  headView.setUint16(10, preSkip, true);
+  headView.setUint32(12, options.inputSampleRate ?? OPUS_RATE, true);
+  headView.setInt16(16, 0, true); // output gain
+  head[18] = 0; // channel mapping family 0 (mono/stereo)
+
+  const vendor = new TextEncoder().encode(options.vendor ?? "tealbrick-marketplace");
+  const tags = new Uint8Array(8 + 4 + vendor.length + 4);
+  const tagsView = new DataView(tags.buffer);
+  tags.set(Array.from("OpusTags", (char) => char.charCodeAt(0)), 0);
+  tagsView.setUint32(8, vendor.length, true);
+  tags.set(vendor, 12);
+  tagsView.setUint32(12 + vendor.length, 0, true); // no user comments
+
+  const pages: Uint8Array[] = [];
+  let sequence = 0;
+  pages.push(writePage({ flags: 0x02, granule: 0n, serial, sequence: sequence++, lacing: lacingOf(head.length), body: [head] }));
+  pages.push(writePage({ flags: 0x00, granule: 0n, serial, sequence: sequence++, lacing: lacingOf(tags.length), body: [tags] }));
+
+  for (const packet of packets) {
+    if (!(packet instanceof Uint8Array) || packet.length === 0 || packet.length > WRITER_MAX_PACKET_BYTES || opusPacketSamples(packet) === 0) {
+      throw new Error("ogg_opus_packet_invalid");
+    }
+  }
+
+  // Audio pages. `continued`: the page starts inside a packet begun on the previous page.
+  let granule = 0n;
+  let lacing: number[] = [];
+  let body: Uint8Array[] = [];
+  let ended = 0;
+  let pageGranule = -1n;
+  let continued = false;
+  const flush = (last: boolean) => {
+    pages.push(writePage({ flags: (continued ? 0x01 : 0) | (last ? 0x04 : 0), granule: pageGranule, serial, sequence: sequence++, lacing, body }));
+    lacing = [];
+    body = [];
+    ended = 0;
+    pageGranule = -1n;
+  };
+  packets.forEach((packet, index) => {
+    const values = lacingOf(packet.length);
+    let offset = 0;
+    for (let segment = 0; segment < values.length; segment += 1) {
+      if (lacing.length === OGG_MAX_SEGMENTS) {
+        flush(false);
+        // The packet goes on: the next page starts with its remaining segments.
+        continued = segment > 0;
+      } else if (segment === 0 && lacing.length === 0) {
+        continued = false;
+      }
+      const size = values[segment]!;
+      lacing.push(size);
+      body.push(packet.subarray(offset, offset + size));
+      offset += size;
+    }
+    granule += BigInt(opusPacketSamples(packet));
+    pageGranule = granule;
+    ended += 1;
+    const last = index === packets.length - 1;
+    if (last) flush(true);
+    else if (ended >= WRITER_PACKETS_PER_PAGE) {
+      flush(false);
+      continued = false;
+    }
+  });
+  const total = pages.reduce((sum, page) => sum + page.length, 0);
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const page of pages) {
+    out.set(page, at);
+    at += page.length;
+  }
+  return out;
 }
