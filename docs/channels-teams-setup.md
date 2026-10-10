@@ -40,13 +40,13 @@ Agents cannot find people or start 1:1 chats in this version. Do not add the Mic
 ## 4. Add the credentials to Marketplace
 
 1. Open Teal Brick Portal. Go to **Account Connections**.
-2. Add these values for Marketplace Channels:
+2. Add the secret: **Microsoft Teams bot client secret** = the secret value.
+3. Open the Marketplace settings in Portal (double-click Marketplace on the canvas). Set these values. They are not secrets, so you can read them back later:
    - **Microsoft Teams bot app ID**: the Microsoft App ID.
-   - **Microsoft Teams bot client secret**: the secret value.
    - **Microsoft Teams tenant ID**: the App Tenant ID.
-   - **Microsoft Teams person lookup**: leave it empty or `false`.
-3. Restart (redeploy) Marketplace. Marketplace reads the values at start.
-4. Open Marketplace **Channels**. Make sure that Microsoft Teams shows **Available**.
+   - **Microsoft Teams person lookup**: keep it off unless you need 1:1 chats with named people.
+4. Restart (redeploy) Marketplace. Marketplace reads the values at start.
+5. Open Marketplace **Channels**. Make sure that Microsoft Teams shows **Available**.
 
 Self-hosted Marketplace: store the values as connector secrets `appId`, `appSecret` and `tenantId` under `channels-teams`.
 
