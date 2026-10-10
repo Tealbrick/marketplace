@@ -398,7 +398,7 @@ provider-env or account field.
 
 | Operation | Route |
 | --- | --- |
-| `marketplace.channels.browse` | `GET /api/marketplace/channels` (`configured`, `providers` with each configured provider's static capability declaration and kinds, channels, readiness, connections, pending grants, uncertain posts) |
+| `marketplace.channels.browse` | `GET /api/marketplace/channels` (`configured`, `providers` with each configured provider's static capability declaration (`channelCapabilities: 2`: v1 keys plus `dm`, `thread`, `mentions`, `reactions`, `edit`, `delete`, `canvas`, `presence`, `ephemeral`, `live`, `inbound`; a feature that is not built is declared `false` or `none`) and kinds, channels, readiness, connections, pending grants, uncertain posts) |
 | `marketplace.channels.discover` | `GET /api/marketplace/channels/discover?provider=` |
 | `marketplace.channels.create` | `POST /api/marketplace/channels` (Idempotency-Key; destination from discovery only; optional `kind`, only kinds the provider serves, else `422 channel_kind_unsupported`) |
 | `marketplace.channels.update` | `PATCH /api/marketplace/channels/{channelId}` (bumps `revision`, re-checks grants) |

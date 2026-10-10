@@ -10,7 +10,7 @@ import {
   ATTACHMENT_KINDS,
   MAX_ATTACHMENTS_PER_MESSAGE,
   applyFallbacks,
-  capabilityForKind,
+  capabilitySupports,
   kindLimits,
 } from "./providers/capabilities.js";
 import { scrubSecrets, validateOutbound } from "./providers/common.js";
@@ -153,10 +153,19 @@ export function effectiveCapabilities(caps: ChannelCapabilities, policy: Channel
     },
     markup: caps.markup,
     mentions: caps.mentions,
+    dm: caps.dm,
     ...media,
     voice,
     maxAttachments: files.allowed ? Math.min(files.maxCount, MAX_ATTACHMENTS_PER_MESSAGE) : 0,
     thread: caps.thread,
+    reactions: caps.reactions,
+    edit: caps.edit,
+    delete: caps.delete,
+    canvas: caps.canvas,
+    presence: caps.presence,
+    ephemeral: caps.ephemeral,
+    live: caps.live,
+    inbound: caps.inbound,
     schedule: caps.schedule,
     limits: caps.limits,
   };
@@ -264,7 +273,7 @@ export function buildChannelPayload(input: {
     if (!record || record.createdBy !== input.agentId) {
       return { ok: false, refusal: refusal("channel_attachment_not_found", `attachment ${spec.id} is unknown`) };
     }
-    if (!(ATTACHMENT_KINDS as readonly string[]).includes(spec.kind) || capabilityForKind(caps, spec.kind as AttachmentKind) === null) {
+    if (!(ATTACHMENT_KINDS as readonly string[]).includes(spec.kind) || !capabilitySupports(caps, spec.kind)) {
       return { ok: false, refusal: refusal("channel_capability_unavailable", `this channel's provider does not declare "${spec.kind}"`) };
     }
     let bytes: Buffer;

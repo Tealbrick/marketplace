@@ -89,7 +89,23 @@ describe("channels: post with a standing grant (§10 item 1)", () => {
     expect(channels[0]).toMatchObject({
       grantClass: "outward",
       usageToday: { counted: 0, perDay: 6 },
-      capabilities: { text: { maxChars: 4096 }, voice: { native: true, types: ["audio/ogg"] }, video: false },
+      capabilities: {
+        channelCapabilities: 2,
+        text: { maxChars: 4096 },
+        voice: { native: true, types: ["audio/ogg"] },
+        video: false,
+        mentions: { users: false, broadcast: "suppressed" },
+        dm: { open: false, maxMembers: 0 },
+        thread: { replies: false, topics: true, forum: false },
+        reactions: { add: false, remove: false, custom: false },
+        edit: { own: false },
+        delete: { own: false },
+        canvas: false,
+        presence: { typing: false, status: false },
+        ephemeral: false,
+        live: false,
+        inbound: { mode: "none", dedupe: false },
+      },
     });
     expect(list.body).not.toContain("-1001234");
     const foreign = await f.agent("GET", `/api/marketplace/v1/agent/channels/${other.id}`);

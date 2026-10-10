@@ -130,3 +130,109 @@ export function applyFallbacks(
   }
   return { text, attachments, fallbacks };
 }
+
+/** Closed list of features a caller can ask a provider about (v2 vocabulary, P2 scope 2.1). */
+export const CHANNEL_FEATURES = [
+  "image",
+  "file",
+  "audio",
+  "voice",
+  "video",
+  "dm",
+  "thread.replies",
+  "thread.topics",
+  "thread.forum",
+  "mentions.users",
+  "reactions.add",
+  "reactions.remove",
+  "reactions.custom",
+  "edit",
+  "delete",
+  "canvas",
+  "presence.typing",
+  "presence.status",
+  "ephemeral",
+  "live.join",
+  "live.listen",
+  "live.speak",
+  "live.transcript",
+  "poll",
+  "buttons.url",
+  "buttons.callback",
+  "events.create",
+  "schedule.native",
+  "inbound",
+] as const;
+
+export type ChannelFeature = (typeof CHANNEL_FEATURES)[number];
+
+/**
+ * Pure: does the provider DECLARE this feature (spec 3.1)? A routes-side gate: an undeclared feature is refused
+ * with `channel_capability_unavailable`. A voice fallback counts as declared (it is named in the receipt).
+ * `edit` and `delete` mean the agent's own message. `inbound` means a mode other than `none`.
+ * An unknown feature name is never supported.
+ */
+export function capabilitySupports(caps: ChannelCapabilities, feature: ChannelFeature | (string & {})): boolean {
+  switch (feature) {
+    case "image":
+    case "file":
+    case "audio":
+    case "voice":
+    case "video":
+      return capabilityForKind(caps, feature as AttachmentKind) !== null;
+    case "dm":
+      return caps.dm.open;
+    case "thread.replies":
+      return caps.thread.replies;
+    case "thread.topics":
+      return caps.thread.topics;
+    case "thread.forum":
+      return caps.thread.forum;
+    case "mentions.users":
+      return caps.mentions.users;
+    case "reactions.add":
+      return caps.reactions.add;
+    case "reactions.remove":
+      return caps.reactions.remove;
+    case "reactions.custom":
+      return caps.reactions.custom;
+    case "edit":
+      return caps.edit.own;
+    case "delete":
+      return caps.delete.own;
+    case "canvas":
+      return caps.canvas;
+    case "presence.typing":
+      return caps.presence.typing;
+    case "presence.status":
+      return caps.presence.status;
+    case "ephemeral":
+      return caps.ephemeral;
+    case "live.join":
+    case "live.listen":
+    case "live.speak":
+    case "live.transcript":
+      return caps.live !== false && caps.live[feature.slice("live.".length) as "join" | "listen" | "speak" | "transcript"];
+    case "poll":
+      return caps.poll;
+    case "buttons.url":
+      return caps.buttons.url;
+    case "buttons.callback":
+      return caps.buttons.callback;
+    case "events.create":
+      return caps.events.create;
+    case "schedule.native":
+      return caps.schedule.native;
+    case "inbound":
+      return caps.inbound.mode !== "none";
+    default:
+      return false;
+  }
+}
+
+/** Refusal for an undeclared feature, or `null` when it is declared. Callers add no side effect before this check. */
+export function featureRefusal(caps: ChannelCapabilities, feature: ChannelFeature | (string & {})): SendError | null {
+  return capabilitySupports(caps, feature)
+    ? null
+    : { errorCode: "channel_capability_unavailable", detail: `this provider does not declare "${feature}"` };
+}

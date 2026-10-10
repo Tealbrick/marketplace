@@ -37,29 +37,34 @@ describe("telegram capabilities", () => {
     const { provider } = make();
     expect(provider.id).toBe("telegram");
     expect(provider.capabilities).toEqual({
-      channelCapabilities: 1,
+      channelCapabilities: 2,
       text: { maxChars: 4096, captionMaxChars: 1024 },
       markup: "plain",
-      mentions: "suppressed",
+      mentions: { users: false, broadcast: "suppressed" },
+      dm: { open: false, maxMembers: 0 },
       image: { types: ["image/png", "image/jpeg", "image/webp"], maxBytes: 10 * MiB, albumMax: 4 },
       file: { types: ["application/pdf", "text/plain", "application/zip", "application/octet-stream"], maxBytes: 50 * MiB },
       audio: { types: ["audio/mpeg", "audio/mp4"], maxBytes: 50 * MiB },
       voice: { native: true, types: ["audio/ogg"], maxBytes: MiB },
       video: { types: ["video/mp4"], maxBytes: 50 * MiB },
-      thread: { topics: true, replies: false },
-      reactions: false,
+      thread: { replies: false, topics: true, forum: false },
+      reactions: { add: false, remove: false, custom: false },
       buttons: { url: false, callback: false },
       poll: false,
-      edit: false,
-      delete: false,
+      edit: { own: false },
+      delete: { own: false },
+      canvas: false,
+      presence: { typing: false, status: false },
+      ephemeral: false,
+      live: false,
       schedule: { native: false },
       events: { create: false },
       discover: "updates",
-      inbound: "none",
+      inbound: { mode: "none", dedupe: false },
       audience: { count: false },
       limits: { perChatPerSecond: 1, perChatPerMinute: 20, retryAfter: "honoured" },
     });
-    expect(CHANNEL_CAPABILITIES_VERSION).toBe(1);
+    expect(CHANNEL_CAPABILITIES_VERSION).toBe(2);
     expect(capabilityForKind(provider.capabilities, "voice")).toEqual({ native: true, types: ["audio/ogg"], maxBytes: MiB });
     expect(capabilityForKind(provider.capabilities, "image")).toMatchObject({ albumMax: 4 });
   });
