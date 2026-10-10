@@ -255,4 +255,7 @@ We verify each item before we build the related part.
 
 ## 13. Open item: the new kit
 
-Martin (2026-10-10): "that new kit should be ready already". Lead · Channels asked the Coordinator which kit release this is and what it covers (Buzz huddles, voice, inbound). If the kit already gives a Buzz huddle client, speech-to-text or text-to-speech, Channels uses it and the P2 effort goes down. This section is updated when the answer arrives.
+Martin (2026-10-10): "that new kit should be ready already". Lead · Channels asked the Coordinator which kit release this is and what it covers (Buzz huddles, voice, inbound). If the kit already gives a Buzz huddle client, speech-to-text or text-to-speech, Channels uses it and the P2 effort goes down. Candidates found on npm (2026-10-10):
+1. `@tealbrick/voice` 0.3.0-rc.16 (kit release train): Portal-authorized speech-to-text and text-to-speech with configurable endpoints, and a native Eve voice channel. Channels can use it for the speech part of huddles and voice channels (replaces "speech provider integration", 2–3 wd, and the credentials go through Portal).
+2. `@kybernesis/buzz` 0.10.2: puts an Eve agent in a Buzz workspace as a member (per-speaker verified identity, presence, typing, seen signals) with `nostr-tools`. It is a reference for the Buzz adapter's identity and inbound parts.
+Neither package has a Buzz huddle audio client. This section is updated when the Coordinator confirms which kit Martin means.
