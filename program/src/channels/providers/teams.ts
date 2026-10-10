@@ -73,7 +73,8 @@ const MESSAGE_ID = /^[A-Za-z0-9][A-Za-z0-9:@._=-]{0,199}$/u;
 // A mention target: a Teams user id (`29:…`) or a Microsoft Entra object id. Never a conversation, team or tag.
 const TEAMS_USER_ID = /^29:[A-Za-z0-9_-]{1,200}$/u;
 const MENTION_NAME = /^[^<>&\p{Cc}​-‏‪-‮⁦-⁩﻿]{1,80}$/u;
-const AT_TAG = /<at>([\s\S]*?)<\/at>/gu;
+// Case-insensitive: Teams treats `<AT>` like `<at>`, so an undeclared tag in any case is refused.
+const AT_TAG = /<at\b[^>]*>([\s\S]*?)<\/at\s*>/giu;
 const EMAIL = /^[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,190}\.[A-Za-z]{2,24}$/u;
 const SECRET_SHAPE = /^[\x21-\x7e]{8,512}$/u;
 
@@ -232,7 +233,8 @@ export function teamsMentionEntities(
     entities.push({ type: "mention", text: tag, mentioned: { id: userId, name } });
   }
   for (const match of text.matchAll(AT_TAG)) {
-    if (!names.has(match[1] ?? "")) {
+    // Only the exact lowercase form of a declared mention may appear; any other <at …> tag is refused.
+    if (!names.has(match[1] ?? "") || match[0] !== `<at>${match[1]}</at>`) {
       return { ok: false, errorCode: "channel_mention_invalid", detail: "the text has an <at> tag without a declared mention; broadcast mentions are never sent" };
     }
   }
@@ -612,6 +614,9 @@ export function createTeamsProvider(options: TeamsProviderOptions = {}): Channel
 
   type ActionOutcome = { status: ActionResult["status"]; errorCode?: string; detail?: string };
 
+  // TODO(channels-p2 wiring): callers of edit/remove MUST check `messageId` against the post ledger
+  // (a `resultIds` entry of a sent receipt on this channel) before calling. Teams itself refuses another
+  // sender's activity, but the adapter cannot tell which of the bot's own messages an agent may change.
   async function messageAction(
     credential: string | null | undefined,
     destination: ChannelDestination,
@@ -636,6 +641,9 @@ export function createTeamsProvider(options: TeamsProviderOptions = {}): Channel
       const mentions = teamsMentionEntities(value, edit?.mentions);
       if (!mentions.ok) return { status: "failed", errorCode: mentions.errorCode, detail: mentions.detail };
       body = { type: "message", id: messageId, text: value, textFormat: "markdown", ...(mentions.entities.length > 0 ? { entities: mentions.entities } : {}) };
+      if (Buffer.byteLength(JSON.stringify(body), "utf8") > TEAMS_MAX_ACTIVITY_BYTES) {
+        return { status: "failed", errorCode: "channel_text_too_long", detail: `the Teams message is larger than ${TEAMS_MAX_ACTIVITY_BYTES} bytes` };
+      }
     }
     const slot = await reserve(ref.conversationId, ref.tenantId);
     if (!slot.ok) return { status: "failed", errorCode: "provider_rate_limited", detail: `local rate limit; next free slot in ${Math.ceil(slot.waitMs / 1000)}s` };

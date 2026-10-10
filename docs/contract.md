@@ -528,11 +528,15 @@ Bot's messaging endpoint). It is a public path at the Marketplace level (like
 the Composio OAuth callback), not a manifest operation: agents never call it,
 the grant guard only sees `tbag_` bearers, and the contract test maps
 operations to routes, not routes to operations. Every request needs a Bot
-Framework JWT: RS256 with a key from
-`login.botframework.com/v1/.well-known/openidconfiguration` (keys cached 24 h,
-an unknown `kid` refreshes at most every 5 min, `jwks_uri` pinned to
-`login.botframework.com`), `iss` `https://api.botframework.com`, `aud` = app
-id, `exp`/`nbf` with 5 min skew, `serviceUrl` claim = activity `serviceUrl`,
+Framework JWT (a missing or non-JWT bearer is refused before the body is
+parsed; body limit 128 KB; a per-source budget of 60 requests burst, 2/s,
+answers 429): RS256 with a key from
+`login.botframework.com/v1/.well-known/openidconfiguration` (keys cached 24 h;
+at most one fetch per 5 min whatever the outcome, stale keys stay usable while
+a refresh fails; `jwks_uri` pinned to `login.botframework.com`), `iss`
+`https://api.botframework.com`, `aud` = app id, `exp`/`nbf` with 5 min skew,
+the `serviceurl` claim (lowercase, `serviceUrl` accepted as a fallback) =
+activity `serviceUrl`,
 key endorsed for `msteams`. The `serviceUrl` must be https on
 `smba.trafficmanager.net` or `smba.infra.gcc.teams.microsoft.com` (GCC High,
 DoD and 21Vianet are not supported). `installationUpdate` /
@@ -543,6 +547,10 @@ name and title, membership, serviceUrl, tenant, installed/removed/updated at).
 Activities for another tenant or bot are ignored. Message activities are
 parsed into the normalized inbound shape and not stored yet (the Buzz bridge
 comes later), so `inbound.mode` stays `none`.
+
+1:1 references are capped at 5,000 per tenant (removed rows go first, then
+the oldest) and are listed apart from team channels and group chats, so they
+never crowd them out of discovery.
 
 Discovery: standard channels of each installed team (live
 `GET {serviceUrl}/v3/teams/{teamId}/conversations`, falling back to the stored

@@ -36,7 +36,8 @@ function setup(keys: unknown[] = [jwk(signer.publicKey, "key-1")], metadata: unk
   }) as typeof fetch;
   const verifier = createBotFrameworkVerifier(resolveRuntime({ fetchImpl, now: clock.now, sleep: clock.sleep }));
   const nowSeconds = Math.floor(clock.now() / 1000);
-  const claims = { iss: "https://api.botframework.com", aud: APP_ID, serviceUrl: SERVICE_URL, nbf: nowSeconds - 10, exp: nowSeconds + 3600 };
+  // Bot Connector tokens carry the lowercase `serviceurl` claim.
+  const claims: Record<string, unknown> = { iss: "https://api.botframework.com", aud: APP_ID, serviceurl: SERVICE_URL, nbf: nowSeconds - 10, exp: nowSeconds + 3600 };
   const activity = { serviceUrl: SERVICE_URL, channelId: "msteams" };
   return { verifier, clock, requests, claims, activity };
 }
@@ -71,6 +72,19 @@ describe("Bot Framework JWT verification", () => {
     // Keys are cached.
     await verifier.verify({ authorization: token(claims), appId: APP_ID, activity });
     expect(requests).toHaveLength(2);
+  });
+
+  it("reads the lowercase serviceurl claim first and accepts serviceUrl as a fallback", async () => {
+    const { verifier, claims, activity } = setup();
+    const { serviceurl, ...rest } = claims;
+    expect((await verifier.verify({ authorization: token({ ...rest, serviceUrl: serviceurl }), appId: APP_ID, activity })).ok).toBe(true);
+    // The lowercase claim wins: a matching camel-case claim does not rescue a wrong lowercase one.
+    expect(await verifier.verify({ authorization: token({ ...claims, serviceurl: "https://smba.trafficmanager.net/emea/", serviceUrl: SERVICE_URL }), appId: APP_ID, activity })).toEqual({
+      ok: false,
+      status: 403,
+      reason: "token_service_url",
+    });
+    expect(await verifier.verify({ authorization: token(rest), appId: APP_ID, activity })).toEqual({ ok: false, status: 403, reason: "token_service_url" });
   });
 
   it("rejects missing, malformed, wrong-algorithm, wrong-issuer, wrong-audience and expired tokens", async () => {
@@ -124,6 +138,53 @@ describe("Bot Framework JWT verification", () => {
     clock.advance(5 * 60_000);
     await verifier.verify({ authorization: token(claims, { kid: "key-9" }), appId: APP_ID, activity });
     expect(requests).toHaveLength(4);
+  });
+
+  it("fetches keys at most once per five minutes while the metadata fetch fails", async () => {
+    const clock = createFakeClock(1_800_000_000_000);
+    let requests = 0;
+    const fetchImpl = (async () => {
+      requests += 1;
+      return jsonResponse(500, {});
+    }) as typeof fetch;
+    const verifier = createBotFrameworkVerifier(resolveRuntime({ fetchImpl, now: clock.now, sleep: clock.sleep }));
+    const nowSeconds = Math.floor(clock.now() / 1000);
+    const claims = { iss: "https://api.botframework.com", aud: APP_ID, serviceurl: SERVICE_URL, exp: nowSeconds + 3600 };
+    const activity = { serviceUrl: SERVICE_URL, channelId: "msteams" };
+    for (let index = 0; index < 20; index += 1) {
+      const result = await verifier.verify({ authorization: token(claims, { kid: `forged-${index}`, key: stranger.privateKey }), appId: APP_ID, activity });
+      expect(result).toEqual({ ok: false, status: 503, reason: "signing_keys_unavailable" });
+      clock.advance(1000);
+    }
+    expect(requests).toBe(1);
+    clock.advance(5 * 60_000);
+    await verifier.verify({ authorization: token(claims, { key: stranger.privateKey }), appId: APP_ID, activity });
+    expect(requests).toBe(2);
+  });
+
+  it("keeps stale keys usable and does not refetch per request while a refresh fails", async () => {
+    let failing = false;
+    const clock = createFakeClock(1_800_000_000_000);
+    const requests: string[] = [];
+    const fetchImpl = (async (input: string | URL | Request) => {
+      const url = String(input);
+      requests.push(url);
+      if (failing) return jsonResponse(503, {});
+      if (url === BOT_FRAMEWORK_OPENID_URL) return jsonResponse(200, { jwks_uri: JWKS_URL });
+      return jsonResponse(200, { keys: [jwk(signer.publicKey, "key-1")] });
+    }) as typeof fetch;
+    const verifier = createBotFrameworkVerifier(resolveRuntime({ fetchImpl, now: clock.now, sleep: clock.sleep }));
+    const activity = { serviceUrl: SERVICE_URL, channelId: "msteams" };
+    const fresh = () => ({ iss: "https://api.botframework.com", aud: APP_ID, serviceurl: SERVICE_URL, exp: Math.floor(clock.now() / 1000) + 3600 });
+    expect((await verifier.verify({ authorization: token(fresh()), appId: APP_ID, activity })).ok).toBe(true);
+    failing = true;
+    clock.advance(25 * 3_600_000);
+    const before = requests.length;
+    for (let index = 0; index < 10; index += 1) {
+      await verifier.verify({ authorization: token(fresh(), { key: stranger.privateKey }), appId: APP_ID, activity });
+    }
+    expect(requests.length - before).toBe(1);
+    expect((await verifier.verify({ authorization: token(fresh()), appId: APP_ID, activity })).ok).toBe(true);
   });
 
   it("requires the msteams endorsement on the key and the msteams channel on the activity (403)", async () => {

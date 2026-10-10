@@ -322,6 +322,10 @@ describe("teams send", () => {
     }
     expect(fake.requests).toHaveLength(0);
     expect(teamsMentionEntities("no mentions", undefined)).toEqual({ ok: true, entities: [] });
+    // Tags in any case or with attributes are refused unless they are the exact declared form.
+    expect(teamsMentionEntities("hi <AT>Everyone</AT> <at>G</at>", [{ userId: "29:g", name: "G" }])).toMatchObject({ ok: false, errorCode: "channel_mention_invalid" });
+    expect(teamsMentionEntities("hi <At>G</At> <at>G</at>", [{ userId: "29:g", name: "G" }])).toMatchObject({ ok: false, errorCode: "channel_mention_invalid" });
+    expect(teamsMentionEntities('hi <at id="19:x">G</at> <at>G</at>', [{ userId: "29:g", name: "G" }])).toMatchObject({ ok: false, errorCode: "channel_mention_invalid" });
   });
 
   it("refuses text over 28,000 characters, attachments, unknown and private destinations, before any request", async () => {
@@ -452,6 +456,8 @@ describe("teams edit and remove", () => {
     const { provider, fake } = make(() => jsonResponse(404, { error: { code: "NotFound", message: "activity not found" } }));
     expect(await provider.edit!(CREDENTIAL, channelDestination, "../x", { text: "x" })).toMatchObject({ status: "failed", errorCode: "channel_message_invalid" });
     expect(await provider.edit!(CREDENTIAL, channelDestination, "77", { text: " " })).toMatchObject({ status: "failed", errorCode: "channel_message_empty" });
+    // Within 28,000 characters but over 100,000 bytes as JSON (each control character is escaped to six bytes).
+    expect(await provider.edit!(CREDENTIAL, channelDestination, "77", { text: `x${"\u0001".repeat(20_000)}` })).toMatchObject({ status: "failed", errorCode: "channel_text_too_long" });
     expect(await provider.edit!(CREDENTIAL, channelDestination, "77", { text: "<at>Ana</at>" })).toMatchObject({ status: "failed", errorCode: "channel_mention_invalid" });
     expect(fake.requests).toHaveLength(0);
     expect(await provider.remove!(CREDENTIAL, channelDestination, "77")).toMatchObject({ status: "failed", errorCode: "provider_not_found" });

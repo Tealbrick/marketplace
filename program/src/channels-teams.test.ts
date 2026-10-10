@@ -22,10 +22,13 @@ const TEAMS_ENV = {
   MARKETPLACE_CHANNELS_TEAMS_TENANT_ID: TENANT_ID,
 };
 
-/** Accepts `Bearer good` (the real RS256 verifier has its own tests); checks the audience it is given. */
+/** A JWT-shaped bearer the fake verifier accepts (the real RS256 verifier has its own tests). */
+const GOOD = "Bearer eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJmYWtlIn0.c2lnbmF0dXJlLWZha2U";
+
+/** Accepts GOOD only; checks the audience it is given. */
 const fakeVerifier: BotFrameworkVerifier = {
   async verify({ authorization, appId, activity }) {
-    if (authorization !== "Bearer good" || appId !== APP_ID) return { ok: false, status: 401, reason: "token_signature" };
+    if (authorization !== GOOD || appId !== APP_ID) return { ok: false, status: 401, reason: "token_signature" };
     return { ok: true, claims: { iss: "https://api.botframework.com", aud: appId, serviceUrl: String(activity.serviceUrl), exp: 0 } };
   },
 };
@@ -64,7 +67,7 @@ async function setup(input: { environment?: Record<string, string | undefined> }
   });
   holder.fixture = fixture;
   fixtures.push(fixture);
-  const activity = (body: Record<string, unknown>, authorization = "Bearer good") =>
+  const activity = (body: Record<string, unknown>, authorization = GOOD) =>
     fixture.app.inject({ method: "POST", url: TEAMS_MESSAGES_PATH, headers: { authorization, "content-type": "application/json" }, payload: body });
   return { f: fixture, requests, activity };
 }
@@ -91,9 +94,13 @@ describe("Teams messaging endpoint", () => {
     const { activity, f } = await setup();
     const anonymous = await f.app.inject({ method: "POST", url: TEAMS_MESSAGES_PATH, payload: install });
     expect(anonymous.statusCode).toBe(401);
-    expect(anonymous.json()).toEqual({ error: "teams_auth_invalid", reason: "token_signature" });
-    // An operator-style or agent bearer is not a Bot Framework token.
-    expect((await activity(install, "Bearer tbag_" + "a".repeat(43))).statusCode).toBe(401);
+    expect(anonymous.json()).toEqual({ error: "teams_auth_invalid", reason: "token_missing" });
+    // An operator-style or agent bearer is not a Bot Framework token: refused before the body is parsed.
+    expect((await activity(install, "Bearer tbag_" + "a".repeat(43))).json()).toEqual({ error: "teams_auth_invalid", reason: "token_missing" });
+    // A JWT-shaped bearer reaches the Bot Framework verifier, which refuses a forged one.
+    const forged = await activity(install, "Bearer eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJldmlsIn0.Zm9yZ2VkLXNpZ25hdHVyZQ");
+    expect(forged.statusCode).toBe(401);
+    expect(forged.json()).toEqual({ error: "teams_auth_invalid", reason: "token_signature" });
     expect(f.store.channels.teams.listActive(TENANT)).toEqual([]);
   });
 

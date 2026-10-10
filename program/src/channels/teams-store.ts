@@ -64,8 +64,16 @@ function toRef(row: Row): TeamsConversationRef {
 
 const COLUMNS = "conversation_id, conversation_type, team_id, channel_id, team_name, title, membership, service_url, tenant_id";
 
+/** Most stored 1:1 references per tenant; beyond it the oldest rows go, removed ones first. */
+export const TEAMS_PERSONAL_ROWS_PER_TENANT = 5000;
+/** Most references discovery reads of each kind (team channels and group chats; 1:1 chats). */
+export const TEAMS_LIST_LIMIT = 1000;
+
 export class TeamsConversationStore {
-  constructor(private readonly db: DatabaseSync) {}
+  constructor(
+    private readonly db: DatabaseSync,
+    private readonly personalCap: number = TEAMS_PERSONAL_ROWS_PER_TENANT,
+  ) {}
 
   upsert(workspaceSlug: string, ref: TeamsConversationRef, now: Date): void {
     const at = now.toISOString();
@@ -101,6 +109,26 @@ export class TeamsConversationStore {
         at,
         at,
       );
+    if (ref.type === "personal") this.trimPersonal(workspaceSlug, ref.tenantId);
+  }
+
+  /** Keeps at most `personalCap` 1:1 rows per tenant: removed rows go first, then the least recently updated. */
+  private trimPersonal(workspaceSlug: string, tenantId: string): void {
+    const { count } = this.db
+      .prepare("SELECT COUNT(*) AS count FROM channel_teams_conversation WHERE workspace_slug = ? AND tenant_id = ? AND conversation_type = 'personal'")
+      .get(workspaceSlug, tenantId) as { count: number };
+    const excess = Number(count) - this.personalCap;
+    if (excess <= 0) return;
+    this.db
+      .prepare(
+        `DELETE FROM channel_teams_conversation WHERE rowid IN (
+           SELECT rowid FROM channel_teams_conversation
+           WHERE workspace_slug = ? AND tenant_id = ? AND conversation_type = 'personal'
+           ORDER BY (removed_at IS NULL), updated_at, conversation_id
+           LIMIT ?
+         )`,
+      )
+      .run(workspaceSlug, tenantId, excess);
   }
 
   /** Marks one conversation, or every conversation of a team, removed. Returns the number of rows changed. */
@@ -123,12 +151,24 @@ export class TeamsConversationStore {
     return 0;
   }
 
+  /**
+   * Active references: team channels and group chats first, then 1:1 chats, each read with its own limit, so
+   * many 1:1 chats never crowd team channels out of discovery.
+   */
   listActive(workspaceSlug: string): TeamsConversationRef[] {
-    return (
-      this.db
-        .prepare(`SELECT ${COLUMNS} FROM channel_teams_conversation WHERE workspace_slug = ? AND removed_at IS NULL ORDER BY installed_at, conversation_id LIMIT 1000`)
-        .all(workspaceSlug) as Row[]
-    ).map(toRef);
+    const shared = this.db
+      .prepare(
+        `SELECT ${COLUMNS} FROM channel_teams_conversation WHERE workspace_slug = ? AND removed_at IS NULL AND conversation_type <> 'personal'
+         ORDER BY installed_at, conversation_id LIMIT ?`,
+      )
+      .all(workspaceSlug, TEAMS_LIST_LIMIT) as Row[];
+    const personal = this.db
+      .prepare(
+        `SELECT ${COLUMNS} FROM channel_teams_conversation WHERE workspace_slug = ? AND removed_at IS NULL AND conversation_type = 'personal'
+         ORDER BY updated_at DESC, conversation_id LIMIT ?`,
+      )
+      .all(workspaceSlug, TEAMS_LIST_LIMIT) as Row[];
+    return [...shared, ...personal].map(toRef);
   }
 
   getActive(workspaceSlug: string, conversationId: string): TeamsConversationRef | null {

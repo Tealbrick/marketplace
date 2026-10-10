@@ -24,7 +24,10 @@ export const TOKEN_REFRESH_MARGIN_MS = 5 * 60_000;
 export const JWT_CLOCK_SKEW_SECONDS = 300;
 /** The Bot Framework keys document is refreshed at least once per day (docs: "at least once every 24 hours"). */
 export const JWKS_MAX_AGE_MS = 24 * 3_600_000;
-/** An unknown `kid` refreshes the keys at most this often, so unauthenticated requests cannot drive fetches. */
+/**
+ * Keys are fetched at most this often, whatever the outcome: an unknown `kid`, stale keys or a failed fetch never
+ * let unauthenticated requests drive more than one metadata fetch per window.
+ */
 export const JWKS_MIN_REFRESH_MS = 5 * 60_000;
 
 export const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
@@ -135,6 +138,15 @@ export function createTokenCache(runtime: ProviderRuntime): TokenCache {
 
 export type BotFrameworkClaims = { iss: string; aud: string; serviceUrl: string; exp: number; nbf?: number };
 
+/**
+ * The service URL claim. Bot Connector tokens carry it as lowercase `serviceurl` (Bot Framework SDK
+ * `AuthenticationConstants.ServiceUrlClaim`); `serviceUrl` is accepted as a fallback.
+ */
+export function serviceUrlClaim(claims: Record<string, unknown>): string | undefined {
+  if (typeof claims.serviceurl === "string") return claims.serviceurl;
+  return typeof claims.serviceUrl === "string" ? claims.serviceUrl : undefined;
+}
+
 export type BotFrameworkVerifyResult =
   | { ok: true; claims: BotFrameworkClaims }
   | { ok: false; status: 401 | 403 | 503; reason: string };
@@ -188,9 +200,12 @@ function toSigningKey(raw: unknown): [string, SigningKey] | undefined {
 export function createBotFrameworkVerifier(runtime: ProviderRuntime): BotFrameworkVerifier {
   let keys = new Map<string, SigningKey>();
   let fetchedAt = Number.NEGATIVE_INFINITY;
+  // Every attempt counts, success or failure (F2): the minimum interval also applies after a failed fetch.
+  let attemptedAt = Number.NEGATIVE_INFINITY;
   let refreshing: Promise<boolean> | null = null;
 
   async function refresh(): Promise<boolean> {
+    attemptedAt = runtime.now();
     const metadata = await httpRequest(runtime, BOT_FRAMEWORK_OPENID_URL, { method: "GET" });
     const document = metadata.kind === "response" && isSuccess(metadata) ? asRecord(metadata.json) : undefined;
     const jwksUri = typeof document?.jwks_uri === "string" ? document.jwks_uri : "";
@@ -225,13 +240,13 @@ export function createBotFrameworkVerifier(runtime: ProviderRuntime): BotFramewo
   }
 
   async function keyFor(kid: string): Promise<SigningKey | undefined | "unavailable"> {
-    const age = runtime.now() - fetchedAt;
-    if (age > JWKS_MAX_AGE_MS) {
-      const ok = await refreshOnce();
-      if (!ok && keys.size === 0) return "unavailable";
-    } else if (!keys.has(kid) && age > JWKS_MIN_REFRESH_MS) {
-      await refreshOnce();
-    }
+    const now = runtime.now();
+    const mayFetch = now - attemptedAt > JWKS_MIN_REFRESH_MS;
+    const stale = now - fetchedAt > JWKS_MAX_AGE_MS;
+    if (mayFetch && (stale || !keys.has(kid))) await refreshOnce();
+    else if (refreshing) await refreshing;
+    if (keys.size === 0) return "unavailable";
+    // Stale keys stay usable while a refresh is failing; Microsoft rotates keys with overlap.
     return keys.get(kid);
   }
 
@@ -254,7 +269,8 @@ export function createBotFrameworkVerifier(runtime: ProviderRuntime): BotFramewo
       if (claims.nbf !== undefined && (typeof claims.nbf !== "number" || claims.nbf - JWT_CLOCK_SKEW_SECONDS > nowSeconds)) {
         return { ok: false, status: 401, reason: "token_not_yet_valid" };
       }
-      if (typeof claims.serviceUrl !== "string" || claims.serviceUrl !== activity.serviceUrl) {
+      const claimedServiceUrl = serviceUrlClaim(claims);
+      if (claimedServiceUrl === undefined || claimedServiceUrl !== activity.serviceUrl) {
         return { ok: false, status: 403, reason: "token_service_url" };
       }
       const key = await keyFor(header.kid);
@@ -277,7 +293,7 @@ export function createBotFrameworkVerifier(runtime: ProviderRuntime): BotFramewo
         claims: {
           iss: claims.iss,
           aud: appId,
-          serviceUrl: claims.serviceUrl,
+          serviceUrl: claimedServiceUrl,
           exp: claims.exp,
           ...(typeof claims.nbf === "number" ? { nbf: claims.nbf } : {}),
         },
