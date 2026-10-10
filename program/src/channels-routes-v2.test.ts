@@ -35,6 +35,7 @@ async function setup() {
     teams: fakeProvider("teams", TEAMS_TOKEN),
   };
   const f = await channelFixture({
+    ownerPin: true,
     environment: {
       MARKETPLACE_CHANNELS_SLACK_BOT_TOKEN: SLACK_TOKEN,
       MARKETPLACE_CHANNELS_TEAMS_APP_ID: TEAMS.appId,
@@ -62,7 +63,7 @@ async function setup() {
   const dm = (channelId: string, personRef: string, text: string, k = key("dm")) =>
     f.agent("POST", `/api/marketplace/v1/agent/channels/${channelId}/people/${personRef}/messages`, { payload: { text }, key: k });
   const approve = (approvalId: string) => f.owner("POST", `/api/marketplace/company-box/approvals/${approvalId}/approve`, {});
-  const setPolicy = (connectionId: string, policy: Record<string, unknown>) => f.owner("PUT", `/api/marketplace/channels/connections/${connectionId}/people-policy`, policy);
+  const setPolicy = (connectionId: string, policy: Record<string, unknown>) => f.ownerWrite("PUT", `/api/marketplace/channels/connections/${connectionId}/people-policy`, policy);
   /** A message Marketplace posts to the channel under a grant: returns its provider message id. */
   const posted = async (channelId: string, text = "Meetup on Friday") => {
     const sent = await f.post(channelId, { text }, key("post"));
@@ -499,7 +500,7 @@ describe("routes v2: people policy and direct messages (R5)", () => {
     // The owner sees the approved person and revokes: the next message needs approval again.
     const people = await t.f.owner("GET", `/api/marketplace/channels/connections/${channel.connectionId}/people?approved=true`);
     expect(people.json().people).toEqual([expect.objectContaining({ personRef: ref, displayName: "Alice Example", approved: true, lookup: { kind: "email", value: "alice@example.com" } })]);
-    const revoked = await t.f.owner("POST", `/api/marketplace/channels/connections/${channel.connectionId}/people/${ref}/revoke`, {});
+    const revoked = await t.f.ownerWrite("POST", `/api/marketplace/channels/connections/${channel.connectionId}/people/${ref}/revoke`, {});
     expect(revoked.json().person).toMatchObject({ approved: false, revokedAt: expect.any(String) });
     expect((await t.dm(channel.id, ref, "After revoke")).statusCode).toBe(202);
     const audit = auditOf(t.f);
@@ -556,6 +557,91 @@ describe("routes v2: people policy and direct messages (R5)", () => {
     const capped = await t.find(channel.id, { email: "p51@example.com" });
     expect(capped.statusCode).toBe(429);
     expect(capped.json()).toMatchObject({ error: "channel_person_lookup_cap" });
+  });
+});
+
+describe("routes v2: people are per agent (review of PR #51)", () => {
+  it("never lets another agent reuse a person reference or another agent's first-contact approval", async () => {
+    const t = await setup();
+    const channel = await t.channelFor("slack", "two-agents");
+    t.f.consentFor("agent-2", channel);
+    t.fakes.slack.addPerson("alice@example.com", { userId: "U0ALICE", displayName: "Alice" });
+    await t.setPolicy(channel.connectionId, { mode: "workspace" });
+    await t.grant(channel.id, { dms: true });
+    await t.f.proposeAndApprove(channel.id, { caps: CAPS, scope: { files: false, immediate: true, scheduled: true, dms: true } }, GRANT_B);
+    // agent-1: find, first DM held, the owner approves, it is sent.
+    const ref1 = (await t.find(channel.id, { email: "alice@example.com" })).json().person.personRef as string;
+    const held1 = await t.dm(channel.id, ref1, "Hi Alice (agent-1)");
+    expect(held1.statusCode).toBe(202);
+    await t.approve(held1.json().approvalId);
+    expect((await t.dm(channel.id, ref1, "Later (agent-1)")).statusCode).toBe(200);
+    // agent-2 (own consent and a grant with dms, never contacted Alice): its own reference, not approved.
+    const found2 = await t.f.agent("POST", `/api/marketplace/v1/agent/channels/${channel.id}/people/find`, { token: GRANT_B, key: key("find"), payload: { email: "alice@example.com" } });
+    expect(found2.statusCode, found2.body).toBe(200);
+    expect(found2.json().person.personRef).not.toBe(ref1);
+    expect(found2.json().person.approved).toBe(false);
+    // agent-1's reference is unknown to agent-2, exactly like an unknown reference.
+    const reused = await t.f.agent("POST", `/api/marketplace/v1/agent/channels/${channel.id}/people/${ref1}/messages`, { token: GRANT_B, key: key("dm"), payload: { text: "reuse" } });
+    expect(reused.statusCode).toBe(404);
+    expect(reused.json()).toMatchObject({ error: "channel_person_not_found" });
+    // agent-2's first DM is held for the owner despite its grant.
+    const first2 = await t.f.agent("POST", `/api/marketplace/v1/agent/channels/${channel.id}/people/${found2.json().person.personRef}/messages`, { token: GRANT_B, key: key("dm"), payload: { text: "Hi Alice (agent-2)" } });
+    expect(first2.statusCode, first2.body).toBe(202);
+    const dmSends = t.fakes.slack.sends.filter((send) => send.destination.type === "person");
+    expect(dmSends.map((send) => send.message.text)).toEqual(["Hi Alice (agent-1)", "Later (agent-1)"]);
+    // The owner sees one row per agent and revokes agent-1's approval only.
+    const people = (await t.f.owner("GET", `/api/marketplace/channels/connections/${channel.connectionId}/people`)).json().people as Array<{ personRef: string; agentId: string; approved: boolean }>;
+    expect(people.map((person) => [person.agentId, person.approved]).sort()).toEqual([["agent-1", true], ["agent-2", false]]);
+    await t.f.ownerWrite("POST", `/api/marketplace/channels/connections/${channel.connectionId}/people/${ref1}/revoke`, {});
+    expect((await t.dm(channel.id, ref1, "After revoke")).statusCode).toBe(202);
+  });
+
+  it("matches a Discord allowlist on the immutable user id, never on a display name or nickname", async () => {
+    const t = await setup();
+    const channel = await t.channelFor("discord", "discord-allow");
+    // An impostor set the nickname "ana"; the owner listed the handle "ana".
+    t.fakes.discord.addPerson("ana", { userId: "4400666", displayName: "ana" });
+    await t.setPolicy(channel.connectionId, { mode: "allowlist", people: ["ana"] });
+    const spoofed = await t.find(channel.id, { handle: "ana" });
+    expect(spoofed.statusCode).toBe(403);
+    expect(spoofed.json()).toMatchObject({ error: "channel_person_not_allowed" });
+    t.fakes.discord.addPerson("ana", { userId: "4400001", displayName: "Ana" });
+    await t.setPolicy(channel.connectionId, { mode: "allowlist", people: ["4400001"] });
+    const real = await t.find(channel.id, { handle: "ana" });
+    expect(real.statusCode, real.body).toBe(200);
+    await t.grant(channel.id);
+    const held = await t.dm(channel.id, real.json().person.personRef, "Hi Ana");
+    const queue = await t.f.owner("GET", "/api/marketplace/company-box/approvals?state=pending");
+    expect(queue.json().approvals.find((entry: { id: string }) => entry.id === held.json().approvalId).channel.action.person).toMatchObject({ displayName: "Ana", platformUserId: "4400001", lookup: { kind: "handle", value: "ana" } });
+  });
+
+  it("changes the people policy and revokes only through the pinned owner's own session", async () => {
+    const t = await setup();
+    const channel = await t.channelFor("slack", "strict-owner");
+    const plain = await t.f.owner("PUT", `/api/marketplace/channels/connections/${channel.connectionId}/people-policy`, { mode: "workspace" });
+    expect(plain.statusCode).toBe(403);
+    expect(plain.json()).toMatchObject({ error: "owner_session_required" });
+    expect((await t.f.owner("GET", `/api/marketplace/channels/connections/${channel.connectionId}/people-policy`)).json().policy.mode).toBe("none");
+    expect((await t.setPolicy(channel.connectionId, { mode: "workspace" })).statusCode).toBe(200);
+    const revoke = await t.f.owner("POST", `/api/marketplace/channels/connections/${channel.connectionId}/people/prs_00000000-0000-4000-8000-000000000000/revoke`, {});
+    expect(revoke.statusCode).toBe(403);
+  });
+
+  it("holds the find cap under concurrent finds and purges sent-message rows with their receipts", async () => {
+    const t = await setup();
+    const channel = await t.channelFor("slack", "cap-race");
+    await t.setPolicy(channel.connectionId, { mode: "workspace" });
+    const answers = await Promise.all(Array.from({ length: 60 }, (_unused, index) => t.find(channel.id, { email: `p${index}@example.com` })));
+    expect(answers.filter((answer) => answer.statusCode === 429)).toHaveLength(10);
+    expect(t.fakes.slack.actions.filter((action) => action.kind === "findPerson")).toHaveLength(50);
+
+    await t.grant(channel.id);
+    await t.posted(channel.id, "kept for 90 days");
+    const count = () => (t.f.store.channels.actions.recentSentMessageIds(TENANT, ["C0ANNOUNCE|"], new Date(0))).size;
+    expect(count()).toBe(1);
+    t.f.advance(91 * 86_400_000);
+    await t.f.runtime.tick(new Date(t.f.now));
+    expect(count()).toBe(0);
   });
 });
 

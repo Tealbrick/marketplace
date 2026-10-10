@@ -409,6 +409,7 @@ const plainToken = (value: unknown, max: number): value is string => typeof valu
 function routesV2Problem(input: {
   store: ChannelStore;
   channel: ChannelRecord;
+  agentId: string;
   caps: ChannelCapabilities;
   op: "post" | "schedule" | "test";
   body: ChannelPostBody;
@@ -445,7 +446,8 @@ function routesV2Problem(input: {
       case "dm": {
         if (!caps.dm.open) return unavailable("dm");
         const record = typeof action.personRef === "string" ? input.store.actions.getPerson(channel.workspaceSlug, action.personRef) : null;
-        if (!record || record.connectionId !== channel.connectionId || record.provider !== channel.provider) {
+        // A reference belongs to the agent that found the person (review of PR #51): any other caller sees it as unknown.
+        if (!record || record.connectionId !== channel.connectionId || record.provider !== channel.provider || record.agentId !== input.agentId) {
           return invalid("channel_person_not_found", "the person reference is unknown on this channel's connection");
         }
         person = { personRef: record.personRef, platformUserId: record.platformUserId, displayName: record.displayName, approvedAt: record.approvedAt };

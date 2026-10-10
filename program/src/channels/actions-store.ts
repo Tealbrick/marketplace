@@ -13,12 +13,14 @@ import type { DatabaseSync } from "node:sqlite";
  *   call returns, before the receipt (review R8).
  * - `channel_people_policy`: the owner's people policy per connection (review R5): `none` (default), `allowlist`, or
  *   `workspace`.
- * - `channel_person`: people an agent found on a connection, by an opaque reference. `approvedAt` is set when the
- *   owner approved the first message to that person (and it was sent); the owner can revoke it.
+ * - `channel_agent_person`: people ONE agent found on a connection, by an opaque reference keyed by (connection, agent,
+ *   platform user id): another agent finding the same person gets its own reference and its own first-contact hold
+ *   (review of PR #51). `approvedAt` is set when the owner approved this agent's first message to that person (and it
+ *   was sent); the owner can revoke it per (agent, person).
  * - `channel_person_lookup`: one row per find, for the per-agent lookup cap.
  */
 
-export const ACTIONS_TABLES = ["channel_post_op", "channel_sent_message", "channel_people_policy", "channel_person", "channel_person_lookup"] as const;
+export const ACTIONS_TABLES = ["channel_post_op", "channel_sent_message", "channel_people_policy", "channel_agent_person", "channel_person_lookup"] as const;
 
 const ACTIONS_DDL = `
   CREATE TABLE IF NOT EXISTS channel_post_op (
@@ -54,10 +56,11 @@ const ACTIONS_DDL = `
     PRIMARY KEY (workspace_slug, connection_id)
   );
 
-  CREATE TABLE IF NOT EXISTS channel_person (
+  CREATE TABLE IF NOT EXISTS channel_agent_person (
     id TEXT PRIMARY KEY,
     workspace_slug TEXT NOT NULL,
     connection_id TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
     provider TEXT NOT NULL,
     platform_user_id TEXT NOT NULL,
     display_name TEXT NOT NULL,
@@ -70,7 +73,7 @@ const ACTIONS_DDL = `
     revoked_by TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    UNIQUE (workspace_slug, connection_id, platform_user_id)
+    UNIQUE (workspace_slug, connection_id, agent_id, platform_user_id)
   );
 
   CREATE TABLE IF NOT EXISTS channel_person_lookup (
@@ -119,6 +122,8 @@ export type PersonRecord = {
   personRef: string;
   workspaceSlug: string;
   connectionId: string;
+  /** The agent that found this person: the reference and its approval belong to that agent only. */
+  agentId: string;
   provider: string;
   platformUserId: string;
   displayName: string;
@@ -166,6 +171,7 @@ function personFromRow(row: Row): PersonRecord {
     personRef: String(row.id),
     workspaceSlug: String(row.workspace_slug),
     connectionId: String(row.connection_id),
+    agentId: String(row.agent_id),
     provider: String(row.provider),
     platformUserId: String(row.platform_user_id),
     displayName: String(row.display_name),
@@ -323,10 +329,11 @@ export class ActionsStore {
 
   // ----- people (R5) -------------------------------------------------------------------
 
-  /** Creates or refreshes the person found on a connection. The reference stays the same for the same platform user. */
+  /** Creates or refreshes the person one agent found on a connection. The reference stays the same for that agent and user. */
   upsertPerson(input: {
     workspaceSlug: string;
     connectionId: string;
+    agentId: string;
     provider: string;
     platformUserId: string;
     displayName: string;
@@ -337,28 +344,28 @@ export class ActionsStore {
     const at = input.now.toISOString();
     this.db
       .prepare(
-        `INSERT INTO channel_person (id, workspace_slug, connection_id, provider, platform_user_id, display_name, lookup_kind, lookup_value, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(workspace_slug, connection_id, platform_user_id) DO UPDATE SET display_name = excluded.display_name,
+        `INSERT INTO channel_agent_person (id, workspace_slug, connection_id, agent_id, provider, platform_user_id, display_name, lookup_kind, lookup_value, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(workspace_slug, connection_id, agent_id, platform_user_id) DO UPDATE SET display_name = excluded.display_name,
            lookup_kind = excluded.lookup_kind, lookup_value = excluded.lookup_value, updated_at = excluded.updated_at`,
       )
-      .run(`prs_${randomUUID()}`, input.workspaceSlug, input.connectionId, input.provider, input.platformUserId, input.displayName, input.lookupKind, input.lookupValue, at, at);
+      .run(`prs_${randomUUID()}`, input.workspaceSlug, input.connectionId, input.agentId, input.provider, input.platformUserId, input.displayName, input.lookupKind, input.lookupValue, at, at);
     return personFromRow(
       this.db
-        .prepare("SELECT * FROM channel_person WHERE workspace_slug = ? AND connection_id = ? AND platform_user_id = ?")
-        .get(input.workspaceSlug, input.connectionId, input.platformUserId) as Row,
+        .prepare("SELECT * FROM channel_agent_person WHERE workspace_slug = ? AND connection_id = ? AND agent_id = ? AND platform_user_id = ?")
+        .get(input.workspaceSlug, input.connectionId, input.agentId, input.platformUserId) as Row,
     );
   }
 
   getPerson(workspaceSlug: string, personRef: string): PersonRecord | null {
-    const row = this.db.prepare("SELECT * FROM channel_person WHERE workspace_slug = ? AND id = ?").get(workspaceSlug, personRef) as Row | undefined;
+    const row = this.db.prepare("SELECT * FROM channel_agent_person WHERE workspace_slug = ? AND id = ?").get(workspaceSlug, personRef) as Row | undefined;
     return row ? personFromRow(row) : null;
   }
 
   listPeople(workspaceSlug: string, connectionId: string, limit = 500): PersonRecord[] {
     return (
       this.db
-        .prepare("SELECT * FROM channel_person WHERE workspace_slug = ? AND connection_id = ? ORDER BY updated_at DESC, id LIMIT ?")
+        .prepare("SELECT * FROM channel_agent_person WHERE workspace_slug = ? AND connection_id = ? ORDER BY updated_at DESC, agent_id, id LIMIT ?")
         .all(workspaceSlug, connectionId, Math.min(Math.max(limit, 1), 1000)) as Row[]
     ).map(personFromRow);
   }
@@ -368,7 +375,7 @@ export class ActionsStore {
     const at = input.now.toISOString();
     this.db
       .prepare(
-        `UPDATE channel_person SET approved_at = ?, approved_by = ?, approved_post_id = ?, revoked_at = NULL, revoked_by = NULL, updated_at = ?
+        `UPDATE channel_agent_person SET approved_at = ?, approved_by = ?, approved_post_id = ?, revoked_at = NULL, revoked_by = NULL, updated_at = ?
          WHERE workspace_slug = ? AND id = ? AND approved_at IS NULL`,
       )
       .run(at, input.approvedBy, input.postId, at, input.workspaceSlug, input.personRef);
@@ -380,7 +387,7 @@ export class ActionsStore {
     const at = input.now.toISOString();
     this.db
       .prepare(
-        `UPDATE channel_person SET approved_at = NULL, approved_by = NULL, approved_post_id = NULL, revoked_at = ?, revoked_by = ?, updated_at = ?
+        `UPDATE channel_agent_person SET approved_at = NULL, approved_by = NULL, approved_post_id = NULL, revoked_at = ?, revoked_by = ?, updated_at = ?
          WHERE workspace_slug = ? AND id = ?`,
       )
       .run(at, input.actor, at, input.workspaceSlug, input.personRef);
@@ -389,10 +396,40 @@ export class ActionsStore {
 
   // ----- lookups ---------------------------------------------------------------------------
 
-  recordLookup(input: { workspaceSlug: string; agentId: string; connectionId: string; outcome: string; now: Date }): void {
+  recordLookup(input: { workspaceSlug: string; agentId: string; connectionId: string; outcome: string; now: Date }): string {
+    const id = `lkp_${randomUUID()}`;
     this.db
       .prepare("INSERT INTO channel_person_lookup (id, workspace_slug, agent_id, connection_id, outcome, created_at) VALUES (?, ?, ?, ?, ?, ?)")
-      .run(`lkp_${randomUUID()}`, input.workspaceSlug, input.agentId, input.connectionId, input.outcome, input.now.toISOString());
+      .run(id, input.workspaceSlug, input.agentId, input.connectionId, input.outcome, input.now.toISOString());
+    return id;
+  }
+
+  /**
+   * Counts and records one lookup in a single synchronous step (review of PR #51): the cap is checked and the slot
+   * taken before the platform is asked, so concurrent finds cannot exceed it. Returns the lookup id, or null when capped.
+   */
+  reserveLookup(input: { workspaceSlug: string; agentId: string; connectionId: string; limit: number; since: Date; now: Date }): string | null {
+    if (this.countLookups(input.workspaceSlug, input.agentId, input.since) >= input.limit) return null;
+    return this.recordLookup({ ...input, outcome: "pending" });
+  }
+
+  finishLookup(workspaceSlug: string, id: string, outcome: string): void {
+    this.db.prepare("UPDATE channel_person_lookup SET outcome = ? WHERE workspace_slug = ? AND id = ?").run(outcome, workspaceSlug, id);
+  }
+
+  /** Sent-message rows whose receipt is gone (purged) or older than `before` (review of PR #51: never kept forever). */
+  purgeSentMessages(workspaceSlug: string, before: Date, limit = 1000): number {
+    return Number(
+      this.db
+        .prepare(
+          `DELETE FROM channel_sent_message WHERE rowid IN (
+             SELECT m.rowid FROM channel_sent_message m
+             WHERE m.workspace_slug = ? AND (m.sent_at < ? OR NOT EXISTS (
+               SELECT 1 FROM channel_receipt r WHERE r.workspace_slug = m.workspace_slug AND r.post_id = m.post_id))
+             LIMIT ?)`,
+        )
+        .run(workspaceSlug, before.toISOString(), limit).changes,
+    );
   }
 
   countLookups(workspaceSlug: string, agentId: string, since: Date): number {

@@ -8,6 +8,7 @@ import { AGENT_OPERATION, MARKETPLACE_MANIFEST } from "../contract.js";
 import { MarketplaceOperatorSessionManager } from "../operator-auth.js";
 import { SqliteMarketplaceStore } from "../store.js";
 import type { ConnectorCapability } from "../types.js";
+import { seededPin } from "./approval-test-support.js";
 import type { OwnerApprovalVerifier } from "./approvals.js";
 import { createBuzzProvider } from "./providers/buzz.js";
 import { createDiscordProvider } from "./providers/discord.js";
@@ -149,6 +150,8 @@ export async function channelFixture(input: {
   verifier?: OwnerApprovalVerifier;
   /** Portal's K1 `approvalTrusted` flag on every introspection answer (absent by default). */
   approvalTrusted?: boolean;
+  /** Pin the deployment owner (owner-1), so `ownerWrite` passes the strict owner gate. */
+  ownerPin?: boolean;
 } = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), "marketplace-channels-app-"));
   const store = new SqliteMarketplaceStore(path.join(root, "marketplace.sqlite"), { handoffEncryptionKey: "a".repeat(64) });
@@ -221,6 +224,7 @@ export async function channelFixture(input: {
     channelScheduler: false,
     channelClock: () => new Date(clock),
     ...(input.verifier ? { ownerApprovalVerifier: input.verifier } : {}),
+    ...(input.ownerPin ? { ownerPinSource: seededPin({ portalIssuer: PORTAL }) } : {}),
     ...input.options,
   });
   const runtime = channelRuntimeOf(app);
@@ -259,6 +263,48 @@ export async function channelFixture(input: {
     );
     if (created.statusCode !== 201) throw new Error(created.body);
     return created.json().channel as { id: string; slug: string; connectionId: string; provider: string; revision: number };
+  };
+
+  /** Strict owner writes: the pinned owner's own Portal launch session (cookie + CSRF), as the owner UI sends them. */
+  let ownerSessionCache: { cookie: string; csrf: string } | null = null;
+  let launchCounter = 0;
+  const ownerWrite = async (method: "POST" | "PUT" | "DELETE", url: string, payload?: unknown) => {
+    if (!ownerSessionCache) {
+      portalReplies.set("/api/deployment-browser/redeem", () =>
+        new Response(
+          JSON.stringify({
+            schema: 1,
+            authorized: true,
+            product: "marketplace",
+            deploymentId: "deployment-1",
+            workspaceId: TENANT,
+            orgId: "portal-org-1",
+            productTenantId: TENANT,
+            userId: "owner-1",
+            endpoint: "https://marketplace.fixture.invalid",
+            session: "s".repeat(43),
+            expiresAt: Date.now() + 3_600_000,
+          }),
+          { status: 200 },
+        ),
+      );
+      const launched = await app.inject({
+        method: "POST",
+        url: "/auth/launch",
+        headers: { origin: PORTAL, "content-type": "application/x-www-form-urlencoded" },
+        payload: `ticket=${String(++launchCounter).padStart(6, "0")}${"w".repeat(37)}`,
+      });
+      if (launched.statusCode !== 303) throw new Error(launched.body);
+      const cookie = String(launched.headers["set-cookie"]).split(";", 1)[0]!;
+      const current = await app.inject({ method: "GET", url: "/api/marketplace/auth/session", headers: { cookie } });
+      ownerSessionCache = { cookie, csrf: current.json().session.csrfToken as string };
+    }
+    return app.inject({
+      method,
+      url,
+      headers: { origin: "http://localhost:5173", cookie: ownerSessionCache.cookie, "x-csrf-token": ownerSessionCache.csrf },
+      ...(payload !== undefined ? { payload: payload as Record<string, unknown> } : {}),
+    });
   };
 
   let consentCounter = 0;
@@ -338,6 +384,7 @@ export async function channelFixture(input: {
     portalRequests,
     portalReplies,
     owner,
+    ownerWrite,
     agent,
     post,
     createChannel,

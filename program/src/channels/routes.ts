@@ -196,6 +196,11 @@ export type ChannelRouteDeps = {
   traceIdFrom: (request: FastifyRequest) => string;
   /** The inbound worker (owner switches, receiver status). */
   inbound: InboundWorker;
+  /**
+   * The strict owner gate (Portal launch session + CSRF + pinned deployment owner) for owner-sensitive writes that
+   * widen what agents may do (routes v2 people policy and person revoke; review of PR #51).
+   */
+  ownerWriter: (request: FastifyRequest, reply: FastifyReply) => Promise<OwnerWriterGateResult>;
   /** The Buzz connection identity and the hook that applies a change (provider re-verify, socket, bridge sink). */
   buzz?: {
     identity: BuzzIdentity;
@@ -1371,9 +1376,18 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
     workspaceSlug: z.string().optional(),
   });
 
+  /** The strict owner gate; answers like the Buzz identity writes. */
+  const strictOwner = async (request: FastifyRequest, reply: FastifyReply) => {
+    const gate = await deps.ownerWriter(request, reply);
+    return gate.ok ? { ok: true as const, actor: gate.actor } : { ok: false as const, body: { ok: false, schema: 1, error: gate.error === "marketplace_operator_required" ? "owner_session_required" : gate.error } };
+  };
+
   app.put(`${OWNER_PREFIX}/connections/:connectionId/people-policy`, async (request, reply) => {
     const principal = await owner(request, reply);
     if (!principal) return ownerDenied(request);
+    // `workspace` widens who agents may contact: the pinned owner's own launch session only.
+    const gate = await strictOwner(request, reply);
+    if (!gate.ok) return gate.body;
     const { connectionId } = request.params as { connectionId: string };
     const found = channelConnection(connectionId);
     if (!found) return fail(reply, 404, "channel_connection_not_found");
@@ -1388,14 +1402,14 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
       mode: validated.mode,
       people: validated.people,
       domains: validated.domains,
-      actor: principal.id,
+      actor: gate.actor,
       now: deps.now(),
     });
     store.recordAudit({
       workspaceSlug: org,
       pluginId: channelPluginId(found.provider),
       eventType: "marketplace.channels.people_policy.updated",
-      actorId: principal.id,
+      actorId: gate.actor,
       // Counts only; the allowlist itself stays in the owner view.
       metadata: { connectionId, from: before.mode, to: policy.mode, people: policy.people.length, domains: policy.domains.length },
     });
@@ -1420,18 +1434,21 @@ export function registerChannelRoutes(deps: ChannelRouteDeps) {
   app.post(`${OWNER_PREFIX}/connections/:connectionId/people/:personRef/revoke`, async (request, reply) => {
     const principal = await owner(request, reply);
     if (!principal) return ownerDenied(request);
+    const gate = await strictOwner(request, reply);
+    if (!gate.ok) return gate.body;
     const { connectionId, personRef } = request.params as { connectionId: string; personRef: string };
     const found = channelConnection(connectionId);
     const person = found ? channels.actions.getPerson(org, personRef) : null;
     if (!found || !person || person.connectionId !== connectionId) return fail(reply, 404, "channel_person_not_found");
     if (person.approvedAt === null) return { ok: true, schema: 1, replayed: true, person: personOwnerView(person) };
-    const revoked = channels.actions.revokePerson({ workspaceSlug: org, personRef, actor: principal.id, now: deps.now() })!;
+    // Per (agent, person): another agent's approval of the same person is untouched.
+    const revoked = channels.actions.revokePerson({ workspaceSlug: org, personRef, actor: gate.actor, now: deps.now() })!;
     store.recordAudit({
       workspaceSlug: org,
       pluginId: channelPluginId(found.provider),
       eventType: "marketplace.channels.person.revoked",
-      actorId: principal.id,
-      metadata: { connectionId, personRef },
+      actorId: gate.actor,
+      metadata: { connectionId, personRef, agentId: person.agentId },
     });
     return { ok: true, schema: 1, person: personOwnerView(revoked) };
   });

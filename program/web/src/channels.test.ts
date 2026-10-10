@@ -624,7 +624,7 @@ describe("Routes v2 owner views", () => {
   it("renders reactions with the emoji and target excerpt, edits with the old and new text, and DMs with the person", async () => {
     const reaction = held({ op: "react", emoji: "tada", remove: false, targetMessageId: "1800.0001", targetExcerpt: "Meetup on <b>Friday</b>" }, "a-react");
     const edit = held({ op: "edit", targetMessageId: "1800.0001", targetExcerpt: "Meetup on Friday" }, "a-edit");
-    const dm = held({ op: "dm", person: { personRef: "prs_1", displayName: "Alice Example", approved: false } }, "a-dm");
+    const dm = held({ op: "dm", person: { personRef: "prs_1", displayName: "Alice Example", platformUserId: "U0ALICE", lookup: { kind: "email", value: "alice@example.com" }, approved: false } }, "a-dm");
     const payload = (text: string) => ({ ok: true, approval: reaction, arguments: {}, payloadView: { digest: DIGEST, matchesHeldDigest: true, text, canonical: "{}", files: [], fallbacks: [] } });
     mockApi({
       "GET /api/marketplace/channels": () => browse({ channels: [channel({ provider: "slack", label: "Eng" })] }),
@@ -645,6 +645,7 @@ describe("Routes v2 owner views", () => {
     const direct = await screen.findByLabelText("Direct message to Alice Example");
     expect(within(direct).getByText("Alice Example")).toBeTruthy();
     expect(within(direct).getByText(/first message/u)).toBeTruthy();
+    expect(within(direct).getByText("U0ALICE")).toBeTruthy();
   });
 
   it("sets the people policy of a DM-capable connection and revokes an approved person", async () => {
@@ -655,7 +656,7 @@ describe("Routes v2 owner views", () => {
       readiness: { ...base.readiness, slack: "available" },
       connections: { ...base.connections, slack: { connectionId: "conn-slack", state: "connected", botUsername: "marketplace", verifiedAt: null, peoplePolicy: { mode: "none", people: [], domains: [], updatedBy: null, updatedAt: null } } },
     });
-    const person = { personRef: "prs_1", provider: "slack", displayName: "Alice Example", platformUserId: "U0ALICE", lookup: { kind: "email", value: "alice@example.com" }, approved: true, approvedAt: "2026-10-09T10:00:00.000Z", approvedPostId: "post-1", revokedAt: null, updatedAt: "2026-10-09T10:00:00.000Z" };
+    const person = { personRef: "prs_1", agentId: "agent-henry", provider: "slack", displayName: "Alice Example", platformUserId: "U0ALICE", lookup: { kind: "email", value: "alice@example.com" }, approved: true, approvedAt: "2026-10-09T10:00:00.000Z", approvedPostId: "post-1", revokedAt: null, updatedAt: "2026-10-09T10:00:00.000Z" };
     let saved: unknown = null;
     const fetchMock = mockApi({
       "GET /api/marketplace/channels": () => answer,
@@ -671,12 +672,12 @@ describe("Routes v2 owner views", () => {
     // Telegram declares no DMs: no people panel for it.
     expect(screen.queryByLabelText("Telegram people")).toBeNull();
     fireEvent.click(within(panel).getByLabelText(/Only listed people/u));
-    fireEvent.change(within(panel).getByLabelText(/Emails or handles/u), { target: { value: "Alice@Example.com" } });
+    fireEvent.change(within(panel).getByLabelText(/Emails or platform ids/u), { target: { value: "Alice@Example.com" } });
     fireEvent.change(within(panel).getByLabelText(/Email domains/u), { target: { value: "example.com" } });
     fireEvent.click(within(panel).getByRole("button", { name: /Save/u }));
     await waitFor(() => expect(saved).toEqual({ mode: "allowlist", people: ["Alice@Example.com"], domains: ["example.com"] }));
     expect(await within(panel).findByText("Alice Example")).toBeTruthy();
-    fireEvent.click(within(panel).getByRole("button", { name: "Revoke Alice Example" }));
+    fireEvent.click(within(panel).getByRole("button", { name: "Revoke Alice Example for agent-henry" }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/people/prs_1/revoke") && init?.method === "POST")).toBe(true));
   });
 });

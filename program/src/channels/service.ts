@@ -12,9 +12,10 @@ import { createGrantService, type GrantService } from "./grants.js";
 import { eventHostAllowed, eventListingStatus, grantCoversPost, maxPendingPerAgent, type PostCampaign } from "./policy.js";
 import { wiredCapabilities } from "./providers/capabilities.js";
 import { parseTeamsCredential } from "./providers/teams.js";
+import { npubEncode } from "./providers/nostr.js";
 import type { ActionResult, ChannelCapabilities, ChannelDestination as ProviderDestination, ChannelProvider, ChannelProviderId, DiscoverResult, SendResult } from "./providers/types.js";
 import type { PersonRecord } from "./actions-store.js";
-import { PERSON_LOOKUPS_PER_DAY, normalizePersonQuery, peoplePolicyRefusal, personLookupOf, type PersonLookup } from "./people.js";
+import { PERSON_LOOKUPS_PER_DAY, normalizePersonQuery, peoplePolicyLookupRefusal, peoplePolicyRefusal, personLookupOf, type PersonLookup } from "./people.js";
 import {
   CHANNEL_PROVIDER_IDS,
   CHANNEL_SECRET_NAME,
@@ -467,8 +468,8 @@ export function createChannelService(deps: ChannelServiceDeps) {
     if (!action) return null;
     if (action.op === "dm") {
       const person = payload.person ? channels.actions.getPerson(org, payload.person.personRef) : null;
-      if (!person || person.connectionId !== channel.connectionId) return { status: 404, error: "channel_person_not_found" };
-      const refused = peoplePolicyRefusal(channels.actions.getPeoplePolicy(org, channel.connectionId), personLookupOf(person));
+      if (!person || person.connectionId !== channel.connectionId || person.agentId !== agentId) return { status: 404, error: "channel_person_not_found" };
+      const refused = peoplePolicyRefusal(channels.actions.getPeoplePolicy(org, channel.connectionId), channel.provider, personLookupOf(person), person.platformUserId);
       return refused ? { status: refused.status, error: refused.error } : null;
     }
     const own = channels.actions.ownMessage({ workspaceSlug: org, channelId: channel.id, destinationKey: destinationKey(channel.destination), messageId: action.targetMessageId });
@@ -1496,6 +1497,9 @@ export function createChannelService(deps: ChannelServiceDeps) {
     const report = { recovered: 0, expired: 0, sent: 0, skipped: 0, claimed: 0 };
     // §7 retention: receipts of finished posts older than the retention go; open posts keep theirs (Q2).
     channels.purgeReceipts(org, new Date(input.now.getTime() - CHANNEL_RECEIPT_RETENTION_MS));
+    // Routes v2: sent-message rows go with their receipts (or after the retention), and old lookup rows after 2 days.
+    channels.actions.purgeSentMessages(org, new Date(input.now.getTime() - CHANNEL_RECEIPT_RETENTION_MS));
+    channels.actions.purgeLookups(org, new Date(input.now.getTime() - 2 * 86_400_000));
     // Inbound retention: received text after the owner's retention (default 30 days), metadata rows after 90 days.
     purgeInbound(input.now);
     // Q1: unreferenced attachments after 24 h, finished posts' attachments after purge or retention (bounded).
@@ -1652,8 +1656,10 @@ export function createChannelService(deps: ChannelServiceDeps) {
       return { ok: false, status: 422, error: "channel_person_query_unsupported", detail: "Slack finds a person by email only" };
     }
     const now = deps.now();
+    let lookupId: string | null = null;
     const record = (outcome: string) => {
-      channels.actions.recordLookup({ workspaceSlug: org, agentId: input.agentId, connectionId: channel.connectionId, outcome, now });
+      if (lookupId) channels.actions.finishLookup(org, lookupId, outcome);
+      else channels.actions.recordLookup({ workspaceSlug: org, agentId: input.agentId, connectionId: channel.connectionId, outcome, now });
       store.recordAudit({
         workspaceSlug: org,
         pluginId: channelPluginId(channel.provider),
@@ -1664,14 +1670,21 @@ export function createChannelService(deps: ChannelServiceDeps) {
       });
     };
     const policy = channels.actions.getPeoplePolicy(org, channel.connectionId);
-    const refused = peoplePolicyRefusal(policy, lookup);
+    const refused = peoplePolicyLookupRefusal(policy, channel.provider, lookup);
     if (refused) {
       record(refused.error);
       return { ok: false, status: refused.status, error: refused.error };
     }
-    if (channels.actions.countLookups(org, input.agentId, new Date(now.getTime() - 86_400_000)) >= PERSON_LOOKUPS_PER_DAY) {
-      return { ok: false, status: 429, error: "channel_person_lookup_cap" };
-    }
+    // The cap is checked and the slot taken in one synchronous step, before the platform is asked.
+    lookupId = channels.actions.reserveLookup({
+      workspaceSlug: org,
+      agentId: input.agentId,
+      connectionId: channel.connectionId,
+      limit: PERSON_LOOKUPS_PER_DAY,
+      since: new Date(now.getTime() - 86_400_000),
+      now,
+    });
+    if (!lookupId) return { ok: false, status: 429, error: "channel_person_lookup_cap" };
     const credential = isChannelProviderId(channel.provider) ? credentials.get(channel.provider)?.value ?? null : null;
     let found;
     try {
@@ -1685,10 +1698,17 @@ export function createChannelService(deps: ChannelServiceDeps) {
       if (found.reason === "ambiguous") return { ok: false, status: 409, error: "channel_person_ambiguous", detail: redact(found.detail) };
       return { ok: false, status: 502, error: "channel_person_lookup_failed", detail: redact(`${found.errorCode}: ${found.detail}`) };
     }
+    // The platform id of the person found decides an allowlist (never a display name or nickname).
+    const notAllowed = peoplePolicyRefusal(policy, channel.provider, lookup, found.userId);
+    if (notAllowed) {
+      record(notAllowed.error);
+      return { ok: false, status: notAllowed.status, error: notAllowed.error };
+    }
     record("found");
     const person = channels.actions.upsertPerson({
       workspaceSlug: org,
       connectionId: channel.connectionId,
+      agentId: input.agentId,
       provider: channel.provider,
       platformUserId: found.userId,
       displayName: redact(found.displayName).slice(0, 80) || found.userId,
@@ -1718,7 +1738,19 @@ export function createChannelService(deps: ChannelServiceDeps) {
     if (!action) return base;
     if (action.op === "dm") {
       const person = channels.actions.getPerson(org, action.personRef);
-      return { ...base, person: person ? { personRef: person.personRef, displayName: person.displayName, approved: person.approvedAt !== null } : null };
+      return {
+        ...base,
+        person: person
+          ? {
+              personRef: person.personRef,
+              displayName: person.displayName,
+              // The immutable platform id (Buzz: npub) beside the user-controlled display name (review of PR #51).
+              platformUserId: person.provider === "buzz" ? npubEncode(person.platformUserId) : person.platformUserId,
+              lookup: { kind: person.lookupKind, value: person.lookupValue },
+              approved: person.approvedAt !== null,
+            }
+          : null,
+      };
     }
     const own = channel
       ? channels.actions.ownMessage({ workspaceSlug: org, channelId: channel.id, destinationKey: destinationKey(channel.destination), messageId: action.targetMessageId })

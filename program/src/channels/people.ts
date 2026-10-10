@@ -1,11 +1,18 @@
 import type { PeoplePolicy, PeoplePolicyMode, PersonRecord } from "./actions-store.js";
+import { parsePubkey } from "./providers/nostr.js";
 
 /**
  * People policy (Channels P2 scope 2.2a item 5; review R5). Pure helpers: query normalisation and the policy match.
  * The owner sets one policy per connection: `none` (default: no direct messages), `allowlist` (named people by exact
  * email or handle, and email domains) or `workspace` (anyone the connected workspace or tenant can reach).
  * The agent passes one email or handle and gets back one opaque reference; it never gets a list of members.
+ *
+ * Allowlist matching (review of PR #51): Slack and Teams match a verified email (or a Teams user principal name) and
+ * email domains; every provider also matches an immutable platform id listed by the owner (Slack `U…`, Teams Entra
+ * object id, Discord user id, Buzz npub or hex key). Display names, nicknames and handles are user-controlled, so on
+ * Discord and Buzz an allowlist matches only the platform id of the person found.
  */
+const EMAIL_VERIFIED_PROVIDERS = new Set(["slack", "teams"]);
 
 export const PEOPLE_POLICY_MODES: readonly PeoplePolicyMode[] = ["none", "allowlist", "workspace"];
 /** Most finds per agent in any 24 hours (all connections): finds call the platform's directory. */
@@ -32,20 +39,51 @@ export function normalizePersonQuery(input: { email?: unknown; handle?: unknown 
   return HANDLE.test(raw) ? { kind: "handle", value: raw.toLowerCase() } : null;
 }
 
-/** Whether the policy lets an agent find (and message) a person reached by this lookup. */
-export function peoplePolicyAllows(policy: Pick<PeoplePolicy, "mode" | "people" | "domains">, lookup: PersonLookup): boolean {
-  if (policy.mode === "workspace") return true;
-  if (policy.mode !== "allowlist") return false;
-  if (policy.people.includes(lookup.value)) return true;
-  if (lookup.kind !== "email") return false;
-  const domain = lookup.value.slice(lookup.value.lastIndexOf("@") + 1);
-  return policy.domains.includes(domain);
+/** A platform id in comparable form (Buzz: the hex key of an npub or hex; others lowercase). */
+export function normalizePlatformId(provider: string, value: string): string {
+  if (provider === "buzz") return parsePubkey(value) ?? value.toLowerCase();
+  return value.trim().toLowerCase();
 }
 
-/** The refusal for a person under the current policy (at find time and again at send time), or null. */
-export function peoplePolicyRefusal(policy: PeoplePolicy, lookup: PersonLookup): { status: number; error: string } | null {
+function emailMatches(policy: Pick<PeoplePolicy, "people" | "domains">, provider: string, lookup: PersonLookup): boolean {
+  if (!EMAIL_VERIFIED_PROVIDERS.has(provider) || !lookup.value.includes("@")) return false;
+  if (policy.people.includes(lookup.value)) return true;
+  return policy.domains.includes(lookup.value.slice(lookup.value.lastIndexOf("@") + 1));
+}
+
+function idMatches(policy: Pick<PeoplePolicy, "people">, provider: string, platformUserId: string): boolean {
+  const id = normalizePlatformId(provider, platformUserId);
+  return policy.people.some((entry) => !entry.includes("@") && normalizePlatformId(provider, entry) === id);
+}
+
+/**
+ * Whether the policy lets an agent message this person: `workspace` always; `allowlist` when the found person's
+ * platform id is listed, or (Slack, Teams) the verified email or its domain is listed.
+ */
+export function peoplePolicyAllows(policy: Pick<PeoplePolicy, "mode" | "people" | "domains">, provider: string, lookup: PersonLookup, platformUserId: string): boolean {
+  if (policy.mode === "workspace") return true;
+  if (policy.mode !== "allowlist") return false;
+  return idMatches(policy, provider, platformUserId) || emailMatches(policy, provider, lookup);
+}
+
+/** The refusal for a person found (at find time and again at send time), or null. */
+export function peoplePolicyRefusal(policy: PeoplePolicy, provider: string, lookup: PersonLookup, platformUserId: string): { status: number; error: string } | null {
   if (policy.mode === "none") return { status: 403, error: "channel_people_disabled" };
-  return peoplePolicyAllows(policy, lookup) ? null : { status: 403, error: "channel_person_not_allowed" };
+  return peoplePolicyAllows(policy, provider, lookup, platformUserId) ? null : { status: 403, error: "channel_person_not_allowed" };
+}
+
+/**
+ * Before the platform is asked: `none` refuses; an allowlist that can only match by email (Slack, Teams without
+ * listed ids) refuses a query it does not list, so an agent cannot probe the directory outside the allowlist.
+ * Otherwise the lookup runs and the platform id of the person found decides (`peoplePolicyRefusal`).
+ */
+export function peoplePolicyLookupRefusal(policy: PeoplePolicy, provider: string, lookup: PersonLookup): { status: number; error: string } | null {
+  if (policy.mode === "none") return { status: 403, error: "channel_people_disabled" };
+  if (policy.mode !== "allowlist") return null;
+  if (emailMatches(policy, provider, lookup)) return null;
+  const listsIds = policy.people.some((entry) => !entry.includes("@"));
+  if (listsIds) return null;
+  return { status: 403, error: "channel_person_not_allowed" };
 }
 
 export function personLookupOf(person: Pick<PersonRecord, "lookupKind" | "lookupValue">): PersonLookup {
@@ -88,6 +126,7 @@ export function validatePeoplePolicy(input: { mode: unknown; people?: unknown; d
 export function personOwnerView(person: PersonRecord) {
   return {
     personRef: person.personRef,
+    agentId: person.agentId,
     provider: person.provider,
     displayName: person.displayName,
     platformUserId: person.platformUserId,

@@ -13,7 +13,7 @@ import { formatWhen, InlineError } from "./ui";
 
 const MODE_COPY: Record<PeoplePolicyMode, { label: string; detail: string }> = {
   none: { label: "Nobody", detail: "Agents can't find or message anyone on this connection." },
-  allowlist: { label: "Only listed people", detail: "Agents can find and message only the emails or handles and the email domains you list." },
+  allowlist: { label: "Only listed people", detail: "Agents can find and message only the people you list: verified emails and email domains (Slack, Teams), or platform ids (Slack U…, Teams object id, Discord user id, Buzz npub). Display names and nicknames never match." },
   workspace: { label: "Anyone in the workspace", detail: "Agents can find and message anyone the connected workspace or tenant can reach." },
 };
 
@@ -32,7 +32,7 @@ function PeopleList({ connectionId, onNotice }: { connectionId: string; onNotice
   const revoke = useMutation({
     mutationFn: (personRef: string) => revokeChannelPerson(connectionId, personRef),
     onSuccess: (result) => {
-      onNotice(`Revoked ${result.person.displayName}. The next message to them waits for your approval.`);
+      onNotice(`Revoked ${result.person.displayName} for ${result.person.agentId}. That agent's next message to them waits for your approval.`);
       void queryClient.invalidateQueries({ queryKey: ["channel-people", connectionId] });
     },
   });
@@ -42,14 +42,15 @@ function PeopleList({ connectionId, onNotice }: { connectionId: string; onNotice
   if (!rows.length) return <p className="muted-detail">No agent has looked anyone up on this connection yet.</p>;
   return <>
     <table className="caps-table" aria-label="People agents found">
-      <thead><tr><th scope="col">Person</th><th scope="col">Found by</th><th scope="col">Status</th><th scope="col"><span className="visually-hidden">Action</span></th></tr></thead>
+      <thead><tr><th scope="col">Person</th><th scope="col">Agent</th><th scope="col">Found by</th><th scope="col">Status</th><th scope="col"><span className="visually-hidden">Action</span></th></tr></thead>
       <tbody>{rows.map((person) => <tr key={person.personRef}>
-        <th scope="row">{person.displayName}</th>
+        <th scope="row">{person.displayName}<small className="muted-detail"> <code>{person.platformUserId}</code></small></th>
+        <td><code>{person.agentId}</code></td>
         <td><code>{person.lookup.value}</code></td>
         <td>{person.approved
           ? <Tag tone="success">Approved {formatWhen(person.approvedAt)}</Tag>
           : <Tag>{person.revokedAt ? `Revoked ${formatWhen(person.revokedAt)}` : "First message needs approval"}</Tag>}</td>
-        <td>{person.approved && <Button size="small" disabled={revoke.isPending} onClick={() => revoke.mutate(person.personRef)} aria-label={`Revoke ${person.displayName}`}><UserMinus size={14} />Revoke</Button>}</td>
+        <td>{person.approved && <Button size="small" disabled={revoke.isPending} onClick={() => revoke.mutate(person.personRef)} aria-label={`Revoke ${person.displayName} for ${person.agentId}`}><UserMinus size={14} />Revoke</Button>}</td>
       </tr>)}</tbody>
     </table>
     {revoke.error && <InlineError error={revoke.error} />}
@@ -79,10 +80,10 @@ function PeoplePolicyForm({ connectionId, provider, policy, onNotice }: { connec
       </label>)}
     </div>
     {mode === "allowlist" && <div className="form-grid two">
-      <label>Emails or handles (one per line)<textarea rows={3} value={people} onChange={(event) => setPeople(event.target.value)} placeholder="ana@example.com" /></label>
+      <label>Emails or platform ids (one per line)<textarea rows={3} value={people} onChange={(event) => setPeople(event.target.value)} placeholder="ana@example.com" /></label>
       <label>Email domains (one per line)<textarea rows={3} value={domains} onChange={(event) => setDomains(event.target.value)} placeholder="example.com" /></label>
     </div>}
-    <p className="muted-detail">{PEOPLE_HINT[provider] ?? ""} The first message to each person always waits for your approval of the exact message; after that, a standing grant with direct messages can cover later ones.</p>
+    <p className="muted-detail">{PEOPLE_HINT[provider] ?? ""} Each agent's first message to each person always waits for your approval of the exact message; after that, a standing grant with direct messages can cover that agent's later ones.</p>
     {save.error && <InlineError error={save.error} />}
     <div className="dialog-actions"><Button size="small" tone="primary" type="submit" disabled={save.isPending}>{save.isPending ? <LoaderCircle className="spin" size={14} /> : <Check size={14} />}Save</Button></div>
   </form>;

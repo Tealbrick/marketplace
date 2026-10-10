@@ -683,6 +683,8 @@ export interface PeoplePolicyView {
 /** A person an agent found on a connection (owner view only). */
 export interface ChannelPersonView {
   personRef: string;
+  /** People and their approvals are per agent: each agent's first message to a person waits for the owner. */
+  agentId: string;
   provider: string;
   displayName: string;
   platformUserId: string;
@@ -705,7 +707,7 @@ export interface ChannelActionView {
   targetExcerpt?: string | null;
   emoji?: string;
   remove?: boolean;
-  person?: { personRef: string; displayName: string; approved: boolean } | null;
+  person?: { personRef: string; displayName: string; platformUserId?: string; lookup?: { kind: "email" | "handle"; value: string }; approved: boolean } | null;
 }
 
 export interface UncertainChannelPost {

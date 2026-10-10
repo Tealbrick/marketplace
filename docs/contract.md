@@ -1040,23 +1040,36 @@ channel_cap_deletes_per_day | channel_edit_min_interval` with
 `retryAfterSeconds`. Polls and direct messages are new outward content and stay
 on the post caps.
 
-People (review R5). The owner sets a people policy per connection: `none`
-(default: no person can be found or messaged), `allowlist` (`people`: exact
-emails or handles; `domains`: email domains) or `workspace` (anyone the
-connected workspace or tenant can reach). `channel-people.find` runs
-server-side: the policy is checked before the platform is asked (`403
-channel_people_disabled | channel_person_not_allowed`), finds are capped at 50
-per agent per 24 h (`429 channel_person_lookup_cap`), and the answer is one
-opaque `personRef` (`prs_…`), the display name to confirm and `approved`; never
+People (review R5). The owner sets a people policy per connection (strict
+owner gate: the pinned owner's own Portal launch session with CSRF; a plain
+operator session is `403 owner_session_required`): `none` (default: no person
+can be found or messaged), `allowlist` or `workspace` (anyone the connected
+workspace or tenant can reach). An allowlist matches the person found by an
+immutable platform id listed in `people` (Slack `U…`, Teams Entra object id,
+Discord user id, Buzz npub or hex key) or, on Slack and Teams only, by the
+verified email (or Teams user principal name) in `people` or its domain in
+`domains`; display names, nicknames and handles never match. `channel-people.find`
+runs server-side: `none`, and an email-only allowlist that does not list the
+query, refuse before the platform is asked; the platform id of the person found
+decides otherwise (`403 channel_people_disabled | channel_person_not_allowed`).
+Finds are capped at 50 per agent per 24 h, the slot taken before the platform
+call (`429 channel_person_lookup_cap`). People are **per agent**: the answer is
+one opaque `personRef` (`prs_…`) that belongs to the calling agent (another
+agent finding the same person gets its own), the display name to confirm and
+`approved` for the caller's own approval only; a reference another agent
+obtained is `404 channel_person_not_found`, the same as an unknown one. Never
 a list (`404 channel_person_not_found`, `409 channel_person_ambiguous`). Slack
 finds by email only; Discord and Buzz by handle; Teams by email or user
 principal name (Graph flag); Telegram has no DMs (`422
 channel_capability_unavailable`). The first message to a person is always held
 for the owner's approval of the exact payload (a grant never covers it, even
-with `scope.dms`); once that message is sent the person is approved on that
-connection (`channel_person.approved_at`) and `scope.dms` may cover later
-messages. The policy is checked again at send time. The owner lists people and
-revokes an approved person (the next message is held again). Audit records the
+with `scope.dms`), per agent; once that message is sent the person is approved
+for that agent on that connection (`channel_agent_person.approved_at`) and that
+agent's `scope.dms` may cover its later messages. The policy is checked again at
+send time. The owner lists people per agent (with the platform id) and revokes
+an approval per (agent, person) (strict owner gate; that agent's next message is
+held again). Sent-message rows are purged with their receipts in the scheduler
+tick. Audit records the
 query kind and outcome, never the email or handle.
 
 Owner views: the Approvals queue and `channel-posts.list` carry `action`:

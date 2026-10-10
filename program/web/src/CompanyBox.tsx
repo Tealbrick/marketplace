@@ -220,7 +220,7 @@ function ChannelActionFacts({ action }: { action: ChannelActionView }) {
       <dt>{action.op === "edit" ? "Message to change" : action.op === "delete" ? "Message to delete" : "On message"}</dt>
       <dd>{action.targetExcerpt ? <pre className="plain-text">{action.targetExcerpt}</pre> : <span className="muted-detail">The original text is no longer kept.</span>}<small className="muted-detail">Message id <code>{action.targetMessageId}</code></small></dd>
     </>}
-    {action.op === "dm" && <><dt>Person</dt><dd>{action.person ? <><strong>{action.person.displayName}</strong>{action.person.approved ? "" : " · first message: after you approve, later messages may be covered by a standing grant with direct messages"}</> : "Unknown person"}</dd></>}
+    {action.op === "dm" && <><dt>Person</dt><dd>{action.person ? <><strong>{action.person.displayName}</strong>{action.person.platformUserId ? <> · <code>{action.person.platformUserId}</code></> : null}{action.person.lookup ? <> · found by <code>{action.person.lookup.value}</code></> : null}{action.person.approved ? "" : " · first message: after you approve, later messages may be covered by a standing grant with direct messages"}</> : "Unknown person"}</dd></>}
     {action.poll && <><dt>Poll</dt><dd><strong>{action.poll.question}</strong><ul className="plain-list">{action.poll.options.map((option) => <li key={option}>{option}</li>)}</ul></dd></>}
     {action.mentions?.length ? <><dt>Mentions</dt><dd>{action.mentions.join(", ")}</dd></> : null}
     {action.markup && <><dt>Markup</dt><dd><code>{action.markup}</code></dd></>}

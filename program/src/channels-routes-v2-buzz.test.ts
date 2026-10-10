@@ -111,7 +111,7 @@ describe("routes v2 on Buzz (real adapter, fake relay)", () => {
     expect(relay.eventsOfKind(5).filter((event) => event.pubkey === agentKey && event.tags.some((tag) => tag[0] === "e" && tag[1] === messageId))).toHaveLength(1);
 
     // DM: the owner allows the workspace; the first message is held and sent after approval.
-    await f.owner("PUT", `/api/marketplace/channels/connections/${channel.connectionId}/people-policy`, { mode: "workspace" });
+    await f.ownerWrite("PUT", `/api/marketplace/channels/connections/${channel.connectionId}/people-policy`, { mode: "workspace" });
     const found = await f.agent("POST", `/api/marketplace/v1/agent/channels/${channel.id}/people/find`, { key: key("find"), payload: { handle: npubEncode(alice) } });
     expect(found.statusCode, found.body).toBe(200);
     expect(Object.keys(found.json().person).sort()).toEqual(["approved", "displayName", "personRef"]);

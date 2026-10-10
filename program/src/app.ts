@@ -8513,6 +8513,14 @@ export async function buildMarketplaceApp(
     dispatch: async (input) => (await dispatchConsentedCall(input)) as Record<string, unknown>,
     traceIdFrom,
     inbound: inboundWorker,
+    // Called per request (after the app is built), so the pin source declared below is initialised.
+    ownerWriter: (request, reply) =>
+      createOwnerWriterGate({
+        organizationId,
+        pinSource: ownerPinSource,
+        requireOperator,
+        ownerLaunchSession: (launch) => operatorSessions.ownerLaunchSession(launch.headers.cookie, launch.headers["x-csrf-token"]),
+      })(request, reply),
     ...(buzzProvider
       ? {
           buzz: {

@@ -31,6 +31,7 @@ function slackFetch(answers: Record<string, () => unknown>) {
 async function setup(environment: Record<string, string | undefined>, answers: Record<string, () => unknown>) {
   const slack = slackFetch(answers);
   const f = await channelFixture({
+    ownerPin: true,
     environment,
     options: {
       channelProviders: {
@@ -175,7 +176,7 @@ describe("channels: routes v2 through the real Slack adapter", () => {
     expect(form("chat.update")).toMatchObject({ channel: "C0ENG", ts, text: "Hello again" });
     expect(form("chat.delete")).toEqual({ channel: "C0ENG", ts });
 
-    await f.owner("PUT", `/api/marketplace/channels/connections/${channel.connectionId}/people-policy`, { mode: "allowlist", domains: ["example.com"] });
+    await f.ownerWrite("PUT", `/api/marketplace/channels/connections/${channel.connectionId}/people-policy`, { mode: "allowlist", domains: ["example.com"] });
     const found = await f.agent("POST", `/api/marketplace/v1/agent/channels/${channel.id}/people/find`, { key: "slack-v2-find-001", payload: { email: "alice@example.com" } });
     expect(found.json().person).toMatchObject({ approved: false });
     // The email travels in the form body only.
