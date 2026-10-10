@@ -18,6 +18,11 @@ export const TELEGRAM_GROUP_RULE: RateRule = { name: "per-minute", capacity: 20,
 /** Discord: conservative 5 messages per 5 seconds per channel. */
 export const DISCORD_CHANNEL_RULE: RateRule = { name: "per-5s", capacity: 5, refillPerSecond: 1 };
 
+/** Slack: about 1 message per second in one channel (chat.postMessage). */
+export const SLACK_CHANNEL_RULE: RateRule = { name: "per-second", capacity: 1, refillPerSecond: 1 };
+/** Slack: chat.scheduleMessage allows 30 messages to post within 5 minutes in one channel. */
+export const SLACK_SCHEDULE_RULE: RateRule = { name: "schedule-per-5min", capacity: 30, refillPerSecond: 30 / 300 };
+
 /** A 429 whose retry_after is longer than this is not waited for. */
 export const MAX_RETRY_AFTER_SECONDS = 30;
 
@@ -104,7 +109,7 @@ function finiteNonNegative(value: unknown): number | undefined {
 
 /**
  * retry_after in seconds from a 429 response.
- * Telegram: `parameters.retry_after`. Discord: `retry_after` in the JSON body. Both: `Retry-After` header.
+ * Telegram: `parameters.retry_after`. Discord: `retry_after` in the JSON body. Slack, and the fallback for all: `Retry-After` header.
  */
 export function retryAfterSeconds(result: Extract<HttpResult, { kind: "response" }>): number | undefined {
   const json = result.json;

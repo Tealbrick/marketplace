@@ -11,7 +11,7 @@ import { CreateChannelPanel, DestinationTitle, EditChannelPanel } from "./Channe
 import { GrantInbox } from "./ChannelGrants";
 import { ReceiptsSection, ReceiptSummary, UncertainPosts, WaitingPosts } from "./ChannelPosts";
 import { ApprovalsPanel } from "./CompanyBox";
-import { CHANNEL_TOKEN_HINT } from "./copy";
+import { CHANNEL_TOKEN_HINT, SLACK_SETUP_STEPS } from "./copy";
 import type { AgentGrantRequestResponse, ChannelProviderEntry, ChannelProviderId, ChannelReadiness, ChannelsBrowseAnswer, ChannelStatus, ChannelView } from "./types";
 import { formatWhen, InlineError, StatePanel } from "./ui";
 
@@ -32,7 +32,7 @@ const STATUS_LABEL: Record<ChannelStatus, string> = { active: "Active", paused: 
 function ProviderReadiness({ browse }: { browse: ChannelsBrowseAnswer }) {
   const entries = new Map(browse.providers.map((entry) => [entry.id, entry]));
   return <div className="provider-grid channel-providers" aria-label="Channel providers">
-    {CHANNEL_PROVIDERS.map((provider) => {
+    {CHANNEL_PROVIDERS.filter((provider) => entries.has(provider) || (browse.configured && browse.readiness[provider] !== undefined)).map((provider) => {
       const readiness = entries.get(provider)?.readiness ?? (browse.configured ? browse.readiness[provider] : undefined) ?? "unavailable";
       const copy = READINESS_COPY[readiness] ?? READINESS_COPY.unavailable;
       const connection = browse.configured ? browse.connections[provider] ?? null : null;
@@ -45,6 +45,10 @@ function ProviderReadiness({ browse }: { browse: ChannelsBrowseAnswer }) {
           <dt>Verified</dt><dd>{formatWhen(connection?.verifiedAt)}</dd>
           <dt>Channels</dt><dd>{channels}</dd>
         </dl>
+        {provider === "slack" && readiness !== "available" && <details className="provider-setup">
+          <summary>Set up the Slack app</summary>
+          <ol>{SLACK_SETUP_STEPS.map((step) => <li key={step}>{step}</li>)}</ol>
+        </details>}
       </article>;
     })}
   </div>;
@@ -249,7 +253,7 @@ export function ChannelsPage({ workspaceSlug }: { workspaceSlug: string }) {
           </button>)}
         </nav>
         {selected && <ChannelDetail channel={selected} providers={data.providers} workspaceSlug={workspaceSlug} onConfirm={setConfirm} onNotice={announce} onChanged={changed} />}
-      </div> : !creating && <div className="collection-empty compact"><Megaphone /><h3>No channels yet</h3><p>{anyReady ? "Add a Telegram chat or a Discord channel your agents may post to." : CHANNEL_TOKEN_HINT}</p></div>}
+      </div> : !creating && <div className="collection-empty compact"><Megaphone /><h3>No channels yet</h3><p>{anyReady ? "Add a Telegram chat, or a Discord or Slack channel, your agents may post to." : CHANNEL_TOKEN_HINT}</p></div>}
     </section>
     <ReceiptsSection channels={channels} onConfirm={(state) => setConfirm(state)} onNotice={announce} />
     <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} onSuccess={(result) => confirm?.after?.(result)} />

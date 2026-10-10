@@ -2,7 +2,7 @@
 // Adapters never throw for provider or network problems. They return a typed result.
 // A credential (bot token) is never part of any returned value.
 
-export type ChannelProviderId = "telegram" | "discord";
+export type ChannelProviderId = "telegram" | "discord" | "slack";
 
 /**
  * Version of the closed capability vocabulary (spec 3.1; P2 scope 2.1). New keys need a contract minor bump.
@@ -85,7 +85,8 @@ export type ChannelCapabilities = {
   };
 };
 
-export type ChannelDestinationType = "chat" | "group" | "channel" | "topic" | "thread";
+/** `person`: a direct message with one named person (P2 scope 2.2a item 4), from `openDirect`. */
+export type ChannelDestinationType = "chat" | "group" | "channel" | "topic" | "thread" | "person";
 
 export type ChannelDestination = {
   type: ChannelDestinationType;
@@ -93,8 +94,10 @@ export type ChannelDestination = {
   /** Untrusted provider text: capped at 128 characters, control characters removed. */
   title: string;
   url?: string;
-  /** Discord guild id, or Telegram forum topic thread id. */
+  /** Discord guild id, Telegram forum topic thread id, or the Slack thread root `ts` of a `thread` destination. */
   parentId?: string;
+  /** Platform user id of the other person, only on a `person` destination. */
+  personId?: string;
 };
 
 export type OutboundAttachment = {
@@ -112,9 +115,16 @@ export type OutboundAttachment = {
   sha256: string;
 };
 
+/** A named person to mention, by platform user id. Broadcast mentions (channel, here, everyone) never ping. */
+export type OutboundMention = { userId: string };
+
 export type OutboundMessage = {
   text: string;
   attachments?: readonly OutboundAttachment[];
+  /** Provider message id to reply to (Slack: the thread root `ts`). Only where `thread.replies` is declared. */
+  replyTo?: string;
+  /** Named people to mention. Only where `mentions.users` is declared; otherwise refused. */
+  mentions?: readonly OutboundMention[];
 };
 
 export type SendStatus = "sent" | "failed" | "uncertain";
@@ -146,6 +156,39 @@ export type DiscoverResult =
   | { ok: true; destinations: ChannelDestination[] }
   | { ok: false; reason: DiscoverFailureReason };
 
+/** Outcome of a reaction or a delete: no new message, so no result ids. Same status rules as `SendResult`. */
+export type ActionResult = {
+  status: SendStatus;
+  detail?: string;
+  errorCode?: string;
+};
+
+export type PersonQuery = { email?: string; handle?: string };
+
+/**
+ * One person, or a refusal. Never a list: agents never get a bulk list of members (P2 scope 2.2a item 5).
+ * `ambiguous`: more than one person has this handle; the caller must ask by email.
+ */
+export type FindPersonResult =
+  | { ok: true; userId: string; displayName: string }
+  | { ok: false; reason: "not_found" | "ambiguous" | "failed"; errorCode: string; detail: string };
+
+export type OpenDirectResult =
+  | { ok: true; destination: ChannelDestination }
+  | { ok: false; errorCode: string; detail: string };
+
+export type ScheduleNativeInput = {
+  text: string;
+  /** When the provider posts the message. */
+  postAt: Date;
+  replyTo?: string;
+  mentions?: readonly OutboundMention[];
+};
+
+export type ScheduleNativeResult =
+  | { status: "scheduled"; scheduledMessageId: string; postAt: string }
+  | { status: "failed" | "uncertain"; errorCode: string; detail: string };
+
 export type ChannelProvider = {
   readonly id: ChannelProviderId;
   readonly capabilities: ChannelCapabilities;
@@ -156,6 +199,54 @@ export type ChannelProvider = {
     destination: ChannelDestination,
     message: OutboundMessage,
   ): Promise<SendResult>;
+  // P2 optional operations. A provider that does not declare the feature leaves the method undefined.
+  // Each one never throws, never returns the credential, validates before any request and classifies like `send`.
+  /** Add (or, with `remove`, remove) the bot's reaction on a message. Needs `reactions.add` / `reactions.remove`. */
+  react?(
+    credential: string | null | undefined,
+    destination: ChannelDestination,
+    messageId: string,
+    emoji: string,
+    options?: { remove?: boolean },
+  ): Promise<ActionResult>;
+  /** Replace the text of the bot's own message. Needs `edit.own`. */
+  edit?(
+    credential: string | null | undefined,
+    destination: ChannelDestination,
+    messageId: string,
+    message: { text: string; mentions?: readonly OutboundMention[] },
+  ): Promise<SendResult>;
+  /** Delete the bot's own message. Needs `delete.own`. */
+  remove?(credential: string | null | undefined, destination: ChannelDestination, messageId: string): Promise<ActionResult>;
+  /** Find one person by email or handle. Needs `dm.open`. */
+  findPerson?(credential: string | null | undefined, query: PersonQuery): Promise<FindPersonResult>;
+  /** Open (or reuse) the direct message with one person: a `person` destination. Needs `dm.open`. */
+  openDirect?(credential: string | null | undefined, userId: string): Promise<OpenDirectResult>;
+  /**
+   * The provider's own scheduler. Needs `schedule.native`. Marketplace's scheduler stays the default
+   * (it re-checks authority and caps at send time); this is an explicit opt-in.
+   */
+  scheduleNative?(
+    credential: string | null | undefined,
+    destination: ChannelDestination,
+    input: ScheduleNativeInput,
+  ): Promise<ScheduleNativeResult>;
+};
+
+/**
+ * One received message, normalised for the inbound worker (P2 scope 2.2). Every field is untrusted data.
+ * Attachments are metadata only; bytes are never fetched by the parser.
+ */
+export type InboundMessage = {
+  platform: ChannelProviderId;
+  channelId: string;
+  /** Thread root id when the message is a reply in a thread. */
+  threadId?: string;
+  messageId: string;
+  senderUserId: string;
+  senderDisplay: string;
+  text: string;
+  attachments: Array<{ id: string; name: string; contentType: string; bytes: number }>;
 };
 
 /** Options injected at construction. Every field is optional; tests inject fakes. */

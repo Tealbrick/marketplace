@@ -24,7 +24,7 @@ import {
   WEEKDAYS,
   type PolicyForm,
 } from "./channels-model";
-import { DISCORD_DISCOVER_HINT, TELEGRAM_DISCOVER_HINT } from "./copy";
+import { DISCORD_DISCOVER_HINT, SLACK_DISCOVER_HINT, TELEGRAM_DISCOVER_HINT } from "./copy";
 import type { ChannelDestination, ChannelProviderCapabilities, ChannelProviderEntry, ChannelProviderId, ChannelsBrowseResponse, ChannelView, StandingGrantView } from "./types";
 import { InlineError } from "./ui";
 
@@ -235,7 +235,7 @@ export function CreateChannelPanel({ browse, onCreated, onCancel }: { browse: Ch
     setLabel(value);
     if (!slugTouched) setSlug(slugFromLabel(value));
   };
-  const hint = provider === "telegram" ? TELEGRAM_DISCOVER_HINT : provider === "discord" ? DISCORD_DISCOVER_HINT : null;
+  const hint = provider === "telegram" ? TELEGRAM_DISCOVER_HINT : provider === "discord" ? DISCORD_DISCOVER_HINT : provider === "slack" ? SLACK_DISCOVER_HINT : null;
 
   return <section className="channel-create" aria-labelledby={`${id}-title`}>
     <div className="section-heading"><div><p className="eyebrow">New channel</p><h3 id={`${id}-title`}>Add a destination</h3></div><Button size="small" onClick={onCancel} aria-label="Close new channel form"><X size={14} />Cancel</Button></div>

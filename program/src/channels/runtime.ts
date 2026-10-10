@@ -16,6 +16,7 @@ import {
 } from "./providers/capabilities.js";
 import { scrubSecrets, validateOutbound } from "./providers/common.js";
 import { createDiscordProvider } from "./providers/discord.js";
+import { createSlackProvider } from "./providers/slack.js";
 import { createTelegramProvider } from "./providers/telegram.js";
 import type {
   AttachmentKind,
@@ -43,13 +44,22 @@ import {
  * no HTTP; the app wires these into `executeConsentedCall`.
  */
 
-export const CHANNEL_PROVIDER_IDS: readonly ChannelProviderId[] = ["telegram", "discord"];
+export const CHANNEL_PROVIDER_IDS: readonly ChannelProviderId[] = ["telegram", "discord", "slack"];
 
 /** Hosted credentials: Account Connections deliver these as provider env (spec §8). */
 export const CHANNEL_TOKEN_ENV: Readonly<Record<ChannelProviderId, string>> = {
   telegram: "MARKETPLACE_CHANNELS_TELEGRAM_BOT_TOKEN",
   discord: "MARKETPLACE_CHANNELS_DISCORD_BOT_TOKEN",
+  slack: "MARKETPLACE_CHANNELS_SLACK_BOT_TOKEN",
 };
+
+/**
+ * Slack signing secret for inbound request verification (P2 scope 2.2; used by the inbound worker, not by
+ * sending, so it never affects readiness). Hosted: provider env. Self-hosted: connector secret
+ * `signingSecret` under `channels-slack`.
+ */
+export const CHANNEL_SLACK_SIGNING_SECRET_ENV = "MARKETPLACE_CHANNELS_SLACK_SIGNING_SECRET";
+export const CHANNEL_SLACK_SIGNING_SECRET_NAME = "signingSecret";
 
 /** Self-hosted credentials: the existing encrypted `connector_secret`, this name under `channels-<provider>`. */
 export const CHANNEL_SECRET_NAME = "botToken";
@@ -59,7 +69,7 @@ export type ChannelReadiness = "available" | "credential_missing" | "credential_
 export type ChannelProviderRegistry = Readonly<Partial<Record<ChannelProviderId, ChannelProvider>>>;
 
 export function defaultChannelProviders(options: ChannelProviderOptions = {}): ChannelProviderRegistry {
-  return { telegram: createTelegramProvider(options), discord: createDiscordProvider(options) };
+  return { telegram: createTelegramProvider(options), discord: createDiscordProvider(options), slack: createSlackProvider(options) };
 }
 
 export function isChannelProviderId(value: unknown): value is ChannelProviderId {
@@ -91,6 +101,16 @@ export function resolveChannelCredential(input: {
   if (hosted) return { value: hosted, ref: `provider-env:${envName}` };
   const secret = input.readSecret(channelPluginId(input.provider));
   return secret?.value ? { value: secret.value, ref: `marketplace-secret:${secret.id}` } : null;
+}
+
+/** The Slack signing secret (env first, then the self-hosted connector secret), or null. Never logged or answered. */
+export function resolveSlackSigningSecret(input: {
+  environment: Record<string, string | undefined>;
+  readSecretValue: (pluginId: string, name: string) => string | null;
+}): string | null {
+  const hosted = input.environment[CHANNEL_SLACK_SIGNING_SECRET_ENV]?.trim();
+  if (hosted) return hosted;
+  return input.readSecretValue(channelPluginId("slack"), CHANNEL_SLACK_SIGNING_SECRET_NAME)?.trim() || null;
 }
 
 /** Redacts every provider credential (and generic token shapes) from text bound for a row, response or log. */

@@ -19,6 +19,21 @@ export const TELEGRAM_DISCOVER_HINT = "Add the bot to the chat and send one mess
 
 export const DISCORD_DISCOVER_HINT = "Invite the bot to your server with View Channels, Send Messages, Attach Files and Embed Links, then press Discover.";
 
+/** Slack shows only channels the bot is a member of (the app has no chat:write.public). */
+export const SLACK_DISCOVER_HINT = "In Slack, open the channel and type /invite @your-app-name, then press Discover. Only channels the app is a member of are listed.";
+
+/**
+ * Owner setup for Slack (Channels P2 scope §4). The app is an internal app of the owner's own workspace: Slack
+ * limits history reads for new non-Marketplace distributed apps, internal apps keep the normal limits.
+ */
+export const SLACK_SETUP_STEPS: readonly string[] = [
+  "Open api.slack.com/apps, choose Create New App, then From a manifest, and select your workspace.",
+  "Paste the Marketplace Slack app manifest (docs/channels-slack-app-manifest.json) and create the app. Keep it an internal app of your workspace; do not distribute it.",
+  "Choose Install to Workspace and allow the listed permissions.",
+  "Copy the Bot User OAuth Token (it starts with xoxb-) and add it under Account Connections in Teal Brick Portal. Optional: add the Signing Secret from Basic Information for incoming messages later.",
+  "Restart Marketplace, invite the app to each channel with /invite, then press Discover.",
+];
+
 /** Owner Buzz approval key (Channels spec §6.3). */
 export const OWNER_KEY_SOURCE_COPY = {
   "owner-session": "Set by the owner session (not attested by Portal)",

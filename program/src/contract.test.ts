@@ -315,15 +315,20 @@ describe("tealbrick.app.json", () => {
     ]));
     // + 3: the owner Buzz approval key (marketplace.approval-owner-key.get|update|clear, Channels §6.3).
     expect(owner.length).toBe(16 + 16 + 3);
-    // Channels P1: the two account-sourced bot tokens arrive as provider env, never stored by Portal.
+    // Channels: the account-sourced bot tokens (and the Slack signing secret) arrive as provider env, never stored by Portal.
     const channels = MARKETPLACE_MANIFEST.settings?.groups.find((group) => group.id === "channels");
     expect(channels?.fields.map((field) => [field.key, field.env])).toEqual([
       ["channels.telegram.botToken", "MARKETPLACE_CHANNELS_TELEGRAM_BOT_TOKEN"],
       ["channels.discord.botToken", "MARKETPLACE_CHANNELS_DISCORD_BOT_TOKEN"],
+      ["channels.slack.botToken", "MARKETPLACE_CHANNELS_SLACK_BOT_TOKEN"],
+      ["channels.slack.signingSecret", "MARKETPLACE_CHANNELS_SLACK_SIGNING_SECRET"],
     ]);
+    expect(channels?.fields.every((field) => field.source === "account" && field.destination === "provider-env")).toBe(true);
     expect(MARKETPLACE_MANIFEST.runtime.env?.allow).toEqual(expect.arrayContaining([
       "MARKETPLACE_CHANNELS_TELEGRAM_BOT_TOKEN",
       "MARKETPLACE_CHANNELS_DISCORD_BOT_TOKEN",
+      "MARKETPLACE_CHANNELS_SLACK_BOT_TOKEN",
+      "MARKETPLACE_CHANNELS_SLACK_SIGNING_SECRET",
     ]));
   });
 
@@ -644,6 +649,8 @@ describe("control endpoints", () => {
     expect(read.statusCode).toBe(200);
     expect(read.json().account).toEqual({
       "channels.discord.botToken": { set: false, source: "account" },
+      "channels.slack.botToken": { set: false, source: "account" },
+      "channels.slack.signingSecret": { set: false, source: "account" },
       "channels.telegram.botToken": { set: false, source: "account" },
       "composio.apiKey": { source: "account", set: true } });
     expect(read.body).not.toContain("test-composio-key");

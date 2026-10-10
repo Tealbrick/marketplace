@@ -9,7 +9,7 @@ import type {
   SendStatus,
 } from "./types.js";
 
-// Shared HTTP, scrubbing and validation helpers for the Telegram and Discord adapters.
+// Shared HTTP, scrubbing and validation helpers for the Telegram, Discord and Slack adapters.
 
 export const DEFAULT_TIMEOUT_MS = 15_000;
 export const MAX_TITLE_CHARS = 128;
@@ -97,6 +97,9 @@ const GENERIC_SECRET_PATTERNS: RegExp[] = [
   /\d{6,}:[A-Za-z0-9_-]{30,}/gu,
   /Bot\s+[A-Za-z0-9._-]{20,}/gu,
   /[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{20,}/gu,
+  // Slack bot, user, refresh and app-level tokens.
+  /xox[abeoprs]-[A-Za-z0-9-]{8,}/gu,
+  /xapp-[A-Za-z0-9-]{8,}/gu,
 ];
 
 /** Removes every secret form (raw, URL-encoded, `bot<token>`, generic token shapes) from text. */
