@@ -5,12 +5,55 @@
  * regenerate with `pnpm exec tsx scripts/generate-confusables.ts <confusables.txt>`). The small tables below were
  * written by hand (not generated) and only ADD lookalikes that UTS #39 does not list, mainly small capitals and a few
  * Latin, Greek, Cyrillic and Cherokee letters; where UTS #39 has an entry, it wins. Lookups run AFTER NFKC,
- * lowercasing and mark removal (Cherokee capitals are listed in both cases because `toLowerCase` maps them to the
+ * lowercasing or full case folding, and mark removal (Cherokee capitals are listed in both cases because `toLowerCase` maps them to the
  * U+AB70 block). Matching over-folds on purpose: a forbidden-term refusal may be a false positive, never a bypass.
  * Keys that decompose under NFD (ё, й, ї: the base letter is looked up after mark removal) or that are more than one
  * code point are not listed: they could never match.
  */
+import { CASE_FOLDING_PACKED } from "./case-folding-data.js";
+import { COMPAT_MARKED, COMPAT_STRICT } from "./compat-readings-data.js";
 import { UTS39_SKELETON } from "./confusables-data.js";
+
+/** "source:target,..." with the source in hex (generated data). */
+const unpack = (packed: string, target: (value: string) => string): Array<[string, string]> =>
+  packed.split(",").map((entry) => {
+    const [from, to] = entry.split(":");
+    return [String.fromCodePoint(Number.parseInt(from!, 16)), target(to!)];
+  });
+
+/** Unicode full case folding (CaseFolding.txt C + F, generated; see case-folding-data.ts for version and sha256). */
+const CASE_FOLDING: ReadonlyMap<string, string> = new Map(
+  unpack(CASE_FOLDING_PACKED, (to) => String.fromCodePoint(...to.split(" ").map((hex) => Number.parseInt(hex, 16)))),
+);
+
+/**
+ * The term reading (lowercase ASCII letters/digits) of a character's Unicode compatibility decomposition, from the
+ * generated UnicodeData table (compat-readings-data.ts), so U+209D LATIN SUBSCRIPT SMALL LETTER W reads "w" even where
+ * the runtime's NFKC is a Unicode version behind and leaves it alone.
+ */
+const COMPAT_READINGS: ReadonlyMap<string, string> = new Map([...unpack(COMPAT_STRICT, (to) => to), ...unpack(COMPAT_MARKED, (to) => to)]);
+
+export function compatReading(char: string): string | undefined {
+  return COMPAT_READINGS.get(char);
+}
+
+/** Every character replaced by its generated compatibility reading where it has one. */
+export function compatSpelling(value: string): string {
+  let out = "";
+  for (const char of value) out += COMPAT_READINGS.get(char) ?? char;
+  return out;
+}
+
+/**
+ * Full case folding per code point, from the generated Unicode table rather than the runtime's `toLowerCase` (which
+ * does not fold: U+1E9E stays a sharp s, Cherokee goes the other way, and the runtime ICU may be a Unicode version
+ * behind). Not idempotent across NFKC/NFD; callers fold, then normalize and strip marks.
+ */
+export function fullCaseFold(value: string): string {
+  let out = "";
+  for (const char of value) out += CASE_FOLDING.get(char) ?? char;
+  return out;
+}
 
 const LATIN_EXTENSIONS: Record<string, string> = {
   // Small capitals (U+1D00 block and IPA extensions).
@@ -21,6 +64,8 @@ const LATIN_EXTENSIONS: Record<string, string> = {
   "ꞩ": "s", "ꞡ": "g", "ꞣ": "k", "ꞥ": "n", "ꞧ": "r", "ɑ": "a", "ɡ": "g", "ɩ": "i", "ȷ": "j",
   "ı": "i", "ł": "l", "ø": "o", "đ": "d", "ħ": "h", "ŀ": "l", "ß": "ss", "ɵ": "o", "ɔ": "o",
   "ǀ": "l", "ʃ": "f", "ʒ": "3", "ƅ": "b", "Ɩ": "l", "Ʀ": "r",
+  // Latin small beta: UTS #39 maps it to sharp s ("ss" after full case folding); it also reads as its capital's "b".
+  "ꞵ": "b",
 };
 
 const GREEK: Record<string, string> = {
