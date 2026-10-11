@@ -6,7 +6,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { buildMarketplaceApp } from "./app.js";
 import {
@@ -490,10 +490,11 @@ describe("kill switch", () => {
     f.consent(pluginId, "gmail.send.email", "connector.dispatch", "consent-send");
     expect((await f.ownerPost("/api/marketplace/agents/agent-1/pause")).statusCode).toBe(200);
     const paused = await f.call("agent-1", pluginId, "gmail.send.email", send, sendInput);
-    expect(paused.statusCode).toBe(423);
+    expect(paused.statusCode).toBe(403);
     expect(paused.json()).toMatchObject({ error: "agent_paused" });
     const viaConsent = await f.toolsCall({ consentId: "consent-send", toolkit: pluginId, action: "gmail.send.email", arguments: sendInput }, "paused-key-0001");
-    expect(viaConsent.statusCode).toBe(423);
+    expect(viaConsent.statusCode).toBe(403);
+    expect(viaConsent.json()).toMatchObject({ error: "agent_paused" });
     // Agents cannot lift it: owner-only operation for app grants, refused for the service bearer + agent headers.
     expect((await f.ownerPost("/api/marketplace/agents/agent-1/resume", { authorization: `Bearer ${APP_GRANT}` })).statusCode).toBe(403);
     expect((await f.ownerPost("/api/marketplace/agents/agent-1/resume", f.agent("agent-1"))).statusCode).toBe(403);
@@ -502,7 +503,7 @@ describe("kill switch", () => {
     const other = await f.grant("agent-2", pluginId, "gmail.send.email");
     expect((await f.call("agent-2", pluginId, "gmail.send.email", other, sendInput)).statusCode).toBe(202);
     expect((await f.ownerPost("/api/marketplace/agents/pause-all")).json()).toMatchObject({ pausedAll: true });
-    expect((await f.call("agent-2", pluginId, "gmail.send.email", other, sendInput)).statusCode).toBe(423);
+    expect((await f.call("agent-2", pluginId, "gmail.send.email", other, sendInput)).json()).toMatchObject({ error: "agent_paused", pausedBy: "all_agents" });
     expect(f.executions).toEqual([]);
     expect((await f.ownerPost("/api/marketplace/agents/resume-all")).json()).toMatchObject({ pausedAll: false });
     expect((await f.ownerPost("/api/marketplace/agents/agent-1/resume")).statusCode).toBe(200);
@@ -519,7 +520,8 @@ describe("kill switch", () => {
     expect(held.statusCode).toBe(202);
     await f.ownerPost("/api/marketplace/agents/pause-all");
     const approveWhilePaused = await f.approve(held.json().approvalId);
-    expect(approveWhilePaused.statusCode).toBe(423);
+    expect(approveWhilePaused.statusCode).toBe(403);
+    expect(approveWhilePaused.json()).toMatchObject({ error: "agent_paused" });
     expect(f.store.getCompanyBoxApproval(held.json().approvalId)?.state).toBe("pending");
     expect(f.executions).toEqual([]);
     await f.ownerPost("/api/marketplace/agents/resume-all");
@@ -541,7 +543,9 @@ describe("kill switch", () => {
     expect(second.store.agentModes.getSetting(TENANT, "agent-1")).toMatchObject({ mode: "assistant", paused: true });
     expect(second.store.agentModes.isPausedAll(TENANT)).toBe(true);
     const send = await second.grant("agent-1", pluginId, "gmail.send.email");
-    expect((await second.call("agent-1", pluginId, "gmail.send.email", send, sendInput)).statusCode).toBe(423);
+    const afterRestart = await second.call("agent-1", pluginId, "gmail.send.email", send, sendInput);
+    expect(afterRestart.statusCode).toBe(403);
+    expect(afterRestart.json()).toMatchObject({ error: "agent_paused" });
     expect(second.executions).toEqual([]);
   });
 });
@@ -809,7 +813,7 @@ describe("Portal agentPolicy claim (source of truth; local setting is the tempor
     const g6 = await grantFor("a6");
     f.policies.set("a6", policy({ paused: true }));
     const paused = await send("a6", g6);
-    expect(paused.statusCode).toBe(423);
+    expect(paused.statusCode).toBe(403);
     expect(paused.json()).toMatchObject({ error: "agent_paused", pausedBy: "portal" });
     // stale revision -> system for that call; the newer one runs again
     const g7 = await grantFor("a7");
@@ -855,7 +859,9 @@ describe("Portal agentPolicy claim (source of truth; local setting is the tempor
     const ran = await lease("lease-key-0002");
     expect(ran.statusCode, ran.body).toBe(200);
     f.policies.set("agent-1", policy({ rev: 3, paused: true }));
-    expect((await lease("lease-key-0003")).statusCode).toBe(423);
+    const pausedLease = await lease("lease-key-0003");
+    expect(pausedLease.statusCode).toBe(403);
+    expect(pausedLease.json()).toMatchObject({ error: "agent_paused" });
     expect(f.executions).toHaveLength(1);
   });
 });
@@ -918,5 +924,69 @@ describe("runtime tool slug (QA pre-GO)", () => {
     const approved = await f.approve(held.json().approvalId);
     expect(approved.json()).toMatchObject({ ok: false, approval: { state: "failed", error: "approval_target_changed", toolSlug: "GMAIL_SEND_EMAIL" } });
     expect(f.executions).toEqual([]);
+  });
+});
+
+describe("contract alignment (approval-mode API)", () => {
+  const policy = (extra: Record<string, unknown> = {}) => ({ v: 1, approvalMode: "system", paused: false, rev: 1, ...extra });
+
+  it("re-checks an approved held call against a fresh (<= 60 s) policy read; stale or paused does not run", async () => {
+    const now = { value: new Date("2026-10-11T10:00:00.000Z") };
+    const f = await modes({ now });
+    const pluginId = await gmail(f);
+    f.policies.set("agent-1", policy());
+    const send = await f.grant("agent-1", pluginId, "gmail.send.email");
+    // System (claim): held; the call is a verified policy read at 10:00:00.
+    const first = await f.call("agent-1", pluginId, "gmail.send.email", send, sendInput, "fresh-key-0001");
+    expect(first.statusCode).toBe(202);
+    now.value = new Date("2026-10-11T10:00:30.000Z");
+    expect((await f.approve(first.json().approvalId)).json()).toMatchObject({ ok: true, approval: { state: "succeeded" } });
+    expect(f.executions).toHaveLength(1);
+
+    const second = await f.call("agent-1", pluginId, "gmail.send.email", send, sendInput, "fresh-key-0002");
+    expect(second.statusCode).toBe(202);
+    now.value = new Date("2026-10-11T10:01:31.000Z");
+    const stale = await f.approve(second.json().approvalId);
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toMatchObject({ error: "approval_policy_stale" });
+    expect(f.store.getCompanyBoxApproval(second.json().approvalId)?.state).toBe("pending");
+    // The agent polls (repeats the call with the same key): a fresh read; now the approval runs.
+    expect((await f.call("agent-1", pluginId, "gmail.send.email", send, sendInput, "fresh-key-0002")).statusCode).toBe(202);
+    expect((await f.approve(second.json().approvalId)).json()).toMatchObject({ ok: true, approval: { state: "succeeded" } });
+    expect(f.executions).toHaveLength(2);
+
+    // Paused by Portal after the hold: the fresh read says paused, so the approval is refused (403) and stays pending.
+    const third = await f.call("agent-1", pluginId, "gmail.send.email", send, sendInput, "fresh-key-0003");
+    f.policies.set("agent-1", policy({ paused: true, rev: 2 }));
+    expect((await f.call("agent-1", pluginId, "gmail.send.email", send, sendInput, "fresh-key-0003")).statusCode).toBe(403);
+    const refused = await f.approve(third.json().approvalId);
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json()).toMatchObject({ error: "agent_paused" });
+    expect(f.store.getCompanyBoxApproval(third.json().approvalId)?.state).toBe("pending");
+    expect(f.executions).toHaveLength(2);
+  });
+
+  it("never treats a missing cap as unlimited: an unreadable cap store holds the call", async () => {
+    const f = await modes();
+    const pluginId = await gmail(f);
+    await f.setMode("agent-1", { mode: "assistant" });
+    const send = await f.grant("agent-1", pluginId, "gmail.send.email");
+    const spy = vi.spyOn(f.store.agentModes, "reserveExecution").mockImplementation(() => {
+      throw new Error("database is locked");
+    });
+    try {
+      const held = await f.call("agent-1", pluginId, "gmail.send.email", send, sendInput);
+      expect(held.statusCode, held.body).toBe(202);
+      expect(held.json()).toMatchObject({ heldBecause: "cap_unavailable" });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(f.executions).toEqual([]);
+    // A cap of 0 holds every call.
+    await f.setMode("agent-1", { mode: "assistant" });
+    const now = new Date();
+    expect(decideOutward(f.store, { workspaceSlug: TENANT, agentId: "agent-z", connectorKey: "x", actionKey: "x.send", risk: { outward: true, destructive: false, sensitive: false }, now })).toMatchObject({ kind: "hold", reason: "system_mode" });
+    f.store.agentModes.updateSetting({ workspaceSlug: TENANT, agentId: "agent-z", mode: "assistant", dailyCap: 0, actor: "operator:owner-1", now });
+    expect(decideOutward(f.store, { workspaceSlug: TENANT, agentId: "agent-z", connectorKey: "x", actionKey: "x.send", risk: { outward: true, destructive: false, sensitive: false }, now })).toEqual({ kind: "hold", reason: "cap_agent" });
   });
 });

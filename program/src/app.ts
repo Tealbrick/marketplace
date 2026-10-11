@@ -154,7 +154,9 @@ import {
   assistantHold,
   commitCapReservation,
   decideOutward,
+  freshAgentPolicy,
   getAgentApprovalMode,
+  parseAgentPolicy,
   isAgentPaused,
   receiptDestination,
   receiptPreview,
@@ -933,7 +935,7 @@ function agentGuidance() {
     "   body or the key; retry with the same Idempotency-Key later to get the result. The owner sets each agent to",
     "   System (every outward action waits; the default) or Assistant (outward actions run at once with a receipt;",
     "   sensitive actions and calls over the daily limits still wait). `heldBecause` in the 202 says why it waits.",
-    "6. `423 agent_paused`: the owner paused you or all agents. Nothing runs until the owner resumes you.",
+    "6. `403 agent_paused`: the owner paused you or all agents. Nothing runs until the owner resumes you.",
     "",
     "## Channels",
     "",
@@ -3668,10 +3670,25 @@ export async function buildMarketplaceApp(
   const agentModes = options.store.agentModes;
   /** The owner's kill switch (isAgentPaused): refused before any provider call, reads included, in both modes. */
   const agentPausedRefusal = (reply: FastifyReply, workspaceSlug: string, agentId: string, policy?: unknown) => {
-    const paused = isAgentPaused(options.store, { workspaceSlug, agentId, policy });
+    const paused = isAgentPaused(options.store, { workspaceSlug, agentId, policy, now: agentModeClock() });
     if (!paused.paused) return null;
-    reply.code(423);
+    reply.code(403);
     return { ok: false, error: "agent_paused", pausedBy: paused.scope === "global" ? "all_agents" : paused.scope === "claim" ? "portal" : "agent" };
+  };
+  /**
+   * An owner-approved held call runs only on a FRESH policy read (contract approval-mode): paused locally or by the
+   * claim → `agent_paused`; Portal sent a claim for this agent but the last verified read is older than 60 s →
+   * `approval_policy_stale` (the agent's next call or status poll refreshes it). No claim ever seen: local only.
+   */
+  const approvalPolicyGate = (workspaceSlug: string, agentId: string): null | { status: number; error: "agent_paused" | "approval_policy_stale" } => {
+    if (isAgentPaused(options.store, { workspaceSlug, agentId }).paused) return { status: 403, error: "agent_paused" };
+    const fresh = freshAgentPolicy(options.store, { workspaceSlug, agentId }, agentModeClock());
+    if (fresh.state === "stale") return { status: 409, error: "approval_policy_stale" };
+    // Read only (parseAgentPolicy): re-recording the stored read here would make it look fresh.
+    if (fresh.state === "fresh" && parseAgentPolicy(fresh.policy)?.paused === true) {
+      return { status: 403, error: "agent_paused" };
+    }
+    return null;
   };
   type AssistantRun = { reservationId: string; replay: boolean; args: Record<string, unknown>; accountRef: string | null; connectorKey: string; provider: string; actionKey: string; toolSlug: string; workspaceSlug: string; agentId: string };
   type OutwardPlan = { kind: "hold"; reason: string; toolSlug?: string } | { kind: "refuse" } | ({ kind: "assistant" } & AssistantRun);
@@ -3721,7 +3738,11 @@ export async function buildMarketplaceApp(
     if (decision.kind === "hold") {
       return {
         kind: "hold",
-        reason: outward.slugUnknown && decision.reason === "sensitive" ? "tool_slug_unknown" : heldBecause(decision.reason, decision.family),
+        reason: outward.slugUnknown && decision.reason === "sensitive"
+          ? "tool_slug_unknown"
+          : decision.capUnavailable
+            ? "cap_unavailable"
+            : heldBecause(decision.reason, decision.family),
         toolSlug: outward.slug,
       };
     }
@@ -3941,7 +3962,8 @@ export async function buildMarketplaceApp(
           : options.store.getMarketplaceAgentConsentById(approval.sourceRef)?.state === "active";
       if (!authorityActive) return fail("approval_authority_revoked");
       // The kill switch also holds back calls approved while the agent is paused (checked again at execution).
-      if (isAgentPaused(options.store, { workspaceSlug: approval.workspaceSlug, agentId: approval.agentId }).paused) return fail("agent_paused");
+      const gate = approvalPolicyGate(approval.workspaceSlug, approval.agentId);
+      if (gate) return fail(gate.error);
       const listing = options.store.getListingForWorkspace(approval.pluginId, approval.workspaceSlug);
       const published = listing
         ? resolvePublishedAgentAction({
@@ -4763,7 +4785,7 @@ export async function buildMarketplaceApp(
       governanceMode !== "owner"
         ? "A Rules service decides your outward actions."
         : paused
-          ? "The owner has paused you: every call answers `423 agent_paused` until the owner resumes you."
+          ? "The owner has paused you: every call answers `403 agent_paused` until the owner resumes you."
           : setting.mode === "assistant"
             ? `Assistant: your outward actions run at once and the owner sees a receipt for each. Sensitive actions (deletes, payments, refunds, sharing or permission changes, bulk sends) still wait for the owner, and so does any call over your daily limits (${setting.dailyCap} outward actions per UTC day, ${setting.connectorDailyCap} per connector).`
             : "System: every outward action waits for the owner's approval (`202 approval_pending`)."
@@ -5872,9 +5894,12 @@ export async function buildMarketplaceApp(
     const owned = ownedApproval(request, reply);
     if ("response" in owned) return owned.response;
     const { principal, approval } = owned;
-    // A paused agent's held call is not run (it stays pending until the owner resumes the agent).
-    const paused = agentPausedRefusal(reply, approval.workspaceSlug, approval.agentId);
-    if (paused) return paused;
+    // A paused agent's held call is not run, nor one without a fresh policy read: it stays pending.
+    const gate = approvalPolicyGate(approval.workspaceSlug, approval.agentId);
+    if (gate) {
+      reply.code(gate.status);
+      return { ok: false, error: gate.error };
+    }
     // Exactly once: only the request that moves it out of `pending` runs it.
     const claimed = options.store.decideCompanyBoxApproval({
       id: approval.id,
@@ -7741,7 +7766,7 @@ export async function buildMarketplaceApp(
           policy: agentPolicy,
         });
         if (plan.kind === "refuse") {
-          reply.code(423);
+          reply.code(403);
           return { ok: false, error: "agent_paused", traceId };
         }
         if (plan.kind === "hold") {
@@ -8410,7 +8435,7 @@ export async function buildMarketplaceApp(
         policy: scope.agentPolicy,
       });
       if (plan.kind === "refuse") {
-        reply.code(423);
+        reply.code(403);
         return runtimeResponse({ ok: false, traceId, error: "agent_paused" });
       }
       if (plan.kind === "hold") {
@@ -8580,6 +8605,11 @@ export async function buildMarketplaceApp(
    * sent by the scheduler at its send time.
    */
   const runApprovedChannelHold = async (approval: CompanyBoxApproval, traceId: string) => {
+    const gate = approvalPolicyGate(organizationId, approval.agentId);
+    if (gate) {
+      options.store.finishCompanyBoxApproval({ id: approval.id, state: "failed", error: gate.error });
+      return { status: gate.status, response: { ok: false, schema: 1, traceId, error: gate.error } as Record<string, unknown> };
+    }
     const post = options.store.channels.getPost(organizationId, String(approval.arguments.postId ?? ""));
     const channel = post ? options.store.channels.getChannel(organizationId, post.channelId) : null;
     if (!post || !channel) {
@@ -9211,8 +9241,14 @@ export async function buildMarketplaceApp(
     const operationScope = `approval-resolve:${approval.id}`;
     const previous = options.store.getMarketplaceRuntimeOperation({ consentId: operationScope, idempotencyKey: key });
     if (!previous && keyDecision === "approve") {
-      const paused = agentPausedRefusal(reply, organizationId, approval.agentId);
+      // The caller's app grant is a fresh policy read (recorded by isAgentPaused) before the gate re-checks it.
+      const paused = agentPausedRefusal(reply, organizationId, approval.agentId, agentPolicyFrom(caller.grant as unknown as Record<string, unknown>));
       if (paused) return { ...paused, schema: 1, traceId };
+      const gate = approvalPolicyGate(organizationId, approval.agentId);
+      if (gate) {
+        reply.code(gate.status);
+        return { ok: false, schema: 1, traceId, error: gate.error };
+      }
     }
     if (previous) {
       const stored = previous.response as { status?: number; body?: Record<string, unknown> } | null;
@@ -9647,6 +9683,8 @@ export async function buildMarketplaceApp(
         }
         const scope = await verifyPortalScope({ request, reply, requiredCapability: approval.capability });
         if (!scope.ok) return { ok: false, error: scope.error };
+        // A status poll is a fresh, verified policy read (the owner's approval re-checks against it).
+        isAgentPaused(options.store, { workspaceSlug: body.workspaceSlug, agentId: scope.scope.agentId, policy: scope.scope.agentPolicy, now: agentModeClock() });
         if (scope.scope.agentId !== approval.agentId || scope.scope.organizationId !== approval.workspaceSlug) {
           reply.code(404);
           return { ok: false, error: "approval_not_found" };

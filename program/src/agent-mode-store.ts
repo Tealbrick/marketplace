@@ -11,7 +11,7 @@ import {
  * Agent approval modes, pauses and Assistant-mode receipts. Additive tables only (`CREATE TABLE IF NOT EXISTS`);
  * an older build ignores them. Settings are written only by owner routes; receipts only by the execution path.
  */
-export const AGENT_MODE_TABLES = ["agent_approval_setting", "agent_pause_all", "agent_outward_receipt", "agent_hold_family_setting", "agent_policy_rev"] as const;
+export const AGENT_MODE_TABLES = ["agent_approval_setting", "agent_pause_all", "agent_outward_receipt", "agent_hold_family_setting", "agent_policy_rev", "agent_policy_seen"] as const;
 
 export function migrateAgentModeTables(db: DatabaseSync): void {
   migrateAgentModeTablesCreate(db);
@@ -77,6 +77,14 @@ function migrateAgentModeTablesCreate(db: DatabaseSync): void {
       workspace_slug TEXT NOT NULL,
       agent_id TEXT NOT NULL,
       rev INTEGER NOT NULL,
+      seen_at TEXT NOT NULL,
+      PRIMARY KEY (workspace_slug, agent_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS agent_policy_seen (
+      workspace_slug TEXT NOT NULL,
+      agent_id TEXT NOT NULL,
+      policy_json TEXT NOT NULL,
       seen_at TEXT NOT NULL,
       PRIMARY KEY (workspace_slug, agent_id)
     );
@@ -254,6 +262,30 @@ export class AgentModeStore {
       )
       .run(input.workspaceSlug, input.familyId, input.enabled ? 1 : 0, input.actor, input.now.toISOString());
     return { previous, enabled: input.enabled };
+  }
+
+  /** The latest raw agentPolicy read from a verified grant or lease, and when (fresh-read check on approval). */
+  recordPolicySeen(workspaceSlug: string, agentId: string, policy: unknown, now: Date) {
+    this.db
+      .prepare(
+        `INSERT INTO agent_policy_seen (workspace_slug, agent_id, policy_json, seen_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT (workspace_slug, agent_id) DO UPDATE SET policy_json = excluded.policy_json, seen_at = excluded.seen_at`,
+      )
+      .run(workspaceSlug, agentId, JSON.stringify(policy ?? null), now.toISOString());
+  }
+
+  lastPolicySeen(workspaceSlug: string, agentId: string): { policy: unknown; seenAt: string } | null {
+    const row = this.db.prepare("SELECT policy_json, seen_at FROM agent_policy_seen WHERE workspace_slug = ? AND agent_id = ?").get(workspaceSlug, agentId) as
+      | { policy_json: string; seen_at: string }
+      | undefined;
+    if (!row) return null;
+    let policy: unknown = null;
+    try {
+      policy = JSON.parse(row.policy_json);
+    } catch {
+      policy = null;
+    }
+    return { policy, seenAt: row.seen_at };
   }
 
   /** The highest agentPolicy `rev` seen for the agent (stale-claim check), or null. */
