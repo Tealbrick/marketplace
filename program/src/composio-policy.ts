@@ -13,6 +13,8 @@
 import { z } from "zod";
 
 import googlecalendarPolicy from "../catalog/composio-policy/googlecalendar.json" with { type: "json" };
+import readAllowlistFile from "../catalog/composio-read-allowlist.json" with { type: "json" };
+import type { GovernedActionRisk } from "./governance.js";
 import type { ConnectorCapability } from "./types.js";
 
 const PatternList = z.array(z.string().trim().min(1).max(200)).max(500).default([]);
@@ -151,4 +153,95 @@ export function composioCallIsOutward(
     }
   }
   return quiet.unlessTrue.some((name) => args[name] === true);
+}
+
+/**
+ * Reviewed read allowlist for toolkits WITHOUT a curated policy
+ * (`catalog/composio-read-allowlist.json`): toolkit → exact tool slugs that a
+ * reviewer confirmed cannot write, send, publish, share or notify. Empty by
+ * default. Name inference never makes a Composio tool read-only; only this
+ * list (or a curated policy) does.
+ */
+export const ComposioReadAllowlistSchema = z
+  .object({
+    schema: z.literal(1),
+    notes: z.string().max(4_000).optional(),
+    toolkits: z.record(
+      z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/u),
+      z.array(z.string().trim().regex(/^[A-Za-z0-9_]{1,200}$/u)).max(500),
+    ),
+  })
+  .strict();
+
+function compileReadAllowlist(raw: unknown): ReadonlyMap<string, ReadonlySet<string>> {
+  const parsed = ComposioReadAllowlistSchema.parse(raw);
+  return new Map(
+    Object.entries(parsed.toolkits).map(([toolkit, slugs]) => [
+      toolkit,
+      new Set(slugs.map((slug) => slug.toUpperCase())),
+    ]),
+  );
+}
+
+let READ_ALLOWLIST = compileReadAllowlist(readAllowlistFile);
+
+/** Tests only: replace the bundled read allowlist; returns a restore function. */
+export function setComposioReadAllowlistForTests(toolkits: Record<string, string[]>) {
+  const previous = READ_ALLOWLIST;
+  READ_ALLOWLIST = compileReadAllowlist({ schema: 1, toolkits });
+  return () => {
+    READ_ALLOWLIST = previous;
+  };
+}
+
+function toolkitKey(toolkit: string) {
+  return toolkit.toLowerCase().replace(/[^a-z0-9]+/gu, "");
+}
+
+/** True only for a tool on the reviewed read allowlist of an uncurated toolkit. */
+export function composioReviewedRead(toolkit: string, toolSlug: string) {
+  if (composioPolicyFor(toolkit)) return false;
+  const slugs = READ_ALLOWLIST.get(toolkit) ?? READ_ALLOWLIST.get(toolkitKey(toolkit));
+  return Boolean(slugs?.has(toolSlug.trim().toUpperCase()));
+}
+
+/**
+ * Static classification of any Composio tool. Curated toolkits use their
+ * policy unchanged. Without a policy, a tool is a reviewed read (observe,
+ * not outward) only when it is on the read allowlist; every other tool needs
+ * at least `connector.dispatch` and is outward on every call, whatever its
+ * name suggests: fail toward approval, never toward silence.
+ */
+export function composioToolClassification(
+  toolkit: string,
+  toolSlug: string,
+  inferred: ConnectorCapability,
+): ComposioToolPolicy & { curated: boolean } {
+  const policy = composioPolicyFor(toolkit);
+  if (policy) return { ...composioToolPolicy(policy, toolSlug, inferred), curated: true };
+  if (composioReviewedRead(toolkit, toolSlug)) {
+    return { capability: "connector.observe", outward: null, destructive: false, curated: false };
+  }
+  return {
+    capability: CAPABILITY_RANK[inferred] >= CAPABILITY_RANK["connector.dispatch"] ? inferred : "connector.dispatch",
+    outward: "always",
+    destructive: false,
+    curated: false,
+  };
+}
+
+/** Per-call risk of one Composio tool (outward may depend on a curated policy's quiet rule). */
+export function composioCallRisk(
+  toolkit: string,
+  toolSlug: string,
+  args: Record<string, unknown> | undefined,
+  inferred: ConnectorCapability,
+): GovernedActionRisk {
+  const policy = composioPolicyFor(toolkit);
+  const classification = composioToolClassification(toolkit, toolSlug, inferred);
+  return {
+    write: classification.capability !== "connector.observe",
+    outward: policy ? composioCallIsOutward(policy, toolSlug, args) : classification.outward !== null,
+    destructive: classification.destructive,
+  };
 }

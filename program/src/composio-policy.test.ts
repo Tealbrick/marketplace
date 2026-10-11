@@ -79,7 +79,7 @@ describe("Composio toolkit policy", () => {
     const refreshed = applyComposioPolicyToListing(stale)!;
     expect(resolveActionRequirement(refreshed, "googlecalendar.patch.event")?.capability).toBe("connector.dispatch");
     expect((refreshed.manifest.composio as { tools: Array<Record<string, unknown>> }).tools.find((tool) => tool.toolName === "GOOGLECALENDAR_PATCH_EVENT")).toMatchObject({ outward: "unlessQuiet" });
-    // Toolkits without a policy are untouched.
+    // Toolkits without a policy are classified at import (outward, dispatch), so nothing changes.
     const github = buildComposioListingFromTools({ toolkit: "github", tools: [{ name: "GITHUB_LIST_REPOSITORIES" }] });
     expect(applyComposioPolicyToListing(github)).toBeNull();
   });

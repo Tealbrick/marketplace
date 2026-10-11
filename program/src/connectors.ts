@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { composioPolicyFor, composioToolPolicy } from "./composio-policy.js";
+import { composioToolClassification } from "./composio-policy.js";
 import type {
   ConnectorCapability,
   ConnectorKind,
@@ -212,7 +212,29 @@ export function inferConnectorCapabilityFromAction(
   return "connector.observe";
 }
 
+/** Listings that execute through Composio. */
+export function listingIsComposio(listing: MarketplaceListing) {
+  return listing.source === "composio" || listing.executionOwner === "composio";
+}
+
 export function resolveActionRequirement(
+  listing: MarketplaceListing,
+  action: string,
+): ActionRequirement | null {
+  const requirement = declaredActionRequirement(listing, action);
+  if (!requirement || !listingIsComposio(listing)) return requirement;
+  // Composio: the toolkit's curated policy, or for an uncurated toolkit the
+  // reviewed read allowlist, decides; a stored (or name-inferred) observe
+  // never makes an unreviewed tool read-only.
+  const classification = composioToolClassification(
+    listing.provider,
+    composioToolNameForAction(listing, action),
+    requirement.capability,
+  );
+  return classification.curated ? requirement : { ...requirement, capability: classification.capability };
+}
+
+function declaredActionRequirement(
   listing: MarketplaceListing,
   action: string,
 ): ActionRequirement | null {
@@ -603,10 +625,10 @@ function normalizeComposioTool(
   const actionSuffix = actionSuffixFromToolName(rawToolName, toolkit);
   const action = `${toolkit}.${actionSuffix}`;
   const inferred = inferConnectorCapabilityFromAction(action);
-  // A curated toolkit policy pins outward, destructive and write tools.
-  const policy = composioPolicyFor(toolkit);
-  const governed = policy ? composioToolPolicy(policy, rawToolName, inferred) : null;
-  const capability = governed?.capability ?? inferred;
+  // A curated toolkit policy pins outward, destructive and write tools;
+  // without one, only a reviewed read is observe: everything else is outward.
+  const governed = composioToolClassification(toolkit, rawToolName, inferred);
+  const capability = governed.capability;
   const inputArguments = composioToolInputArguments(record);
   return [
     {
@@ -619,23 +641,23 @@ function normalizeComposioTool(
       description: stringValue(record.description) ?? "",
       capability,
       ...(inputArguments ? { inputArguments } : {}),
-      ...(governed?.outward ? { outward: governed.outward } : {}),
-      ...(governed?.destructive ? { destructive: true as const } : {}),
+      ...(governed.outward ? { outward: governed.outward } : {}),
+      ...(governed.destructive ? { destructive: true as const } : {}),
     },
   ];
 }
 
 /**
- * Re-apply the toolkit's Composio policy to a stored listing (listings
- * imported before the policy existed, or before it changed). Returns null
+ * Re-apply the toolkit's Composio classification to a stored listing
+ * (listings imported before the policy existed or changed, and uncurated
+ * listings imported before unreviewed tools became outward). Returns null
  * when nothing changes.
  */
 export function applyComposioPolicyToListing(listing: MarketplaceListing): MarketplaceListing | null {
   if (listing.source !== "composio") return null;
-  const policy = composioPolicyFor(listing.provider);
   const composio = recordValue(listing.manifest.composio);
   const tools = Array.isArray(composio?.tools) ? composio.tools : [];
-  if (!policy || !tools.length) return null;
+  if (!tools.length) return null;
   const requirements = { ...(recordValue(listing.manifest.actionRequirements) ?? {}) };
   let changed = false;
   const nextTools = tools.map((value) => {
@@ -643,7 +665,7 @@ export function applyComposioPolicyToListing(listing: MarketplaceListing): Marke
     const toolName = stringValue(tool?.toolName);
     const action = stringValue(tool?.action);
     if (!tool || !toolName || !action) return value;
-    const governed = composioToolPolicy(policy, toolName, inferConnectorCapabilityFromAction(action));
+    const governed = composioToolClassification(listing.provider, toolName, inferConnectorCapabilityFromAction(action));
     const next: Record<string, unknown> = { ...tool, capability: governed.capability };
     delete next.outward;
     delete next.destructive;
