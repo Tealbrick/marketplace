@@ -1,11 +1,11 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { DatabaseSync } from "node:sqlite";
 
 import { canonicalGrant, grantDigest, parseGrant } from "@tealbrick/contract";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ownerAssertion, portalSigner, seededPin, type PortalSigner } from "./channels/approval-test-support.js";
 import { DISCORD_TOKEN, GRANT_B, PORTAL, TELEGRAM_TOKEN, TENANT, channelFixture, fakeProvider, type ChannelFixture } from "./channels/app-fixture.js";
@@ -23,6 +23,23 @@ import { writeOggOpus } from "./channels/providers/ogg-opus.js";
 
 // Channels P2 live sessions (scope §2.3): live-session grants (contract alpha.8) and Buzz huddle sessions, end to end
 // through the app over a fake Buzz relay, a fake huddle relay (127.0.0.1) and a fake speech provider. No network.
+
+// L3: lets one test flip a byte of the clip AFTER the route verified the stored file (the swap the re-assert guards).
+const tamper = vi.hoisted(() => ({ next: false }));
+vi.mock("./channels/store.js", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./channels/store.js")>();
+  return {
+    ...original,
+    readAttachmentBytes: (root: string, sha256: string) => {
+      const bytes = original.readAttachmentBytes(root, sha256);
+      if (tamper.next) {
+        tamper.next = false;
+        bytes[bytes.length - 1] = bytes[bytes.length - 1]! ^ 0xff;
+      }
+      return bytes;
+    },
+  };
+});
 
 const OWNER_SECRET = "0000000000000000000000000000000000000000000000000000000000000003";
 const OWNER = publicKeyOf(OWNER_SECRET)!;
@@ -952,5 +969,46 @@ describe("pre-0.3.0 security digest of the live-voice feature", () => {
     expect(t.relay.eventsOfKind(9).filter((event) => event.pubkey === AGENT_KEY)).toHaveLength(notices);
     expect(t.f.store.channels.live.listSessions(TENANT, { limit: 50 })).toHaveLength(sessions);
     expect(t.huddleRelay.upgrades).toHaveLength(upgrades);
+  });
+
+  it("L3: speak-approved re-asserts the clip SHA-256 right before speaking; a swapped clip is refused and the approval is not burned", async () => {
+    const t = await setup();
+    const grant = await t.active({ modes: { speakApproved: true } });
+    const { sessionId } = await t.joined(grant.id, { speakApproved: true });
+    const clip = Buffer.from(writeOggOpus(Array.from({ length: 5 }, (_unused, index) => opusPacket(index + 1))));
+    const uploaded = await t.f.app.inject({
+      method: "POST",
+      url: `${A}/attachments?name=clip.ogg`,
+      headers: { authorization: `Bearer tbag_${"a".repeat(43)}`, "idempotency-key": key("upload"), "content-type": "audio/ogg" },
+      payload: clip,
+    });
+    expect(uploaded.statusCode, uploaded.body).toBe(201);
+    const attachmentId = uploaded.json().attachmentId as string;
+    const sha = uploaded.json().sha256 as string;
+    const speak = () => t.f.agent("POST", `${A}/${t.channel.id}/live/sessions/${sessionId}/speak`, { key: key("speak"), payload: { attachmentId, transcript: "Welcome to the call" } });
+    const held = await speak();
+    expect(held.statusCode, held.body).toBe(202);
+    const approvalId = held.json().approvalId as string;
+    expect((await t.f.app.inject({ method: "GET", url: `${O}/clips/${approvalId}`, headers: await t.strictHeaders() })).statusCode).toBe(200);
+    const approved = await t.f.app.inject({ method: "POST", url: `/api/marketplace/company-box/approvals/${approvalId}/approve`, headers: await t.strictHeaders(), payload: { playedSha256: sha } });
+    expect(approved.statusCode, approved.body).toBe(200);
+    // The stored file itself is swapped: the route's own read refuses it (nothing is spoken).
+    const file = (await readdir(t.f.root, { recursive: true })).map((entry) => path.join(t.f.root, entry)).find((entry) => path.basename(entry) === sha);
+    expect(file, "stored clip file").toBeTruthy();
+    const original = await readFile(file!);
+    await writeFile(file!, Buffer.concat([original.subarray(0, -1), Buffer.from([original[original.length - 1]! ^ 0xff])]));
+    expect((await speak()).statusCode).toBe(410);
+    await writeFile(file!, original);
+    // The bytes change after the route's read: the speak path refuses them before the first packet.
+    tamper.next = true;
+    const swapped = await speak();
+    expect(swapped.statusCode, swapped.body).toBe(422);
+    expect(swapped.json().error).toBe("live_clip_digest_mismatch");
+    expect(t.huddleRelay.conns.every((conn) => conn.framesIn.length === 0)).toBe(true);
+    expect(t.f.store.channels.live.listTranscript(TENANT, sessionId)).toHaveLength(0);
+    // The approval was not claimed: the genuine clip still plays, once.
+    const played = await speak();
+    expect(played.statusCode, played.body).toBe(200);
+    expect(played.json().spoken).toMatchObject({ kind: "clip", sha256: sha });
   });
 });

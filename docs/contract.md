@@ -1200,7 +1200,8 @@ terms and shown to the owner, who plays the exact stored bytes (`GET /api/market
 `marketplace.channel-live-clips.get`, pinned owner's launch session, `audio/ogg`, inline, no-store, `x-content-sha256`)
 before approving. The clip digest is `sha256("tealbrick-live-clip/v1\n" + grantDigest + "\n" + sessionId + "\n" +
 clipSha256)`: a narrowed and re-approved grant, another session or the 24 h hold expiry invalidate it, and an
-approved clip plays once (`live_clip_already_played`). Approving a clip hold (re-review of PR #53) needs the pinned
+approved clip plays once (`live_clip_already_played`). Right before speaking, the clip bytes are hashed again and must equal the approved `clipSha256`
+(`422 live_clip_digest_mismatch`, before the single use is claimed). Approving a clip hold (re-review of PR #53) needs the pinned
 owner's own launch session (strict gate) AND a server-side record that the playback route served this hold's exact
 clip (whole body; `Range` requests are refused) to that same session after the hold was created and within its TTL,
 plus the page's SHA-256 of the played bytes (`{playedSha256}`); otherwise `409 live_clip_requires_playback` /

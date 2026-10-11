@@ -657,6 +657,13 @@ export function createLiveSessionManager(deps: LiveSessionManagerDeps) {
       void stopRun(run, reason);
       return refuse(409, "live_grant_not_active", { reason });
     }
+    // L3 (defence in depth): the bytes about to be spoken must be the bytes the owner approved. The route has read them
+    // from the attachment store (SHA-256 checked there); this re-asserts it right before the first packet, and before
+    // the approval is claimed, so a mismatch does not burn the single use.
+    if (sha256Hex(input.clip) !== input.clipSha256) {
+      deps.audit("marketplace.channels.live_session.speak_refused", `agent:${input.agentId}`, { sessionId: run.record.id, reason: "clip_digest_mismatch", approvalId: input.approvalId });
+      return refuse(422, "live_clip_digest_mismatch");
+    }
     if (!live.claimClipUse(org, input.approvalId, run.record.id, deps.now())) return refuse(409, "live_clip_already_played", { approvalId: input.approvalId });
     const startedAt = deps.now();
     let result;
