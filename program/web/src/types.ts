@@ -910,7 +910,7 @@ export type ChannelPayloadView =
 export type AgentApprovalMode = "assistant" | "system";
 
 export interface SensitiveFamilyView {
-  family: "destructive" | "money" | "access-sharing" | "bulk";
+  family: "destructive" | "money" | "access-sharing" | "bulk" | "profile-change";
   label: string;
   words: string[];
 }

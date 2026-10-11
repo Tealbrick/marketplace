@@ -220,7 +220,7 @@ const sendInput = { recipient_email: "client@example.invalid", subject: "Invoice
 
 describe("sensitive families", () => {
   it("keeps one exported list with the four families and matches whole word segments", () => {
-    expect(SENSITIVE_ACTION_FAMILIES.map((family) => family.family)).toEqual(["destructive", "money", "access-sharing", "bulk"]);
+    expect(SENSITIVE_ACTION_FAMILIES.map((family) => family.family)).toEqual(["destructive", "money", "access-sharing", "bulk", "profile-change"]);
     expect(toolNameSegments("GMAIL_SEND_EMAIL", "gmail")).toEqual(["SEND", "EMAIL"]);
     expect(toolNameSegments("sendMessageToAll")).toEqual(["SEND", "MESSAGE", "TO", "ALL"]);
     const samples: Array<[string, string | undefined, string]> = [
@@ -705,9 +705,9 @@ describe("hold families are owner settings", () => {
     const f = await modes();
     const pluginId = await gmail(f);
     expect(getHoldFamilies(f.store, TENANT).map((family) => [family.id, family.on])).toEqual([
-      ["destructive", true], ["money", true], ["access-sharing", true], ["bulk", true], ["first-contact-dm", true], ["live-session-grant", true],
+      ["destructive", true], ["money", true], ["access-sharing", true], ["bulk", true], ["profile-change", true], ["first-contact-dm", true], ["live-session-grant", true],
     ]);
-    expect((await f.overview()).holdFamilies).toHaveLength(6);
+    expect((await f.overview()).holdFamilies).toHaveLength(7);
     const accessTokenLogin = f.sessions.exchange("operator-access-token", "static-operator");
     for (const [label, headers] of [
       ["agent app grant", { authorization: `Bearer ${APP_GRANT}` }],

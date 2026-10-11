@@ -56,7 +56,8 @@
     "apps_stripe_api_stripe_create_subscription": "money",
     "apps_stripe_api_configure_overage": "money",
     "apps_users_api_create_email": "access-sharing",
-    "apps_wizard_api_setup_wizard_set_token": "access-sharing"
+    "apps_wizard_api_setup_wizard_set_token": "access-sharing",
+    "apps_users_api_send_confirm_email": "profile-change"
   },
   "exposure": "auto",
   "excluded": []

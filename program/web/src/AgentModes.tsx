@@ -10,7 +10,7 @@ import { InlineError } from "./ui";
 /** Owner copy; Lead · Website may refine it. */
 export const MODE_COPY: Record<AgentApprovalMode, string> = {
   assistant:
-    "Assistant: this agent sends and changes things without asking you. You see every action in Activity. Daily limits and Pause still apply. Deletes, payments, refunds, and sharing or permission changes still wait for you.",
+    "Assistant: this agent sends and changes things without asking you. You see every action in Activity. Daily limits and Pause still apply. Deletes, payments, refunds, sharing or permission changes, and profile changes still wait for you.",
   system: "System: every outward action waits for your approval.",
 };
 
