@@ -7,12 +7,13 @@
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { fullCaseFolding, packedLiteral, readUcd } from "./lib/ucd.js";
+import { assertFloor, fullCaseFolding, packedLiteral, PINS, readUcd } from "./lib/ucd.js";
 
 const input = process.argv[2];
 if (!input) throw new Error("usage: tsx scripts/generate-case-folding.ts <CaseFolding.txt>");
-const { text, sha256, version } = readUcd(input, /CaseFolding-(\S+)\.txt/u);
+const { text, sha256, version } = readUcd(input, PINS.caseFolding);
 const folding = [...fullCaseFolding(text).entries()].sort(([a], [b]) => a - b);
+assertFloor("CaseFolding.txt C + F", folding.length, 1606);
 const hex = (code: number) => code.toString(16);
 // Compact form: "source:target target,..." in hex; parsed once at module load.
 const packed = packedLiteral(folding.map(([from, to]) => `${hex(from)}:${to.map(hex).join(" ")}`));

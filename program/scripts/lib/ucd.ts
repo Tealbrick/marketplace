@@ -1,14 +1,62 @@
 // Small parsers for Unicode Character Database files, shared by the generate-*.ts scripts. Version-exact: nothing
 // here uses the runtime's own Unicode tables (String.prototype.normalize, toLowerCase, \p{...}), because Node's ICU
 // can be a Unicode version behind the data files.
+//
+// Every input is pinned (Unicode version + sha256, below): a missing file, a different file, a version mismatch, an
+// empty parse result or an entry count under its floor throws, so a generator never writes an empty or partial table.
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+
+export const UNICODE_VERSION = "18.0.0";
+
+export type UcdPin = {
+  name: string;
+  sha256: string;
+  /** Captures the version from the file's own header; UnicodeData.txt has none (its sha256 pins it). */
+  versionPattern?: RegExp;
+};
+
+/** The exact Unicode 18.0.0 files the committed tables were generated from (https://www.unicode.org/Public/18.0.0/). */
+export const PINS = {
+  confusables: {
+    name: "confusables.txt",
+    sha256: "6ed3ee967c9dfdf6677d563c9985182fbc50a2efb7d6059cd57b2e2ce18f5b92",
+    versionPattern: /^# Version: (\S+)$/mu,
+  },
+  caseFolding: {
+    name: "CaseFolding.txt",
+    sha256: "a004797658a457bec4dc11683e39f69249ea3b595b752dbea6721c4c9f587b0d",
+    versionPattern: /^# CaseFolding-(\S+)\.txt$/mu,
+  },
+  unicodeData: { name: "UnicodeData.txt", sha256: "0736451de439ae7baf1425136617da495e09ee5afbe6e394374db7009ea08950" },
+  derivedCoreProperties: {
+    name: "DerivedCoreProperties.txt",
+    sha256: "09c928886a178fcafd93c29e4bd59073a058e5a100b716d425cb563ab50f68c9",
+    versionPattern: /^# DerivedCoreProperties-(\S+)\.txt$/mu,
+  },
+} as const satisfies Record<string, UcdPin>;
 
 export type UcdFile = { text: string; sha256: string; version: string };
 
-export function readUcd(file: string, versionPattern: RegExp): UcdFile {
+/** Reads a pinned input; throws on a missing file, a sha256 or version mismatch, or an empty file. */
+export function readUcd(file: string | undefined, pin: UcdPin): UcdFile {
+  if (!file) throw new Error(`${pin.name}: no path given`);
+  if (!existsSync(file)) throw new Error(`${pin.name}: file not found: ${file}`);
   const text = readFileSync(file, "utf8");
-  return { text, sha256: createHash("sha256").update(text).digest("hex"), version: versionPattern.exec(text)?.[1] ?? "unknown" };
+  if (!text.trim()) throw new Error(`${pin.name}: file is empty: ${file}`);
+  const sha256 = createHash("sha256").update(text).digest("hex");
+  if (sha256 !== pin.sha256) throw new Error(`${pin.name}: sha256 ${sha256} is not the pinned ${pin.sha256} (Unicode ${UNICODE_VERSION}): ${file}`);
+  if (pin.versionPattern) {
+    const version = pin.versionPattern.exec(text)?.[1];
+    if (version !== UNICODE_VERSION) throw new Error(`${pin.name}: version ${version ?? "(none found)"} is not the pinned ${UNICODE_VERSION}: ${file}`);
+  }
+  return { text, sha256, version: UNICODE_VERSION };
+}
+
+/** Throws when a parsed table is smaller than its floor (the pinned file's count; never 0). */
+export function assertFloor(label: string, count: number, floor: number): void {
+  if (floor < 1) throw new Error(`${label}: floor must be at least 1`);
+  if (count < floor) throw new Error(`${label}: ${count} entries, expected at least ${floor} (Unicode ${UNICODE_VERSION})`);
 }
 
 const cps = (hex: string) => hex.trim().split(/\s+/u).filter(Boolean).map((part) => Number.parseInt(part, 16));
