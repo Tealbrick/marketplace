@@ -21,6 +21,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
     "test": "vitest run && vitest run --config web/vitest.config.ts",
     "test:e2e": "pnpm run build:web && playwright test --config web/playwright.config.ts",
+    "test:e2e:handoff": "pnpm run build:web && playwright test --config web/playwright.handoff.config.ts",
     "lint": "tsc -p tsconfig.json --noEmit",
     "company-box:coverage": "tsx scripts/company-box-coverage.ts",
     "composio:coverage": "tsx scripts/composio-coverage.ts",

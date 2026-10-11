@@ -67,3 +67,19 @@ steps:
       - cd program
       - corepack enable && corepack prepare pnpm@9.15.4 --activate
       - pnpm exec vitest run --config web/vitest.config.ts --maxWorkers=2
+
+  # Browser end-to-end suites, including the paired Portal handoff config (it is not part of test:e2e). About a
+  # minute: Chromium and its system libraries are installed per run (no secrets; the handoff key is a test value).
+  - name: e2e
+    image: *node_image
+    environment:
+      CI: "true"
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      MARKETPLACE_HANDOFF_ENCRYPTION_KEY: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    commands:
+      - cd program
+      - corepack enable && corepack prepare pnpm@9.15.4 --activate
+      - pnpm exec playwright install --with-deps chromium
+      - pnpm run test:e2e
+      - pnpm exec playwright test --config web/playwright.handoff.config.ts

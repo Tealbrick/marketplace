@@ -276,7 +276,8 @@ agent-grant attachment and the runtime lease are the paths that read it.
     not a family toggle;
   - **hold families** (`HOLD_FAMILIES` in `program/src/agent-approval-mode.ts`),
     all ON by default: four matched on tool-name words (deletes and resets,
-    payments and refunds, sharing and permissions, bulk and broadcast; whole
+    payments and refunds, sharing and permissions, bulk and broadcast, profile
+    changes; whole
     word segments, the last word may be plural, e.g. `REFUNDS`) and two
     declared by the caller (`first-contact-dm`, `live-session-grant`, passed by
     Channels). **Deletes and payments are locked ON.** The owner can turn the
@@ -307,17 +308,17 @@ agent-grant attachment and the runtime lease are the paths that read it.
 - **Pause** (per agent) and **Pause all agents** are persisted kill switches
   (a pause set here also overrides a Portal claim `paused: false`; the owner UI
   says so):
-  every call of a paused agent answers `403 agent_paused` before any provider
+  every call of a paused agent answers `423 agent_paused` before any provider
   call (reads and channel posts included; a scheduled post due while paused is
   skipped, not sent later), and a held call
   cannot be approved while its agent is paused. Pause also applies with Rules.
-  The answer is `403 {error: "agent_paused"}` (contract approval-mode API).
+  The answer is `423 {error: "agent_paused"}` (contract approval-mode API).
 - **Approved holds re-check a fresh policy at execution:** when Portal has
   sent an `agentPolicy` for the agent, an owner-approved held call runs only
   if the last verified read of it (the agent's grant, lease or status poll) is
   at most 60 s old and not paused. Otherwise the approval answers
   `409 approval_policy_stale` (the call stays pending; the agent's next call or
-  poll refreshes the read) or `403 agent_paused`. Without any claim the local
+  poll refreshes the read) or `423 agent_paused`. Without any claim the local
   pause alone applies.
 - Only the owner changes modes, limits and pauses: the owner's Portal launch
   session with its CSRF token and the pinned owner (the same gate as the owner

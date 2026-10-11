@@ -40,8 +40,9 @@ function consentFor(request: { requestId: string; deploymentId: string; agentId:
     consentId: `consent-${request.requestId.slice(0, 8)}`,
     consentRevision: 1,
     state: "active",
-    capabilities: ["connector.observe"],
-    requiredActions: ["read"],
+    // Portal grants exactly the capability the selection names (v1.2: absent means observe).
+    capabilities: [request.selection.capability ?? "connector.observe"],
+    requiredActions: [request.selection.capability && request.selection.capability !== "connector.observe" ? "create" : "read"],
     selection: request.selection,
   };
 }
@@ -104,7 +105,9 @@ export default async function globalSetup(config: FullConfig) {
     kind: "connector",
     provider: "github",
     description: "Paired browser fixture connector.",
-    capabilities: ["connector.observe"],
+    // F3-1 (0.2.1): GitHub has no curated Composio policy, so even its list tool is outward and needs
+    // connector.dispatch ("Can make changes"); the agent grant flow requests and Portal grants that.
+    capabilities: ["connector.dispatch"],
     actions: ["github.list.repositories"],
     source: "composio",
     authOwner: "composio",

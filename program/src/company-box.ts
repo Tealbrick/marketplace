@@ -176,7 +176,7 @@ export const CompanyBoxEntrySchema = z
      * word families; destructive and money cannot be turned off. Every key must name an exposed outward operation.
      */
     sensitiveFamilies: z
-      .record(z.string().trim().min(1).max(300), z.enum(["destructive", "money", "access-sharing", "bulk"]))
+      .record(z.string().trim().min(1).max(300), z.enum(["destructive", "money", "access-sharing", "bulk", "profile-change"]))
       .default({}),
     exposure: z.enum(["auto", "direct", "discovery"]).default("auto"),
     excluded: z.array(ExclusionSchema).max(5_000).default([]),
@@ -285,7 +285,7 @@ export type CompanyBoxCoverageItem = {
   sensitiveFamily?: CompanyBoxSensitiveFamily;
 };
 
-export type CompanyBoxSensitiveFamily = "destructive" | "money" | "access-sharing" | "bulk";
+export type CompanyBoxSensitiveFamily = "destructive" | "money" | "access-sharing" | "bulk" | "profile-change";
 
 type CompiledBase = {
   entry: CompanyBoxEntry;

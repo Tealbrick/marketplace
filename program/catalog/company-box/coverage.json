@@ -24638,7 +24638,8 @@
           "key": "company-box-glitchtip.apps-users-api-send-confirm-email",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "profile-change"
         },
         {
           "ref": "apps_users_api_get_notifications",
@@ -25744,7 +25745,8 @@
           "key": "company-box-listmonk.update-subscriber-by-id",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "profile-change"
         },
         {
           "ref": "deleteSubscriberById",
@@ -25764,7 +25766,8 @@
           "key": "company-box-listmonk.patch-subscriber",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "profile-change"
         },
         {
           "ref": "getSubscriberActivity",

@@ -21,14 +21,17 @@ import type { SqliteMarketplaceStore } from "./store.js";
 
 export type AgentApprovalMode = "assistant" | "system";
 
+/** HTTP status of every paused refusal (contract approval-mode `AGENT_PAUSED_STATUS`), body `{error: "agent_paused"}`. */
+export const AGENT_PAUSED_STATUS = 423;
+
 export const DEFAULT_AGENT_DAILY_CAP = 100;
 export const DEFAULT_AGENT_CONNECTOR_DAILY_CAP = 50;
 export const MAX_AGENT_DAILY_CAP = 10_000;
 
 /** Families held in Assistant mode: four matched on tool names, two declared by the caller (Channels). */
-export type HoldFamilyId = "destructive" | "money" | "access-sharing" | "bulk" | "first-contact-dm" | "live-session-grant";
+export type HoldFamilyId = "destructive" | "money" | "access-sharing" | "bulk" | "profile-change" | "first-contact-dm" | "live-session-grant";
 /** The slug-matched families (the ones classifySensitive can return). */
-export type SensitiveFamily = "destructive" | "money" | "access-sharing" | "bulk";
+export type SensitiveFamily = "destructive" | "money" | "access-sharing" | "bulk" | "profile-change";
 
 export type HoldFamilyDefinition = {
   readonly id: HoldFamilyId;
@@ -87,6 +90,14 @@ export const HOLD_FAMILIES: ReadonlyArray<HoldFamilyDefinition> = Object.freeze(
       label: "Bulk and broadcast",
       description: "Bulk actions and messages to everyone at once.",
       words: ["BULK_*", "*_ALL", "SEND_TO_ALL", "BROADCAST", "MASS_*"],
+      defaultOn: true,
+      locked: false,
+    },
+    {
+      id: "profile-change",
+      label: "Profile changes",
+      description: "Changing a profile, avatar, bio, display name or username, or a person's contact details.",
+      words: ["PROFILE", "AVATAR", "BIO", "DISPLAY_NAME", "USERNAME", "SET_PHOTO", "UPDATE_ME"],
       defaultOn: true,
       locked: false,
     },
