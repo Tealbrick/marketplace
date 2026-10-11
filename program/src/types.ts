@@ -364,7 +364,7 @@ export type CompanyBoxApproval = {
   capability: ConnectorCapability;
   agentId: string;
   /** How the agent's authority was proven: a stored grant or a Portal consent. */
-  sourceKind: "agent-grant" | "runtime-lease" | "channel-consent";
+  sourceKind: "agent-grant" | "runtime-lease" | "channel-consent" | "live-clip";
   sourceRef: string;
   idempotencyKey: string | null;
   fingerprint: string;

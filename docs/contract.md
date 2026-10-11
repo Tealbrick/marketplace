@@ -1,12 +1,12 @@
 # Teal Brick miniapp contract
 
 Marketplace follows the Teal Brick miniapp contract (`tealbrick.miniapp/v1`,
-kit `@tealbrick/contract` pinned at `0.1.0-alpha.7`). The manifest is
+kit `@tealbrick/contract` pinned at `0.1.0-alpha.8`). The manifest is
 `tealbrick.app.json` at the repository root. It is validated at start-up and
 served at `/.well-known/tealbrick/manifest`. Validate it in CI with:
 
 ```sh
-npx -y @tealbrick/contract@0.1.0-alpha.7 validate tealbrick.app.json
+npx -y @tealbrick/contract@0.1.0-alpha.8 validate tealbrick.app.json
 ```
 
 The Portal launch hand-off, the runtime lease receiver, connector secret
@@ -85,7 +85,7 @@ claim handler (`createContractHandler` with `identity`, `claim` and
 (`program/src/manifest-claim.ts`):
 
 * `GET` → `{instanceId, publicJwk}`, with the answer header
-  `x-tealbrick-contract: 0.1.0-alpha.7` (the kit version). Portal Core sends
+  `x-tealbrick-contract: 0.1.0-alpha.8` (the kit version). Portal Core sends
   `ownerSubject` only when this header says alpha.7 or newer.
 * `POST {portalIssuer, nonce, companyId, jwksUri?, grantKids?, ownerSubject?,
   claimIssuedAt?}` → `{proof}`, an EdDSA `tealbrick-app-claim` v1 JWT with
@@ -204,6 +204,16 @@ spec's sub-resource ids use a hyphenated resource
 | `marketplace.channel-messages.delete` | `DELETE /api/marketplace/v1/agent/channels/{channelId}/messages/{messageId}` | external-effects (`approvalAuthority: "app"`, `appHold`) | required |
 | `marketplace.channel-people.find` | `POST /api/marketplace/v1/agent/channels/{channelId}/people/find` `{email}` or `{handle}` → `{person: {personRef, displayName, approved}}` | writes-app-state | required |
 | `marketplace.channel-people.message` | `POST /api/marketplace/v1/agent/channels/{channelId}/people/{personRef}/messages` `{text, attachments?}` | external-effects (`approvalAuthority: "app"`, `appHold`) | required |
+| `marketplace.channel-live-grants.list` | `GET /api/marketplace/v1/agent/channels/live-grants` | read-only | none |
+| `marketplace.channel-live-grants.propose` | `POST /api/marketplace/v1/agent/channels/{channelId}/live-grants` (see [Live sessions](#live-sessions-channels-p2)) | writes-app-state | required |
+| `marketplace.channel-live-grants.narrow` | `POST /api/marketplace/v1/agent/channels/live-grants/{grantId}/narrow` | writes-app-state | required |
+| `marketplace.channel-live-grants.withdraw` | `POST /api/marketplace/v1/agent/channels/live-grants/{grantId}/withdraw` | writes-app-state | supported |
+| `marketplace.channel-live-grants.resolve` | `POST /api/marketplace/v1/agent/channels/live-grants/{grantId}/resolve` `{approvalId: grantId, proof}` | writes-app-state | required |
+| `marketplace.channel-live-grants.command` | `POST /api/marketplace/v1/agent/channels/live-grants/commands` `{event}` | writes-app-state | supported |
+| `marketplace.channel-live.join` | `POST /api/marketplace/v1/agent/channels/{channelId}/live/sessions` `{grantId, huddleId, modes}` | external-effects | required |
+| `marketplace.channel-live.leave` | `POST /api/marketplace/v1/agent/channels/{channelId}/live/sessions/{sessionId}/leave` | external-effects | supported |
+| `marketplace.channel-live.speak` | `POST /api/marketplace/v1/agent/channels/{channelId}/live/sessions/{sessionId}/speak` `{attachmentId, transcript}` or `{text, voice?}` | external-effects (`approvalAuthority: "app"`, `appHold`) | required |
+| `marketplace.channel-live.transcript` | `GET /api/marketplace/v1/agent/channels/{channelId}/live/sessions/{sessionId}/transcript` | read-only | none |
 | `marketplace.approvals.resolve` | `POST /api/marketplace/v1/agent/approvals/{approvalId}/resolve` | writes-app-state | required (`resolve.<approvalId>.<decision>`) |
 
 Consent: a Portal v1.4 class grant `{pluginId: channels-<provider>, accountId:
@@ -449,6 +459,12 @@ provider-env or account field.
 | `marketplace.channel-people-policy.get` / `.update` | `GET|PUT /api/marketplace/channels/connections/{connectionId}/people-policy` `{mode: none|allowlist|workspace, people?, domains?}` (see [Routes v2](#routes-v2-channels-p2)) |
 | `marketplace.channel-people.list` / `.revoke` | `GET /api/marketplace/channels/connections/{connectionId}/people?approved=`, `POST .../people/{personRef}/revoke` |
 | `marketplace.channel-buzz-identity.get` / `.update`, `marketplace.channel-buzz-key.generate`, `marketplace.channel-buzz-auth-tag.revoke` | `GET|PUT /api/marketplace/channels/buzz/identity`, `POST .../identity/key`, `DELETE .../identity/auth-tag` (see [Buzz](#buzz-channels-p2)) |
+| `marketplace.channel-live-grants.inbox` | `GET /api/marketplace/channels/live` (live-session grants with canonical JSON, digest, consent values, caps and usage; recent sessions; the owner switch) |
+| `marketplace.channel-live-grants.approve` / `.restrict` | `POST /api/marketplace/channels/live/grants/{grantId}/approve` `{digest}`, `POST .../narrow` `{terms}` (pinned owner's launch session) |
+| `marketplace.channel-live-grants.decline` / `.revoke` / `.pause` / `.resume` | `POST /api/marketplace/channels/live/grants/{grantId}/decline|revoke|pause|resume` (resume: pinned owner) |
+| `marketplace.channel-live-control.update` | `PUT /api/marketplace/channels/live/control` `{paused?, commandChannel?}` (resume and command channel: pinned owner) |
+| `marketplace.channel-live-sessions.stop` / `.transcript` | `POST /api/marketplace/channels/live/sessions/{sessionId}/stop`, `GET .../transcript` |
+| `marketplace.channel-live-clips.get` | `GET /api/marketplace/channels/live/clips/{approvalId}` (the exact held clip bytes; pinned owner) |
 
 "Grant to agent" is `marketplace.consents.request` with the channel's class
 selection (each channel in `browse` carries it as `grantSelection`, with the
@@ -1119,6 +1135,88 @@ webhook before `sendMessage` answers. The receiver waits (at most 10 s) for
 sends to the same chat that are still in flight, then checks the message id
 against the sent-message ledger and receipts of the last 48 hours; the loop
 breaker's per-sender cap stays as the last guard.
+
+### Live sessions (Channels P2)
+
+Buzz huddles under a **live-session grant** (scope §2.3, contract alpha.8 `@tealbrick/contract/grants`). Buzz declares
+`live: {join, listen, speak, transcript, maxSessionMinutes: 120}`; `live.join|listen|speak|transcript` are wired.
+
+Grant. The agent proposes `{huddleId?, modes: {listen?, speakApproved?, speakLive?}, maxSessionMinutes ≤ 120,
+maxDayMinutes, costCap.providerMinutes, topic, forbiddenTerms?, consent?: {disclosureNotice (default true),
+perParticipantConsent (default false)}, caps?: {perDay (default 10), perHour?, minIntervalSeconds?}, expires}` for a
+channel it holds an `outward` consent for. Marketplace builds the canonical grant (fresh id `live-<16 hex>`, the
+description `Live huddle session for agent <agentId> in channel <slug>`, target = the Buzz channel or one huddle), checks it with `parseGrant`,
+`assertServerEnforceable` and `grantApprovalWindow` (≤ 30 days after approval) and stores `canonicalGrant` and
+`grantDigest` (`sha256("tealbrick-grant/v1\n" + canonical)`) in `channel_live_grant`. `experts` and `deny` are
+refused (the server cannot enforce them). Two open grants never share a 32-hex digest prefix.
+At approval and at every use the stored grant must still match the server template for the record (id, description
+for the record's agent and channel slug, target inside the channel's Buzz conversation, approval channel); a direct
+database edit makes it unusable (`live_grant_corrupt` / `grant_integrity_failed`) and is audited once.
+
+Approval (owner only, exactly the digest): the Marketplace UI (`approve` with the shown `digest`, pinned owner's
+launch session); a Buzz reply `approve grant <32+ hex>` signed by the pinned owner Buzz key and posted in the grant's
+own Buzz channel (the channel comes from the grant record, never from the request); or a Portal owner assertion with
+`op: "tealbrick:standing-grant"`, `approvalId` = grant id, the digest and the pinned `ownerSubject`. Both proofs go
+through `verifyGrantApproval`, are single use instance-wide (`marketplace_used_approval_proof`) and Marketplace stores
+`result.canonical` as returned. A Buzz proof signed before the current owner key was set is refused. Any change (agent
+or owner narrowing) is a new digest and needs a new approval; nobody widens. The agent may only make the consent flags
+stricter; the owner may set them either way. Owner revoke/pause/resume: the UI, or a forwarded owner-signed
+`revoke <grant-id>` (in that grant's channel) / `pause grants` / `resume grants` (in the owner command channel set in
+the UI), verified with `verifyOwnerCommand`.
+
+Agent proposals (review of PR #53): consent at least as strict as the defaults (`disclosureNotice: false` is refused
+with `live_consent_weaker_than_default`; only the owner turns the notice off, through the strict-gated narrow in the
+Marketplace UI), and never wider than the caller's current approved grant for the same target (modes, minutes, cost,
+caps, forbidden terms, consent, expiry: `live_grant_wider_than_approved`). Live grants need the channel's
+`standingGrants: "allowed"`; switching it off stops live sessions. Signed owner commands are monotonic: a command
+created at or before the last state change of its grant (`revoke`) or of the global switch (`pause` / `resume`,
+UI changes included) is refused (`live_command_stale`), so a withheld older `resume grants` never undoes a later
+pause. Signed commands still need an agent to forward them (Marketplace does not yet subscribe to the owner command
+channel itself; the UI controls do not depend on an agent).
+
+Session. `join` needs the caller's active grant covering every requested mode, the `outward` consent, the Buzz
+identity, and room under the caps (joins per day/hour/interval, minutes in the rolling day, provider minutes). With
+`consent.disclosureNotice` the notice (kind 9) is posted in the huddle's parent channel first; if it fails nothing
+joins; the notice is a fixed Marketplace template and the agent's topic follows on its own line, labelled
+`Topic (from the agent):`. The huddle must be an ephemeral huddle of the granted channel: before joining,
+Marketplace queries the relay for the 48100 event and the huddle channel's 9007 create event and checks the 48100
+signature, `h` = the channel, `ephemeral_channel_id` = the huddle and signer = the 9007 signer (the huddle's
+creator) (`live_huddle_not_in_channel` otherwise); the notice is posted in the parent
+channel and in the huddle itself. `listen` is refused while `perParticipantConsent` is true (no per-participant gate yet) and while no speech
+provider is wired. Every 250 ms the session re-reads the grant record, the owner switch, the consent and the channel;
+revoke, pause, expiry, narrowing, consent loss, channel pause, `maxSessionMinutes`, `maxDayMinutes` and the cost cap
+stop it, and the client leaves within 5 s. `speak`: `{attachmentId}` of an uploaded `audio/ogg` clip is held once in the
+approvals queue (`live.speak-clip`, digest `sha256("tealbrick-live-clip/v1\n" + grantId + "\n" + clipSha256)`, owner
+approval in the UI, Buzz or TBD) and plays once after approval; `{text}` (speak-live) refuses forbidden terms before any
+provider call and is refused (`live_tts_unavailable`) until `@tealbrick/voice` ships Ogg/Opus synthesis (rc.19).
+Clips (review of PR #53): `{attachmentId, transcript}`; the agent-stated transcript is checked against the forbidden
+terms and shown to the owner, who plays the exact stored bytes (`GET /api/marketplace/channels/live/clips/{approvalId}`,
+`marketplace.channel-live-clips.get`, pinned owner's launch session, `audio/ogg`, inline, no-store, `x-content-sha256`)
+before approving. The clip digest is `sha256("tealbrick-live-clip/v1\n" + grantDigest + "\n" + sessionId + "\n" +
+clipSha256)`: a narrowed and re-approved grant, another session or the 24 h hold expiry invalidate it, and an
+approved clip plays once (`live_clip_already_played`). Approving a clip hold (re-review of PR #53) needs the pinned
+owner's own launch session (strict gate) AND a server-side record that the playback route served this hold's exact
+clip (whole body; `Range` requests are refused) to that same session after the hold was created and within its TTL,
+plus the page's SHA-256 of the played bytes (`{playedSha256}`); otherwise `409 live_clip_requires_playback` /
+`live_clip_sha_mismatch`. Buzz replies and TBD assertions cannot prove listening: `marketplace.approvals.resolve`
+refuses clip holds with `409 live_clip_requires_playback`, and a clip hold's `approvalText` points to the Marketplace
+Approvals view instead of an `approve <prefix>` code. Only `GET` serves a clip (`HEAD` and every other method answer
+405 and record nothing), and the play is recorded only when the response finished with the whole body (an aborted
+download records nothing); the owner UI fetches the clip only when the owner clicks Play and enables Approve only
+after playback ended with a matching SHA-256. Play records are purged after two days. Forbidden terms are matched on a skeleton of both sides (NFKC,
+lowercase, combining marks, format characters and invisible letters (Hangul fillers) removed, a vendored UTS #39
+confusables subset folded (Latin extensions and small capitals, Greek, Cyrillic, Cherokee:
+`program/src/channels/live/confusables.ts`), letters and digits only); speak-live text and clip transcripts with
+format characters or invisible letters are refused (`live_text_hidden_characters`). Operator note: the folding over-matches on purpose,
+so Cyrillic or Greek speech can be flagged or refused for a Latin term (for example `мах`, `сор`, `нор` read as `max`,
+`cop`, `hop`); a false refusal is accepted, a bypass is not.
+The bound consent must stay active and `outward`.
+
+Receipts. `channel_live_transcript` keeps what the agent heard (other participants: `framing:
+"untrusted-external-speech"` with the speaker key; forbidden terms flagged, never refused) and said (text, or the
+SHA-256 of an approved clip), with times; text is emptied after the inbound text retention. Sessions keep join and
+leave times and minutes. Raw audio is never written anywhere. The audit gets metadata and SHA-256 only (the session
+end records the transcript digest).
 
 ### Inert mode
 

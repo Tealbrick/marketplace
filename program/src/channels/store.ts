@@ -7,6 +7,7 @@ import { sha256Hex } from "./canonical-json.js";
 import { ACTIONS_TABLES, ActionsStore, migrateActionsTables } from "./actions-store.js";
 import { BUZZ_TABLES, BuzzStore, migrateBuzzTables } from "./buzz-store.js";
 import { INBOUND_TABLES, InboundStore, migrateInboundTables } from "./inbound-store.js";
+import { LIVE_TABLES, LiveStore, migrateLiveTables } from "./live/store.js";
 import { TEAMS_CONVERSATION_DDL, TeamsConversationStore } from "./teams-store.js";
 import {
   ceilingActionCaps,
@@ -44,6 +45,7 @@ export const CHANNEL_TABLES = [
   ...INBOUND_TABLES,
   ...BUZZ_TABLES,
   ...ACTIONS_TABLES,
+  ...LIVE_TABLES,
 ] as const;
 
 const HOUR_MS = 3_600_000;
@@ -207,6 +209,8 @@ export function migrateChannelTables(db: DatabaseSync): void {
   migrateBuzzTables(db);
   // Routes v2 (P2): post ops, the sent-message ledger, people policy and people.
   migrateActionsTables(db);
+  // Live sessions (P2 scope 2.3): live-session grants, huddle sessions, transcripts, the owner switch.
+  migrateLiveTables(db);
 }
 
 // ---------------------------------------------------------------------------
@@ -877,6 +881,13 @@ export class ChannelStore {
   private inboundStore: InboundStore | undefined;
   private buzzStore: BuzzStore | undefined;
   private actionsStore: ActionsStore | undefined;
+  private liveStore: LiveStore | undefined;
+
+  /** Live-session grants, huddle sessions and transcripts (P2 scope 2.3), on the same connection. */
+  get live(): LiveStore {
+    this.liveStore ??= new LiveStore(this.db);
+    return this.liveStore;
+  }
 
   /** Routes v2 state (post ops, sent messages, people policy, people), on the same connection. */
   get actions(): ActionsStore {

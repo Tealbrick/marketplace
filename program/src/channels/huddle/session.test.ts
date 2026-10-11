@@ -337,7 +337,7 @@ describe("huddle stop, memory and persistence", () => {
   });
 });
 
-describe("gating: nothing exposes live voice yet", () => {
+describe("wiring: live voice only through the live-session grant module", () => {
   async function sourceFiles(dir: string): Promise<string[]> {
     const out: string[] = [];
     for (const entry of await readdir(dir, { withFileTypes: true })) {
@@ -348,18 +348,19 @@ describe("gating: nothing exposes live voice yet", () => {
     return out;
   }
 
-  it("keeps `live` out of the wired capabilities and the huddle module out of every runtime import", async () => {
-    expect([...AGENT_WIRED_FEATURES].filter((feature) => feature.startsWith("live"))).toEqual([]);
+  it("wires live.* and lets only channels/live/sessions.ts construct a huddle session", async () => {
+    expect([...AGENT_WIRED_FEATURES].filter((feature) => feature.startsWith("live")).sort()).toEqual(["live.join", "live.listen", "live.speak", "live.transcript"]);
     const offenders: string[] = [];
     for (const file of await sourceFiles(SRC)) {
       const relative = path.relative(SRC, file);
       if (relative.startsWith(path.join("channels", "huddle") + path.sep)) continue;
+      if (relative === path.join("channels", "live", "sessions.ts")) continue;
       const text = await readFile(file, "utf8");
-      if (/from "[^"]*huddle\/|createHuddleSession|createHuddleAudioClient|from "@tealbrick\/voice/u.test(text)) offenders.push(relative);
+      if (/from "[^"]*huddle\/(client|session|listen|speak)|createHuddleSession|createHuddleAudioClient/u.test(text)) offenders.push(relative);
     }
     expect(offenders).toEqual([]);
-    // The speech dependency arrives with the wiring PR: nothing imports @tealbrick/voice yet.
-    for (const file of await sourceFiles(path.join(SRC, "channels", "huddle"))) {
+    // @tealbrick/voice rc.18 has no Ogg/Opus synthesis: the dependency is not added until rc.19.
+    for (const file of await sourceFiles(SRC)) {
       expect(await readFile(file, "utf8"), file).not.toMatch(/from "@tealbrick\/voice/u);
     }
   });

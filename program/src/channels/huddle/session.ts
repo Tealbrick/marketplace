@@ -11,9 +11,9 @@ import type { SpeechProvider } from "./speech.js";
 /**
  * One agent in one Buzz huddle: audio client + listen pipeline + speak pipeline + usage accounting + receipt.
  *
- * GATED (Channels P2 §2.3): nothing outside tests constructs this. No agent operation, route or capability uses
- * it; `live` stays out of AGENT_WIRED_FEATURES. The live-session grant (contract alpha.8) will own the modes,
- * limits, consent block and revoke, and call `stop()` (which leaves within 5 s).
+ * Wired (Channels P2 §2.3): only `channels/live/sessions.ts` constructs this, under an active live-session grant
+ * (contract alpha.8) that owns the modes, limits, consent block and revoke, and calls `stop()` (which leaves within
+ * 5 s).
  *
  * The receipt holds only what the scope allows: join/leave times and the transcript of what the agent heard and
  * said (with times, and the SHA-256 of each approved clip). Raw audio is never kept: frames live in bounded memory

@@ -374,6 +374,134 @@
       "appHold": true
     },
     {
+      "id": "marketplace.channel-live-grants.list",
+      "crud": [
+        "read"
+      ],
+      "method": "GET",
+      "path": "/api/marketplace/v1/agent/channels/live-grants",
+      "idempotency": "none",
+      "effects": "read-only",
+      "review": "none",
+      "summary": "The caller's own live-session grants (canonical grant, digest, state, usage counters)"
+    },
+    {
+      "id": "marketplace.channel-live-grants.propose",
+      "crud": [
+        "create"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/v1/agent/channels/{channelId}/live-grants",
+      "input": "#/schemas/LiveGrantProposal",
+      "idempotency": "required",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Propose a live-session grant (contract alpha.8) for a Buzz channel's huddles: modes listen / speakApproved / speakLive, session and day minutes, provider-minute cost cap, topic, forbidden terms and the consent block (disclosure notice on; an agent can only ask for stricter consent, never wider than its current approved grant); authorises nothing until the owner approves its digest"
+    },
+    {
+      "id": "marketplace.channel-live-grants.narrow",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/v1/agent/channels/live-grants/{grantId}/narrow",
+      "input": "#/schemas/LiveGrantTerms",
+      "idempotency": "required",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Narrow one of the caller's live-session grants (never wider; a new digest needs a new owner approval)"
+    },
+    {
+      "id": "marketplace.channel-live-grants.withdraw",
+      "crud": [
+        "delete"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/v1/agent/channels/live-grants/{grantId}/withdraw",
+      "idempotency": "supported",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Withdraw one of the caller's live-session grants (running sessions on it leave within 5 s)"
+    },
+    {
+      "id": "marketplace.channel-live-grants.resolve",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/v1/agent/channels/live-grants/{grantId}/resolve",
+      "input": "#/schemas/ApprovalResolveRequest",
+      "idempotency": "required",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Forward the owner-signed approval {approvalId: grantId, proof} of the caller's own pending live-session grant (Buzz `approve grant <32+ hex>` in the grant's own channel, or a Portal owner assertion with op tealbrick:standing-grant); single use"
+    },
+    {
+      "id": "marketplace.channel-live-grants.command",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/v1/agent/channels/live-grants/commands",
+      "input": "#/schemas/LiveOwnerCommand",
+      "idempotency": "supported",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Forward an owner-signed Buzz command: `revoke <grant-id>` (in that grant's channel), `pause grants` or `resume grants` (in the owner command channel); single use, and refused when signed at or before the last change of that grant or of the global switch"
+    },
+    {
+      "id": "marketplace.channel-live.join",
+      "crud": [
+        "create"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/v1/agent/channels/{channelId}/live/sessions",
+      "input": "#/schemas/LiveJoinInput",
+      "idempotency": "required",
+      "effects": "external-effects",
+      "review": "none",
+      "summary": "Join a Buzz huddle of a consented channel under an active live-session grant covering the requested modes (posts the disclosure notice first when the grant says so); session, day-minute and cost caps stop the session; revoke or pause leaves within 5 s"
+    },
+    {
+      "id": "marketplace.channel-live.leave",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/v1/agent/channels/{channelId}/live/sessions/{sessionId}/leave",
+      "idempotency": "supported",
+      "effects": "external-effects",
+      "review": "none",
+      "summary": "Leave the caller's own huddle session"
+    },
+    {
+      "id": "marketplace.channel-live.speak",
+      "crud": [
+        "create"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/v1/agent/channels/{channelId}/live/sessions/{sessionId}/speak",
+      "input": "#/schemas/LiveSpeakInput",
+      "idempotency": "required",
+      "effects": "external-effects",
+      "review": "allowed",
+      "summary": "Speak in the caller's joined huddle: an uploaded Ogg/Opus clip with its stated transcript (speakApproved: 202 approval_pending until the owner, who can play it, approves its digest bound to the grant digest, this session and the clip; then it plays once) or text (speakLive; refused while text-to-speech in Ogg/Opus is unavailable; forbidden terms and hidden characters refuse)",
+      "approvalAuthority": "app",
+      "appHold": true
+    },
+    {
+      "id": "marketplace.channel-live.transcript",
+      "crud": [
+        "read"
+      ],
+      "method": "GET",
+      "path": "/api/marketplace/v1/agent/channels/{channelId}/live/sessions/{sessionId}/transcript",
+      "idempotency": "none",
+      "effects": "read-only",
+      "review": "none",
+      "summary": "The caller's own session transcript: other participants' words framed as untrusted external speech with the speaker's key; the agent's own lines with clip SHA-256"
+    },
+    {
       "id": "marketplace.approvals.resolve",
       "crud": [
         "update"
@@ -1089,6 +1217,152 @@
       "effects": "writes-app-state",
       "review": "none",
       "summary": "Revoke the Buzz NIP-OA tag: Marketplace stops publishing and receiving with the Buzz identity at once",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channel-live-grants.inbox",
+      "crud": [
+        "read"
+      ],
+      "method": "GET",
+      "path": "/api/marketplace/channels/live",
+      "idempotency": "none",
+      "effects": "read-only",
+      "review": "none",
+      "summary": "Live-session grants (canonical JSON, digest, consent values, caps, usage), recent huddle sessions and the owner switch",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channel-live-grants.approve",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/channels/live/grants/{grantId}/approve",
+      "input": "#/schemas/LiveGrantOwnerApproval",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Approve exactly the shown digest of a pending live-session grant (pinned owner's launch session)",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channel-live-grants.restrict",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/channels/live/grants/{grantId}/narrow",
+      "input": "#/schemas/LiveGrantOwnerNarrow",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Narrow a live-session grant (the owner may set the consent flags either way); the new digest needs approval",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channel-live-grants.decline",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/channels/live/grants/{grantId}/decline",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Decline a pending live-session grant",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channel-live-grants.revoke",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/channels/live/grants/{grantId}/revoke",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Revoke a live-session grant at once (sessions leave within 5 s)",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channel-live-grants.pause",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/channels/live/grants/{grantId}/pause",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Pause a live-session grant (sessions leave within 5 s)",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channel-live-grants.resume",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/channels/live/grants/{grantId}/resume",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Resume a paused live-session grant (same approved digest, inside its window)",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channel-live-control.update",
+      "crud": [
+        "update"
+      ],
+      "method": "PUT",
+      "path": "/api/marketplace/channels/live/control",
+      "input": "#/schemas/LiveControlInput",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Pause or resume every live-session grant and set the owner command channel for signed Buzz commands",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channel-live-sessions.stop",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/channels/live/sessions/{sessionId}/stop",
+      "idempotency": "none",
+      "effects": "external-effects",
+      "review": "none",
+      "summary": "Stop a huddle session now (the agent leaves within 5 s)",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channel-live-sessions.transcript",
+      "crud": [
+        "read"
+      ],
+      "method": "GET",
+      "path": "/api/marketplace/channels/live/sessions/{sessionId}/transcript",
+      "idempotency": "none",
+      "effects": "read-only",
+      "review": "none",
+      "summary": "A huddle session's transcript receipt",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.channel-live-clips.get",
+      "crud": [
+        "read"
+      ],
+      "method": "GET",
+      "path": "/api/marketplace/channels/live/clips/{approvalId}",
+      "idempotency": "none",
+      "effects": "read-only",
+      "review": "none",
+      "summary": "Play a held speak-approved clip: the exact stored Ogg/Opus bytes, whole body only (audio/ogg, inline, no-store, SHA-256 in x-content-sha256); recorded per owner session, and approving the hold requires that record; pinned owner's launch session",
       "audience": "owner"
     }
   ],
@@ -3297,6 +3571,369 @@
           "items": {
             "type": "string"
           }
+        }
+      }
+    },
+    "LiveGrantProposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "modes",
+        "maxSessionMinutes",
+        "maxDayMinutes",
+        "costCap",
+        "topic",
+        "expires"
+      ],
+      "properties": {
+        "huddleId": {
+          "type": "string",
+          "format": "uuid",
+          "description": "One huddle instead of every huddle of the channel"
+        },
+        "modes": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "listen": {
+              "const": true
+            },
+            "speakApproved": {
+              "const": true
+            },
+            "speakLive": {
+              "const": true
+            }
+          }
+        },
+        "maxSessionMinutes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120
+        },
+        "maxDayMinutes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1440
+        },
+        "costCap": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "providerMinutes"
+          ],
+          "properties": {
+            "providerMinutes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 44640
+            }
+          }
+        },
+        "topic": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "forbiddenTerms": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "caps": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "perDay"
+          ],
+          "properties": {
+            "perDay": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            },
+            "perHour": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            },
+            "minIntervalSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 86400
+            }
+          }
+        },
+        "expires": {
+          "type": "string",
+          "format": "date-time",
+          "description": "At most 30 days after the owner's approval"
+        },
+        "consent": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Defaults: disclosureNotice true, perParticipantConsent false",
+          "properties": {
+            "disclosureNotice": {
+              "type": "boolean"
+            },
+            "perParticipantConsent": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "LiveGrantTerms": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "modes",
+        "maxSessionMinutes",
+        "maxDayMinutes",
+        "costCap",
+        "topic",
+        "forbiddenTerms",
+        "consent",
+        "caps",
+        "expires"
+      ],
+      "properties": {
+        "modes": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "listen": {
+              "const": true
+            },
+            "speakApproved": {
+              "const": true
+            },
+            "speakLive": {
+              "const": true
+            }
+          }
+        },
+        "maxSessionMinutes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120
+        },
+        "maxDayMinutes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1440
+        },
+        "costCap": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "providerMinutes"
+          ],
+          "properties": {
+            "providerMinutes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 44640
+            }
+          }
+        },
+        "topic": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "forbiddenTerms": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "caps": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "perDay"
+          ],
+          "properties": {
+            "perDay": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            },
+            "perHour": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            },
+            "minIntervalSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 86400
+            }
+          }
+        },
+        "expires": {
+          "type": "string",
+          "format": "date-time",
+          "description": "At most 30 days after the owner's approval"
+        },
+        "consent": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "disclosureNotice",
+            "perParticipantConsent"
+          ],
+          "properties": {
+            "disclosureNotice": {
+              "type": "boolean"
+            },
+            "perParticipantConsent": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "LiveGrantOwnerApproval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "digest"
+      ],
+      "properties": {
+        "digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "LiveGrantOwnerNarrow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "terms"
+      ],
+      "properties": {
+        "terms": {
+          "$ref": "#/schemas/LiveGrantTerms"
+        }
+      }
+    },
+    "LiveOwnerCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event"
+      ],
+      "properties": {
+        "event": {
+          "type": "object",
+          "description": "The owner-signed Nostr event (NIP-01) as received"
+        }
+      }
+    },
+    "LiveJoinInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "grantId",
+        "huddleId",
+        "modes"
+      ],
+      "properties": {
+        "grantId": {
+          "type": "string",
+          "pattern": "^live-[0-9a-f]{16}$"
+        },
+        "huddleId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "modes": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "listen": {
+              "const": true
+            },
+            "speakApproved": {
+              "const": true
+            },
+            "speakLive": {
+              "const": true
+            }
+          }
+        }
+      }
+    },
+    "LiveSpeakInput": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "attachmentId",
+            "transcript"
+          ],
+          "properties": {
+            "attachmentId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "transcript": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000,
+              "description": "What the clip says (agent-stated, shown to the owner, checked against the forbidden terms)"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "text"
+          ],
+          "properties": {
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "voice": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._-]{1,64}$"
+            }
+          }
+        }
+      ]
+    },
+    "LiveControlInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "paused": {
+          "type": "boolean"
+        },
+        "commandChannel": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
         }
       }
     }

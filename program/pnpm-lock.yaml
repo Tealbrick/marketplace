@@ -24,8 +24,8 @@ importers:
         specifier: ^5.90.20
         version: 5.101.4(react@19.2.8)
       '@tealbrick/contract':
-        specifier: 0.1.0-alpha.7
-        version: 0.1.0-alpha.7
+        specifier: 0.1.0-alpha.8
+        version: 0.1.0-alpha.8
       '@tealbrick/ui':
         specifier: 0.2.2
         version: 0.2.2(react@19.2.8)
@@ -991,8 +991,8 @@ packages:
     engines: {node: '>=24'}
     hasBin: true
 
-  '@tealbrick/contract@0.1.0-alpha.7':
-    resolution: {integrity: sha512-sTIo5lcsrY9QsiN6IqZ9qXgMlJnql4Xc7+ypU7pxbgoLweu8NuPTtfosaDdr5+G7VSJJgVSb3fofXTi/QJXUIQ==}
+  '@tealbrick/contract@0.1.0-alpha.8':
+    resolution: {integrity: sha512-nVcju5kMweJcDzaRxwN+ao+KA/YlZjpvMGVyzjgQVMovLgubTCdbUXa+kqKxl2udiZAC2tk2lsCkRooZoNFpDw==}
     engines: {node: '>=24'}
     hasBin: true
 
@@ -2601,9 +2601,9 @@ snapshots:
   '@tealbrick/conformance@0.1.0-alpha.5':
     dependencies:
       '@noble/curves': 2.4.0
-      '@tealbrick/contract': 0.1.0-alpha.7
+      '@tealbrick/contract': 0.1.0-alpha.8
 
-  '@tealbrick/contract@0.1.0-alpha.7':
+  '@tealbrick/contract@0.1.0-alpha.8':
     dependencies:
       '@noble/curves': 2.4.0
       zod: 4.6.5

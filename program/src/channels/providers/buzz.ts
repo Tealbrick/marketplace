@@ -126,7 +126,8 @@ const CAPABILITIES: ChannelCapabilities = {
   canvas: false,
   presence: { typing: true, status: false },
   ephemeral: false,
-  live: false,
+  // Huddles (P2 scope 2.3): the Marketplace huddle client under a live-session grant, 2 h per session at most.
+  live: { join: true, listen: true, speak: true, transcript: true, maxSessionMinutes: 120 },
   schedule: { native: false },
   events: { create: false },
   discover: "list",
@@ -307,6 +308,11 @@ export type BuzzBridgeApi = {
 
 export type BuzzProvider = ChannelProvider & {
   typing(credential: string | null | undefined, destination: ChannelDestination, options?: { replyTo?: string }): Promise<ActionResult>;
+  /**
+   * Read-only relay query (`POST /query`, NIP-01 filters) as the identity. Answers the events as the relay returned
+   * them: untrusted, the caller verifies each one (live sessions: the creator-signed 48100 huddle link).
+   */
+  queryEvents(credential: string | null | undefined, filters: Record<string, unknown>[]): Promise<{ ok: true; events: unknown[] } | { ok: false; errorCode: string; detail: string }>;
   readonly bridge: BuzzBridgeApi;
 };
 
@@ -874,6 +880,16 @@ export function createBuzzProvider(options: ChannelProviderOptions & { allowPriv
       guard(() => findPerson(credential, personQuery), { ok: false, reason: "failed", errorCode: "provider_internal_error", detail: "unexpected adapter error" }),
     openDirect: (credential, userId) => guard(() => openDirect(credential, userId), { ok: false, errorCode: "provider_internal_error", detail: "unexpected adapter error" }),
     typing: (credential, destination, typingOptions) => guard(() => typing(credential, destination, typingOptions), uncertainAction),
+    queryEvents: (credential, filters) =>
+      guard(
+        async () => {
+          const checked = check(credential);
+          if (!checked.ok) return { ok: false as const, errorCode: checked.failure.errorCode, detail: checked.failure.detail };
+          const found = await query(checked.cred, filters, secretsOf(credential, checked.cred));
+          return found.ok ? { ok: true as const, events: found.events as unknown[] } : { ok: false as const, errorCode: found.failure.errorCode, detail: found.failure.detail.replace(/; delivery is unknown$/u, "") };
+        },
+        { ok: false as const, errorCode: "provider_internal_error", detail: "unexpected adapter error" },
+      ),
     bridge,
   };
 }
