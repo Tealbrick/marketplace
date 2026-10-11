@@ -609,3 +609,13 @@ code, .mono { font-family: var(--dg-font-mono); overflow-wrap: anywhere; }
 .people-policy { display: grid; min-width: 0; gap: 10px; }
 .people-policy h4 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; font-weight: 600; }
 .people-policy textarea { width: 100%; min-width: 0; }
+
+/* Live sessions (Channels P2 scope 2.3) */
+.live-grant { border: 1px solid var(--border, #d0d7de); border-radius: 8px; padding: 12px; margin: 8px 0; }
+.live-consent { border-left: 4px solid var(--accent, #0f766e); padding: 4px 12px; margin: 8px 0; }
+.live-consent p { margin: 4px 0; }
+.live-summary { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 8px 0; }
+.live-summary dt { font-weight: 600; }
+.live-canonical { white-space: pre-wrap; word-break: break-all; max-height: 240px; overflow: auto; font-size: 12px; }
+.live-session { padding: 8px 0; border-bottom: 1px solid var(--border, #d0d7de); }
+.live-transcript li { margin: 2px 0; }

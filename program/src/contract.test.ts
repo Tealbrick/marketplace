@@ -317,7 +317,10 @@ describe("tealbrick.app.json", () => {
     // + 3: Channels inbound (marketplace.channel-inbound-routes.update, -events.list, -settings.update; P2 scope 2.2).
     // + 4: the Buzz identity (marketplace.channel-buzz-identity.get|update, -buzz-key.generate, -buzz-auth-tag.revoke).
     // + 4: routes v2 people (marketplace.channel-people-policy.get|update, marketplace.channel-people.list|revoke).
-    expect(owner.length).toBe(16 + 16 + 3 + 3 + 4 + 4);
+    // + 10: live sessions (marketplace.channel-live-grants.inbox|approve|restrict|decline|revoke|pause|resume,
+    //   marketplace.channel-live-control.update, marketplace.channel-live-sessions.stop|transcript; P2 scope 2.3);
+    // + 1: marketplace.channel-live-clips.get (owner playback of a held clip).
+    expect(owner.length).toBe(16 + 16 + 3 + 3 + 4 + 4 + 11);
     // Channels: the account-sourced bot tokens (and the Slack signing secret) arrive as provider env, never stored by Portal.
     const channels = MARKETPLACE_MANIFEST.settings?.groups.find((group) => group.id === "channels");
     expect(channels?.fields.map((field) => [field.key, field.env])).toEqual([
@@ -362,7 +365,7 @@ describe("tealbrick.app.json", () => {
     const manifest = JSON.parse(await readFile(path.join(repoRoot, "tealbrick.app.json"), "utf8")) as { app: { version: string } };
     const program = JSON.parse(await readFile(path.join(repoRoot, "program/package.json"), "utf8")) as { version: string; dependencies: Record<string, string> };
     expect(manifest.app.version).toBe(program.version);
-    expect(program.dependencies["@tealbrick/contract"]).toBe("0.1.0-alpha.7");
+    expect(program.dependencies["@tealbrick/contract"]).toBe("0.1.0-alpha.8");
   });
 
   it("resolves launch routes against the manifest", () => {

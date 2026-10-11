@@ -76,6 +76,11 @@ import {
 import { createOwnerWriterGate, currentOwnerKeyView, registerOwnerKeyRoutes } from "./channels/owner-key-routes.js";
 import { NO_OWNER_PIN, readAttestedOwnerNostrPubkey, readOwnerPin, type OwnerKeyAttestation, type OwnerPinSource } from "./channels/owner-pin.js";
 import { CHANNEL_AGENT_OPERATION, registerChannelRoutes } from "./channels/routes.js";
+import { createLiveGrantService, type LiveOwnerBinding } from "./channels/live/grants.js";
+import { createLiveSessionManager, sha256Hex as liveSha256 } from "./channels/live/sessions.js";
+import { LIVE_AGENT_OPERATION, LIVE_CLIP_ACTION, liveClipApprovalRefusal, liveClipDigest } from "./channels/live/routes.js";
+import type { SpeechProvider } from "./channels/huddle/speech.js";
+import type { BinarySocketFactory } from "./channels/buzz-relay-guard.js";
 import { resolveRuntime } from "./channels/providers/common.js";
 import { createBotFrameworkVerifier, type BotFrameworkVerifier } from "./channels/providers/teams-auth.js";
 import { TEAMS_MESSAGES_PATH, registerTeamsInboundRoute } from "./channels/teams-inbound.js";
@@ -683,6 +688,20 @@ export type BuildMarketplaceAppOptions = {
   ownerPinSource?: OwnerPinSource;
   /** Fetch for the pinned grant JWKS of PO3 owner assertions (default: `portalFetch`, then `fetch`). */
   ownerApprovalJwksFetch?: typeof fetch;
+  /**
+   * Live sessions (P2 scope 2.3): speech-to-text / text-to-speech for Buzz huddles. Default: none (listen is
+   * refused with `live_speech_unavailable`); the @tealbrick/voice-backed provider arrives with voice rc.19.
+   */
+  liveSpeechProvider?: SpeechProvider;
+  /** Whether the speech provider synthesizes Ogg/Opus (speak-live). Default false: speak-live is refused. */
+  liveTtsAvailable?: boolean;
+  /** Test seam: the huddle audio socket factory (default: the guarded, address-pinned relay connect). */
+  liveHuddleSocketFactory?: BinarySocketFactory;
+  /** Test seam: the live session re-check interval (default 250 ms). */
+  liveTickMs?: number;
+  /** Test seam: the huddle join deadline and close grace. */
+  liveHuddleJoinTimeoutMs?: number;
+  liveHuddleCloseGraceMs?: number;
 };
 
 /** Test and ops handle on a built app's channel runtime (scheduler tick, boot completion). */
@@ -5479,6 +5498,20 @@ export async function buildMarketplaceApp(
       error: approval.error,
       ...(approval.state === "succeeded" ? { result: approval.result } : {}),
       ...(approval.sourceKind === "channel-consent" ? { channel: channelApprovalSummary(approval) } : {}),
+      ...(approval.sourceKind === "live-clip"
+        ? {
+            live: {
+              grantId: approval.sourceRef,
+              sessionId: String(approval.arguments.sessionId ?? ""),
+              clipSha256: String(approval.arguments.clipSha256 ?? ""),
+              channelId: String(approval.arguments.channelId ?? ""),
+              digest: approval.fingerprint,
+              transcript: String(approval.arguments.transcript ?? ""),
+              // The agent already played the approved clip in the huddle (single use); not the owner's playback.
+              usedByAgent: options.store.channels.live.clipUsed(approval.id),
+            },
+          }
+        : {}),
       ...ownerProofView(approval),
     };
   };
@@ -5588,6 +5621,24 @@ export async function buildMarketplaceApp(
     const owned = ownedApproval(request, reply);
     if ("response" in owned) return owned.response;
     const { principal, approval } = owned;
+    // A held huddle clip (re-review of PR #53, H1): only the pinned owner's own launch session, and only after the
+    // playback route served this exact clip to that session (and the page reports the SHA-256 it played). Checked
+    // before the claim, so a refusal consumes nothing.
+    if (approval.sourceKind === "live-clip") {
+      const gate = await createOwnerWriterGate({
+        organizationId,
+        pinSource: ownerPinSource,
+        requireOperator,
+        ownerLaunchSession: (launch) => operatorSessions.ownerLaunchSession(launch.headers.cookie, launch.headers["x-csrf-token"]),
+      })(request, reply);
+      if (!gate.ok) return { ok: false, error: gate.error === "marketplace_operator_required" ? "owner_session_required" : gate.error };
+      const body = request.body && typeof request.body === "object" ? (request.body as Record<string, unknown>) : {};
+      const refusal = liveClipApprovalRefusal({ store: options.store, approval, cookieHeader: request.headers.cookie, playedSha256: body.playedSha256, now: new Date() });
+      if (refusal) {
+        reply.code(refusal.status);
+        return { ok: false, error: refusal.error };
+      }
+    }
     // Exactly once: only the request that moves it out of `pending` runs it.
     const claimed = options.store.decideCompanyBoxApproval({
       id: approval.id,
@@ -5596,6 +5647,18 @@ export async function buildMarketplaceApp(
       decidedBy: principal.id,
     });
     if (!claimed) return notPending(reply, approval.id);
+    if (claimed.sourceKind === "live-clip") {
+      const finished = runApprovedLiveClip(claimed);
+      options.store.recordAudit({
+        workspaceSlug: finished.workspaceSlug,
+        pluginId: finished.pluginId,
+        eventType: "marketplace.company_box.approval.approved",
+        actorId: principal.id,
+        metadata: { approvalId: finished.id, actionKey: finished.actionKey, agentId: finished.agentId, digest: finished.fingerprint, outcome: finished.state, ...(finished.error ? { error: finished.error } : {}) },
+      });
+      reply.code(200);
+      return { ok: finished.state === "succeeded", approval: ownerApprovalView(finished) };
+    }
     if (claimed.sourceKind === "channel-consent") {
       const run = await runApprovedChannelHold(claimed, traceIdFrom(request));
       const current = options.store.getCompanyBoxApproval(claimed.id)!;
@@ -8293,6 +8356,12 @@ export async function buildMarketplaceApp(
     await channelsReady;
     const at = now ?? channelClock();
     const report = await channelService.tick({ now: at, claimer: claimer ?? channelInstanceId, run: runScheduledChannelPost });
+    // Live-session transcripts follow the inbound text retention.
+    try {
+      liveSessions?.purge(at);
+    } catch {
+      // Retention retries on the next tick.
+    }
     // Buzz bridge retention: Marketplace deletes its own bridged messages after the inbound text retention.
     if (buzzBridge) {
       try {
@@ -8504,6 +8573,120 @@ export async function buildMarketplaceApp(
     inbound: { pipeline: inboundPipeline, worker: inboundWorker },
     buzzBridge,
   });
+  // ----- Live sessions (P2 scope 2.3): live-session grants (contract alpha.8) and Buzz huddle sessions -----
+  /** The pinned owner material for live-grant proofs, read per request (owner Buzz key, Portal owner pin). */
+  const liveOwnerBinding = async (): Promise<LiveOwnerBinding> => {
+    const attestation = await readAttestedOwnerNostrPubkey(ownerPinSource);
+    const key = options.store.channels.getOwnerKey(organizationId);
+    const nostr: LiveOwnerBinding["nostr"] =
+      attestation.status === "error"
+        ? { ok: false, status: 503, error: "approval_owner_key_mismatch" }
+        : !key?.pubkey || !key.fingerprint
+          ? { ok: false, status: 503, error: "approval_owner_unbound" }
+          : attestation.status === "attested" && attestation.pubkey !== key.pubkey
+            ? { ok: false, status: 503, error: "approval_owner_key_mismatch" }
+            : { ok: true, pubkey: key.pubkey, fingerprint: key.fingerprint, setAtMs: Date.parse(key.setAt) };
+    const pin = await readOwnerPin(ownerPinSource);
+    const portal: LiveOwnerBinding["portal"] =
+      !pin || !pin.jwksUri || !portalConfiguration.deploymentId || (instanceClaim && pin.instanceId !== instanceClaim.instanceId)
+        ? { ok: false, status: 503, error: "approval_owner_unbound" }
+        : { ok: true, issuer: pin.portalIssuer, jwksUri: pin.jwksUri, grantKids: pin.grantKids, instanceId: pin.instanceId, deploymentId: portalConfiguration.deploymentId, ownerSubject: pin.ownerSubject };
+    return { nostr, portal };
+  };
+  const liveAudit = (eventType: string, actorId: string, metadata: Record<string, unknown>) => {
+    try {
+      options.store.recordAudit({ workspaceSlug: organizationId, pluginId: "channels-buzz", eventType, actorId, metadata });
+    } catch {
+      // Audit is best effort for live-session telemetry; state changes are already stored.
+    }
+  };
+  let liveSessions: ReturnType<typeof createLiveSessionManager> | null = null;
+  const liveGrants = createLiveGrantService({
+    live: options.store.channels.live,
+    organizationId,
+    now: channelClock,
+    // The bound consent must stay active AND outward (review L3): a downgrade to read stops live sessions.
+    consentActive: (consentRowId) => {
+      const consent = options.store.getMarketplaceAgentConsentById(consentRowId);
+      return consent?.state === "active" && classSelectionOfConsent(consent)?.grantClass === "outward";
+    },
+    channel: (channelId) => options.store.channels.getChannel(organizationId, channelId),
+    ownerBinding: liveOwnerBinding,
+    markUsed: (proofId, kind, expiresAt) => options.store.channels.markUsedApprovalProof({ proofId, kind, expiresAt }).ok,
+    jwksFetch: options.ownerApprovalJwksFetch ?? options.portalFetch,
+    audit: (eventType, record, actorId, metadata) =>
+      liveAudit(eventType, actorId, { grantId: record.id, channelId: record.channelId, agentId: record.agentId, status: record.status, digest: record.digest, ...(metadata ?? {}) }),
+    auditControl: (eventType, actorId, metadata) => liveAudit(eventType, actorId, metadata ?? {}),
+    onGrantChanged: (grantId, reason) => liveSessions?.onGrantChanged(grantId, reason),
+    onControlChanged: (paused) => liveSessions?.onControlChanged(paused),
+  });
+  liveSessions = createLiveSessionManager({
+    live: options.store.channels.live,
+    grants: liveGrants,
+    organizationId,
+    instanceId: channelInstanceId,
+    now: channelClock,
+    channel: (channelId) => options.store.channels.getChannel(organizationId, channelId),
+    buzz: buzzProvider
+      ? {
+          credential: () => buzzIdentity.credential()?.value ?? null,
+          pinnedOwner: () => options.store.channels.getOwnerKey(organizationId)?.pubkey ?? null,
+        }
+      : null,
+    speech: options.liveSpeechProvider ?? null,
+    ttsAvailable: options.liveTtsAvailable === true && Boolean(options.liveSpeechProvider),
+    postNotice: async (channel, conversationId, text) => {
+      const credential = buzzIdentity.credential()?.value ?? null;
+      if (!credential || !buzzProvider) return { ok: false, error: "credential_missing" };
+      const result = await buzzProvider.send(credential, { type: "channel", externalId: conversationId, title: channel.destination.title }, { text });
+      liveAudit("marketplace.channels.live_session.notice", "marketplace:live", { channelId: channel.id, conversationId, status: result.status, textSha256: liveSha256(text), ...(result.errorCode ? { errorCode: result.errorCode } : {}) });
+      return result.status === "sent" ? { ok: true, eventId: result.resultIds[0] ?? null } : { ok: false, error: result.errorCode ?? result.status };
+    },
+    huddleLinkEvents: async (parentChannelId, huddleId) => {
+      const credential = buzzIdentity.credential()?.value ?? null;
+      if (!credential || !buzzProvider) return { ok: false, error: "credential_missing" };
+      const found = await buzzProvider.queryEvents(credential, [
+        { kinds: [48100], "#h": [parentChannelId], limit: 200 },
+        { kinds: [9007], "#h": [huddleId], limit: 10 },
+      ]);
+      return found.ok ? { ok: true, events: found.events } : { ok: false, error: found.errorCode };
+    },
+    retentionDays: () => options.store.channels.inbound.getSettings(organizationId).textRetentionDays,
+    audit: liveAudit,
+    ...(options.liveHuddleSocketFactory ? { socketFactory: options.liveHuddleSocketFactory } : {}),
+    env: environment as Record<string, string | undefined>,
+    ...(options.liveTickMs !== undefined ? { tickMs: options.liveTickMs } : {}),
+    ...(options.liveHuddleJoinTimeoutMs !== undefined ? { joinTimeoutMs: options.liveHuddleJoinTimeoutMs } : {}),
+    ...(options.liveHuddleCloseGraceMs !== undefined ? { closeGraceMs: options.liveHuddleCloseGraceMs } : {}),
+  });
+  app.addHook("onClose", async () => {
+    await liveSessions?.close();
+  });
+  /**
+   * An owner-approved speak-approved clip hold (CompanyBox `live-clip`): nothing is sent now; the approval of this
+   * exact digest (grant id + clip SHA-256) lets the agent play that clip under the still-active grant.
+   */
+  const runApprovedLiveClip = (approval: CompanyBoxApproval): CompanyBoxApproval => {
+    const grantId = String(approval.arguments.grantId ?? "");
+    const grantDigest = String(approval.arguments.grantDigest ?? "");
+    const sessionId = String(approval.arguments.sessionId ?? "");
+    const clipSha256 = String(approval.arguments.clipSha256 ?? "");
+    if (approval.actionKey !== LIVE_CLIP_ACTION || approval.sourceRef !== grantId || approval.fingerprint !== liveClipDigest(grantDigest, sessionId, clipSha256)) {
+      return options.store.finishCompanyBoxApproval({ id: approval.id, state: "failed", error: "approval_target_unavailable" });
+    }
+    const record = options.store.channels.live.getGrant(organizationId, grantId);
+    const usable = liveGrants.usable(record);
+    const session = options.store.channels.live.getSession(organizationId, sessionId);
+    // Still the same approved grant digest, the same live session of the same agent.
+    if (!usable.ok || record?.agentId !== approval.agentId || record.digest !== grantDigest || !usable.grant.scope.modes.speakApproved) {
+      return options.store.finishCompanyBoxApproval({ id: approval.id, state: "failed", error: "live_grant_not_active" });
+    }
+    if (!session || session.agentId !== approval.agentId || session.grantId !== grantId || (session.status !== "joined" && session.status !== "joining")) {
+      return options.store.finishCompanyBoxApproval({ id: approval.id, state: "failed", error: "live_session_not_joined" });
+    }
+    return options.store.finishCompanyBoxApproval({ id: approval.id, state: "succeeded", result: { clipApproved: true, grantId, sessionId, clipSha256, singleUse: true } });
+  };
+
   registerChannelRoutes({
     app,
     store: options.store,
@@ -8550,6 +8733,8 @@ export async function buildMarketplaceApp(
           },
         }
       : {}),
+    // Inert without a usable Buzz identity (agent key, relay URL and a valid owner NIP-OA tag).
+    live: { grants: liveGrants, sessions: liveSessions, buzzReady: () => Boolean(buzzProvider) && buzzIdentity.credential() !== null },
   });
   // Teams messaging endpoint (public path, Bot Framework JWT): captures conversation references at install.
   registerTeamsInboundRoute({
@@ -8792,7 +8977,11 @@ export async function buildMarketplaceApp(
     "channel.dm": CHANNEL_AGENT_OPERATION.messagePerson,
   };
   const heldOperation = (approval: CompanyBoxApproval) =>
-    approval.sourceKind === "channel-consent" ? CHANNEL_HELD_OPERATIONS[approval.actionKey] ?? CHANNEL_AGENT_OPERATION.post : AGENT_OPERATION.toolsCall;
+    approval.sourceKind === "live-clip"
+      ? LIVE_AGENT_OPERATION.liveSpeak
+      : approval.sourceKind === "channel-consent"
+        ? CHANNEL_HELD_OPERATIONS[approval.actionKey] ?? CHANNEL_AGENT_OPERATION.post
+        : AGENT_OPERATION.toolsCall;
   type ResolveRefusal = { ok: false; status: number; error: string };
   /**
    * The Buzz key a `nostr` proof is checked against: the key pinned on the hold at creation, still the
@@ -8845,6 +9034,12 @@ export async function buildMarketplaceApp(
     if (!approval || approval.workspaceSlug !== organizationId || approval.agentId !== caller.agentId) {
       reply.code(404);
       return { ok: false, schema: 1, traceId, error: "approval_not_found" };
+    }
+    // A held huddle clip needs the owner to have listened to it in Marketplace (re-review of PR #53, H1): a Buzz reply
+    // or a TBD assertion cannot prove that. Refused before any claim or proof check (nothing is consumed).
+    if (approval.sourceKind === "live-clip") {
+      reply.code(409);
+      return { ok: false, schema: 1, traceId, error: "live_clip_requires_playback" };
     }
     const operationScope = `approval-resolve:${approval.id}`;
     const previous = options.store.getMarketplaceRuntimeOperation({ consentId: operationScope, idempotencyKey: key });
@@ -8981,6 +9176,9 @@ export async function buildMarketplaceApp(
       if (verification.decision === "deny") {
         if (decided.sourceKind === "channel-consent") channelService.onApprovalDenied(decided);
         result = { status: 200, body: { ok: true, schema: 1, traceId, decision: "deny", ...agentApprovalView(decided) } };
+      } else if (decided.sourceKind === "live-clip") {
+        const finished = runApprovedLiveClip(decided);
+        result = { status: 200, body: { ok: finished.state === "succeeded", schema: 1, traceId, decision: "approve", ...agentApprovalView(finished) } };
       } else if (decided.sourceKind === "channel-consent") {
         const run = await runApprovedChannelHold(decided, traceId);
         result = { status: run.status, body: { ...run.response, decision: "approve", approvalId: decided.id } };

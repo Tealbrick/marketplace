@@ -8,6 +8,16 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Raw bytes of an owner-only GET that needs the strict owner gate (launch session + CSRF header), e.g. a held live
+ * clip: the page plays it from a blob URL. Answers the bytes and the server's SHA-256 header.
+ */
+export async function apiBlob(route: string): Promise<{ blob: Blob; sha256: string | null }> {
+  const response = await fetch(route, { credentials: "include", headers: operatorCsrfToken ? { "x-csrf-token": operatorCsrfToken } : {} });
+  if (!response.ok) throw new ApiError(`Request failed (${response.status})`, response.status, null);
+  return { blob: await response.blob(), sha256: response.headers.get("x-content-sha256") };
+}
+
 export async function api<T>(route: string, init?: RequestInit): Promise<T> {
   const response = await fetch(route, {
     ...init,
@@ -217,8 +227,9 @@ async function companyBoxResult(run: () => Promise<CompanyBoxResult>): Promise<C
 export const getCompanyBoxApprovals = (state?: CompanyBoxApproval["state"]) =>
   api<CompanyBoxApprovalsResponse>(`${companyBoxRoute()}/approvals${state ? `?state=${state}` : ""}`);
 
-export const decideCompanyBoxApproval = (approvalId: string, decision: "approve" | "deny") =>
-  api<{ ok: boolean; approval: CompanyBoxApproval; channel?: { scheduled?: boolean; receipt?: { status?: string } } & Record<string, unknown> }>(`${companyBoxRoute()}/approvals/${encodeURIComponent(approvalId)}/${decision}`, { method: "POST" });
+/** `extra`: a held huddle clip's approval carries the SHA-256 of the clip the page played (`playedSha256`). */
+export const decideCompanyBoxApproval = (approvalId: string, decision: "approve" | "deny", extra?: { playedSha256: string }) =>
+  api<{ ok: boolean; approval: CompanyBoxApproval; channel?: { scheduled?: boolean; receipt?: { status?: string } } & Record<string, unknown> }>(`${companyBoxRoute()}/approvals/${encodeURIComponent(approvalId)}/${decision}`, { method: "POST", ...(extra ? { body: JSON.stringify(extra) } : {}) });
 
 /** Owner-only: the full stored arguments of a held call (a channel hold adds the exact payload view). */
 export const getCompanyBoxApproval = (approvalId: string) =>

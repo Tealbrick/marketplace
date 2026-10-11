@@ -26,7 +26,7 @@ pnpm -C program exec tsx scripts/channels-upgrade-rehearsal.ts \
   after a PASS, unless you give `--keep`. It keeps the directory after a FAIL.
 - Exit code: 0 when all phases pass, 1 when a step fails, 2 for a usage error.
 
-The run takes about 10 seconds. Requirements: Node 22.22 or later (it uses
+The run takes about 10 seconds. Requirements: Node 24 or later (it uses
 `node:sqlite`), `git` and `tar`.
 
 ## How each side runs

@@ -90,7 +90,7 @@ exact origins) exists for test fixtures only.
 
 ## Local development
 
-Requires Node `>=22.22.0` and pnpm `>=9.15.4`.
+Requires Node `>=24` (the runtime image is node:24; `@tealbrick/contract` needs Node 24) and pnpm `>=9.15.4`.
 
 ```sh
 pnpm --dir program install --frozen-lockfile

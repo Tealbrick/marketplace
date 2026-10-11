@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError, setupCompanyBoxEntry } from "./api";
-import { CompanyBoxSection, coverageLabel, exposureLabel } from "./CompanyBox";
+import { CompanyBoxSection, coverageLabel, exposureLabel, LiveClipView } from "./CompanyBox";
 import { errorCopy } from "./copy";
 import type { CompanyBoxEntry, CompanyBoxResponse } from "./types";
 
@@ -164,5 +164,30 @@ describe("Company Box approvals panel", () => {
     expect(await screen.findByText("Approved and ran Email a note to someone.")).toBeTruthy();
     expect(fetchMock.mock.calls.some(([route, init]) => String(route).endsWith("/approve") && init?.method === "POST")).toBe(true);
     expect(await screen.findByText("Nothing waiting.")).toBeTruthy();
+  });
+});
+
+describe("live huddle clip in the approvals card (re-review H1c)", () => {
+  it("fetches nothing until the owner clicks Play, and reports the hash only after playback ended", async () => {
+    const clipBytes = new Uint8Array([79, 103, 103, 83, 1, 2, 3]);
+    const digest = await crypto.subtle.digest("SHA-256", clipBytes);
+    const sha = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(clipBytes, { status: 200, headers: { "content-type": "audio/ogg", "x-content-sha256": sha } }));
+    // jsdom has no object URLs: provide them for this test.
+    const created = vi.fn(() => "blob:clip");
+    Object.assign(URL, { createObjectURL: created, revokeObjectURL: vi.fn() });
+    const heard: string[] = [];
+    const live = { grantId: "live-0000000000000001", sessionId: "lvs_00000000-0000-4000-8000-000000000001", clipSha256: sha, channelId: "chn", digest: "d".repeat(64), transcript: "Welcome", usedByAgent: false };
+    render(createElement(LiveClipView, { approvalId: "approval_1", live, onHeard: (value: string) => heard.push(value) }));
+    expect(fetchMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /Play the clip/u }));
+    await waitFor(() => expect(screen.getByLabelText("Clip player")).toBeTruthy());
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/marketplace/channels/live/clips/approval_1");
+    expect(created).toHaveBeenCalled();
+    expect(heard).toEqual([]);
+    fireEvent.play(screen.getByLabelText("Clip player"));
+    expect(heard).toEqual([]);
+    fireEvent.ended(screen.getByLabelText("Clip player"));
+    expect(heard).toEqual([sha]);
   });
 });

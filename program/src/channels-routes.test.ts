@@ -127,7 +127,8 @@ describe("channels: post with a standing grant (§10 item 1)", () => {
 
   it("never exposes a declared feature that no agent operation uses (wired filter)", async () => {
     const f = await setup();
-    // The adapter declares canvas, presence, live voice, forum posts, buttons and events: no route performs them.
+    // The adapter declares canvas, presence, forum posts, buttons and events: no route performs them. (Live voice is
+    // wired since the live-session operations; only the Buzz adapter declares it, and only Buzz channels take grants.)
     const provider = f.telegram.provider as { capabilities: ChannelCapabilities };
     provider.capabilities = {
       ...provider.capabilities,
@@ -145,7 +146,6 @@ describe("channels: post with a standing grant (§10 item 1)", () => {
     const hidden = {
       canvas: false,
       presence: { typing: false, status: false },
-      live: false,
       schedule: { native: false },
     };
     const list = await f.agent("GET", "/api/marketplace/v1/agent/channels");
