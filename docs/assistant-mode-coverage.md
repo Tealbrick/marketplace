@@ -28,8 +28,8 @@ once in Assistant mode within the daily limits); `held: ...` (outward; held in b
 | company-box:listmonk (openapi) | 104 | 0 | 95 | 8 | 1 | 0 | 0 | 0 | 0 | 0 |
 | company-box:nextcloud (openapi) | 284 | 0 | 251 | 16 | 5 | 0 | 1 | 0 | 11 | 0 |
 | company-box:postiz (openapi) | 31 | 0 | 18 | 10 | 3 | 0 | 0 | 0 | 0 | 0 |
-| company-box:pretix (openapi) | 370 | 0 | 317 | 38 | 15 | 0 | 0 | 0 | 0 | 0 |
-| **All** | **3283** | **0** | **2969** | **262** | **38** | **1** | **1** | **0** | **11** | **1** |
+| company-box:pretix (openapi) | 370 | 0 | 317 | 24 | 15 | 0 | 0 | 13 | 1 | 0 |
+| **All** | **3283** | **0** | **2969** | **248** | **38** | **1** | **1** | **13** | **12** | **1** |
 
 ## Near-misses: tools that run in Assistant mode and contain a sensitive word as a substring
 
@@ -46,17 +46,3 @@ For manual review: the word matches only inside another word, so the tool is not
 | company-box:nextcloud (openapi) | `deleted_shareapi-undelete` | DELETE, SHARE |
 | company-box:nextcloud (openapi) | `ocs_authapi-request-shared-secret` | SHARE |
 | company-box:nextcloud (openapi) | `request_handler-unshare` | SHARE |
-| company-box:pretix (openapi) | `orders.create` | ORDER |
-| company-box:pretix (openapi) | `orders.approve` | ORDER |
-| company-box:pretix (openapi) | `orders.create_invoice` | ORDER |
-| company-box:pretix (openapi) | `orders.extend` | ORDER |
-| company-box:pretix (openapi) | `orders.mark_paid` | ORDER |
-| company-box:pretix (openapi) | `orders.mark_pending` | ORDER |
-| company-box:pretix (openapi) | `orders_payments.create` | PAY, ORDER |
-| company-box:pretix (openapi) | `orders_payments.confirm` | PAY, ORDER |
-| company-box:pretix (openapi) | `orders.reactivate` | ORDER |
-| company-box:pretix (openapi) | `orders_refunds.create` | ORDER, REFUND |
-| company-box:pretix (openapi) | `orders_refunds.done` | ORDER, REFUND |
-| company-box:pretix (openapi) | `orders_refunds.process` | ORDER, REFUND |
-| company-box:pretix (openapi) | `orders.resend_link` | ORDER |
-| company-box:pretix (openapi) | `teams_invites.create` | INVITE |

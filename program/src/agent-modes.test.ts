@@ -209,12 +209,16 @@ describe("sensitive families", () => {
       ["SLACK_BROADCAST_MESSAGE", "slack", "bulk"],
       ["notify_users_all", undefined, "bulk"],
       ["mass_email", undefined, "bulk"],
+      // Plural last words (pretix `orders_refunds.create`, `teams_invites.create`).
+      ["orders_refunds.create", undefined, "money"],
+      ["teams_invites.create", undefined, "access"],
+      ["GMAIL_DELETE_MESSAGES", "gmail", "destructive"],
     ];
     for (const [slug, toolkit, family] of samples) {
       expect(sensitiveMatches(slug, toolkit).map((match) => match.family), slug).toContain(family);
     }
     // Not sensitive: ordinary sends, partial words, a toolkit name that contains a word.
-    for (const [slug, toolkit] of [["GMAIL_SEND_EMAIL", "gmail"], ["SLACK_SEND_MESSAGE", "slack"], ["GOOGLEDRIVE_LIST_SHARED_DRIVES", "googledrive"], ["SHAREPOINT_LIST_FILES", "sharepoint"], ["SHOPIFY_LIST_ORDERS", "shopify"], ["BULK", undefined], ["ALL", undefined]] as const) {
+    for (const [slug, toolkit] of [["GMAIL_SEND_EMAIL", "gmail"], ["SLACK_SEND_MESSAGE", "slack"], ["GOOGLEDRIVE_LIST_SHARED_DRIVES", "googledrive"], ["SHAREPOINT_LIST_FILES", "sharepoint"], ["SHOPIFY_ORDERLY_SYNC", "shopify"], ["PAYPAL_GET_BALANCE", "paypal"], ["BULK", undefined], ["ALL", undefined]] as const) {
       expect(sensitiveMatches(slug, toolkit), slug).toEqual([]);
     }
     expect(assistantHoldReason({ risk: { write: true, outward: true, destructive: true }, capability: "connector.dispatch", toolName: "X_SEND" })).toEqual({ reason: "destructive" });
