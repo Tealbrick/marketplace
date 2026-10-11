@@ -94,6 +94,8 @@ const CHEROKEE_CAPITALS: Record<number, string> = {
   0x13a0: "d", 0x13a1: "r", 0x13a2: "t", 0x13a5: "i", 0x13a9: "y", 0x13aa: "a", 0x13ab: "j", 0x13ac: "e", 0x13b3: "w", 0x13b7: "m",
   0x13bb: "h", 0x13bd: "y", 0x13c0: "g", 0x13c2: "h", 0x13c3: "z", 0x13cf: "b", 0x13d9: "v", 0x13da: "s", 0x13de: "l", 0x13df: "c",
   0x13d4: "w", 0x13e2: "p", 0x13e6: "k", 0x13f4: "b",
+  // Ᏸ: UTS #39 maps it to sharp s ("ss" after full case folding); it also reads as "b" (as Latin small beta ꞵ does).
+  0x13f0: "b",
 };
 
 function cherokee(): Record<string, string> {
