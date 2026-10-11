@@ -32,6 +32,7 @@ import type {
   MarketplaceRuntimeOperation,
   WorkspacePluginInstall,
 } from "./types.js";
+import { AGENT_MODE_TABLES, AgentModeStore, migrateAgentModeTables } from "./agent-mode-store.js";
 import { boundedStoredOutput, shapeOf } from "./usage-ledger.js";
 import { compatDebugEnabled } from "./legacy-ids.js";
 import {
@@ -64,6 +65,7 @@ export const MARKETPLACE_TABLES = [
   "audit_event",
   "company_box_approval",
   ...CHANNEL_TABLES,
+  ...AGENT_MODE_TABLES,
 ] as const;
 
 type JsonRecord = Record<string, unknown>;
@@ -478,6 +480,7 @@ function companyBoxApprovalFromRow(row: Record<string, unknown>): CompanyBoxAppr
     fingerprint: String(row.fingerprint),
     arguments: jsonParse<Record<string, unknown>>(String(row.arguments_json), {}),
     argumentsPreview: String(row.arguments_preview),
+    toolSlug: row.tool_slug === null || row.tool_slug === undefined ? null : String(row.tool_slug),
     state: row.state as CompanyBoxApproval["state"],
     result: row.result_json === null ? null : jsonParse<unknown>(String(row.result_json), null),
     error: row.error === null ? null : String(row.error),
@@ -517,6 +520,7 @@ export class SqliteMarketplaceStore {
   private readonly debug: boolean;
   private readonly handoffEncryptionKey: Buffer | null;
   private channelStore: ChannelStore | null = null;
+  private agentModeStore: AgentModeStore | null = null;
 
   constructor(
     readonly dbPath: string,
@@ -910,8 +914,12 @@ export class SqliteMarketplaceStore {
     this.addColumnIfMissing(
       "ALTER TABLE marketplace_listing ADD COLUMN workspace_slug TEXT",
     );
+    // 0.2.1: the tool a held call targets (Composio slug), checked again when it is approved.
+    this.addColumnIfMissing("ALTER TABLE company_box_approval ADD COLUMN tool_slug TEXT");
     // Channels (0.2.0): additive tables only; older builds ignore them.
     migrateChannelTables(this.db);
+    // Agent approval modes (0.2.1): additive tables only.
+    migrateAgentModeTables(this.db);
     this.migratePortalHandoffSessions();
   }
 
@@ -919,6 +927,36 @@ export class SqliteMarketplaceStore {
   get channels(): ChannelStore {
     this.channelStore ??= new ChannelStore(this.db);
     return this.channelStore;
+  }
+
+  /** Agent approval modes, pauses and Assistant-mode receipts on the same connection. */
+  get agentModes(): AgentModeStore {
+    this.agentModeStore ??= new AgentModeStore(this.db);
+    return this.agentModeStore;
+  }
+
+  /** True while the agent still holds an active (not revoked) grant or consent in the workspace. */
+  agentHasActiveAccess(workspaceSlug: string, agentId: string) {
+    const grant = this.db
+      .prepare("SELECT 1 FROM agent_connector_grant WHERE workspace_slug = ? AND agent_id = ? AND state = 'active' LIMIT 1")
+      .get(workspaceSlug, agentId);
+    const consent = this.db
+      .prepare("SELECT 1 FROM marketplace_agent_consent WHERE product_tenant_id = ? AND agent_id = ? AND state = 'active' LIMIT 1")
+      .get(workspaceSlug, agentId);
+    return Boolean(grant || consent);
+  }
+
+  /** After a revocation: an agent with no access left is removed, so its approval mode resets to System. */
+  private resetAgentModeIfRemoved(workspaceSlug: string, agentId: string) {
+    if (this.agentHasActiveAccess(workspaceSlug, agentId)) return;
+    if (this.agentModes.resetMode(workspaceSlug, agentId, new Date())) {
+      this.recordAudit({
+        workspaceSlug,
+        eventType: "marketplace.agent.mode.reset",
+        actorId: "marketplace",
+        metadata: { agentId, mode: "system", reason: "agent_removed" },
+      });
+    }
   }
 
   private addColumnIfMissing(statement: string) {
@@ -1273,6 +1311,8 @@ export class SqliteMarketplaceStore {
     fingerprint: string;
     arguments: Record<string, unknown>;
     argumentsPreview: string;
+    /** The tool the provider receives (Composio slug), when known. */
+    toolSlug?: string | null;
     /** Lifetime from creation. Creation and expiry derive from one clock reading, so the span is exactly this. */
     ttlMs: number;
   }): CompanyBoxApproval {
@@ -1284,8 +1324,8 @@ export class SqliteMarketplaceStore {
       .prepare(
         `INSERT INTO company_box_approval (
           id, workspace_slug, plugin_id, action_key, capability, agent_id, source_kind, source_ref,
-          idempotency_key, fingerprint, arguments_json, arguments_preview, state, expires_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
+          idempotency_key, fingerprint, arguments_json, arguments_preview, tool_slug, state, expires_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
       )
       .run(
         id,
@@ -1300,6 +1340,7 @@ export class SqliteMarketplaceStore {
         input.fingerprint,
         JSON.stringify(input.arguments),
         input.argumentsPreview,
+        input.toolSlug ?? null,
         expiresAt,
         timestamp,
         timestamp,
@@ -2102,7 +2143,9 @@ export class SqliteMarketplaceStore {
          WHERE id = ? AND state = 'active'`,
       )
       .run(nowIso(), id);
-    return this.getAgentConnectorGrant(id);
+    const grant = this.getAgentConnectorGrant(id);
+    if (grant) this.resetAgentModeIfRemoved(grant.workspaceSlug, grant.agentId);
+    return grant;
   }
 
   listAgentConnectorGrants(input: {
@@ -2458,7 +2501,9 @@ export class SqliteMarketplaceStore {
          WHERE id = ? AND state = 'active'`,
       )
       .run(nowIso(), id);
-    return this.getMarketplaceAgentConsentById(id);
+    const consent = this.getMarketplaceAgentConsentById(id);
+    if (consent) this.resetAgentModeIfRemoved(consent.productTenantId, consent.agentId);
+    return consent;
   }
 
   getMarketplaceRuntimeOperation(input: {
@@ -2832,6 +2877,16 @@ export class SqliteMarketplaceStore {
     pluginId: string;
   }): { grants: number; consents: number } {
     const timestamp = nowIso();
+    const affected = new Set(
+      [
+        ...(this.db
+          .prepare("SELECT agent_id FROM agent_connector_grant WHERE workspace_slug = ? AND plugin_id = ? AND state = 'active'")
+          .all(input.workspaceSlug, input.pluginId) as Array<{ agent_id: string }>),
+        ...(this.db
+          .prepare("SELECT agent_id FROM marketplace_agent_consent WHERE product_tenant_id = ? AND plugin_id = ? AND state = 'active'")
+          .all(input.workspaceSlug, input.pluginId) as Array<{ agent_id: string }>),
+      ].map((row) => row.agent_id),
+    );
     const grants = this.db
       .prepare(
         `UPDATE agent_connector_grant
@@ -2846,6 +2901,7 @@ export class SqliteMarketplaceStore {
          WHERE product_tenant_id = ? AND plugin_id = ? AND state = 'active'`,
       )
       .run(timestamp, input.workspaceSlug, input.pluginId);
+    for (const agentId of affected) this.resetAgentModeIfRemoved(input.workspaceSlug, agentId);
     return {
       grants: Number(grants.changes),
       consents: Number(consents.changes),

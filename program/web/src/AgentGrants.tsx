@@ -4,6 +4,7 @@ import { Button, Tag } from "@tealbrick/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getAgentActionCatalog, getAgentGrants, redeemAgentGrant, requestAgentGrant } from "./agent-grants-api";
+import { AgentModesPanel } from "./AgentModes";
 import type {
   AgentActionCatalogEntry,
   AgentConsentSummary,
@@ -260,6 +261,7 @@ export function AgentGrantsPage({ workspaceSlug, onRevoke, onNavigate }: { works
         <Tag>{visibleGrants.length} grants</Tag>
       </header>
       <div className="credential-proof agent-grant-creation-gap"><ShieldCheck size={18} /><div><strong>Agents get access only through Portal approval</strong><p>Marketplace never accepts agent credentials from the browser. Request access below and approve it in Teal Brick Portal.</p></div></div>
+      <AgentModesPanel />
       <RequestGrantForm data={data} workspaceSlug={workspaceSlug} onNavigate={onNavigate} onRequested={(result) => { setRequestNotice(result); void queryClient.invalidateQueries({ queryKey: ["agent-grants", workspaceSlug] }); }} />
       {requestNotice && <div className="request-result contract-gap" role="status"><ShieldCheck size={18} /><div><strong>Approval requested</strong><p>Open the request in Teal Brick Portal and approve it, then come back here to finish.</p><a href={requestNotice.request.approvalUrl} target="_blank" rel="noreferrer">Open Portal review <ExternalLink size={13} /></a></div></div>}
       {redeem.error && <div className="grant-redeem-error"><InlineError error={redeem.error} /></div>}

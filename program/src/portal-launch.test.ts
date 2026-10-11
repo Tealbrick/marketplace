@@ -2,12 +2,22 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { beforeAll, afterAll, afterEach, describe, expect, it } from "vitest";
 
 import { buildMarketplaceApp } from "./app.js";
 import { buildComposioListingFromTools } from "./connectors.js";
 import { MarketplaceOperatorSessionManager } from "./operator-auth.js";
 import { SqliteMarketplaceStore } from "./store.js";
+import { setComposioReadAllowlistForTests } from "./composio-policy.js";
+
+// F3-1: the shipped Composio read allowlist is empty, so every tool of an uncurated toolkit is
+// outward and needs connector.dispatch. This file exercises grant/consent/execution plumbing with
+// a read action, so it marks that read as reviewed for the duration of the file only.
+let restoreComposioReadAllowlist: () => void = () => {};
+beforeAll(() => {
+  restoreComposioReadAllowlist = setComposioReadAllowlistForTests({ github: ["GITHUB_LIST_REPOSITORIES"] });
+});
+afterAll(() => restoreComposioReadAllowlist());
 
 const roots: string[] = [];
 

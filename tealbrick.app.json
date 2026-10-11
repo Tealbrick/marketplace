@@ -762,6 +762,110 @@
       "audience": "owner"
     },
     {
+      "id": "marketplace.agents.list",
+      "crud": [
+        "read"
+      ],
+      "method": "GET",
+      "path": "/api/marketplace/agents",
+      "idempotency": "none",
+      "effects": "read-only",
+      "review": "none",
+      "summary": "List agents with their approval mode (Assistant or System), pause and today's counts against their daily limits (UTC day)",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.agents.update",
+      "crud": [
+        "update"
+      ],
+      "method": "PATCH",
+      "path": "/api/marketplace/agents/{agentId}",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Set an agent's approval mode or daily limits (owner launch session, pinned owner)",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.agents.pause",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/agents/{agentId}/pause",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Pause one agent: its calls are refused before any provider call (owner launch session, pinned owner)",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.agents.resume",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/agents/{agentId}/resume",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Resume a paused agent (owner launch session, pinned owner)",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.agents.pause-all",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/agents/pause-all",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Pause all agents (owner launch session, pinned owner)",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.agents.resume-all",
+      "crud": [
+        "update"
+      ],
+      "method": "POST",
+      "path": "/api/marketplace/agents/resume-all",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Lift the pause on all agents (owner launch session, pinned owner)",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.agent-receipts.list",
+      "crud": [
+        "read"
+      ],
+      "method": "GET",
+      "path": "/api/marketplace/agents/receipts",
+      "idempotency": "none",
+      "effects": "read-only",
+      "review": "none",
+      "summary": "List receipts of outward calls agents ran under Assistant mode",
+      "audience": "owner"
+    },
+    {
+      "id": "marketplace.hold-families.update",
+      "crud": [
+        "update"
+      ],
+      "method": "PATCH",
+      "path": "/api/marketplace/agents/hold-families/{familyId}",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Turn a hold family on or off for Assistant agents in this workspace (owner launch session, pinned owner)",
+      "audience": "owner"
+    },
+    {
       "id": "marketplace.channels.browse",
       "crud": [
         "read"

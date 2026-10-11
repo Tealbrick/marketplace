@@ -386,7 +386,7 @@ function exampleBody(id: string, operation: { method: string; path: string }) {
 }
 
 /** Minimal arguments for an operation; falls back to its documented example body for schemas too intricate to synthesize. */
-function argumentsFor(id: string, operation: { method: string; path: string }, inputSchema: JsonSchemaLike) {
+export function argumentsFor(id: string, operation: { method: string; path: string }, inputSchema: JsonSchemaLike) {
   const defs = isRecord(inputSchema.$defs) ? inputSchema.$defs : {};
   const properties = isRecord(inputSchema.properties) ? inputSchema.properties : {};
   const required = Array.isArray(inputSchema.required) ? (inputSchema.required as string[]) : [];
@@ -501,7 +501,7 @@ export async function fixture(id: string, mode: "allow" | "review" | "owner") {
     expected.exposure === "discovery"
       ? tool(`marketplace.${plugin}.operations.call`, { operation: key, arguments: args }, grantId)
       : tool(tools.find((entry) => entry.actionType === key)!.toolName, args, grantId);
-  return { inject, operator, plugin, rest, rulesCalls, grant, tool, call, tools, close };
+  return { inject, operator, plugin, rest, rulesCalls, grant, tool, call, tools, close, store };
 }
 
 function pathMatcher(compiled: CompiledOpenApiEntry, template: string) {

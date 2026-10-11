@@ -1,3 +1,4 @@
+import { agentPolicyFrom } from "./agent-approval-mode.js";
 import { createPublicKey, verify as verifySignature } from "node:crypto";
 
 import {
@@ -19,6 +20,8 @@ type PortalRuntimeScope = {
   leaseId: string;
   capabilities: string[];
   expiresAt: number;
+  /** Portal's raw `agentPolicy`: the lease introspection answer first, then the lease claims (agent-approval-mode.ts). */
+  agentPolicy?: unknown;
 };
 
 export class PortalRuntimeScopeError extends Error {
@@ -298,6 +301,9 @@ export function createPortalRuntimeScopeVerifier(input: {
       leaseId: introspected.leaseId,
       capabilities: introspected.capabilities,
       expiresAt: introspected.expiresAt,
+      ...(agentPolicyFrom(introspected as unknown as Record<string, unknown>, claims) !== undefined
+        ? { agentPolicy: agentPolicyFrom(introspected as unknown as Record<string, unknown>, claims) }
+        : {}),
     };
   };
 }

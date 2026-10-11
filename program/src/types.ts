@@ -370,6 +370,11 @@ export type CompanyBoxApproval = {
   fingerprint: string;
   arguments: Record<string, unknown>;
   argumentsPreview: string;
+  /**
+   * The tool the provider receives (the Composio slug sent to /tools/execute/<slug>), recorded when the call is
+   * held; an approved call whose listing now maps the action to another tool is not run.
+   */
+  toolSlug?: string | null;
   state: CompanyBoxApprovalState;
   /** Bounded (64 KB) stored result; larger results keep bytes + sha256 only. */
   result: unknown;

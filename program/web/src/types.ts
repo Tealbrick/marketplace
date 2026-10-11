@@ -906,6 +906,53 @@ export type ChannelPayloadView =
     }
   | { error: string };
 
+/** Agent approval mode (owner governance mode): System holds every outward action; Assistant runs them with receipts. */
+export type AgentApprovalMode = "assistant" | "system";
+
+export interface SensitiveFamilyView {
+  family: "destructive" | "money" | "access-sharing" | "bulk" | "profile-change";
+  label: string;
+  words: string[];
+}
+
+/** A hold family and whether it keeps Assistant agents' actions waiting in this workspace (owner setting). */
+export interface HoldFamilyView {
+  id: string;
+  label: string;
+  description: string;
+  words?: string[];
+  defaultOn: boolean;
+  /** Always waits in Assistant mode (destructive, money): no toggle. */
+  locked: boolean;
+  on: boolean;
+  updatedBy: string | null;
+  updatedAt: string | null;
+}
+
+export interface AgentModeView {
+  agentId: string;
+  mode: AgentApprovalMode;
+  paused: boolean;
+  dailyCap: number;
+  connectorDailyCap: number;
+  today: { day: string; executed: number; byConnector: Record<string, number> };
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
+export interface AgentModesResponse {
+  ok: true;
+  workspaceSlug: string;
+  governanceMode: "owner" | "rules";
+  pausedAll: boolean;
+  day: string;
+  limitsReset: string;
+  defaults: { dailyCap: number; connectorDailyCap: number };
+  sensitiveFamilies: SensitiveFamilyView[];
+  holdFamilies: HoldFamilyView[];
+  agents: AgentModeView[];
+}
+
 // ----- Live sessions (Channels P2 scope 2.3): live-session grants and Buzz huddle sessions -----
 
 export type LiveGrantStatus = "proposed" | "active" | "paused" | "revoked" | "expired" | "declined" | "withdrawn";

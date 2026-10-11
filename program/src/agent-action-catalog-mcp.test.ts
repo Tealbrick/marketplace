@@ -158,7 +158,7 @@ describe("agent action catalog: custom MCP connectors", () => {
     expect(mcp.map((entry) => [entry.toolName, entry.capability])).toEqual([
       ["create_issue", "connector.dispatch"],
       ["Delete Everything!", "connector.admin"],
-      ["echo", "connector.observe"],
+      ["echo", "connector.dispatch"], // F3-4: readOnlyHint is not trusted
       ["fail_tool", "connector.dispatch"],
     ]);
     const createIssue = mcp.find((entry) => entry.toolName === "create_issue");

@@ -62,6 +62,18 @@
     "testWorkflowV3",
     "searchFeedbackRecordsV3"
   ],
+  "sensitiveFamilies": {
+    "POST /api/v1/webhooks": "access-sharing",
+    "createWebhook": "access-sharing",
+    "updateWebhook": "access-sharing",
+    "createTeam": "access-sharing",
+    "updateTeam": "access-sharing",
+    "updateWorkspaceTeam": "access-sharing",
+    "createWorkspaceTeam": "access-sharing",
+    "createUser": "access-sharing",
+    "updateUser": "access-sharing",
+    "enableWorkflowV3": "bulk"
+  },
   "exposure": "auto",
   "excluded": [
     {

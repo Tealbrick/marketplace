@@ -39,6 +39,9 @@
   "destructive": [
     "PUT /notifications"
   ],
+  "sensitiveFamilies": {
+    "addNotifications": "access-sharing"
+  },
   "exposure": "auto",
   "excluded": []
 }
