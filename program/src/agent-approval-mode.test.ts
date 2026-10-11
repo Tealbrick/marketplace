@@ -490,10 +490,10 @@ describe("kill switch", () => {
     f.consent(pluginId, "gmail.send.email", "connector.dispatch", "consent-send");
     expect((await f.ownerPost("/api/marketplace/agents/agent-1/pause")).statusCode).toBe(200);
     const paused = await f.call("agent-1", pluginId, "gmail.send.email", send, sendInput);
-    expect(paused.statusCode).toBe(403);
+    expect(paused.statusCode).toBe(423);
     expect(paused.json()).toMatchObject({ error: "agent_paused" });
     const viaConsent = await f.toolsCall({ consentId: "consent-send", toolkit: pluginId, action: "gmail.send.email", arguments: sendInput }, "paused-key-0001");
-    expect(viaConsent.statusCode).toBe(403);
+    expect(viaConsent.statusCode).toBe(423);
     expect(viaConsent.json()).toMatchObject({ error: "agent_paused" });
     // Agents cannot lift it: owner-only operation for app grants, refused for the service bearer + agent headers.
     expect((await f.ownerPost("/api/marketplace/agents/agent-1/resume", { authorization: `Bearer ${APP_GRANT}` })).statusCode).toBe(403);
@@ -520,7 +520,7 @@ describe("kill switch", () => {
     expect(held.statusCode).toBe(202);
     await f.ownerPost("/api/marketplace/agents/pause-all");
     const approveWhilePaused = await f.approve(held.json().approvalId);
-    expect(approveWhilePaused.statusCode).toBe(403);
+    expect(approveWhilePaused.statusCode).toBe(423);
     expect(approveWhilePaused.json()).toMatchObject({ error: "agent_paused" });
     expect(f.store.getCompanyBoxApproval(held.json().approvalId)?.state).toBe("pending");
     expect(f.executions).toEqual([]);
@@ -544,7 +544,7 @@ describe("kill switch", () => {
     expect(second.store.agentModes.isPausedAll(TENANT)).toBe(true);
     const send = await second.grant("agent-1", pluginId, "gmail.send.email");
     const afterRestart = await second.call("agent-1", pluginId, "gmail.send.email", send, sendInput);
-    expect(afterRestart.statusCode).toBe(403);
+    expect(afterRestart.statusCode).toBe(423);
     expect(afterRestart.json()).toMatchObject({ error: "agent_paused" });
     expect(second.executions).toEqual([]);
   });
@@ -649,7 +649,7 @@ describe("Rules mode is unchanged", () => {
     if (deniedGrant.statusCode === 201) {
       // Assistant mode does not override a Rules denial.
       const refused = await denied.call("agent-1", deniedPlugin, "gmail.send.email", deniedGrant.json().grant.id, sendInput);
-      expect(refused.statusCode).toBe(403);
+      expect(refused.statusCode).toBe(423);
       expect(refused.json()).toMatchObject({ error: "rules_denied" });
     } else {
       expect(deniedGrant.statusCode).toBe(403);
@@ -813,7 +813,7 @@ describe("Portal agentPolicy claim (source of truth; local setting is the tempor
     const g6 = await grantFor("a6");
     f.policies.set("a6", policy({ paused: true }));
     const paused = await send("a6", g6);
-    expect(paused.statusCode).toBe(403);
+    expect(paused.statusCode).toBe(423);
     expect(paused.json()).toMatchObject({ error: "agent_paused", pausedBy: "portal" });
     // stale revision -> system for that call; the newer one runs again
     const g7 = await grantFor("a7");
@@ -860,7 +860,7 @@ describe("Portal agentPolicy claim (source of truth; local setting is the tempor
     expect(ran.statusCode, ran.body).toBe(200);
     f.policies.set("agent-1", policy({ rev: 3, paused: true }));
     const pausedLease = await lease("lease-key-0003");
-    expect(pausedLease.statusCode).toBe(403);
+    expect(pausedLease.statusCode).toBe(423);
     expect(pausedLease.json()).toMatchObject({ error: "agent_paused" });
     expect(f.executions).toHaveLength(1);
   });
@@ -955,12 +955,12 @@ describe("contract alignment (approval-mode API)", () => {
     expect((await f.approve(second.json().approvalId)).json()).toMatchObject({ ok: true, approval: { state: "succeeded" } });
     expect(f.executions).toHaveLength(2);
 
-    // Paused by Portal after the hold: the fresh read says paused, so the approval is refused (403) and stays pending.
+    // Paused by Portal after the hold: the fresh read says paused, so the approval is refused (423) and stays pending.
     const third = await f.call("agent-1", pluginId, "gmail.send.email", send, sendInput, "fresh-key-0003");
     f.policies.set("agent-1", policy({ paused: true, rev: 2 }));
-    expect((await f.call("agent-1", pluginId, "gmail.send.email", send, sendInput, "fresh-key-0003")).statusCode).toBe(403);
+    expect((await f.call("agent-1", pluginId, "gmail.send.email", send, sendInput, "fresh-key-0003")).statusCode).toBe(423);
     const refused = await f.approve(third.json().approvalId);
-    expect(refused.statusCode).toBe(403);
+    expect(refused.statusCode).toBe(423);
     expect(refused.json()).toMatchObject({ error: "agent_paused" });
     expect(f.store.getCompanyBoxApproval(third.json().approvalId)?.state).toBe("pending");
     expect(f.executions).toHaveLength(2);
