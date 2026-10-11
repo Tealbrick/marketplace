@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { SENSITIVE_ACTION_FAMILIES, assistantHoldReason, holdReasonCode } from "../src/agent-modes.js";
+import { SENSITIVE_ACTION_FAMILIES, classifySensitive } from "../src/agent-approval-mode.js";
 import { composioCallRisk, composioReviewedRead, composioToolClassification } from "../src/composio-policy.js";
 import { inferConnectorCapabilityFromAction, normalizeComposioTools } from "../src/connectors.js";
 import type { ConnectorCapability } from "../src/types.js";
@@ -32,8 +32,10 @@ const SUBSTRINGS = SENSITIVE_ACTION_FAMILIES.flatMap((family) =>
 function classify(source: string, slug: string, toolkit: string | undefined, capability: ConnectorCapability, risk: { write: boolean; outward: boolean; destructive: boolean }, reviewedRead: boolean): Row {
   if (reviewedRead) return { source, slug, capability, outward: false, klass: "read-allowlisted" };
   if (!risk.outward) return { source, slug, capability, outward: false, klass: "not outward (consent only)" };
-  const why = assistantHoldReason({ risk, capability, toolName: slug, toolkit });
-  return { source, slug, capability, outward: true, klass: why ? `held: ${holdReasonCode(why)}` : "assistant-runs" };
+    // The same order assistantHold applies (default family settings: every family ON), split by cause.
+  const sensitive = classifySensitive(slug, { toolkit });
+  const klass = risk.destructive ? "held: destructive" : capability === "connector.admin" ? "held: admin" : sensitive.sensitive ? `held: sensitive:${sensitive.family}` : "assistant-runs";
+  return { source, slug, capability, outward: true, klass };
 }
 
 const rows: Row[] = [];
@@ -86,7 +88,8 @@ const lines = [
   "Classes: `read-allowlisted` (reviewed read, uncurated Composio only; the allowlist ships empty); `not outward` (runs",
   "on the agent's consent in both modes, modes do not apply); `assistant-runs` (outward; held in System mode, runs at",
   "once in Assistant mode within the daily limits); `held: ...` (outward; held in both modes: curated destructive flag,",
-  "`connector.admin`, or a sensitive family word). An \"unless quiet\" Calendar tool is counted as outward.",
+  "`connector.admin`, or a word of a hold family; computed with the default family settings, every family ON).",
+  "An \"unless quiet\" Calendar tool is counted as outward.",
   "",
   "## Counts",
   "",

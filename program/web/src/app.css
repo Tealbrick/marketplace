@@ -621,8 +621,15 @@ code, .mono { font-family: var(--dg-font-mono); overflow-wrap: anywhere; }
 .agent-modes__paused { margin: 10px 0 0; border-left: 2px solid var(--dg-danger); padding: 6px 10px; color: var(--dg-text); font-size: 12px; }
 .agent-modes__waits { margin-top: 14px; }
 .agent-modes__waits p { margin: 8px 0; color: var(--dg-text-muted); font-size: 12px; }
-.agent-modes__family dd { display: flex; flex-wrap: wrap; gap: 5px; }
-.agent-modes__family code { border: 1px solid var(--dg-line); border-radius: var(--dg-radius-sm); padding: 1px 5px; font-size: 10px; }
+.agent-modes__families { display: grid; gap: 1px; border: 1px solid var(--dg-line); border-radius: var(--dg-radius-md); background: var(--dg-line); }
+.agent-modes__family { display: grid; min-width: 0; gap: 6px; padding: 10px 12px; background: var(--dg-panel); }
+.agent-modes__family > strong, .agent-modes__family-toggle strong { font-size: 13px; }
+.agent-modes__family small { display: block; color: var(--dg-text-muted); font-size: 11px; line-height: 1.45; }
+.agent-modes__family-toggle { display: flex; align-items: flex-start; gap: 9px; cursor: pointer; }
+.agent-modes__family-toggle input { margin-top: 2px; accent-color: var(--dg-ink); }
+.agent-modes__words { display: flex; flex-wrap: wrap; gap: 5px; padding-left: 22px; }
+.agent-modes__words code { border: 1px solid var(--dg-line); border-radius: var(--dg-radius-sm); padding: 1px 5px; font-size: 10px; }
+.agent-modes__off { margin: 0 0 0 22px; border-left: 2px solid var(--dg-danger); padding: 3px 8px; color: var(--dg-text); font-size: 12px; }
 .agent-modes__limits { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin-top: 13px; }
 .agent-modes__limits label { display: grid; gap: 5px; color: var(--dg-text-subtle); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; font-family: var(--dg-font-mono); }
 .agent-modes__limits input { width: 110px; border: 1px solid var(--dg-line); border-radius: var(--dg-radius-sm); padding: 6px 8px; background: var(--dg-canvas); color: var(--dg-text); }

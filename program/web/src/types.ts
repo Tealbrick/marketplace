@@ -908,9 +908,21 @@ export type ChannelPayloadView =
 export type AgentApprovalMode = "assistant" | "system";
 
 export interface SensitiveFamilyView {
-  family: "destructive" | "money" | "access" | "bulk";
+  family: "destructive" | "money" | "access-sharing" | "bulk";
   label: string;
   words: string[];
+}
+
+/** A hold family and whether it keeps Assistant agents' actions waiting in this workspace (owner setting). */
+export interface HoldFamilyView {
+  id: string;
+  label: string;
+  description: string;
+  words?: string[];
+  defaultOn: boolean;
+  on: boolean;
+  updatedBy: string | null;
+  updatedAt: string | null;
 }
 
 export interface AgentModeView {
@@ -933,5 +945,6 @@ export interface AgentModesResponse {
   limitsReset: string;
   defaults: { dailyCap: number; connectorDailyCap: number };
   sensitiveFamilies: SensitiveFamilyView[];
+  holdFamilies: HoldFamilyView[];
   agents: AgentModeView[];
 }

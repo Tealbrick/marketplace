@@ -5,13 +5,13 @@ import {
   DEFAULT_AGENT_CONNECTOR_DAILY_CAP,
   DEFAULT_AGENT_DAILY_CAP,
   type AgentApprovalMode,
-} from "./agent-modes.js";
+} from "./agent-approval-mode.js";
 
 /**
  * Agent approval modes, pauses and Assistant-mode receipts. Additive tables only (`CREATE TABLE IF NOT EXISTS`);
  * an older build ignores them. Settings are written only by owner routes; receipts only by the execution path.
  */
-export const AGENT_MODE_TABLES = ["agent_approval_setting", "agent_pause_all", "agent_outward_receipt"] as const;
+export const AGENT_MODE_TABLES = ["agent_approval_setting", "agent_pause_all", "agent_outward_receipt", "agent_hold_family_setting"] as const;
 
 export function migrateAgentModeTables(db: DatabaseSync): void {
   db.exec(`
@@ -54,6 +54,15 @@ export function migrateAgentModeTables(db: DatabaseSync): void {
       finished_at TEXT,
       UNIQUE (workspace_slug, agent_id, plugin_id, replay_key)
     );
+    CREATE TABLE IF NOT EXISTS agent_hold_family_setting (
+      workspace_slug TEXT NOT NULL,
+      family_id TEXT NOT NULL,
+      enabled INTEGER NOT NULL,
+      updated_by TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (workspace_slug, family_id)
+    );
+
     CREATE INDEX IF NOT EXISTS agent_outward_receipt_day
       ON agent_outward_receipt (workspace_slug, agent_id, day);
   `);
@@ -207,6 +216,25 @@ export class AgentModeStore {
     return setting.mode !== "system";
   }
 
+  /** Owner hold-family settings for the workspace (absent family = its default). */
+  getFamilySettings(workspaceSlug: string) {
+    const rows = this.db
+      .prepare("SELECT family_id, enabled, updated_by, updated_at FROM agent_hold_family_setting WHERE workspace_slug = ?")
+      .all(workspaceSlug) as Array<{ family_id: string; enabled: number; updated_by: string; updated_at: string }>;
+    return new Map(rows.map((row) => [row.family_id, { enabled: Number(row.enabled) === 1, updatedBy: row.updated_by, updatedAt: row.updated_at }]));
+  }
+
+  setFamily(input: { workspaceSlug: string; familyId: string; enabled: boolean; actor: string; now: Date }) {
+    const previous = this.getFamilySettings(input.workspaceSlug).get(input.familyId)?.enabled ?? null;
+    this.db
+      .prepare(
+        `INSERT INTO agent_hold_family_setting (workspace_slug, family_id, enabled, updated_by, updated_at) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (workspace_slug, family_id) DO UPDATE SET enabled = excluded.enabled, updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
+      )
+      .run(input.workspaceSlug, input.familyId, input.enabled ? 1 : 0, input.actor, input.now.toISOString());
+    return { previous, enabled: input.enabled };
+  }
+
   isPausedAll(workspaceSlug: string) {
     const row = this.db.prepare("SELECT paused FROM agent_pause_all WHERE workspace_slug = ?").get(workspaceSlug) as
       | { paused: number }
@@ -341,6 +369,38 @@ export class AgentModeStore {
       this.db.exec("ROLLBACK");
       throw error;
     }
+  }
+
+  /** A receipt for an execution that did not go through reserveExecution (counted). */
+  recordFinishedReceipt(input: {
+    workspaceSlug: string;
+    agentId: string;
+    pluginId: string;
+    provider: string;
+    actionKey: string;
+    accountRef: string | null;
+    destination: string | null;
+    argumentsPreview: string;
+    mode: AgentApprovalMode;
+    status: "succeeded" | "failed";
+    error: string | null;
+    now: Date;
+    day: string;
+  }) {
+    const id = `receipt_${randomUUID()}`;
+    this.db
+      .prepare(
+        `INSERT INTO agent_outward_receipt (
+           id, workspace_slug, agent_id, plugin_id, provider, action_key, account_ref, destination, arguments_preview,
+           mode, status, error, replay_key, trace_id, day, created_at, finished_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?)`,
+      )
+      .run(
+        id, input.workspaceSlug, input.agentId, input.pluginId, input.provider, input.actionKey, input.accountRef,
+        input.destination, input.argumentsPreview, input.mode, input.status, input.error, input.day,
+        input.now.toISOString(), input.now.toISOString(),
+      );
+    return this.getReceipt(id)!;
   }
 
   finishReceipt(input: { id: string; status: "succeeded" | "failed" | "not_run"; error?: string | null; now: Date }) {

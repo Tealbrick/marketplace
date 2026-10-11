@@ -6,8 +6,10 @@ import {
   DEFAULT_AGENT_DAILY_CAP,
   MAX_AGENT_DAILY_CAP,
   SENSITIVE_ACTION_FAMILIES,
+  getHoldFamilies,
+  isHoldFamilyId,
   utcDay,
-} from "./agent-modes.js";
+} from "./agent-approval-mode.js";
 import type { AgentApprovalSetting } from "./agent-mode-store.js";
 import { createOwnerWriterGate } from "./channels/owner-key-routes.js";
 import type { OwnerPinSource } from "./channels/owner-pin.js";
@@ -24,6 +26,8 @@ import type { SqliteMarketplaceStore } from "./store.js";
  * - `POST  /api/marketplace/agents/{agentId}/pause|resume` (`marketplace.agents.pause|resume`)
  * - `POST  /api/marketplace/agents/pause-all|resume-all` (`marketplace.agents.pause-all|resume-all`)
  * - `GET   /api/marketplace/agents/receipts` (`marketplace.agent-receipts.list`): Assistant-mode receipts.
+ * - `PATCH /api/marketplace/agents/hold-families/{familyId}` (`marketplace.hold-families.update`) `{on}`: which hold
+ *   families keep an Assistant agent's outward action waiting in this workspace (absent = default ON).
  *
  * Writes need the owner's own Portal launch session with its CSRF token and the pinned owner (createOwnerWriterGate).
  * Refused: agent grants (owner operations), runtime leases, the service bearer, the operator access-token session.
@@ -78,7 +82,7 @@ export function registerAgentModeRoutes(deps: AgentModeRouteDeps): void {
   const agentParam = (request: FastifyRequest) => {
     const { agentId } = request.params as { agentId: string };
     // Path words of the collection routes are never agent ids.
-    return AGENT_ID.test(agentId) && !["receipts", "pause-all", "resume-all"].includes(agentId) ? agentId : null;
+    return AGENT_ID.test(agentId) && !["receipts", "pause-all", "resume-all", "hold-families"].includes(agentId) ? agentId : null;
   };
 
   const agentView = (setting: AgentApprovalSetting, day: string) => {
@@ -112,6 +116,7 @@ export function registerAgentModeRoutes(deps: AgentModeRouteDeps): void {
       limitsReset: "00:00 UTC",
       defaults: { dailyCap: DEFAULT_AGENT_DAILY_CAP, connectorDailyCap: DEFAULT_AGENT_CONNECTOR_DAILY_CAP },
       sensitiveFamilies: SENSITIVE_ACTION_FAMILIES,
+      holdFamilies: getHoldFamilies(store, org),
       agents: knownAgents().map((agentId) => agentView(modes.getSetting(org, agentId), day)),
     };
   };
@@ -158,6 +163,23 @@ export function registerAgentModeRoutes(deps: AgentModeRouteDeps): void {
       },
     });
     return { ok: true, agent: agentView(next, utcDay(now)) };
+  });
+
+  app.patch("/api/marketplace/agents/hold-families/:familyId", { bodyLimit: 1_024 }, async (request, reply) => {
+    const gate = await writer(request, reply);
+    if ("refusal" in gate) return gate.refusal;
+    const { familyId } = request.params as { familyId: string };
+    const body = z.strictObject({ on: z.boolean(), workspaceSlug: z.string().optional(), actorId: z.string().optional() }).safeParse(request.body ?? {});
+    if (!isHoldFamilyId(familyId) || !body.success) return refuse(reply, 400, "validation_failed");
+    const now = deps.clock();
+    const result = modes.setFamily({ workspaceSlug: org, familyId, enabled: body.data.on, actor: gate.actor, now });
+    store.recordAudit({
+      workspaceSlug: org,
+      eventType: "marketplace.agent.hold_family.changed",
+      actorId: gate.actor,
+      metadata: { familyId, from: result.previous, to: result.enabled, at: now.toISOString() },
+    });
+    return overview();
   });
 
   for (const [suffix, paused] of [["pause", true], ["resume", false]] as const) {

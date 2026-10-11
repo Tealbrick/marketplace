@@ -12,8 +12,13 @@ async function unlockMarketplace(page: import("@playwright/test").Page) {
 const families = [
   { family: "destructive", label: "Deletes and resets", words: ["DELETE", "REMOVE", "PURGE"] },
   { family: "money", label: "Payments and refunds", words: ["PAY", "REFUND"] },
-  { family: "access", label: "Sharing and permissions", words: ["SHARE", "INVITE"] },
+  { family: "access-sharing", label: "Sharing and permissions", words: ["SHARE", "INVITE"] },
   { family: "bulk", label: "Bulk and broadcast", words: ["BULK_*", "*_ALL"] },
+];
+const familyState: Record<string, boolean> = {};
+const holdFamilies = () => [
+  ...families.map((family) => ({ id: family.family, label: family.label, description: `${family.label}.`, words: family.words, defaultOn: true, on: familyState[family.family] ?? true, updatedBy: null, updatedAt: null })),
+  { id: "first-contact-dm", label: "First message to a new person", description: "Declared by Channels.", defaultOn: true, on: familyState["first-contact-dm"] ?? true, updatedBy: null, updatedAt: null },
 ];
 
 test("owner switches an agent between System and Assistant, pauses it, and sees what still waits", async ({ page }) => {
@@ -28,6 +33,7 @@ test("owner switches an agent between System and Assistant, pauses it, and sees 
     limitsReset: "00:00 UTC",
     defaults: { dailyCap: 100, connectorDailyCap: 50 },
     sensitiveFamilies: families,
+    holdFamilies: holdFamilies(),
     agents: [{ agentId: "tempo", mode: state.mode, paused: state.paused, dailyCap: 100, connectorDailyCap: 50, today: { day: "2026-10-11", executed: 3, byConnector: { "gmail-composio": 3 } }, updatedAt: null, updatedBy: null }],
   });
   await page.route("**/api/marketplace/agents", async (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(overview()) }));
@@ -40,6 +46,12 @@ test("owner switches an agent between System and Assistant, pauses it, and sees 
     calls.push("pause");
     state.paused = true;
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, agent: overview().agents[0] }) });
+  });
+  await page.route("**/api/marketplace/agents/hold-families/*", async (route) => {
+    const familyId = route.request().url().split("/").at(-1)!;
+    calls.push(`family ${familyId} ${route.request().postData()}`);
+    familyState[familyId] = (JSON.parse(route.request().postData() ?? "{}") as { on: boolean }).on;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(overview()) });
   });
   await page.route("**/api/marketplace/agents/pause-all", async (route) => {
     calls.push("pause-all");
@@ -62,6 +74,13 @@ test("owner switches an agent between System and Assistant, pauses it, and sees 
   await panel.getByText("What still waits?").click();
   await expect(panel).toContainText("Payments and refunds");
   await expect(panel.getByText("REFUND", { exact: true })).toBeVisible();
+  await expect(panel.getByTestId("hold-family-first-contact-dm")).toContainText("First message to a new person");
+  const money = panel.getByTestId("hold-family-money");
+  await expect(money.getByRole("checkbox")).toBeChecked();
+  await money.getByRole("checkbox").click();
+  await expect(money.getByRole("checkbox")).not.toBeChecked();
+  await expect(money).toContainText("Assistant agents will do this without asking you.");
+  expect(calls).toContain('family money {"on":false}');
   await page.screenshot({ path: process.env.AGENT_MODES_SCREENSHOT ?? "test-results/agent-modes.png", fullPage: true });
   await row.getByRole("button", { name: "Pause tempo" }).click();
   await expect(row).toContainText("Paused: every call from this agent is refused");

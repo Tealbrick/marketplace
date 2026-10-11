@@ -3,7 +3,7 @@ import { Bot, LoaderCircle, Pause, Play, ShieldCheck } from "lucide-react";
 import { Button, Tag } from "@tealbrick/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { getAgentModes, setAgentPaused, setAllAgentsPaused, updateAgentMode } from "./agent-grants-api";
+import { getAgentModes, setAgentPaused, setAllAgentsPaused, setHoldFamily, updateAgentMode } from "./agent-grants-api";
 import type { AgentApprovalMode, AgentModesResponse, AgentModeView } from "./types";
 import { InlineError } from "./ui";
 
@@ -16,20 +16,33 @@ export const MODE_COPY: Record<AgentApprovalMode, string> = {
 
 const AGENT_MODES_KEY = ["agent-modes"] as const;
 
+/** Shown next to a family the owner turned off. */
+export const FAMILY_OFF_WARNING = "Assistant agents will do this without asking you.";
+
 function WhatStillWaits({ data }: { data: AgentModesResponse }) {
+  const queryClient = useQueryClient();
+  const toggle = useMutation({
+    mutationFn: (input: { id: string; on: boolean }) => setHoldFamily(input.id, input.on),
+    onSuccess: (next) => queryClient.setQueryData(AGENT_MODES_KEY, next),
+  });
   return (
     <details className="technical-details agent-modes__waits">
       <summary>What still waits?</summary>
-      <p>In Assistant mode these actions still wait for your approval, matched on the words in the action name:</p>
-      <dl className="contract-list">
-        {data.sensitiveFamilies.map((family) => (
-          <div key={family.family} className="agent-modes__family">
-            <dt>{family.label}</dt>
-            <dd>{family.words.map((word) => <code key={word}>{word}</code>)}</dd>
+      <p>In Assistant mode these actions still wait for your approval. Actions are matched on the words in their name; Channels marks the last two itself. Turn a family off only if Assistant agents may do it without asking.</p>
+      <div className="agent-modes__families">
+        {data.holdFamilies.map((family) => (
+          <div key={family.id} className="agent-modes__family" data-testid={`hold-family-${family.id}`}>
+            <label className="agent-modes__family-toggle">
+              <input type="checkbox" checked={family.on} disabled={toggle.isPending} onChange={(event) => toggle.mutate({ id: family.id, on: event.target.checked })} aria-label={`${family.label} waits for you`} />
+              <span><strong>{family.label}</strong><small>{family.description}</small></span>
+            </label>
+            {family.words?.length ? <div className="agent-modes__words">{family.words.map((word) => <code key={word}>{word}</code>)}</div> : null}
+            {!family.on && <p className="agent-modes__off" role="status">{FAMILY_OFF_WARNING}</p>}
           </div>
         ))}
-        <div className="agent-modes__family"><dt>Also</dt><dd>Actions a connector marks as destructive, actions that need full control, and every call over the daily limits.</dd></div>
-      </dl>
+        <div className="agent-modes__family"><strong>Always</strong><small>Actions a connector marks as destructive, actions that need full control, and every call over the daily limits. These cannot be turned off.</small></div>
+      </div>
+      {toggle.error && <InlineError error={toggle.error} />}
     </details>
   );
 }

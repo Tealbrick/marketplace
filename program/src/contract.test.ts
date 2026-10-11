@@ -327,8 +327,9 @@ describe("tealbrick.app.json", () => {
     // + 3: Channels inbound (marketplace.channel-inbound-routes.update, -events.list, -settings.update; P2 scope 2.2).
     // + 4: the Buzz identity (marketplace.channel-buzz-identity.get|update, -buzz-key.generate, -buzz-auth-tag.revoke).
     // + 4: routes v2 people (marketplace.channel-people-policy.get|update, marketplace.channel-people.list|revoke).
-    // + 7: agent approval modes (marketplace.agents.list|update|pause|resume|pause-all|resume-all, agent-receipts.list).
-    expect(owner.length).toBe(16 + 16 + 3 + 3 + 4 + 4 + 7);
+    // + 8: agent approval modes (marketplace.agents.list|update|pause|resume|pause-all|resume-all, agent-receipts.list,
+    // hold-families.update).
+    expect(owner.length).toBe(16 + 16 + 3 + 3 + 4 + 4 + 8);
     // Channels: the account-sourced bot tokens (and the Slack signing secret) arrive as provider env, never stored by Portal.
     const channels = MARKETPLACE_MANIFEST.settings?.groups.find((group) => group.id === "channels");
     expect(channels?.fields.map((field) => [field.key, field.env])).toEqual([

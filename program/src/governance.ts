@@ -34,7 +34,7 @@ export type AgentAttestation =
   | "owner-approval"
   /**
    * Outward connector execute in owner mode under the owner's per-agent
-   * Assistant setting (agent-modes.ts): not sensitive, within the daily
+   * Assistant setting (agent-approval-mode.ts): not sensitive, within the daily
    * limits, receipt reserved. Set only by the execution path after reading the
    * owner-written setting, never from request input.
    */

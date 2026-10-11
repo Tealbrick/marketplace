@@ -55,3 +55,6 @@ export const setAgentPaused = (agentId: string, paused: boolean) =>
 
 export const setAllAgentsPaused = (paused: boolean) =>
   api<AgentModesResponse>(`/api/marketplace/agents/${paused ? "pause-all" : "resume-all"}`, { method: "POST", body: JSON.stringify({}) });
+
+export const setHoldFamily = (familyId: string, on: boolean) =>
+  api<AgentModesResponse>(`/api/marketplace/agents/hold-families/${encodeURIComponent(familyId)}`, { method: "PATCH", body: JSON.stringify({ on }) });
