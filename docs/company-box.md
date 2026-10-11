@@ -215,6 +215,33 @@ governance (the same gate every connector execute uses):
   (`owner_approval_required_for_outward`); the owner's own session runs them
   directly.
 
+The same queue and the same risk apply to two connector kinds whose risk
+nobody has reviewed (0.2.1, QA findings F3-1 and F3-4):
+
+- **Composio toolkits without a curated policy** (every toolkit except
+  `googlecalendar`, see [google-calendar.md](google-calendar.md)): every tool
+  needs `connector.dispatch` and every call is outward
+  (`{ write: true, outward: true, destructive: false }`): held for the owner in
+  owner approval mode, sent to Rules as outward otherwise. Tool names do not
+  change this (`*_LIST_*`, `*_FETCH_*` are not trusted as reads), and a
+  Portal consent at `connector.observe` cannot run such a tool. The only
+  exception is the reviewed read allowlist,
+  `program/catalog/composio-read-allowlist.json` (toolkit → exact tool slugs,
+  observe, not outward), which ships empty. Stored listings are re-classified
+  at start-up; consents minted at observe for these tools must be granted
+  again at dispatch. Name-inferred admin tools stay admin.
+- **Custom MCP connectors** (an operator's own server, not a Company Box
+  `mcp` entry): the server's `readOnlyHint` and tool names are ignored, so
+  every tool needs at least `connector.dispatch` (`destructiveHint` or a
+  destructive name still means `connector.admin`) and every call is outward.
+  A Company Box `mcp` entry that no longer loads is outward too. The code
+  keeps one hook (`customMcpToolCapability(..., { readOnly })`) for a later
+  owner-confirmed read-only flag; nothing sets it yet.
+
+Agents see this before they call: `/api/agent/capabilities` lists `risk` for
+Composio and custom MCP tools and says in the description that an outward
+tool waits for the owner's approval.
+
 ## Install, credentials and connection test
 
 `POST /api/marketplace/company-box/<id>/setup` with `{ baseUrl, credentials }`

@@ -1,0 +1,5 @@
+{
+  "schema": 1,
+  "notes": "Reviewed read-only Composio tools of toolkits WITHOUT a curated policy in composio-policy/. Every other tool of such a toolkit is held as outward (owner approval each call) and needs connector.dispatch. Add a tool only after reviewing that it cannot write, send, publish, share or notify. Exact tool slugs, no wildcards.",
+  "toolkits": {}
+}

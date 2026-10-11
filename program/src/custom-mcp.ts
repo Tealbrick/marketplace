@@ -14,6 +14,7 @@ import {
   normalizeConnectorSlug,
 } from "./connectors.js";
 import { listingIsOperatorCustomMcp } from "./hub.js";
+import type { GovernedActionRisk } from "./governance.js";
 import type { McpRemoteTool, McpTransport } from "./mcp-remote-client.js";
 import type { SqliteMarketplaceStore } from "./store.js";
 import type { ConnectorCapability, MarketplaceListing } from "./types.js";
@@ -396,7 +397,69 @@ export function deriveActionKeys(provider: string, toolNames: readonly string[])
 }
 
 /**
- * Capability rule: `readOnlyHint: true` → observe; `destructiveHint: true` →
+ * Capability of a tool on an operator's own custom MCP server (not a Company
+ * Box entry). The remote server controls its tool names and annotations, so
+ * neither can make a tool read-only: a sending tool marked `readOnlyHint:
+ * true` would otherwise be grantable on a read-only consent and never held.
+ * Every tool needs at least `connector.dispatch` and is outward (held for the
+ * owner in owner approval mode). Hints and names may only tighten:
+ * `destructiveHint: true` or a destructive name → `connector.admin`.
+ * `owner.readOnly` is the only way to observe: reserved for an owner-confirmed
+ * read-only flag stored at connect time (not built yet).
+ */
+export function customMcpToolCapability(
+  tool: Pick<McpRemoteTool, "annotations">,
+  actionSegmentValue: string,
+  owner: { readOnly?: boolean } = {},
+): ConnectorCapability {
+  if (owner.readOnly === true) return "connector.observe";
+  const annotations = tool.annotations ?? {};
+  return annotations.destructiveHint === true ||
+    inferConnectorCapabilityFromAction(actionSegmentValue) === "connector.admin"
+    ? "connector.admin"
+    : "connector.dispatch";
+}
+
+/** Per-call risk of a custom MCP tool: anything not owner-confirmed read-only is outward. */
+export function customMcpToolRisk(capability: ConnectorCapability): GovernedActionRisk {
+  return capability === "connector.observe"
+    ? { write: false, outward: false, destructive: false }
+    : { write: true, outward: true, destructive: capability === "connector.admin" };
+}
+
+/**
+ * Re-classify a stored operator custom MCP listing (not a Company Box entry)
+ * whose tools were classified from server hints or names before
+ * `customMcpToolCapability`. Returns null when nothing changes.
+ */
+export function applyCustomMcpClassificationToListing(listing: MarketplaceListing): MarketplaceListing | null {
+  if (!listingIsOperatorCustomMcp(listing) || listing.executionOwner !== "mcp" || !listing.ownerWorkspaceSlug) {
+    return null;
+  }
+  const manifest = customMcpManifest(listing);
+  if (manifest.companyBox) return null;
+  let changed = false;
+  const tools = manifest.tools.map((tool) => {
+    const capability = customMcpToolCapability(tool, tool.action.slice(listing.provider.length + 1));
+    if (capability === tool.capability) return tool;
+    changed = true;
+    return { ...tool, capability };
+  });
+  if (!changed) return null;
+  return customMcpListing({
+    pluginId: listing.pluginId,
+    workspaceSlug: listing.ownerWorkspaceSlug,
+    displayName: listing.displayName,
+    description: listing.description,
+    version: typeof listing.manifest.version === "string" ? listing.manifest.version : undefined,
+    createdAt: listing.createdAt,
+    manifest: { ...manifest, tools },
+  });
+}
+
+/**
+ * Company Box `mcp` entries only (curated, pinned snapshot; see
+ * companyBoxMcpToolRisk). Capability rule: `readOnlyHint: true` → observe; `destructiveHint: true` →
  * admin; any other explicit hint → dispatch; no hints → infer from the tool
  * segment of the action key (inferConnectorCapabilityFromAction).
  */
@@ -443,7 +506,8 @@ export function toolRecordsFromRemote(
       action,
       ...(title ? { title } : {}),
       ...(description ? { description } : {}),
-      capability: capabilityForTool(tool, action.slice(provider.length + 1)),
+      // Company Box entries re-derive this from their curated entry (app refresh).
+      capability: customMcpToolCapability(tool, action.slice(provider.length + 1)),
       inputSchema:
         schema && Buffer.byteLength(schemaJson) <= MAX_INPUT_SCHEMA_BYTES
           ? schema
