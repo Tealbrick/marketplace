@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import type { BinarySocketFactory } from "../buzz-relay-guard.js";
 import type { Timers } from "../discord-gateway.js";
@@ -12,6 +12,7 @@ import type { SpeechProvider } from "../huddle/speech.js";
 import type { ChannelRecord } from "../store.js";
 import { CONFUSABLE_SKELETON, HAND_FIRST_SKELETON, INVISIBLE_LETTERS } from "./confusables.js";
 import { modesOf, type LiveGrant, type LiveGrantService } from "./grants.js";
+import type { NoticeReservation, NoticeReserver } from "./notice-caps.js";
 import type { LiveGrantRecord, LiveModes, LiveSessionRecord, LiveStore } from "./store.js";
 
 /**
@@ -58,6 +59,8 @@ export type LiveSessionManagerDeps = {
   /** Posts the disclosure notice (kind 9) in the huddle's parent channel; returns the event id. */
   /** Posts the disclosure notice (kind 9) in one Buzz conversation (the parent channel or the huddle itself). */
   postNotice: (channel: ChannelRecord, conversationId: string, text: string) => Promise<{ ok: true; eventId: string | null } | { ok: false; error: string }>;
+  /** Reserves a disclosure notice against the channel's post caps (pre-0.3.0 review L2); see `notice-caps.ts`. */
+  reserveNotice: NoticeReserver;
   /**
    * The huddle's link events (relay query; review M3): the 48100 "started" events in the parent channel and the 9007
    * create event of the huddle channel. Untrusted; verified here: the 48100 signature, kind, `h` = parent, content
@@ -453,6 +456,29 @@ export function createLiveSessionManager(deps: LiveSessionManagerDeps) {
     if (!linked) return refuse(403, "live_huddle_not_in_channel");
     const modes: LiveModes = Object.fromEntries(requested.map((mode) => [mode, true])) as LiveModes;
     recoverStale({ grantId: record.id });
+    // L2: the disclosure notices (parent channel and huddle) count against the channel's post caps like posts. They
+    // are reserved BEFORE anything starts; a refused reservation refuses the join (nothing joins without its notice).
+    const noticeText = scope.consent.disclosureNotice ? disclosureText({ agentId: input.agentId, modes, topic: scope.topic, retentionDays: deps.retentionDays() }) : null;
+    const noticeTargets = noticeText === null ? [] : [parent, input.huddleId];
+    const reservations: Array<{ conversation: string; reservation: Extract<NoticeReservation, { ok: true }> }> = [];
+    const releaseNotices = (outcome: "failed" | "uncertain" = "failed") => {
+      for (const held of reservations.splice(0)) held.reservation.settle(outcome);
+    };
+    const attempt = randomUUID();
+    for (const [index, conversation] of noticeTargets.entries()) {
+      let reserved: NoticeReservation;
+      try {
+        reserved = deps.reserveNotice({ channel, agentId: input.agentId, consentId: record.consentId, grantId: record.id, attempt, conversationId: conversation, index, text: noticeText! });
+      } catch {
+        reserved = { ok: false, error: "channel_reservation_failed" };
+      }
+      if (!reserved.ok) {
+        releaseNotices();
+        const capped = reserved.error.startsWith("channel_cap_") || reserved.error === "channel_min_interval";
+        return refuse(capped ? 429 : 409, reserved.error, { cap: "channel.policy.caps", detail: "live_disclosure_notice", ...(reserved.retryAfterSeconds !== undefined ? { retryAfterSeconds: reserved.retryAfterSeconds } : {}) });
+      }
+      reservations.push({ conversation, reservation: reserved });
+    }
     const startedRow = live.startSession({
       workspaceSlug: org,
       grantId: record.id,
@@ -464,7 +490,10 @@ export function createLiveSessionManager(deps: LiveSessionManagerDeps) {
       instanceId: deps.instanceId,
       now: deps.now(),
     });
-    if (!startedRow.ok) return refuse(409, startedRow.error);
+    if (!startedRow.ok) {
+      releaseNotices();
+      return refuse(409, startedRow.error);
+    }
     const session = startedRow.session;
     const remainingDayMs = (scope.maxDayMinutes - dayMinutes(record.id, nowMs)) * 60_000;
     const maxSessionMs = Math.max(1000, Math.min(scope.maxSessionMinutes * 60_000, remainingDayMs));
@@ -472,17 +501,23 @@ export function createLiveSessionManager(deps: LiveSessionManagerDeps) {
 
     // Disclosure first: nothing is captured before the notice is out (scope §2.3 rule 4), in the parent channel AND
     // in the huddle itself (review M3). Both must be posted, or nothing joins.
-    if (scope.consent.disclosureNotice) {
-      const text = disclosureText({ agentId: input.agentId, modes, topic: scope.topic, retentionDays: deps.retentionDays() });
+    if (noticeText !== null) {
       let firstEventId: string | null = null;
-      for (const conversation of [parent, input.huddleId]) {
+      while (reservations.length > 0) {
+        const { conversation, reservation } = reservations.shift()!;
         let notice: Awaited<ReturnType<LiveSessionManagerDeps["postNotice"]>>;
         try {
-          notice = await deps.postNotice(channel, conversation, text);
+          notice = await deps.postNotice(channel, conversation, noticeText);
+          // A clean provider refusal sent nothing (slot free again); a success is counted.
+          reservation.settle(notice.ok ? "sent" : "failed");
         } catch {
+          // A throw may have reached the provider: the slot stays counted.
+          reservation.settle("uncertain");
           notice = { ok: false, error: "provider_internal_error" };
         }
         if (!notice.ok) {
+          // The notices not yet sent were never posted: their slots are free again.
+          releaseNotices();
           live.endSession(org, session.id, { status: "failed", reason: "disclosure_failed", now: deps.now() });
           return refuse(502, "live_disclosure_failed", { sessionId: session.id, detail: notice.error });
         }

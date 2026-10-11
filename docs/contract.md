@@ -1182,7 +1182,11 @@ joins; the notice is a fixed Marketplace template and the agent's topic follows 
 Marketplace queries the relay for the 48100 event and the huddle channel's 9007 create event and checks the 48100
 signature, `h` = the channel, `ephemeral_channel_id` = the huddle and signer = the 9007 signer (the huddle's
 creator) (`live_huddle_not_in_channel` otherwise); the notice is posted in the parent
-channel and in the huddle itself. `listen` is refused while `perParticipantConsent` is true (no per-participant gate yet) and while no speech
+channel and in the huddle itself. Both notices count against the channel's post caps like posts (`perDay`,
+`perHour` and the minimum gap of the channel policy, shared by all agents; the second notice of a join skips the
+gap): they are reserved before anything starts, a refused reservation refuses the join with the cap error
+(`429 channel_cap_per_day` / `channel_cap_per_hour` / `channel_min_interval`) and nothing is sent or joined; a notice
+that was sent counts, one that was cleanly refused by the provider does not. `listen` is refused while `perParticipantConsent` is true (no per-participant gate yet) and while no speech
 provider is wired. Every 250 ms the session re-reads the grant record, the owner switch, the consent and the channel;
 revoke, pause, expiry, narrowing, consent loss, channel pause, `maxSessionMinutes`, `maxDayMinutes` and the cost cap
 stop it, and the client leaves within 5 s. An owner Stop (`POST .../sessions/{id}/stop`) also pauses the grant

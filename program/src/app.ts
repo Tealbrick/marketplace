@@ -77,6 +77,7 @@ import { createOwnerWriterGate, currentOwnerKeyView, registerOwnerKeyRoutes } fr
 import { NO_OWNER_PIN, readAttestedOwnerNostrPubkey, readOwnerPin, type OwnerKeyAttestation, type OwnerPinSource } from "./channels/owner-pin.js";
 import { CHANNEL_AGENT_OPERATION, registerChannelRoutes } from "./channels/routes.js";
 import { createLiveGrantService, type LiveOwnerBinding } from "./channels/live/grants.js";
+import { createNoticeReserver } from "./channels/live/notice-caps.js";
 import { createLiveSessionManager, sha256Hex as liveSha256 } from "./channels/live/sessions.js";
 import { LIVE_AGENT_OPERATION, LIVE_CLIP_ACTION, liveClipApprovalRefusal, liveClipDigest } from "./channels/live/routes.js";
 import type { SpeechProvider } from "./channels/huddle/speech.js";
@@ -8635,6 +8636,7 @@ export async function buildMarketplaceApp(
       : null,
     speech: options.liveSpeechProvider ?? null,
     ttsAvailable: options.liveTtsAvailable === true && Boolean(options.liveSpeechProvider),
+    reserveNotice: createNoticeReserver({ channels: options.store.channels, organizationId, now: channelClock }),
     postNotice: async (channel, conversationId, text) => {
       const credential = buzzIdentity.credential()?.value ?? null;
       if (!credential || !buzzProvider) return { ok: false, error: "credential_missing" };

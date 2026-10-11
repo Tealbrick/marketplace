@@ -919,4 +919,38 @@ describe("pre-0.3.0 security digest of the live-voice feature", () => {
     expect(resumed.statusCode, resumed.body).toBe(200);
     expect((await t.join(grant.id, t.huddle())).statusCode).toBe(201);
   });
+
+  it("L2: disclosure notices count against the channel post caps and window; a refused reservation refuses the join and sends nothing", async () => {
+    const t = await setup();
+    const tighten = (caps: Record<string, unknown>) => {
+      const current = t.f.store.channels.getChannel(TENANT, t.channel.id)!;
+      t.f.store.channels.updateChannel(TENANT, t.channel.id, { policy: { ...current.policy, caps: { ...current.policy.caps, ...caps } } });
+    };
+    // Three posts a day: one join takes two (parent channel + huddle); the second join needs two more.
+    tighten({ perDay: 3, minIntervalSeconds: 600 });
+    const grant = await t.active({ caps: { perDay: 10 } });
+    const counted = () => t.f.store.channels.listPosts(TENANT, { channelId: t.channel.id, limit: 100 }).filter((post) => ["sending", "sent", "uncertain"].includes(post.status));
+    const first = await t.join(grant.id, t.huddle());
+    expect(first.statusCode, first.body).toBe(201);
+    // Both notices of the join were counted (the second is the same burst, so it skips the minimum gap).
+    expect(counted()).toHaveLength(2);
+    expect(counted().every((post) => post.status === "sent" && post.reason === "live_disclosure_notice")).toBe(true);
+    const notices = t.relay.eventsOfKind(9).filter((event) => event.pubkey === AGENT_KEY).length;
+    expect(notices).toBe(2);
+    const sessions = t.f.store.channels.live.listSessions(TENANT, { limit: 50 }).length;
+    const upgrades = t.huddleRelay.upgrades.length;
+    // The minimum gap of the channel window refuses the next join.
+    const gap = await t.join(grant.id, t.huddle());
+    expect(gap.statusCode).toBe(429);
+    expect(gap.json()).toMatchObject({ error: "channel_min_interval" });
+    // With the gap off, the day cap (3) still refuses: the first notice would fit, the second would not, so none is kept.
+    tighten({ minIntervalSeconds: 0 });
+    const day = await t.join(grant.id, t.huddle());
+    expect(day.statusCode).toBe(429);
+    expect(day.json()).toMatchObject({ error: "channel_cap_per_day" });
+    expect(counted()).toHaveLength(2);
+    expect(t.relay.eventsOfKind(9).filter((event) => event.pubkey === AGENT_KEY)).toHaveLength(notices);
+    expect(t.f.store.channels.live.listSessions(TENANT, { limit: 50 })).toHaveLength(sessions);
+    expect(t.huddleRelay.upgrades).toHaveLength(upgrades);
+  });
 });
