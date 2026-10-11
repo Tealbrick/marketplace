@@ -112,6 +112,9 @@ export function forbiddenSkeletons(value: string): string[] {
   for (const table of [CONFUSABLE_SKELETON, HAND_FIRST_SKELETON]) {
     for (const lower of [false, true]) out.add(forbiddenSkeleton(value, table, lower));
   }
+  // The plain spelling too: UTS #39 maps some ASCII letters to other ASCII (m -> rn, I -> l), and every text letter
+  // keeps its plain lowercase reading, so the term's plain form must stay a needle.
+  out.add(forbiddenSkeleton(value, {}, true));
   return [...out];
 }
 
@@ -123,12 +126,30 @@ const finalFold = (value: string) => value.toLowerCase().normalize("NFD").replac
  * spaces, marks). A term matches when SOME choice of one reading per character spells it, so letters that need
  * different modes in one word ("ΙΝVEST") cannot slip through.
  */
-function readingsOf(char: string): string[] {
+function tableReadings(char: string, out: Set<string>): void {
   const lower = char.toLowerCase();
-  const out = new Set<string>();
-  for (const candidate of [CONFUSABLE_SKELETON[char], HAND_FIRST_SKELETON[char], CONFUSABLE_SKELETON[lower], HAND_FIRST_SKELETON[lower], lower]) {
+  for (const candidate of [CONFUSABLE_SKELETON[char], HAND_FIRST_SKELETON[char], CONFUSABLE_SKELETON[lower], HAND_FIRST_SKELETON[lower]]) {
     if (candidate !== undefined) out.add(finalFold(candidate));
   }
+}
+
+const MAX_READINGS = 64;
+
+function readingsOf(char: string): string[] {
+  const out = new Set<string>();
+  // The character as written (before compatibility normalization: U+017F long s reads "f", U+0132 reads "lj").
+  tableReadings(char, out);
+  // Its normalized form, one reading per resulting letter (fullwidth, ligatures, Roman numerals expand here).
+  const parts = [...char.normalize("NFKC").normalize("NFD").replace(/[\p{Mn}\p{Cf}]/gu, "").replace(INVISIBLE_LETTERS, "")];
+  let combos: string[] = [""];
+  for (const part of parts) {
+    const options = new Set<string>([finalFold(part.toLowerCase())]);
+    tableReadings(part, options);
+    const next: string[] = [];
+    for (const prefix of combos) for (const option of options) if (next.length < MAX_READINGS) next.push(prefix + option);
+    combos = next;
+  }
+  for (const combo of combos) out.add(combo);
   return [...out];
 }
 
@@ -152,7 +173,8 @@ function needleOf(term: string, skeleton: string): Needle {
  * a term), so the cost is text length × readings × needle words. Over-matching is accepted.
  */
 export function forbiddenTermsIn(text: string, terms: readonly string[]): string[] {
-  const letters = [...text.normalize("NFKC").normalize("NFD").replace(/[\p{Mn}\p{Cf}]/gu, "").replace(INVISIBLE_LETTERS, "")];
+  // Per character as written; each character carries its own readings (as written and normalized).
+  const letters = [...text.normalize("NFC")];
   const lattice = letters.map(readingsOf);
   const needles: Needle[] = [];
   for (const term of terms) {
