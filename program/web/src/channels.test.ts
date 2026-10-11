@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ChannelsPage } from "./Channels";
 import { buzzTagSummary, capabilityRows, formToPolicy, looksLikeSecretKey, policyToForm, slugFromLabel, slugProblem, wideningFields } from "./channels-model";
+import { LivePanel } from "./ChannelLive";
 import { ApprovalsPanel } from "./CompanyBox";
 import type { BuzzIdentityView, ChannelProviderCapabilities, ChannelsBrowseResponse, ChannelView, CompanyBoxApproval, StandingGrantView } from "./types";
 
@@ -726,5 +727,16 @@ describe("Buzz identity", () => {
     expect(calls).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: "Rotate now" }));
     await waitFor(() => expect(calls.at(-1)).toEqual({ method: "POST", body: { rotate: true } }));
+  });
+});
+
+describe("live voice panel", () => {
+  it("states that a signed Buzz pause or revoke works only when an agent relays it, and where to stop at once", async () => {
+    mockApi({
+      "GET /api/marketplace/channels/live": () => ({ ok: true, control: { paused: false, pausedAt: null, pausedBy: null, commandChannel: null, updatedAt: null }, buzzReady: true, grants: [], sessions: [] }),
+    });
+    renderWithClient(createElement(LivePanel, { onNotice: () => undefined }));
+    const note = await screen.findByRole("note");
+    expect(note.textContent).toBe("A signed Buzz pause or revoke takes effect only when an agent relays it. Use Pause or Revoke here to stop at once.");
   });
 });
