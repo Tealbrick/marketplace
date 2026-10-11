@@ -244,8 +244,25 @@ tool waits for the owner's approval.
 
 ## Assistant and System agents
 
-In owner approval mode (no Rules service) the owner sets each agent to one of
-two approval modes. Rules mode is unchanged: Rules decides every outward call.
+In owner approval mode (no Rules service) each agent has one of two approval
+modes. Rules mode is unchanged: Rules decides every outward call.
+
+**Source of truth: Teal Brick Portal.** A verified app grant (introspection
+answer or JWT), credential lease or handoff attachment can carry
+`agentPolicy: { v: 1, approvalMode, paused, holdFamilies?, rev }`. When the
+claim is present it wins over Marketplace's own settings, and the local
+setting can only make it stricter: System beats Assistant, either source can
+pause, and an overridable family is off only when both turn it off. A claim
+with `v` other than 1, a bad `rev`, an unknown mode or a wrong type on a known
+key counts as System; `paused` is true only when exactly `true`; `destructive`
+and `money` in `holdFamilies` are ignored; a `rev` lower than the highest seen
+for that agent is stale and counts as System for that call. Parsing lives in
+one function (`parseAgentPolicy`) so it can move to
+`@tealbrick/contract/approval-mode` mechanically. **The local owner settings
+below (mode, pause, hold families, limits) are a temporary fallback until
+Portal ships the claim; they will be removed in the next release.** Until the
+contract kit passes `agentPolicy` through the app-grant introspection, the
+agent-grant attachment and the runtime lease are the paths that read it.
 
 - **System** (the default for every agent without a setting, and for an agent
   id that was removed and registered again): every outward call is held in the
@@ -258,13 +275,14 @@ two approval modes. Rules mode is unchanged: Rules decides every outward call.
     `connector.admin` tools (destructive by name or hint). Always held; this is
     not a family toggle;
   - **hold families** (`HOLD_FAMILIES` in `program/src/agent-approval-mode.ts`),
-    each ON by default and switchable per workspace by the owner (Agent grants
-    → "What still waits?", warning "Assistant agents will do this without
-    asking you." when off): four matched on tool-name words (deletes and
-    resets, payments and refunds, sharing and permissions, bulk and broadcast;
-    whole word segments, the last word may be plural, e.g. `REFUNDS`) and two
+    all ON by default: four matched on tool-name words (deletes and resets,
+    payments and refunds, sharing and permissions, bulk and broadcast; whole
+    word segments, the last word may be plural, e.g. `REFUNDS`) and two
     declared by the caller (`first-contact-dm`, `live-session-grant`, passed by
-    Channels). System mode ignores families;
+    Channels). **Deletes and payments are locked ON.** The owner can turn the
+    others off per workspace (Agent grants → "What still waits?", warning
+    "Assistant agents will do this without asking you."). System mode ignores
+    families;
   - **daily limits**: 100 outward executions per agent and 50 per agent and
     connector per **UTC day** (reset at 00:00 UTC), editable by the owner. The
     limit is checked and the execution reserved in one SQLite transaction

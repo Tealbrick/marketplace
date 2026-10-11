@@ -17,8 +17,8 @@ const families = [
 ];
 const familyState: Record<string, boolean> = {};
 const holdFamilies = () => [
-  ...families.map((family) => ({ id: family.family, label: family.label, description: `${family.label}.`, words: family.words, defaultOn: true, on: familyState[family.family] ?? true, updatedBy: null, updatedAt: null })),
-  { id: "first-contact-dm", label: "First message to a new person", description: "Declared by Channels.", defaultOn: true, on: familyState["first-contact-dm"] ?? true, updatedBy: null, updatedAt: null },
+  ...families.map((family) => ({ id: family.family, label: family.label, description: `${family.label}.`, words: family.words, defaultOn: true, locked: family.family === "destructive" || family.family === "money", on: familyState[family.family] ?? true, updatedBy: null, updatedAt: null })),
+  { id: "first-contact-dm", label: "First message to a new person", description: "Declared by Channels.", defaultOn: true, locked: false, on: familyState["first-contact-dm"] ?? true, updatedBy: null, updatedAt: null },
 ];
 
 test("owner switches an agent between System and Assistant, pauses it, and sees what still waits", async ({ page }) => {
@@ -75,12 +75,15 @@ test("owner switches an agent between System and Assistant, pauses it, and sees 
   await expect(panel).toContainText("Payments and refunds");
   await expect(panel.getByText("REFUND", { exact: true })).toBeVisible();
   await expect(panel.getByTestId("hold-family-first-contact-dm")).toContainText("First message to a new person");
-  const money = panel.getByTestId("hold-family-money");
-  await expect(money.getByRole("checkbox")).toBeChecked();
-  await money.getByRole("checkbox").click();
-  await expect(money.getByRole("checkbox")).not.toBeChecked();
-  await expect(money).toContainText("Assistant agents will do this without asking you.");
-  expect(calls).toContain('family money {"on":false}');
+  // Destructive and money always wait: no toggle.
+  await expect(panel.getByTestId("hold-family-money").getByRole("checkbox")).toHaveCount(0);
+  await expect(panel.getByTestId("hold-family-money")).toContainText("Always waits for you.");
+  const sharing = panel.getByTestId("hold-family-access-sharing");
+  await expect(sharing.getByRole("checkbox")).toBeChecked();
+  await sharing.getByRole("checkbox").click();
+  await expect(sharing.getByRole("checkbox")).not.toBeChecked();
+  await expect(sharing).toContainText("Assistant agents will do this without asking you.");
+  expect(calls).toContain('family access-sharing {"on":false}');
   await page.screenshot({ path: process.env.AGENT_MODES_SCREENSHOT ?? "test-results/agent-modes.png", fullPage: true });
   await row.getByRole("button", { name: "Pause tempo" }).click();
   await expect(row).toContainText("Paused: every call from this agent is refused");

@@ -9,6 +9,12 @@
  *
  * Only the owner sets the mode (owner launch session + CSRF + pinned owner). The mode never widens a consent: the
  * Portal consent class still decides what an agent may call at all. Rules mode is unchanged: Rules decides.
+ *
+ * Source of truth: PORTAL. The verified grant / lease claims carry `agentPolicy` ({approvalMode, paused,
+ * holdFamilies?}); when present it wins. The local owner setting (mode, pause, families, limits; table
+ * agent_approval_setting and friends) is a TEMPORARY FALLBACK until Portal ships the mode claim
+ * (@tealbrick/contract/approval-mode): remove it in the next release. Do not add local features. The exported
+ * function names stay, so the swap to the contract helper is mechanical.
  */
 import type { AgentOutwardReceipt } from "./agent-mode-store.js";
 import type { SqliteMarketplaceStore } from "./store.js";
@@ -35,8 +41,10 @@ export type HoldFamilyDefinition = {
    * Absent: a caller-declared family (decideOutward `families`).
    */
   readonly words?: readonly string[];
-  /** Held for Assistant agents unless the owner turns it off for the workspace. */
+  /** Held for Assistant agents unless the owner (or Portal's agentPolicy) turns it off. */
   readonly defaultOn: true;
+  /** Always held in Assistant mode: neither the owner nor Portal can turn it off (destructive, money). */
+  readonly locked: boolean;
 };
 
 /**
@@ -52,6 +60,7 @@ export const HOLD_FAMILIES: ReadonlyArray<HoldFamilyDefinition> = Object.freeze(
       description: "Deleting, emptying, overwriting, revoking, disabling, banning or resetting things.",
       words: ["DELETE", "REMOVE", "PURGE", "WIPE", "TRASH", "EMPTY", "OVERWRITE", "REPLACE_ALL", "REVOKE", "DISABLE", "BAN", "KICK", "RESET", "ARCHIVE_ALL"],
       defaultOn: true,
+      locked: true,
     },
     {
       id: "money",
@@ -59,6 +68,7 @@ export const HOLD_FAMILIES: ReadonlyArray<HoldFamilyDefinition> = Object.freeze(
       description: "Paying, charging, transferring, ordering, subscribing or refunding.",
       words: ["PAY", "CHARGE", "TRANSFER", "PAYOUT", "PURCHASE", "ORDER", "SUBSCRIBE", "CANCEL_SUBSCRIPTION", "REFUND"],
       defaultOn: true,
+      locked: true,
     },
     {
       id: "access-sharing",
@@ -69,6 +79,7 @@ export const HOLD_FAMILIES: ReadonlyArray<HoldFamilyDefinition> = Object.freeze(
         "FORWARD", "CREATE_API_KEY", "CREATE_TOKEN", "ADD_WEBHOOK", "CREATE_FORWARDING_RULE", "CREATE_FILTER",
       ],
       defaultOn: true,
+      locked: false,
     },
     {
       id: "bulk",
@@ -76,18 +87,21 @@ export const HOLD_FAMILIES: ReadonlyArray<HoldFamilyDefinition> = Object.freeze(
       description: "Bulk actions and messages to everyone at once.",
       words: ["BULK_*", "*_ALL", "SEND_TO_ALL", "BROADCAST", "MASS_*"],
       defaultOn: true,
+      locked: false,
     },
     {
       id: "first-contact-dm",
       label: "First message to a new person",
       description: "A direct message to someone the agent has not written to before (declared by Channels).",
       defaultOn: true,
+      locked: false,
     },
     {
       id: "live-session-grant",
       label: "Live sessions",
       description: "Starting or granting a live session such as a voice huddle (declared by Channels).",
       defaultOn: true,
+      locked: false,
     },
   ] as HoldFamilyDefinition[]).map((entry) => Object.freeze({ ...entry, ...(entry.words ? { words: Object.freeze([...entry.words]) } : {}) })),
 );
@@ -245,25 +259,119 @@ export function receiptDestination(args: Record<string, unknown>): string | null
 // these functions are not called (the kill switch, isAgentPaused, still applies in both modes).
 
 export type ModeStore = Pick<SqliteMarketplaceStore, "agentModes" | "recordAudit">;
-type AgentRef = { workspaceSlug: string; agentId: string };
 
-/** The owner's mode for this agent; System when there is no setting (fail closed). */
-export function getAgentApprovalMode(store: ModeStore, ref: AgentRef): AgentApprovalMode {
-  return store.agentModes.getSetting(ref.workspaceSlug, ref.agentId).mode;
+/**
+ * Portal's per-agent policy claim (contract alpha.10): `agentPolicy: { v: 1, approvalMode: "assistant" | "system",
+ * paused: boolean, holdFamilies?: { "access-sharing"?, bulk?, "first-contact-dm"?, "live-session-grant"?: boolean },
+ * rev: number }`, carried by the app-grant introspection answer (L1) and JWT (L2), the Marketplace credential lease /
+ * handoff attachment, and the kit runtime config. Passed around raw as `policy` (undefined: no claim). Companion
+ * (app-to-app) grants carry none. Parsing lives in parseAgentPolicy only (moves to @tealbrick/contract/approval-mode).
+ */
+export const AGENT_POLICY_CLAIM = "agentPolicy";
+
+export type AgentPolicy = {
+  approvalMode: AgentApprovalMode;
+  paused: boolean;
+  /** Only the overridable families Portal sets; destructive and money are never taken from the claim. */
+  holdFamilies: Partial<Record<HoldFamilyId, boolean>>;
+  /** The policy revision, or null when the claim is malformed. */
+  rev: number | null;
+};
+type AgentRef = { workspaceSlug: string; agentId: string; policy?: unknown };
+
+/** The first verified claim set that carries the agent policy (introspection answer first, then token claims). */
+export function agentPolicyFrom(...sources: Array<Record<string, unknown> | null | undefined>): unknown {
+  for (const source of sources) if (source && source[AGENT_POLICY_CLAIM] !== undefined) return source[AGENT_POLICY_CLAIM];
+  return undefined;
 }
 
-/** The owner's kill switch: this agent (`agent`) or all agents (`global`). */
-export function isAgentPaused(store: ModeStore, ref: AgentRef): { paused: boolean; scope: "agent" | "global" | null } {
+/**
+ * Parse a present agentPolicy (fail closed). Undefined: null (absent; the local owner setting applies). Otherwise:
+ * not an object, `v` missing or not 1, `rev` not a non-negative integer, an unknown `approvalMode`, or a wrong type
+ * on a known key (`v`, `rev`, `approvalMode`, `paused`, `holdFamilies`) → `system` (still a present claim).
+ * `paused` only when exactly `true`. `holdFamilies`: only the overridable families, off only when exactly `false`;
+ * `destructive` and `money` are ignored (always held). Unknown keys are ignored.
+ */
+export function parseAgentPolicy(raw: unknown): AgentPolicy | null {
+  if (raw === undefined) return null;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { approvalMode: "system", paused: false, holdFamilies: {}, rev: null };
+  const value = raw as Record<string, unknown>;
+  const rev = typeof value.rev === "number" && Number.isInteger(value.rev) && value.rev >= 0 ? value.rev : null;
+  const familiesValue = value.holdFamilies;
+  const malformed =
+    value.v !== 1 ||
+    rev === null ||
+    (value.approvalMode !== undefined && typeof value.approvalMode !== "string") ||
+    (value.paused !== undefined && typeof value.paused !== "boolean") ||
+    (familiesValue !== undefined && (!familiesValue || typeof familiesValue !== "object" || Array.isArray(familiesValue)));
+  const holdFamilies: Partial<Record<HoldFamilyId, boolean>> = {};
+  if (!malformed && familiesValue) {
+    const families = familiesValue as Record<string, unknown>;
+    for (const family of HOLD_FAMILIES) {
+      if (!family.locked && typeof families[family.id] === "boolean") holdFamilies[family.id] = families[family.id] as boolean;
+    }
+  }
+  return {
+    approvalMode: !malformed && value.approvalMode === "assistant" ? "assistant" : "system",
+    paused: value.paused === true,
+    holdFamilies,
+    rev,
+  };
+}
+
+/**
+ * The claim to use for this call: parsed, and `system` when its `rev` is LOWER than the highest revision seen for
+ * this agent (stale, as the contract's isStalePolicy). A higher revision is recorded.
+ */
+export function effectiveAgentPolicy(store: ModeStore, ref: AgentRef): AgentPolicy | null {
+  const parsed = parseAgentPolicy(ref.policy);
+  if (!parsed || parsed.rev === null) return parsed;
+  const seen = store.agentModes.lastPolicyRev(ref.workspaceSlug, ref.agentId);
+  if (seen !== null && parsed.rev < seen) return { ...parsed, approvalMode: "system", holdFamilies: {} };
+  if (seen === null || parsed.rev > seen) store.agentModes.recordPolicyRev(ref.workspaceSlug, ref.agentId, parsed.rev);
+  return parsed;
+}
+
+/**
+ * The agent's mode. Claim present: the STRICTER of the claim and a stored local owner setting (System beats
+ * Assistant; the local setting can only tighten). Claim absent: the local owner setting (temporary fallback), System
+ * when there is none (fail closed).
+ */
+export function getAgentApprovalMode(store: ModeStore, ref: AgentRef): AgentApprovalMode {
+  const local = store.agentModes.getSetting(ref.workspaceSlug, ref.agentId);
+  const claimed = effectiveAgentPolicy(store, ref);
+  if (!claimed) return local.mode;
+  return claimed.approvalMode === "assistant" && (!local.stored || local.mode === "assistant") ? "assistant" : "system";
+}
+
+/**
+ * The kill switch: paused when either source says so (claim `paused: true`: scope `claim`; the local pause of this
+ * agent: `agent`; of all agents: `global`).
+ */
+export function isAgentPaused(store: ModeStore, ref: AgentRef): { paused: boolean; scope: "claim" | "agent" | "global" | null } {
+  if (parseAgentPolicy(ref.policy)?.paused === true) return { paused: true, scope: "claim" };
   const state = store.agentModes.pauseState(ref.workspaceSlug, ref.agentId);
   return { paused: state !== null, scope: state === "all" ? "global" : state };
 }
 
-/** The registry with this workspace's owner settings (absent = default ON). */
-export function getHoldFamilies(store: ModeStore, workspaceSlug: string): Array<HoldFamilyDefinition & { on: boolean; updatedBy: string | null; updatedAt: string | null }> {
+/**
+ * The registry with the families' current state for this workspace (and claim, when given): locked families always
+ * ON; the stricter of the claim and the local owner setting when a claim is present; the local setting otherwise.
+ */
+export function getHoldFamilies(
+  store: ModeStore,
+  workspaceSlug: string,
+  policy?: unknown,
+): Array<HoldFamilyDefinition & { on: boolean; updatedBy: string | null; updatedAt: string | null }> {
+  const claimed = parseAgentPolicy(policy);
   const settings = store.agentModes.getFamilySettings(workspaceSlug);
   return HOLD_FAMILIES.map((family) => {
     const setting = settings.get(family.id);
-    return { ...family, on: setting ? setting.enabled : family.defaultOn, updatedBy: setting?.updatedBy ?? null, updatedAt: setting?.updatedAt ?? null };
+    // Locked families are always ON. Otherwise the local setting (absent = default ON); with a claim present the
+    // stricter of both: a family is off only when the claim AND the local setting turn it off.
+    const local = family.locked || (setting ? setting.enabled : family.defaultOn);
+    const on = claimed ? local || (claimed.holdFamilies[family.id] ?? family.defaultOn) : local;
+    return { ...family, on, updatedBy: setting?.updatedBy ?? null, updatedAt: setting?.updatedAt ?? null };
   });
 }
 
@@ -273,12 +381,12 @@ export function getHoldFamilies(store: ModeStore, workspaceSlug: string): Array<
  */
 export function assistantHold(
   store: ModeStore,
-  input: { workspaceSlug: string; risk: OutwardRisk; slug?: string; toolkit?: string; families?: readonly string[] },
+  input: { workspaceSlug: string; risk: OutwardRisk; slug?: string; toolkit?: string; families?: readonly string[]; policy?: unknown },
 ): { reason: "destructive" | "sensitive"; family?: HoldFamilyId } | null {
   if (!input.risk.outward) return null;
   if (input.risk.destructive) return { reason: "destructive" };
   if (input.risk.sensitive) return { reason: "sensitive" };
-  const families = getHoldFamilies(store, input.workspaceSlug);
+  const families = getHoldFamilies(store, input.workspaceSlug, input.policy);
   const declared = (input.families ?? []).find((id) => families.some((family) => family.id === id && family.on));
   if (declared) return { reason: "sensitive", family: declared as HoldFamilyId };
   if (input.slug) {
@@ -318,6 +426,8 @@ export function decideOutward(
     toolkit?: string;
     /** Caller-declared families, e.g. `["first-contact-dm"]`: held when any is ON for the workspace. */
     families?: readonly string[];
+    /** Portal's raw `agentPolicy` claim from the verified grant or lease (undefined: none; local fallback). */
+    policy?: unknown;
     now?: Date;
     /** Idempotency scope of the call (counts once, replays never re-run). */
     replayKey?: string | null;
@@ -337,7 +447,7 @@ export function decideOutward(
   }
   const setting = modes.getSetting(input.workspaceSlug, input.agentId);
   // System mode ignores families: every outward call is held.
-  if (setting.mode !== "assistant") return { kind: "hold", reason: "system_mode" };
+  if (getAgentApprovalMode(store, input) !== "assistant") return { kind: "hold", reason: "system_mode" };
   const held = assistantHold(store, input);
   if (held) return { kind: "hold", reason: held.reason, ...(held.family ? { family: held.family } : {}) };
   const now = input.now ?? new Date();

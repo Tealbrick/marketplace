@@ -28,14 +28,18 @@ function WhatStillWaits({ data }: { data: AgentModesResponse }) {
   return (
     <details className="technical-details agent-modes__waits">
       <summary>What still waits?</summary>
-      <p>In Assistant mode these actions still wait for your approval. Actions are matched on the words in their name; Channels marks the last two itself. Turn a family off only if Assistant agents may do it without asking.</p>
+      <p>In Assistant mode these actions still wait for your approval. Actions are matched on the words in their name; Channels marks the last two itself. Turn a family off only if Assistant agents may do it without asking. When Teal Brick Portal sends an agent policy, these settings can only make it stricter.</p>
       <div className="agent-modes__families">
         {data.holdFamilies.map((family) => (
           <div key={family.id} className="agent-modes__family" data-testid={`hold-family-${family.id}`}>
-            <label className="agent-modes__family-toggle">
-              <input type="checkbox" checked={family.on} disabled={toggle.isPending} onChange={(event) => toggle.mutate({ id: family.id, on: event.target.checked })} aria-label={`${family.label} waits for you`} />
-              <span><strong>{family.label}</strong><small>{family.description}</small></span>
-            </label>
+            {family.locked ? (
+              <div className="agent-modes__family-toggle"><span><strong>{family.label}</strong><small>{family.description} Always waits for you.</small></span></div>
+            ) : (
+              <label className="agent-modes__family-toggle">
+                <input type="checkbox" checked={family.on} disabled={toggle.isPending} onChange={(event) => toggle.mutate({ id: family.id, on: event.target.checked })} aria-label={`${family.label} waits for you`} />
+                <span><strong>{family.label}</strong><small>{family.description}</small></span>
+              </label>
+            )}
             {family.words?.length ? <div className="agent-modes__words">{family.words.map((word) => <code key={word}>{word}</code>)}</div> : null}
             {!family.on && <p className="agent-modes__off" role="status">{FAMILY_OFF_WARNING}</p>}
           </div>

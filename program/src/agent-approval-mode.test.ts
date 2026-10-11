@@ -60,9 +60,14 @@ async function modes(input: FixtureInput = {}) {
   const rulesCalls: Array<Record<string, unknown>> = [];
   const capabilities = input.capabilities ?? ["connector.observe", "connector.dispatch", "connector.admin"];
   const sessions = new MarketplaceOperatorSessionManager({ accessToken: "operator-access-token", operatorId: "owner-1", organizationId: TENANT });
+  /** Portal's agentPolicy claim per agent, as the verified attachment / lease carries it (undefined: none). */
+  const policies = new Map<string, unknown>();
   const agentScopeVerifier: PortalAgentScopeVerifier = async ({ agentToken, requiredCapability }) => {
     if (!capabilities.includes(requiredCapability as ConnectorCapability)) throw new Error("capability_not_granted");
-    return { organizationId: TENANT, agentId: agentToken, attachmentId: "attachment-1", capabilities, expiresAt: Math.floor(Date.now() / 1000) + 300 };
+    return {
+      organizationId: TENANT, agentId: agentToken, attachmentId: "attachment-1", capabilities, expiresAt: Math.floor(Date.now() / 1000) + 300,
+      ...(policies.has(agentToken) ? { agentPolicy: policies.get(agentToken) } : {}),
+    };
   };
   const portalFetch: typeof fetch = async (url) => {
     if (String(url).endsWith("/api/runtime/app-grant/introspect")) {
@@ -94,6 +99,11 @@ async function modes(input: FixtureInput = {}) {
     operatorSessionManager: sessions,
     agentScopeVerifier,
     portalFetch,
+    portalRuntimeScopeVerifier: async ({ requiredCapability }) => ({
+      portalOrgId: "portal-org-1", productTenantId: TENANT, workspaceId: TENANT, deploymentId: "deployment-1", agentId: "agent-1",
+      consentId: "consent-lease", leaseId: "lease-1", capabilities: [requiredCapability], expiresAt: Date.now() + 300_000,
+      ...(policies.has("agent-1") ? { agentPolicy: policies.get("agent-1") } : {}),
+    }),
     ...(input.pinned === false ? {} : { ownerPinSource: seededPin({ portalIssuer: PORTAL }) }),
     ...(input.now ? { agentModeClock: () => input.now!.value } : {}),
     ...(input.rules
@@ -197,7 +207,7 @@ async function modes(input: FixtureInput = {}) {
     (store.listAudit({ workspaceSlug: TENANT, limit: 500 }) as Array<{ event_type: string; metadata: string }>)
       .filter((row) => row.event_type === "marketplace.agent.outward.receipt")
       .map((row) => JSON.parse(row.metadata) as Record<string, unknown>);
-  return { root, app, store, executions, rulesCalls, sessions, service, owner, agent, importToolkit, grant, call, setMode, ownerPost, setFamily, overview, approve, consent, toolsCall, receiptAudit };
+  return { root, app, store, executions, rulesCalls, sessions, policies, service, owner, agent, importToolkit, grant, call, setMode, ownerPost, setFamily, overview, approve, consent, toolsCall, receiptAudit };
 }
 
 type Fixture = Awaited<ReturnType<typeof modes>>;
@@ -701,32 +711,40 @@ describe("hold families are owner settings", () => {
       ["Portal runtime lease", { authorization: "Bearer portal-runtime-lease-token" }],
       ["static operator access token", { origin: "http://localhost", cookie: `${MARKETPLACE_OPERATOR_SESSION_COOKIE}=${accessTokenLogin.token}`, "x-csrf-token": accessTokenLogin.status.csrfToken! }],
     ] as Array<[string, Record<string, string>]>) {
-      const response = await f.setFamily("destructive", false, headers);
+      const response = await f.setFamily("access-sharing", false, headers);
       expect(response.statusCode, label).toBeGreaterThanOrEqual(401);
       expect(response.statusCode, label).toBeLessThan(500);
     }
-    expect(getHoldFamilies(f.store, TENANT).find((family) => family.id === "destructive")?.on).toBe(true);
+    expect(getHoldFamilies(f.store, TENANT).find((family) => family.id === "access-sharing")?.on).toBe(true);
     expect((await f.setFamily("not-a-family", false)).statusCode).toBe(400);
+    // Destructive and money always wait: not owner-overridable.
+    for (const locked of ["destructive", "money"]) {
+      const response = await f.setFamily(locked, false);
+      expect(response.statusCode, locked).toBe(400);
+      expect(response.json()).toMatchObject({ error: "hold_family_locked" });
+    }
 
     await f.setMode("agent-1", { mode: "assistant" });
-    const trash = await f.grant("agent-1", pluginId, "gmail.trash.message");
-    expect((await f.call("agent-1", pluginId, "gmail.trash.message", trash, { id: "m1" })).json()).toMatchObject({ heldBecause: "sensitive:destructive" });
-    const off = await f.setFamily("destructive", false);
+    const forward = await f.grant("agent-1", pluginId, "gmail.forward.message");
+    expect((await f.call("agent-1", pluginId, "gmail.forward.message", forward, { id: "m1", to: "a@example.invalid" })).json()).toMatchObject({ heldBecause: "sensitive:access-sharing" });
+    const off = await f.setFamily("access-sharing", false);
     expect(off.statusCode, off.body).toBe(200);
-    expect(off.json().holdFamilies.find((family: { id: string }) => family.id === "destructive")).toMatchObject({ on: false, updatedBy: "operator:owner-1" });
+    expect(off.json().holdFamilies.find((family: { id: string }) => family.id === "access-sharing")).toMatchObject({ on: false, updatedBy: "operator:owner-1" });
     const audit = f.store.listAudit({ workspaceSlug: TENANT, limit: 50 }) as Array<{ event_type: string; actor_id: string; metadata: string }>;
     expect(audit.find((row) => row.event_type === "marketplace.agent.hold_family.changed")).toMatchObject({ actor_id: "operator:owner-1" });
-    expect(JSON.parse(audit.find((row) => row.event_type === "marketplace.agent.hold_family.changed")!.metadata)).toMatchObject({ familyId: "destructive", from: null, to: false });
-    const ran = await f.call("agent-1", pluginId, "gmail.trash.message", trash, { id: "m1" });
+    expect(JSON.parse(audit.find((row) => row.event_type === "marketplace.agent.hold_family.changed")!.metadata)).toMatchObject({ familyId: "access-sharing", from: null, to: false });
+    const ran = await f.call("agent-1", pluginId, "gmail.forward.message", forward, { id: "m1", to: "a@example.invalid" });
     expect(ran.statusCode, ran.body).toBe(200);
-    expect(f.receiptAudit()).toEqual([expect.objectContaining({ actionKey: "gmail.trash.message", status: "succeeded", mode: "assistant" })]);
-    // Destructive by name (connector.admin) is not a family toggle: still held.
+    expect(f.receiptAudit()).toEqual([expect.objectContaining({ actionKey: "gmail.forward.message", status: "succeeded", mode: "assistant" })]);
+    // Destructive words stay held (locked family), and so does destructive-by-name (connector.admin).
+    const trash = await f.grant("agent-1", pluginId, "gmail.trash.message");
+    expect((await f.call("agent-1", pluginId, "gmail.trash.message", trash, { id: "m1" })).json()).toMatchObject({ heldBecause: "sensitive:destructive" });
     const del = await f.grant("agent-1", pluginId, "gmail.delete.message");
     expect((await f.call("agent-1", pluginId, "gmail.delete.message", del, { id: "m1" })).json()).toMatchObject({ heldBecause: "destructive" });
     // System mode ignores families.
     await f.setMode("agent-1", { mode: "system" });
-    expect((await f.call("agent-1", pluginId, "gmail.trash.message", trash, { id: "m2" })).json()).toMatchObject({ heldBecause: "system_mode" });
-    expect(f.executions.map((execution) => execution.tool)).toEqual(["GMAIL_TRASH_MESSAGE"]);
+    expect((await f.call("agent-1", pluginId, "gmail.forward.message", forward, { id: "m2" })).json()).toMatchObject({ heldBecause: "system_mode" });
+    expect(f.executions.map((execution) => execution.tool)).toEqual(["GMAIL_FORWARD_MESSAGE"]);
   });
 
   it("holds a caller-declared family while it is ON and runs it once the owner turns it off", async () => {
@@ -744,5 +762,100 @@ describe("hold families are owner settings", () => {
     // Another workspace keeps its default (ON).
     expect(decideOutward(store, { ...input, workspaceSlug: "other", agentId: "agent-d" })).toEqual({ kind: "hold", reason: "system_mode" });
     expect(getHoldFamilies(store, "other").every((family) => family.on)).toBe(true);
+  });
+});
+
+describe("Portal agentPolicy claim (source of truth; local setting is the temporary fallback)", () => {
+  const policy = (extra: Record<string, unknown> = {}) => ({ v: 1, approvalMode: "assistant", paused: false, rev: 1, ...extra });
+
+  it("parses exactly: v/rev/type errors and unknown modes are system, paused only when true, destructive/money ignored", async () => {
+    const { parseAgentPolicy } = await import("./agent-approval-mode.js");
+    expect(parseAgentPolicy(undefined)).toBeNull();
+    expect(parseAgentPolicy(policy())).toEqual({ approvalMode: "assistant", paused: false, holdFamilies: {}, rev: 1 });
+    expect(parseAgentPolicy(policy({ x: 1, holdFamilies: { bulk: false, destructive: false, money: false, nope: false } }))).toEqual({ approvalMode: "assistant", paused: false, holdFamilies: { bulk: false }, rev: 1 });
+    for (const bad of [null, "assistant", [], policy({ v: 2 }), policy({ v: undefined }), policy({ rev: -1 }), policy({ rev: 1.5 }), policy({ rev: "1" }), policy({ approvalMode: "boss" }), policy({ approvalMode: 1 }), policy({ paused: "no" }), policy({ holdFamilies: [] })]) {
+      expect(parseAgentPolicy(bad)?.approvalMode, JSON.stringify(bad)).toBe("system");
+    }
+    expect(parseAgentPolicy(policy({ paused: true }))?.paused).toBe(true);
+    expect(parseAgentPolicy(policy({ paused: "yes" }))?.paused).toBe(false);
+    expect(parseAgentPolicy({ v: 1, approvalMode: "assistant", rev: 0 })?.paused).toBe(false);
+  });
+
+  it("claim present: the stricter of claim and local; claim absent: local; paused claim refuses; stale rev is system", async () => {
+    const f = await modes();
+    const pluginId = await gmail(f);
+    const grantFor = (agentId: string) => f.grant(agentId, pluginId, "gmail.send.email");
+    const send = async (agentId: string, grantId: string) => (await f.call(agentId, pluginId, "gmail.send.email", grantId, sendInput));
+
+    // claim assistant + no local setting -> assistant (runs)
+    f.policies.set("a1", policy());
+    expect((await send("a1", await grantFor("a1"))).statusCode).toBe(200);
+    // claim assistant + local system -> system (the local setting can only tighten)
+    f.policies.set("a2", policy());
+    await f.setMode("a2", { mode: "system" });
+    expect((await send("a2", await grantFor("a2"))).json()).toMatchObject({ heldBecause: "system_mode" });
+    // claim system + local assistant -> system
+    f.policies.set("a3", policy({ approvalMode: "system" }));
+    await f.setMode("a3", { mode: "assistant" });
+    expect((await send("a3", await grantFor("a3"))).json()).toMatchObject({ heldBecause: "system_mode" });
+    // claim absent -> local (assistant runs)
+    await f.setMode("a4", { mode: "assistant" });
+    expect((await send("a4", await grantFor("a4"))).statusCode).toBe(200);
+    // invalid claim value -> system, even with local assistant
+    f.policies.set("a5", policy({ approvalMode: "boss" }));
+    await f.setMode("a5", { mode: "assistant" });
+    expect((await send("a5", await grantFor("a5"))).json()).toMatchObject({ heldBecause: "system_mode" });
+    // paused claim -> refused before any provider call, whatever the local setting
+    const g6 = await grantFor("a6");
+    f.policies.set("a6", policy({ paused: true }));
+    const paused = await send("a6", g6);
+    expect(paused.statusCode).toBe(423);
+    expect(paused.json()).toMatchObject({ error: "agent_paused", pausedBy: "portal" });
+    // stale revision -> system for that call; the newer one runs again
+    const g7 = await grantFor("a7");
+    f.policies.set("a7", policy({ rev: 5 }));
+    expect((await send("a7", g7)).statusCode).toBe(200);
+    f.policies.set("a7", policy({ rev: 4 }));
+    expect((await send("a7", g7)).json()).toMatchObject({ heldBecause: "system_mode" });
+    f.policies.set("a7", policy({ rev: 6 }));
+    expect((await send("a7", g7)).statusCode).toBe(200);
+    expect(f.executions.map((execution) => execution.tool)).toEqual(["GMAIL_SEND_EMAIL", "GMAIL_SEND_EMAIL", "GMAIL_SEND_EMAIL", "GMAIL_SEND_EMAIL"]);
+    // The verified agent sees its effective mode.
+    const caps = await f.app.inject({ method: "GET", url: `/api/agent/capabilities?workspaceSlug=${TENANT}&grantId=${g7}`, headers: f.agent("a7") });
+    expect(caps.json()).toMatchObject({ agent: { approvalMode: "assistant" } });
+  });
+
+  it("claim holdFamilies only loosen together with the local setting; locked families ignore the claim", async () => {
+    const f = await modes();
+    const pluginId = await gmail(f);
+    f.policies.set("agent-1", policy({ holdFamilies: { "access-sharing": false, destructive: false } }));
+    const forward = await f.grant("agent-1", pluginId, "gmail.forward.message");
+    const trash = await f.grant("agent-1", pluginId, "gmail.trash.message");
+    // Local default (ON) is stricter than the claim's off: still held.
+    expect((await f.call("agent-1", pluginId, "gmail.forward.message", forward, { id: "m1" })).json()).toMatchObject({ heldBecause: "sensitive:access-sharing" });
+    await f.setFamily("access-sharing", false);
+    expect((await f.call("agent-1", pluginId, "gmail.forward.message", forward, { id: "m1" })).statusCode).toBe(200);
+    expect((await f.call("agent-1", pluginId, "gmail.trash.message", trash, { id: "m1" })).json()).toMatchObject({ heldBecause: "sensitive:destructive" });
+  });
+
+  it("reads the claim from the lease on the consented-call path (runtime receiver)", async () => {
+    const f = await modes();
+    const pluginId = await gmail(f);
+    f.consent(pluginId, "gmail.send.email", "connector.dispatch", "consent-lease");
+    const body = (key: string) => ({
+      schema: 1,
+      consentId: "consent-lease",
+      selection: { pluginId, actionKey: "gmail.send.email", accountId: "ca_1", resourceKind: "gmail.connected-account", resourceRef: "account:ca_1", capability: "connector.dispatch" },
+      input: sendInput,
+      idempotencyKey: key,
+    });
+    const lease = (key: string) => f.app.inject({ method: "POST", url: "/api/marketplace/v1/runtime/composio/execute", headers: { authorization: "Bearer portal-lease-token" }, payload: body(key) });
+    expect((await lease("lease-key-0001")).statusCode).toBe(202);
+    f.policies.set("agent-1", policy({ rev: 2 }));
+    const ran = await lease("lease-key-0002");
+    expect(ran.statusCode, ran.body).toBe(200);
+    f.policies.set("agent-1", policy({ rev: 3, paused: true }));
+    expect((await lease("lease-key-0003")).statusCode).toBe(423);
+    expect(f.executions).toHaveLength(1);
   });
 });

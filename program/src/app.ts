@@ -149,6 +149,7 @@ import { registerCompanyBoxRoutes } from "./company-box-routes.js";
 import { composioCallRisk } from "./composio-policy.js";
 import { registerAgentModeRoutes } from "./agent-mode-routes.js";
 import {
+  agentPolicyFrom,
   assistantHold,
   commitCapReservation,
   decideOutward,
@@ -414,6 +415,8 @@ type ConsentedCallScope = {
   consentId: string;
   /** Lease id, or a non-secret reference for an app grant. Recorded in audit and usage metadata. */
   leaseId: string;
+  /** Portal's raw agentPolicy claim from the verified lease or app grant (agent-approval-mode.ts); absent: none. */
+  agentPolicy?: unknown;
 };
 
 const PortalIdentifierSchema = z
@@ -3650,11 +3653,11 @@ export async function buildMarketplaceApp(
   const agentModeClock = options.agentModeClock ?? (() => new Date());
   const agentModes = options.store.agentModes;
   /** The owner's kill switch (isAgentPaused): refused before any provider call, reads included, in both modes. */
-  const agentPausedRefusal = (reply: FastifyReply, workspaceSlug: string, agentId: string) => {
-    const paused = isAgentPaused(options.store, { workspaceSlug, agentId });
+  const agentPausedRefusal = (reply: FastifyReply, workspaceSlug: string, agentId: string, policy?: unknown) => {
+    const paused = isAgentPaused(options.store, { workspaceSlug, agentId, policy });
     if (!paused.paused) return null;
     reply.code(423);
-    return { ok: false, error: "agent_paused", pausedBy: paused.scope === "global" ? "all_agents" : "agent" };
+    return { ok: false, error: "agent_paused", pausedBy: paused.scope === "global" ? "all_agents" : paused.scope === "claim" ? "portal" : "agent" };
   };
   type AssistantRun = { reservationId: string; replay: boolean; args: Record<string, unknown>; accountRef: string | null; connectorKey: string; provider: string; actionKey: string; workspaceSlug: string; agentId: string };
   type OutwardPlan = { kind: "hold"; reason: string } | { kind: "refuse" } | ({ kind: "assistant" } & AssistantRun);
@@ -3675,6 +3678,8 @@ export async function buildMarketplaceApp(
     holdKey: string | null;
     replayKey: string | null;
     traceId: string;
+    /** Portal's raw agentPolicy claim of this call, when the verified grant or lease carries one. */
+    policy?: unknown;
   }): OutwardPlan => {
     if (
       input.holdKey &&
@@ -3696,6 +3701,7 @@ export async function buildMarketplaceApp(
       argumentsPreview: receiptPreview(input.args),
       destination: receiptDestination(input.args),
       traceId: input.traceId,
+      policy: input.policy,
     });
     if (decision.kind === "refuse") return { kind: "refuse" };
     if (decision.kind === "hold") return { kind: "hold", reason: heldBecause(decision.reason, decision.family) };
@@ -4720,8 +4726,9 @@ export async function buildMarketplaceApp(
     reply.type("text/markdown; charset=utf-8");
     const agentId = grant.agentId;
     if (!agentId) return agentGuidance();
-    const setting = agentModes.getSetting(organizationId, agentId);
-    const paused = isAgentPaused(options.store, { workspaceSlug: organizationId, agentId }).paused;
+    const policy = agentPolicyFrom(grant as unknown as Record<string, unknown>);
+    const setting = { ...agentModes.getSetting(organizationId, agentId), mode: getAgentApprovalMode(options.store, { workspaceSlug: organizationId, agentId, policy }) };
+    const paused = isAgentPaused(options.store, { workspaceSlug: organizationId, agentId, policy }).paused;
     return `${agentGuidance()}\n## Your approval mode\n\n${
       governanceMode !== "owner"
         ? "A Rules service decides your outward actions."
@@ -7492,6 +7499,7 @@ export async function buildMarketplaceApp(
       const input = ExecuteInputSchema.parse(request.body);
       const traceId = traceIdFrom(request);
       let scopedGrant: AgentConnectorGrant | null = null;
+      let agentPolicy: unknown;
       let effectiveActorId = input.actorId;
       let effectiveAction = input.action;
       if (input.agentGrantId) {
@@ -7526,7 +7534,8 @@ export async function buildMarketplaceApp(
           return { ok: false, error: "resource_mismatch" };
         }
         effectiveActorId = `agent:${verified.scope.agentId}`;
-        const paused = agentPausedRefusal(reply, input.workspaceSlug, scopedGrant.agentId);
+        agentPolicy = verified.scope.agentPolicy;
+        const paused = agentPausedRefusal(reply, input.workspaceSlug, scopedGrant.agentId, agentPolicy);
         if (paused) return paused;
       }
       options.store.recordEvent({
@@ -7698,6 +7707,7 @@ export async function buildMarketplaceApp(
           holdKey: input.idempotencyKey ?? null,
           replayKey: input.idempotencyKey ?? null,
           traceId,
+          policy: agentPolicy,
         });
         if (plan.kind === "refuse") {
           reply.code(423);
@@ -8232,7 +8242,7 @@ export async function buildMarketplaceApp(
     if ("response" in verified) return verified.response;
     const { consent } = verified;
     // Kill switch: before any provider call, channel sends and reads included.
-    const paused = agentPausedRefusal(reply, organizationId, consent.agentId);
+    const paused = agentPausedRefusal(reply, organizationId, consent.agentId, scope.agentPolicy);
     if (paused) return runtimeResponse({ ok: false, traceId, error: "agent_paused" });
     if (call.channel) {
       // Channel path (Channels §6): the class consent must be exactly the
@@ -8365,6 +8375,7 @@ export async function buildMarketplaceApp(
         holdKey: input.idempotencyKey,
         replayKey: `${input.consentId}:${input.idempotencyKey}`,
         traceId,
+        policy: scope.agentPolicy,
       });
       if (plan.kind === "refuse") {
         reply.code(423);
@@ -9059,6 +9070,8 @@ export async function buildMarketplaceApp(
           .update(`${caller.grant.principalId}|${consent.consentId}`)
           .digest("hex")
           .slice(0, 16)}`,
+        // The app-grant introspection answer (L1) / JWT (L2) carries Portal's agentPolicy once the kit passes it.
+        agentPolicy: agentPolicyFrom(caller.grant as unknown as Record<string, unknown>),
       },
       input: {
         consentId: consent.consentId,
@@ -9532,8 +9545,9 @@ export async function buildMarketplaceApp(
       return { ok: false, error: verified.error };
     }
     // For the verified agent: whether each outward call runs now or waits (its mode, pause), so it can tell the user.
-    const approvalMode = getAgentApprovalMode(options.store, { workspaceSlug: query.workspaceSlug, agentId: grant.agentId });
-    const paused = isAgentPaused(options.store, { workspaceSlug: query.workspaceSlug, agentId: grant.agentId }).paused;
+    const policy = verified.scope.agentPolicy;
+    const approvalMode = getAgentApprovalMode(options.store, { workspaceSlug: query.workspaceSlug, agentId: grant.agentId, policy });
+    const paused = isAgentPaused(options.store, { workspaceSlug: query.workspaceSlug, agentId: grant.agentId, policy }).paused;
     return {
       workspaceSlug: query.workspaceSlug,
       grant: sanitizeAgentConnectorGrant(grant),

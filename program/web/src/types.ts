@@ -920,6 +920,8 @@ export interface HoldFamilyView {
   description: string;
   words?: string[];
   defaultOn: boolean;
+  /** Always waits in Assistant mode (destructive, money): no toggle. */
+  locked: boolean;
   on: boolean;
   updatedBy: string | null;
   updatedAt: string | null;

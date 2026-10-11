@@ -5,6 +5,7 @@ import {
   DEFAULT_AGENT_CONNECTOR_DAILY_CAP,
   DEFAULT_AGENT_DAILY_CAP,
   MAX_AGENT_DAILY_CAP,
+  HOLD_FAMILIES,
   SENSITIVE_ACTION_FAMILIES,
   getHoldFamilies,
   isHoldFamilyId,
@@ -27,7 +28,11 @@ import type { SqliteMarketplaceStore } from "./store.js";
  * - `POST  /api/marketplace/agents/pause-all|resume-all` (`marketplace.agents.pause-all|resume-all`)
  * - `GET   /api/marketplace/agents/receipts` (`marketplace.agent-receipts.list`): Assistant-mode receipts.
  * - `PATCH /api/marketplace/agents/hold-families/{familyId}` (`marketplace.hold-families.update`) `{on}`: which hold
- *   families keep an Assistant agent's outward action waiting in this workspace (absent = default ON).
+ *   families keep an Assistant agent's outward action waiting in this workspace (absent = default ON; destructive and
+ *   money are locked ON).
+ *
+ * TEMPORARY FALLBACK until Portal ships the agentPolicy claim (@tealbrick/contract/approval-mode): with a claim
+ * present the local setting can only tighten it. Remove these local settings in the next release; add nothing.
  *
  * Writes need the owner's own Portal launch session with its CSRF token and the pinned owner (createOwnerWriterGate).
  * Refused: agent grants (owner operations), runtime leases, the service bearer, the operator access-token session.
@@ -171,6 +176,8 @@ export function registerAgentModeRoutes(deps: AgentModeRouteDeps): void {
     const { familyId } = request.params as { familyId: string };
     const body = z.strictObject({ on: z.boolean(), workspaceSlug: z.string().optional(), actorId: z.string().optional() }).safeParse(request.body ?? {});
     if (!isHoldFamilyId(familyId) || !body.success) return refuse(reply, 400, "validation_failed");
+    // Destructive and money actions always wait in Assistant mode.
+    if (HOLD_FAMILIES.find((family) => family.id === familyId)?.locked) return refuse(reply, 400, "hold_family_locked");
     const now = deps.clock();
     const result = modes.setFamily({ workspaceSlug: org, familyId, enabled: body.data.on, actor: gate.actor, now });
     store.recordAudit({

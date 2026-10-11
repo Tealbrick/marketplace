@@ -11,7 +11,7 @@ import {
  * Agent approval modes, pauses and Assistant-mode receipts. Additive tables only (`CREATE TABLE IF NOT EXISTS`);
  * an older build ignores them. Settings are written only by owner routes; receipts only by the execution path.
  */
-export const AGENT_MODE_TABLES = ["agent_approval_setting", "agent_pause_all", "agent_outward_receipt", "agent_hold_family_setting"] as const;
+export const AGENT_MODE_TABLES = ["agent_approval_setting", "agent_pause_all", "agent_outward_receipt", "agent_hold_family_setting", "agent_policy_rev"] as const;
 
 export function migrateAgentModeTables(db: DatabaseSync): void {
   db.exec(`
@@ -61,6 +61,14 @@ export function migrateAgentModeTables(db: DatabaseSync): void {
       updated_by TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       PRIMARY KEY (workspace_slug, family_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS agent_policy_rev (
+      workspace_slug TEXT NOT NULL,
+      agent_id TEXT NOT NULL,
+      rev INTEGER NOT NULL,
+      seen_at TEXT NOT NULL,
+      PRIMARY KEY (workspace_slug, agent_id)
     );
 
     CREATE INDEX IF NOT EXISTS agent_outward_receipt_day
@@ -233,6 +241,23 @@ export class AgentModeStore {
       )
       .run(input.workspaceSlug, input.familyId, input.enabled ? 1 : 0, input.actor, input.now.toISOString());
     return { previous, enabled: input.enabled };
+  }
+
+  /** The highest agentPolicy `rev` seen for the agent (stale-claim check), or null. */
+  lastPolicyRev(workspaceSlug: string, agentId: string): number | null {
+    const row = this.db.prepare("SELECT rev FROM agent_policy_rev WHERE workspace_slug = ? AND agent_id = ?").get(workspaceSlug, agentId) as
+      | { rev: number }
+      | undefined;
+    return row ? Number(row.rev) : null;
+  }
+
+  recordPolicyRev(workspaceSlug: string, agentId: string, rev: number) {
+    this.db
+      .prepare(
+        `INSERT INTO agent_policy_rev (workspace_slug, agent_id, rev, seen_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT (workspace_slug, agent_id) DO UPDATE SET rev = MAX(rev, excluded.rev), seen_at = excluded.seen_at`,
+      )
+      .run(workspaceSlug, agentId, rev, new Date().toISOString());
   }
 
   isPausedAll(workspaceSlug: string) {
