@@ -66,7 +66,8 @@ export const HOLD_FAMILIES: ReadonlyArray<HoldFamilyDefinition> = Object.freeze(
       id: "money",
       label: "Payments and refunds",
       description: "Paying, charging, transferring, ordering, subscribing or refunding.",
-      words: ["PAY", "CHARGE", "TRANSFER", "PAYOUT", "PURCHASE", "ORDER", "SUBSCRIBE", "CANCEL_SUBSCRIPTION", "REFUND"],
+      // MONEY: added after QA's runtime-slug check (ACME_SEND_MONEY ran unheld with the original list).
+      words: ["PAY", "CHARGE", "TRANSFER", "PAYOUT", "PURCHASE", "ORDER", "SUBSCRIBE", "CANCEL_SUBSCRIPTION", "REFUND", "MONEY"],
       defaultOn: true,
       locked: true,
     },
@@ -457,6 +458,7 @@ export function decideOutward(
     pluginId: input.connectorKey,
     provider: input.provider ?? input.connectorKey,
     actionKey: input.actionKey,
+    toolSlug: input.slug ?? null,
     accountRef: input.accountRef ?? null,
     destination: input.destination ?? null,
     argumentsPreview: input.argumentsPreview ?? "",
@@ -497,6 +499,8 @@ export function writeOutwardReceipt(
     connectorKey: string;
     accountRef: string | null;
     actionKey: string;
+    /** The tool the provider received (Composio slug), when known. */
+    toolSlug?: string | null;
     argumentsPreview: string;
     destination?: string | null;
     status: "ok" | "failed";
@@ -518,6 +522,7 @@ export function writeOutwardReceipt(
         pluginId: input.connectorKey,
         provider: input.provider ?? input.connectorKey,
         actionKey: input.actionKey,
+        toolSlug: input.toolSlug ?? null,
         accountRef: input.accountRef,
         destination: input.destination ?? null,
         argumentsPreview: input.argumentsPreview,
@@ -538,6 +543,7 @@ export function writeOutwardReceipt(
       pluginId: input.connectorKey,
       provider: input.provider ?? receipt?.provider ?? input.connectorKey,
       actionKey: input.actionKey,
+      toolSlug: input.toolSlug ?? receipt?.toolSlug ?? null,
       account: input.accountRef,
       destination: input.destination ?? null,
       argumentsPreview: input.argumentsPreview,

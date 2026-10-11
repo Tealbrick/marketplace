@@ -480,6 +480,7 @@ function companyBoxApprovalFromRow(row: Record<string, unknown>): CompanyBoxAppr
     fingerprint: String(row.fingerprint),
     arguments: jsonParse<Record<string, unknown>>(String(row.arguments_json), {}),
     argumentsPreview: String(row.arguments_preview),
+    toolSlug: row.tool_slug === null || row.tool_slug === undefined ? null : String(row.tool_slug),
     state: row.state as CompanyBoxApproval["state"],
     result: row.result_json === null ? null : jsonParse<unknown>(String(row.result_json), null),
     error: row.error === null ? null : String(row.error),
@@ -913,6 +914,8 @@ export class SqliteMarketplaceStore {
     this.addColumnIfMissing(
       "ALTER TABLE marketplace_listing ADD COLUMN workspace_slug TEXT",
     );
+    // 0.2.1: the tool a held call targets (Composio slug), checked again when it is approved.
+    this.addColumnIfMissing("ALTER TABLE company_box_approval ADD COLUMN tool_slug TEXT");
     // Channels (0.2.0): additive tables only; older builds ignore them.
     migrateChannelTables(this.db);
     // Agent approval modes (0.2.1): additive tables only.
@@ -1308,6 +1311,8 @@ export class SqliteMarketplaceStore {
     fingerprint: string;
     arguments: Record<string, unknown>;
     argumentsPreview: string;
+    /** The tool the provider receives (Composio slug), when known. */
+    toolSlug?: string | null;
     /** Lifetime from creation. Creation and expiry derive from one clock reading, so the span is exactly this. */
     ttlMs: number;
   }): CompanyBoxApproval {
@@ -1319,8 +1324,8 @@ export class SqliteMarketplaceStore {
       .prepare(
         `INSERT INTO company_box_approval (
           id, workspace_slug, plugin_id, action_key, capability, agent_id, source_kind, source_ref,
-          idempotency_key, fingerprint, arguments_json, arguments_preview, state, expires_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
+          idempotency_key, fingerprint, arguments_json, arguments_preview, tool_slug, state, expires_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
       )
       .run(
         id,
@@ -1335,6 +1340,7 @@ export class SqliteMarketplaceStore {
         input.fingerprint,
         JSON.stringify(input.arguments),
         input.argumentsPreview,
+        input.toolSlug ?? null,
         expiresAt,
         timestamp,
         timestamp,
