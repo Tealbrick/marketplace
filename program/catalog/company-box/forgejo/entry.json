@@ -59,6 +59,19 @@
     "renderMarkdownRaw",
     "renderMarkup"
   ],
+  "sensitiveFamilies": {
+    "adminCreateUser": "access-sharing",
+    "orgCreateHook": "access-sharing",
+    "orgEditHook": "access-sharing",
+    "repoAddCollaborator": "access-sharing",
+    "repoCreateHook": "access-sharing",
+    "repoEditHook": "access-sharing",
+    "repoAddPushMirror": "access-sharing",
+    "orgAddTeamMember": "access-sharing",
+    "userAddEmail": "access-sharing",
+    "userCreateHook": "access-sharing",
+    "userEditHook": "access-sharing"
+  },
   "exposure": "auto",
   "excluded": [
     {

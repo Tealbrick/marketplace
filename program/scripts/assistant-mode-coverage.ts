@@ -23,19 +23,25 @@ type Row = {
   capability: ConnectorCapability;
   outward: boolean;
   klass: string;
+  /** Why it is held or runs, for the reviewed table (curated flag, reviewed family, words). */
+  basis: string;
 };
 
 const SUBSTRINGS = SENSITIVE_ACTION_FAMILIES.flatMap((family) =>
   family.words.map((word) => ({ family: family.family, word, needle: word.replace(/^\*_/u, "_").replace(/_\*$/u, "") })),
 );
 
-function classify(source: string, slug: string, toolkit: string | undefined, capability: ConnectorCapability, risk: { write: boolean; outward: boolean; destructive: boolean }, reviewedRead: boolean): Row {
-  if (reviewedRead) return { source, slug, capability, outward: false, klass: "read-allowlisted" };
-  if (!risk.outward) return { source, slug, capability, outward: false, klass: "not outward (consent only)" };
-    // The same order assistantHold applies (default family settings: every family ON), split by cause.
+function classify(source: string, slug: string, toolkit: string | undefined, capability: ConnectorCapability, risk: { write: boolean; outward: boolean; destructive: boolean }, reviewedRead: boolean, reviewed?: string): Row {
+  if (reviewedRead) return { source, slug, capability, outward: false, klass: "read-allowlisted", basis: "read allowlist" };
+  if (!risk.outward) return { source, slug, capability, outward: false, klass: "not outward (consent only)", basis: "" };
+  // The same order assistantHold applies (default family settings: every family ON), split by cause.
+  if (risk.destructive) return { source, slug, capability, outward: true, klass: "held: destructive", basis: "curated destructive flag" };
+  if (capability === "connector.admin") return { source, slug, capability, outward: true, klass: "held: admin", basis: "connector.admin" };
+  if (reviewed) return { source, slug, capability, outward: true, klass: `held: sensitive:${reviewed}`, basis: "reviewed family" };
   const sensitive = classifySensitive(slug, { toolkit });
-  const klass = risk.destructive ? "held: destructive" : capability === "connector.admin" ? "held: admin" : sensitive.sensitive ? `held: sensitive:${sensitive.family}` : "assistant-runs";
-  return { source, slug, capability, outward: true, klass };
+  return sensitive.sensitive
+    ? { source, slug, capability, outward: true, klass: `held: sensitive:${sensitive.family}`, basis: `word ${sensitive.word}` }
+    : { source, slug, capability, outward: true, klass: "assistant-runs", basis: "reviewed: runs" };
 }
 
 const rows: Row[] = [];
@@ -57,13 +63,13 @@ for (const file of fs.readdirSync(policyDir).filter((name) => name.endsWith(".to
 
 // Company Box entries (curated REST adapters and pinned MCP snapshots).
 const coverage = JSON.parse(fs.readFileSync(path.join(programDir, "catalog/company-box/coverage.json"), "utf8")) as {
-  entries: Array<{ id: string; source: string; items: Array<{ ref: string; status: string; capability?: ConnectorCapability; outward?: boolean; destructive?: boolean }> }>;
+  entries: Array<{ id: string; source: string; items: Array<{ ref: string; status: string; capability?: ConnectorCapability; outward?: boolean; destructive?: boolean; sensitiveFamily?: string }> }>;
 };
 for (const entry of coverage.entries) {
   for (const item of entry.items) {
     if (item.status !== "exposed" || !item.capability) continue;
     const risk = { write: item.capability !== "connector.observe", outward: item.outward === true, destructive: item.destructive === true };
-    rows.push(classify(`company-box:${entry.id} (${entry.source})`, item.ref, undefined, item.capability, risk, false));
+    rows.push(classify(`company-box:${entry.id} (${entry.source})`, item.ref, undefined, item.capability, risk, false, item.sensitiveFamily));
   }
 }
 
@@ -88,7 +94,8 @@ const lines = [
   "Classes: `read-allowlisted` (reviewed read, uncurated Composio only; the allowlist ships empty); `not outward` (runs",
   "on the agent's consent in both modes, modes do not apply); `assistant-runs` (outward; held in System mode, runs at",
   "once in Assistant mode within the daily limits); `held: ...` (outward; held in both modes: curated destructive flag,",
-  "`connector.admin`, or a word of a hold family; computed with the default family settings, every family ON).",
+  "`connector.admin`, a hand-reviewed family (Company Box entry.json `sensitiveFamilies`) or a word of a hold family;",
+  "computed with the default family settings, every family ON).",
   "An \"unless quiet\" Calendar tool is counted as outward.",
   "",
   "## Counts",
@@ -105,6 +112,18 @@ const lines = [
   nearMisses.length ? "| Source | Tool | Substrings |" : "None.",
   ...(nearMisses.length ? ["| --- | --- | --- |"] : []),
   ...nearMisses.map(({ row, hits }) => `| ${row.source} | \`${row.slug}\` | ${[...new Set(hits.map((hit) => hit.word))].join(", ")} |`),
+  "",
+  "## Reviewed: every outward Company Box operation",
+  "",
+  "Each outward operation of the shipped entries was reviewed by hand. `held` rows wait for the owner in Assistant mode",
+  "(System holds every row). Basis: the entry's curated destructive flag, `connector.admin`, a reviewed family",
+  "(entry.json `sensitiveFamilies`), a tool-name word, or reviewed as runs.",
+  "",
+  "| Entry | Action | Assistant mode | Basis |",
+  "| --- | --- | --- | --- |",
+  ...rows
+    .filter((row) => row.source.startsWith("company-box:") && row.outward)
+    .map((row) => `| ${row.source.replace(/^company-box:/u, "").replace(/ \(openapi\)$/u, "")} | \`${row.slug}\` | ${row.klass === "assistant-runs" ? "runs" : row.klass.replace("held: sensitive:", "held: ")} | ${row.basis} |`),
   "",
 ];
 fs.writeFileSync(outFile, `${lines.join("\n")}`);

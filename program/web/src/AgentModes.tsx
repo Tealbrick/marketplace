@@ -16,6 +16,9 @@ export const MODE_COPY: Record<AgentApprovalMode, string> = {
 
 const AGENT_MODES_KEY = ["agent-modes"] as const;
 
+/** Shown with the Pause controls: a pause set here stops the agent even when Portal says it is not paused. */
+export const PAUSE_OVERRIDES_PORTAL = "Pause here also overrides Portal: a paused agent stays paused until you resume it here.";
+
 /** Shown next to a family the owner turned off. */
 export const FAMILY_OFF_WARNING = "Assistant agents will do this without asking you.";
 
@@ -126,6 +129,7 @@ export function AgentModesPanel() {
         </Button>
       </div>
       <p className="section-copy">{MODE_COPY.system} {MODE_COPY.assistant} Daily limits count outward actions per UTC day and reset at 00:00 UTC. New agents start in System.</p>
+      <p className="agent-modes__note">{PAUSE_OVERRIDES_PORTAL}</p>
       {data.governanceMode === "rules" && <div className="credential-proof"><ShieldCheck size={18} /><div><strong>A Rules service decides outward actions</strong><p>Modes apply only when Marketplace runs without Rules. Pause still stops an agent.</p></div></div>}
       {data.pausedAll && <p className="agent-modes__paused" role="status">All agents are paused. No agent call runs until you resume them.</p>}
       <WhatStillWaits data={data} />

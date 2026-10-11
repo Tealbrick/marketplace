@@ -52,6 +52,11 @@
     "previewCampaignArchive",
     "previewTemplate"
   ],
+  "sensitiveFamilies": {
+    "updateCampaignStatusById": "bulk",
+    "testCampaignById": "bulk",
+    "transactWithSubscriber": "bulk"
+  },
   "exposure": "auto",
   "excluded": [
     {

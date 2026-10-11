@@ -2245,9 +2245,13 @@ function outwardInputFor(
   actionKey: string,
   risk: GovernedActionRisk,
   capability: ConnectorCapability,
-): { risk: OutwardRisk; slug: string; toolkit?: string; slugUnknown?: true } {
+): { risk: OutwardRisk; slug: string; toolkit?: string; slugUnknown?: true; families?: string[] } {
   const tool = riskToolName(catalog, listing, workspaceSlug, actionKey);
+  // A hand-reviewed family of a Company Box operation is held like a caller-declared family.
+  const entry = companyBoxEntryForListing(catalog, listing, workspaceSlug);
+  const curated = entry?.kind === "openapi" ? entry.byKey.get(actionKey)?.sensitiveFamily : undefined;
   return {
+    ...(curated ? { families: [curated] } : {}),
     // A tool that cannot be named is held in Assistant mode (decided sensitive by the caller; never overridable).
     risk: { outward: risk.outward, destructive: risk.destructive || capability === "connector.admin", sensitive: tool.unknown === true },
     slug: tool.name,
