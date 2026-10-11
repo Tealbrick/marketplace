@@ -16,6 +16,8 @@ test("runs request, explicit Portal approval, return, and reconcile through the 
   await page.getByLabel("Portal deployment ID").fill("deployment-1");
   await page.getByLabel("Agent selection").fill("agent-1");
   await expect(page.getByLabel("Connected account")).toHaveValue("ca_1");
+  // F3-1: an uncurated Composio tool is outward, so the request is at "Can make changes" (connector.dispatch).
+  await expect(page.getByTestId("grant-capability")).toContainText("Can make changes");
   await page.getByRole("button", { name: "Request approval in Portal" }).click();
 
   const request = page.getByTestId(/^handoff-request-/u).first();
