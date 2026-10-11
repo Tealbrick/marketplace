@@ -898,3 +898,25 @@ describe("live sessions: capability and inert mode", () => {
     expect(t.huddleRelay.upgrades).toHaveLength(upgrades);
   });
 });
+
+describe("pre-0.3.0 security digest of the live-voice feature", () => {
+  it("M1: an owner Stop also pauses the grant; a rejoin is refused until the pinned owner presses Resume", async () => {
+    const t = await setup();
+    const grant = await t.active();
+    const { sessionId } = await t.joined(grant.id);
+    const stopped = await t.f.owner("POST", `${O}/sessions/${sessionId}/stop`, {});
+    expect(stopped.statusCode, stopped.body).toBe(200);
+    await waitFor(() => t.sessionRow(sessionId).status === "left", 5000, "left");
+    expect(t.sessionRow(sessionId).endReason).toBe("stopped_by_owner");
+    expect(t.f.store.channels.live.getGrant(TENANT, grant.id)).toMatchObject({ status: "paused", decidedReason: "stopped_by_owner" });
+    const refused = await t.join(grant.id, t.huddle());
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json()).toMatchObject({ error: "live_grant_not_active", reason: "grant_stopped_by_owner_resume_required" });
+    // Resume is the strict owner gate: another operator session cannot do it.
+    expect((await t.f.owner("POST", `${O}/grants/${grant.id}/resume`, {})).statusCode).not.toBe(200);
+    expect(t.f.store.channels.live.getGrant(TENANT, grant.id)?.status).toBe("paused");
+    const resumed = await t.strict("POST", `${O}/grants/${grant.id}/resume`, {});
+    expect(resumed.statusCode, resumed.body).toBe(200);
+    expect((await t.join(grant.id, t.huddle())).statusCode).toBe(201);
+  });
+});

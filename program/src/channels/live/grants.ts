@@ -417,8 +417,9 @@ export function createLiveGrantService(deps: LiveGrantServiceDeps) {
     transition(record, ["proposed"], "declined", "declined_by_owner", actorId, "marketplace.channels.live_grant.declined");
   const revoke = (record: LiveGrantRecord, actorId: string, via = "owner") =>
     transition(record, ["proposed", "active", "paused"], "revoked", via === "owner" ? "revoked_by_owner" : `revoked_by_owner_${via}`, actorId, "marketplace.channels.live_grant.revoked");
-  const pause = (record: LiveGrantRecord, actorId: string) =>
-    transition(record, ["active"], "paused", "paused_by_owner", actorId, "marketplace.channels.live_grant.paused");
+  /** `reason` "stopped_by_owner": an owner Stop of a live session also pauses its grant until the owner resumes it. */
+  const pause = (record: LiveGrantRecord, actorId: string, reason: "paused_by_owner" | "stopped_by_owner" = "paused_by_owner") =>
+    transition(record, ["active"], "paused", reason, actorId, "marketplace.channels.live_grant.paused");
 
   /** Resume a paused grant: still the approved digest, still inside its approval window and expiry. */
   const resume = (record: LiveGrantRecord, actorId: string): LiveOutcome => {
@@ -677,6 +678,7 @@ export function createLiveGrantService(deps: LiveGrantServiceDeps) {
   const usable = (record: LiveGrantRecord | null): { ok: true; grant: LiveGrant; record: LiveGrantRecord } | { ok: false; reason: string } => {
     if (!record) return { ok: false, reason: "grant_missing" };
     if (live.getControl(org).paused) return { ok: false, reason: "grants_paused" };
+    if (record.status === "paused" && record.decidedReason === "stopped_by_owner") return { ok: false, reason: "grant_stopped_by_owner_resume_required" };
     if (record.status !== "active") return { ok: false, reason: `grant_${record.status}` };
     if (record.approvedDigest !== record.digest) return { ok: false, reason: "grant_changed" };
     const grant = liveGrantOf(record);

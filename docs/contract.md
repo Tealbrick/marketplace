@@ -1185,7 +1185,9 @@ creator) (`live_huddle_not_in_channel` otherwise); the notice is posted in the p
 channel and in the huddle itself. `listen` is refused while `perParticipantConsent` is true (no per-participant gate yet) and while no speech
 provider is wired. Every 250 ms the session re-reads the grant record, the owner switch, the consent and the channel;
 revoke, pause, expiry, narrowing, consent loss, channel pause, `maxSessionMinutes`, `maxDayMinutes` and the cost cap
-stop it, and the client leaves within 5 s. `speak`: `{attachmentId}` of an uploaded `audio/ogg` clip is held once in the
+stop it, and the client leaves within 5 s. An owner Stop (`POST .../sessions/{id}/stop`) also pauses the grant
+(`decidedReason` `stopped_by_owner`): a rejoin is refused (`409 live_grant_not_active`, reason
+`grant_stopped_by_owner_resume_required`) until the pinned owner presses Resume (strict gate). `speak`: `{attachmentId}` of an uploaded `audio/ogg` clip is held once in the
 approvals queue (`live.speak-clip`, digest `sha256("tealbrick-live-clip/v1\n" + grantId + "\n" + clipSha256)`, owner
 approval in the UI, Buzz or TBD) and plays once after approval; `{text}` (speak-live) refuses forbidden terms before any
 provider call and is refused (`live_tts_unavailable`) until `@tealbrick/voice` ships Ogg/Opus synthesis (rc.19).

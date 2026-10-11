@@ -162,7 +162,7 @@ function SessionRow({ session, onNotice }: { session: LiveSessionView; onNotice:
   const stop = useMutation({
     mutationFn: () => stopLiveSession(session.sessionId),
     onSuccess: () => {
-      onNotice("The agent left the huddle.");
+      onNotice("The agent left the huddle. Its grant is paused until you press Resume.");
       void queryClient.invalidateQueries({ queryKey: ["channel-live"] });
     },
   });
@@ -173,7 +173,8 @@ function SessionRow({ session, onNotice }: { session: LiveSessionView; onNotice:
       <small className="muted-detail"> joined {formatWhen(session.joinedAt ?? session.startedAt)}{session.leftAt ? `, left ${formatWhen(session.leftAt)} (${(session.endReason ?? "").replace(/_/gu, " ")})` : ""} · listened {session.minutesListened} min · spoke {session.minutesSpoken} min</small>
     </div>
     <div className="dialog-actions">
-      {live && <Button size="small" tone="danger" disabled={stop.isPending} onClick={() => stop.mutate()} aria-label={`Stop the session of ${session.agentId}`}><Square size={14} />Stop</Button>}
+      {live && <Button size="small" tone="danger" disabled={stop.isPending} onClick={() => stop.mutate()} aria-label={`Stop the session of ${session.agentId}`} title="Ends the session and also pauses the grant until you press Resume."><Square size={14} />Stop</Button>}
+      {live && <small className="muted-detail">Stop also pauses the grant until Resume.</small>}
       <Button size="small" onClick={() => setOpen((value) => !value)}>{open ? "Hide transcript" : "Transcript"}</Button>
     </div>
     {stop.error && <InlineError error={stop.error} />}

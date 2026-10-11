@@ -600,6 +600,10 @@ export function createLiveSessionManager(deps: LiveSessionManagerDeps) {
     if (!row) return refuse(404, "live_session_not_found");
     const run = running.get(row.id);
     deps.audit("marketplace.channels.live_session.stopped", input.actorId, { sessionId: row.id, grantId: row.grantId });
+    // Stop is sticky (pre-0.3.0 review M1): the grant is paused FIRST (this also pushes the stop with the reason
+    // "stopped_by_owner"), so the agent cannot rejoin at once. Only the pinned owner's Resume makes it usable again.
+    const grant = live.getGrant(org, row.grantId);
+    if (grant?.status === "active") deps.grants.pause(grant, input.actorId, "stopped_by_owner");
     if (run) await stopRun(run, "stopped_by_owner");
     else live.endSession(org, row.id, { status: "left", reason: "stopped_by_owner", now: deps.now() });
     return ok(200, { session: sessionView(live.getSession(org, row.id) ?? row) });
