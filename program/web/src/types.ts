@@ -788,3 +788,35 @@ export type ChannelPayloadView =
       fallbacks: string[];
     }
   | { error: string };
+
+/** Agent approval mode (owner governance mode): System holds every outward action; Assistant runs them with receipts. */
+export type AgentApprovalMode = "assistant" | "system";
+
+export interface SensitiveFamilyView {
+  family: "destructive" | "money" | "access" | "bulk";
+  label: string;
+  words: string[];
+}
+
+export interface AgentModeView {
+  agentId: string;
+  mode: AgentApprovalMode;
+  paused: boolean;
+  dailyCap: number;
+  connectorDailyCap: number;
+  today: { day: string; executed: number; byConnector: Record<string, number> };
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
+export interface AgentModesResponse {
+  ok: true;
+  workspaceSlug: string;
+  governanceMode: "owner" | "rules";
+  pausedAll: boolean;
+  day: string;
+  limitsReset: string;
+  defaults: { dailyCap: number; connectorDailyCap: number };
+  sensitiveFamilies: SensitiveFamilyView[];
+  agents: AgentModeView[];
+}

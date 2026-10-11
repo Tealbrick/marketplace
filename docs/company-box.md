@@ -242,6 +242,55 @@ Agents see this before they call: `/api/agent/capabilities` lists `risk` for
 Composio and custom MCP tools and says in the description that an outward
 tool waits for the owner's approval.
 
+## Assistant and System agents
+
+In owner approval mode (no Rules service) the owner sets each agent to one of
+two approval modes. Rules mode is unchanged: Rules decides every outward call.
+
+- **System** (the default for every agent without a setting, and for an agent
+  id that was removed and registered again): every outward call is held in the
+  approval queue, as described above.
+- **Assistant**: outward calls run at once and each one leaves a **receipt** in
+  Activity (agent, connector and account, action, destination when the
+  arguments name one, a redacted argument preview, result status, mode, time).
+  A failed provider call also leaves a receipt. These still wait for the owner:
+  - **sensitive actions**: a connector's curated destructive flag,
+    `connector.admin` tools (destructive by name or hint), and tool names with a
+    word from `SENSITIVE_ACTION_FAMILIES` (`program/src/agent-modes.ts`):
+    deletes and resets, payments and refunds, sharing and permissions, bulk and
+    broadcast. The owner UI shows the same list under "What still waits?";
+  - **daily limits**: 100 outward executions per agent and 50 per agent and
+    connector per **UTC day** (reset at 00:00 UTC), editable by the owner. The
+    limit is checked and the execution reserved in one SQLite transaction
+    before the provider call; at the limit a call is held, never dropped. Only
+    executed calls count; a replay with the same idempotency key counts once.
+- A hold made under System stays held after a switch to Assistant (never
+  released automatically). Switching to System holds the next call.
+- The mode never widens a consent: an observe consent still cannot run a
+  dispatch or outward tool. Non-outward actions follow the consent in both
+  modes.
+- **Pause** (per agent) and **Pause all agents** are persisted kill switches:
+  every call of a paused agent answers `423 agent_paused` before any provider
+  call (reads and channel posts included; a scheduled post due while paused is
+  skipped, not sent later), and a held call
+  cannot be approved while its agent is paused. Pause also applies with Rules.
+- Only the owner changes modes, limits and pauses: the owner's Portal launch
+  session with its CSRF token and the pinned owner (the same gate as the owner
+  Buzz key). Agents, the service bearer, runtime leases and the operator
+  access-token session are refused. Every change is audited. Agents cannot
+  write, edit or delete receipts.
+- Agents see what applies: `/api/agent/capabilities` gives each outward tool
+  `approval: { system, assistant, waitsBecause? }` (and `forThisAgent` with a
+  verified grant), the 202 carries `heldBecause`, and the guidance ends with the
+  agent's own mode.
+
+Owner routes (owner audience): `GET /api/marketplace/agents`,
+`PATCH /api/marketplace/agents/{agentId}` `{mode?, dailyCap?, connectorDailyCap?}`,
+`POST /api/marketplace/agents/{agentId}/pause|resume`,
+`POST /api/marketplace/agents/pause-all|resume-all`,
+`GET /api/marketplace/agents/receipts`. Coverage of the classes over the catalog
+snapshots: [assistant-mode-coverage.md](assistant-mode-coverage.md).
+
 ## Install, credentials and connection test
 
 `POST /api/marketplace/company-box/<id>/setup` with `{ baseUrl, credentials }`

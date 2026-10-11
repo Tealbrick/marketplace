@@ -49,6 +49,38 @@ export async function currentOwnerKeyView(store: SqliteMarketplaceStore, organiz
   return { ...ownerKeyView(record?.pubkey ? { pubkey: record.pubkey, setAt: record.setAt } : null, attested), ownerPin };
 }
 
+/**
+ * The strict owner gate for owner-only app state (the Buzz key, agent approval modes and pauses): the owner's own
+ * Portal launch session with its CSRF token, and the claim binding's PINNED owner. Answers the refusal status
+ * itself; `"approval_owner_unbound"` (409) when nothing is pinned, false (403/401) for anything else.
+ */
+export function createOwnerWriter(deps: Pick<OwnerKeyRouteDeps, "organizationId" | "pinSource" | "requireOperator" | "ownerLaunchSession">) {
+  const org = deps.organizationId;
+  return async (request: FastifyRequest, reply: FastifyReply): Promise<boolean | "approval_owner_unbound"> => {
+    reply.header("cache-control", "no-store");
+    const principal = deps.requireOperator(request, reply);
+    if (!principal) return false;
+    const owner = deps.ownerLaunchSession(request);
+    // The launch session itself (cookie + CSRF, checked strictly) is the actor; the request principal only gates the org.
+    if (!owner || owner.organizationId !== org || principal.organizationId !== org) {
+      reply.code(403);
+      return false;
+    }
+    // Review M1: only the PINNED deployment owner (claim binding `ownerSubject`, alpha.7) may write. Without a pin
+    // (no claim yet, or a cleared one) nobody can: any Portal-launched member would otherwise qualify.
+    const pin = await readOwnerPin(deps.pinSource);
+    if (!pin) {
+      reply.code(409);
+      return "approval_owner_unbound";
+    }
+    if (pin.ownerSubject !== `${USER_PRINCIPAL_PREFIX}${owner.id}`) {
+      reply.code(403);
+      return false;
+    }
+    return true;
+  };
+}
+
 export function registerOwnerKeyRoutes(deps: OwnerKeyRouteDeps): void {
   const { app, store, organizationId: org } = deps;
 
@@ -93,31 +125,7 @@ export function registerOwnerKeyRoutes(deps: OwnerKeyRouteDeps): void {
     };
   };
 
-  /** The owner session gate for writes; answers the refusal itself and returns false. */
-  const ownerWriter = async (request: FastifyRequest, reply: FastifyReply): Promise<boolean | "approval_owner_unbound"> => {
-    reply.header("cache-control", "no-store");
-    const principal = deps.requireOperator(request, reply);
-    if (!principal) return false;
-    const owner = deps.ownerLaunchSession(request);
-    // The launch session itself (cookie + CSRF, checked strictly) is the actor; the request principal only gates the org.
-    if (!owner || owner.organizationId !== org || principal.organizationId !== org) {
-      reply.code(403);
-      return false;
-    }
-    // Review M1: only the PINNED deployment owner (claim binding `ownerSubject`, alpha.7) may change the key.
-    // Without a pin (no claim yet, or a cleared one) nobody can: any Portal-launched member would otherwise
-    // qualify. Same fail-closed rule as portal proofs.
-    const pin = await readOwnerPin(deps.pinSource);
-    if (!pin) {
-      reply.code(409);
-      return "approval_owner_unbound";
-    }
-    if (pin.ownerSubject !== `${USER_PRINCIPAL_PREFIX}${owner.id}`) {
-      reply.code(403);
-      return false;
-    }
-    return true;
-  };
+  const ownerWriter = createOwnerWriter(deps);
   const writerRefusal = (gate: boolean | string) => ({ ok: false, error: typeof gate === "string" ? gate : "owner_session_required" });
 
   app.put(OWNER_KEY_ROUTE, { bodyLimit: 1_024 }, async (request, reply) => {
