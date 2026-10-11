@@ -132,6 +132,7 @@ import { registerCompanyBoxRoutes } from "./company-box-routes.js";
 import { composioCallRisk } from "./composio-policy.js";
 import { registerAgentModeRoutes } from "./agent-mode-routes.js";
 import {
+  AGENT_PAUSED_STATUS,
   agentPolicyFrom,
   assistantHold,
   commitCapReservation,
@@ -899,7 +900,7 @@ function agentGuidance() {
     "   body or the key; retry with the same Idempotency-Key later to get the result. The owner sets each agent to",
     "   System (every outward action waits; the default) or Assistant (outward actions run at once with a receipt;",
     "   sensitive actions and calls over the daily limits still wait). `heldBecause` in the 202 says why it waits.",
-    "6. `403 agent_paused`: the owner paused you or all agents. Nothing runs until the owner resumes you.",
+    "6. `423 agent_paused`: the owner paused you or all agents. Nothing runs until the owner resumes you.",
     "",
     "## Channels",
     "",
@@ -3605,7 +3606,7 @@ export async function buildMarketplaceApp(
   const agentPausedRefusal = (reply: FastifyReply, workspaceSlug: string, agentId: string, policy?: unknown) => {
     const paused = isAgentPaused(options.store, { workspaceSlug, agentId, policy, now: agentModeClock() });
     if (!paused.paused) return null;
-    reply.code(403);
+    reply.code(AGENT_PAUSED_STATUS);
     return { ok: false, error: "agent_paused", pausedBy: paused.scope === "global" ? "all_agents" : paused.scope === "claim" ? "portal" : "agent" };
   };
   /**
@@ -3614,12 +3615,12 @@ export async function buildMarketplaceApp(
    * `approval_policy_stale` (the agent's next call or status poll refreshes it). No claim ever seen: local only.
    */
   const approvalPolicyGate = (workspaceSlug: string, agentId: string): null | { status: number; error: "agent_paused" | "approval_policy_stale" } => {
-    if (isAgentPaused(options.store, { workspaceSlug, agentId }).paused) return { status: 403, error: "agent_paused" };
+    if (isAgentPaused(options.store, { workspaceSlug, agentId }).paused) return { status: AGENT_PAUSED_STATUS, error: "agent_paused" };
     const fresh = freshAgentPolicy(options.store, { workspaceSlug, agentId }, agentModeClock());
     if (fresh.state === "stale") return { status: 409, error: "approval_policy_stale" };
     // Read only (parseAgentPolicy): re-recording the stored read here would make it look fresh.
     if (fresh.state === "fresh" && parseAgentPolicy(fresh.policy)?.paused === true) {
-      return { status: 403, error: "agent_paused" };
+      return { status: AGENT_PAUSED_STATUS, error: "agent_paused" };
     }
     return null;
   };
@@ -4718,7 +4719,7 @@ export async function buildMarketplaceApp(
       governanceMode !== "owner"
         ? "A Rules service decides your outward actions."
         : paused
-          ? "The owner has paused you: every call answers `403 agent_paused` until the owner resumes you."
+          ? "The owner has paused you: every call answers `423 agent_paused` until the owner resumes you."
           : setting.mode === "assistant"
             ? `Assistant: your outward actions run at once and the owner sees a receipt for each. Sensitive actions (deletes, payments, refunds, sharing or permission changes, bulk sends) still wait for the owner, and so does any call over your daily limits (${setting.dailyCap} outward actions per UTC day, ${setting.connectorDailyCap} per connector).`
             : "System: every outward action waits for the owner's approval (`202 approval_pending`)."
@@ -7695,7 +7696,7 @@ export async function buildMarketplaceApp(
           policy: agentPolicy,
         });
         if (plan.kind === "refuse") {
-          reply.code(403);
+          reply.code(AGENT_PAUSED_STATUS);
           return { ok: false, error: "agent_paused", traceId };
         }
         if (plan.kind === "hold") {
@@ -8364,7 +8365,7 @@ export async function buildMarketplaceApp(
         policy: scope.agentPolicy,
       });
       if (plan.kind === "refuse") {
-        reply.code(403);
+        reply.code(AGENT_PAUSED_STATUS);
         return runtimeResponse({ ok: false, traceId, error: "agent_paused" });
       }
       if (plan.kind === "hold") {

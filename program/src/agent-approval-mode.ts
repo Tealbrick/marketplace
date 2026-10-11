@@ -21,6 +21,9 @@ import type { SqliteMarketplaceStore } from "./store.js";
 
 export type AgentApprovalMode = "assistant" | "system";
 
+/** HTTP status of every paused refusal (contract approval-mode `AGENT_PAUSED_STATUS`), body `{error: "agent_paused"}`. */
+export const AGENT_PAUSED_STATUS = 423;
+
 export const DEFAULT_AGENT_DAILY_CAP = 100;
 export const DEFAULT_AGENT_CONNECTOR_DAILY_CAP = 50;
 export const MAX_AGENT_DAILY_CAP = 10_000;
