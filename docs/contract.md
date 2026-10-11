@@ -463,7 +463,7 @@ provider-env or account field.
 | `marketplace.channel-live-grants.approve` / `.restrict` | `POST /api/marketplace/channels/live/grants/{grantId}/approve` `{digest}`, `POST .../narrow` `{terms}` (pinned owner's launch session) |
 | `marketplace.channel-live-grants.decline` / `.revoke` / `.pause` / `.resume` | `POST /api/marketplace/channels/live/grants/{grantId}/decline|revoke|pause|resume` (resume: pinned owner) |
 | `marketplace.channel-live-control.update` | `PUT /api/marketplace/channels/live/control` `{paused?, commandChannel?}` (resume and command channel: pinned owner) |
-| `marketplace.channel-live-sessions.stop` / `.transcript` | `POST /api/marketplace/channels/live/sessions/{sessionId}/stop`, `GET .../transcript` |
+| `marketplace.channel-live-sessions.stop` / `.transcript` | `POST /api/marketplace/channels/live/sessions/{sessionId}/stop` (any owner session; also pauses the grant until the pinned owner resumes it), `GET .../transcript` (pinned owner's launch session) |
 | `marketplace.channel-live-clips.get` | `GET /api/marketplace/channels/live/clips/{approvalId}` (the exact held clip bytes; pinned owner) |
 
 "Grant to agent" is `marketplace.consents.request` with the channel's class
@@ -1221,7 +1221,9 @@ The bound consent must stay active and `outward`.
 
 Receipts. `channel_live_transcript` keeps what the agent heard (other participants: `framing:
 "untrusted-external-speech"` with the speaker key; forbidden terms flagged, never refused) and said (text, or the
-SHA-256 of an approved clip), with times; text is emptied after the inbound text retention. Sessions keep join and
+SHA-256 of an approved clip), with times; text AND its SHA-256 (`text_sha256`, set to null) are removed after the inbound text retention, only
+metadata and the clip SHA-256 stay. The owner reads a transcript only in the pinned owner's own launch session (strict
+gate, like clip playback). Sessions keep join and
 leave times and minutes. Raw audio is never written anywhere. The audit gets metadata and SHA-256 only (the session
 end records the transcript digest).
 

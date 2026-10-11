@@ -297,7 +297,7 @@ export function createLiveSessionManager(deps: LiveSessionManagerDeps) {
       providerMinutes: Math.round((run.providerSeconds / 60) * 100) / 100,
       transcriptLines: lines.length,
       // Metadata and a SHA-256 only: the digest of the receipt lines, never their text.
-      transcriptSha256: sha256Hex(lines.map((line) => `${line.kind}|${line.speakerPubkey ?? ""}|${line.startedAt}|${line.textSha256}|${line.clipSha256 ?? ""}`).join("\n")),
+      transcriptSha256: sha256Hex(lines.map((line) => `${line.kind}|${line.speakerPubkey ?? ""}|${line.startedAt}|${line.textSha256 ?? ""}|${line.clipSha256 ?? ""}`).join("\n")),
     });
   };
 

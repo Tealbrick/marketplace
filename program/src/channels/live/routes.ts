@@ -679,6 +679,10 @@ export function registerLiveRoutes(ctx: LiveRouteContext): void {
   app.get(`${OWNER_PREFIX}/sessions/:sessionId/transcript`, async (request, reply) => {
     const principal = await ctx.owner(request, reply);
     if (!principal) return ctx.ownerDenied(request);
+    // L4: what the agent heard is the owner's alone: the pinned owner's own launch session (strict gate, like clip
+    // playback), not any operator session.
+    const gate = await ctx.strictOwner(request, reply);
+    if (!gate.ok) return gate.body;
     const { sessionId } = request.params as { sessionId: string };
     const session = SESSION_ID.test(sessionId) ? live.getSession(org, sessionId) : null;
     if (!session) return fail(reply, 404, "live_session_not_found");

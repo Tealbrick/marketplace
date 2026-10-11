@@ -90,7 +90,7 @@ const LIVE_DDL = `
     kind TEXT NOT NULL,
     speaker_pubkey TEXT,
     text TEXT NOT NULL,
-    text_sha256 TEXT NOT NULL,
+    text_sha256 TEXT,
     clip_sha256 TEXT,
     flagged_terms_json TEXT NOT NULL DEFAULT '[]',
     started_at TEXT NOT NULL,
@@ -136,6 +136,25 @@ const LIVE_DDL = `
 
 export function migrateLiveTables(db: DatabaseSync): void {
   db.exec(LIVE_DDL);
+  // Pre-0.3.0 review L4: `text_sha256` is NULL after retention purge. A table made before that was NOT NULL: rebuild it
+  // once (SQLite cannot drop a NOT NULL constraint in place).
+  const column = (db.prepare("PRAGMA table_info(channel_live_transcript)").all() as Array<{ name: string; notnull: number }>).find((entry) => entry.name === "text_sha256");
+  if (column && Number(column.notnull) === 1) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(`
+        ALTER TABLE channel_live_transcript RENAME TO channel_live_transcript_old;
+        DROP INDEX IF EXISTS idx_channel_live_transcript_session;
+        DROP INDEX IF EXISTS idx_channel_live_transcript_created;
+      `);
+      db.exec(LIVE_DDL);
+      db.exec("INSERT INTO channel_live_transcript SELECT * FROM channel_live_transcript_old; DROP TABLE channel_live_transcript_old;");
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
 }
 
 export type LiveGrantStatus = "proposed" | "active" | "paused" | "revoked" | "expired" | "declined" | "withdrawn";
@@ -204,7 +223,8 @@ export type LiveTranscriptRecord = {
   kind: LiveTranscriptKind;
   speakerPubkey: string | null;
   text: string;
-  textSha256: string;
+  /** The SHA-256 of the text; null once the retention purge removed the text (only metadata stays). */
+  textSha256: string | null;
   clipSha256: string | null;
   flaggedTerms: string[];
   startedAt: string;
@@ -300,7 +320,7 @@ function transcriptFromRow(row: Row): LiveTranscriptRecord {
     kind: String(row.kind) as LiveTranscriptKind,
     speakerPubkey: text(row.speaker_pubkey),
     text: String(row.text),
-    textSha256: String(row.text_sha256),
+    textSha256: text(row.text_sha256),
     clipSha256: text(row.clip_sha256),
     flaggedTerms: flagged,
     startedAt: String(row.started_at),
@@ -593,11 +613,11 @@ export class LiveStore {
     return rows.map(transcriptFromRow);
   }
 
-  /** Retention: transcript text older than `before` is emptied (metadata and the text SHA-256 stay). */
+  /** Retention: transcript text older than `before` is emptied AND its SHA-256 dropped (L4: a hash of a short line is a guessing oracle); only metadata and the clip SHA-256 stay. */
   purgeTranscripts(workspaceSlug: string, before: Date, now: Date, limit = 1000): number {
     const result = this.db
       .prepare(
-        `UPDATE channel_live_transcript SET text = '', purged_at = ? WHERE id IN (
+        `UPDATE channel_live_transcript SET text = '', text_sha256 = NULL, purged_at = ? WHERE id IN (
           SELECT id FROM channel_live_transcript WHERE workspace_slug = ? AND purged_at IS NULL AND created_at < ? LIMIT ?)`,
       )
       .run(iso(now), workspaceSlug, iso(before), Math.max(1, limit));

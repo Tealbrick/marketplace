@@ -1011,4 +1011,61 @@ describe("pre-0.3.0 security digest of the live-voice feature", () => {
     expect(played.statusCode, played.body).toBe(200);
     expect(played.json().spoken).toMatchObject({ kind: "clip", sha256: sha });
   });
+
+  it("L4: the owner reads a transcript only in the pinned owner's own launch session", async () => {
+    const t = await setup();
+    const grant = await t.active();
+    const { sessionId } = await t.joined(grant.id);
+    t.f.store.channels.live.addTranscript({ workspaceSlug: TENANT, sessionId, grantId: grant.id, agentId: "agent-1", kind: "heard", speakerPubkey: PEER, text: "private words", textSha256: "a".repeat(64), flaggedTerms: [], startedAt: new Date(), endedAt: new Date(), now: new Date() });
+    const url = `${O}/sessions/${sessionId}/transcript`;
+    // Any other operator session (not the pinned owner's own launch session) is refused.
+    const operator = await t.f.owner("GET", url);
+    expect(operator.statusCode).toBe(403);
+    expect(operator.body).not.toContain("private words");
+    expect((await t.f.app.inject({ method: "GET", url, headers: { origin: BROWSER, cookie: "marketplace_session=bogus" } })).statusCode).toBeGreaterThanOrEqual(401);
+    const pinned = await t.f.app.inject({ method: "GET", url, headers: await t.strictHeaders() });
+    expect(pinned.statusCode, pinned.body).toBe(200);
+    expect(pinned.json().lines.map((line: { text: string }) => line.text)).toEqual(["private words"]);
+    // Another browser session of the same pinned owner is the owner too.
+    expect((await t.f.app.inject({ method: "GET", url, headers: await t.otherOwnerSession() })).statusCode).toBe(200);
+  });
+
+  it("L4: the retention purge drops the text and its SHA-256 and keeps metadata only", async () => {
+    const t = await setup();
+    const grant = await t.active();
+    const { sessionId } = await t.joined(grant.id);
+    const live = t.f.store.channels.live;
+    const written = live.addTranscript({ workspaceSlug: TENANT, sessionId, grantId: grant.id, agentId: "agent-1", kind: "heard", speakerPubkey: PEER, text: "yes", textSha256: "b".repeat(64), flaggedTerms: ["secret-project"], startedAt: new Date(), endedAt: new Date(), now: new Date() });
+    live.addTranscript({ workspaceSlug: TENANT, sessionId, grantId: grant.id, agentId: "agent-1", kind: "said", speakerPubkey: null, text: "clip words", textSha256: "c".repeat(64), clipSha256: "d".repeat(64), flaggedTerms: [], startedAt: new Date(), endedAt: new Date(), now: new Date() });
+    expect(live.purgeTranscripts(TENANT, new Date(Date.now() + 60_000), new Date())).toBe(2);
+    const lines = live.listTranscript(TENANT, sessionId);
+    expect(lines).toHaveLength(2);
+    for (const line of lines) expect(line).toMatchObject({ text: "", textSha256: null, purgedAt: expect.any(String) });
+    expect(lines.find((line) => line.id === written.id)).toMatchObject({ kind: "heard", speakerPubkey: PEER, flaggedTerms: ["secret-project"] });
+    expect(lines.find((line) => line.kind === "said")?.clipSha256).toBe("d".repeat(64));
+    // Neither the text nor its hash is left in the database file.
+    const db = (live as unknown as { db: DatabaseSync }).db;
+    expect(db.prepare("SELECT COUNT(*) AS n FROM channel_live_transcript WHERE text_sha256 IS NOT NULL OR text <> ''").get()).toEqual({ n: 0 });
+  });
+
+  it("L4: a database made with the old NOT NULL text_sha256 column is rebuilt in place, keeping its rows", async () => {
+    const { DatabaseSync: Sqlite } = await import("node:sqlite");
+    const { migrateLiveTables } = await import("./channels/live/store.js");
+    const db = new Sqlite(":memory:");
+    migrateLiveTables(db);
+    // A legacy table: same columns, text_sha256 NOT NULL.
+    db.exec(`DROP TABLE channel_live_transcript; CREATE TABLE channel_live_transcript (
+      id TEXT PRIMARY KEY, workspace_slug TEXT NOT NULL, session_id TEXT NOT NULL, grant_id TEXT NOT NULL, agent_id TEXT NOT NULL, kind TEXT NOT NULL,
+      speaker_pubkey TEXT, text TEXT NOT NULL, text_sha256 TEXT NOT NULL, clip_sha256 TEXT, flagged_terms_json TEXT NOT NULL DEFAULT '[]',
+      started_at TEXT NOT NULL, ended_at TEXT NOT NULL, purged_at TEXT, created_at TEXT NOT NULL);
+      INSERT INTO channel_live_transcript VALUES ('lvt_1', 'ws', 's', 'g', 'a', 'heard', NULL, 'hi', 'e', NULL, '[]', 't', 't', NULL, 't');`);
+    migrateLiveTables(db);
+    const info = (db.prepare("PRAGMA table_info(channel_live_transcript)").all() as Array<{ name: string; notnull: number }>).find((column) => column.name === "text_sha256");
+    expect(info?.notnull).toBe(0);
+    expect(db.prepare("SELECT id, text, text_sha256 FROM channel_live_transcript").all()).toEqual([{ id: "lvt_1", text: "hi", text_sha256: "e" }]);
+    db.prepare("UPDATE channel_live_transcript SET text_sha256 = NULL").run();
+    expect(db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name LIKE 'idx_channel_live_transcript%'").get()).toEqual({ n: 2 });
+    migrateLiveTables(db);
+    db.close();
+  });
 });
