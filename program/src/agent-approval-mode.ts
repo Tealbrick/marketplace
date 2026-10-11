@@ -278,7 +278,7 @@ export type AgentPolicy = {
   /** The policy revision, or null when the claim is malformed. */
   rev: number | null;
 };
-type AgentRef = { workspaceSlug: string; agentId: string; policy?: unknown };
+type AgentRef = { workspaceSlug: string; agentId: string; policy?: unknown; now?: Date };
 
 /** The first verified claim set that carries the agent policy (introspection answer first, then token claims). */
 export function agentPolicyFrom(...sources: Array<Record<string, unknown> | null | undefined>): unknown {
@@ -350,9 +350,32 @@ export function getAgentApprovalMode(store: ModeStore, ref: AgentRef): AgentAppr
  * agent: `agent`; of all agents: `global`).
  */
 export function isAgentPaused(store: ModeStore, ref: AgentRef): { paused: boolean; scope: "claim" | "agent" | "global" | null } {
+  // Every verified read of the claim is remembered, so a held call can be re-checked against it on approval.
+  if (ref.policy !== undefined) store.agentModes.recordPolicySeen(ref.workspaceSlug, ref.agentId, ref.policy, ref.now ?? new Date());
   if (parseAgentPolicy(ref.policy)?.paused === true) return { paused: true, scope: "claim" };
   const state = store.agentModes.pauseState(ref.workspaceSlug, ref.agentId);
   return { paused: state !== null, scope: state === "all" ? "global" : state };
+}
+
+/** A held call approved by the owner runs only on a policy read at most this old. */
+export const FRESH_POLICY_MAX_AGE_MS = 60_000;
+
+/**
+ * The policy to re-check an approved held call against, at execution time (contract approval-mode): `none` when
+ * Portal never sent a claim for this agent (local fallback applies), `fresh` with the claim when the last verified
+ * read is at most 60 s old, `stale` otherwise (the call must not run on it: no fresh read is available, since the
+ * owner's approval carries no agent credential to introspect with).
+ */
+export function freshAgentPolicy(
+  store: ModeStore,
+  ref: { workspaceSlug: string; agentId: string },
+  now: Date = new Date(),
+  maxAgeMs: number = FRESH_POLICY_MAX_AGE_MS,
+): { state: "none" } | { state: "stale"; seenAt: string } | { state: "fresh"; policy: unknown } {
+  const seen = store.agentModes.lastPolicySeen(ref.workspaceSlug, ref.agentId);
+  if (!seen) return { state: "none" };
+  const age = now.getTime() - Date.parse(seen.seenAt);
+  return Number.isFinite(age) && age >= 0 && age <= maxAgeMs ? { state: "fresh", policy: seen.policy } : { state: "stale", seenAt: seen.seenAt };
 }
 
 /**
@@ -406,6 +429,8 @@ export type OutwardDecision = {
   replay?: boolean;
   /** For `sensitive`: the family that held it (slug-matched or caller-declared). */
   family?: HoldFamilyId;
+  /** For `cap_agent`: held because the cap store could not be read (never treated as unlimited). */
+  capUnavailable?: true;
 };
 
 /**
@@ -446,13 +471,23 @@ export function decideOutward(
     const ran = modes.findReceiptByKey({ workspaceSlug: input.workspaceSlug, agentId: input.agentId, pluginId: input.connectorKey, replayKey: input.replayKey });
     if (ran && ran.status !== "not_run") return { kind: "run", reason: "assistant", capReservation: ran.id, replay: true };
   }
-  const setting = modes.getSetting(input.workspaceSlug, input.agentId);
-  // System mode ignores families: every outward call is held.
-  if (getAgentApprovalMode(store, input) !== "assistant") return { kind: "hold", reason: "system_mode" };
-  const held = assistantHold(store, input);
-  if (held) return { kind: "hold", reason: held.reason, ...(held.family ? { family: held.family } : {}) };
+  let setting: ReturnType<typeof modes.getSetting>;
+  try {
+    setting = modes.getSetting(input.workspaceSlug, input.agentId);
+    // System mode ignores families: every outward call is held.
+    if (getAgentApprovalMode(store, input) !== "assistant") return { kind: "hold", reason: "system_mode" };
+    const held = assistantHold(store, input);
+    if (held) return { kind: "hold", reason: held.reason, ...(held.family ? { family: held.family } : {}) };
+  } catch {
+    // The mode store cannot be read: fail toward approval.
+    return { kind: "hold", reason: "system_mode" };
+  }
+  // A cap is never "unlimited": a missing or invalid cap counts as 0 (hold).
+  const capOf = (value: unknown) => (typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : 0);
   const now = input.now ?? new Date();
-  const reserved = modes.reserveExecution({
+  let reserved: ReturnType<typeof modes.reserveExecution>;
+  try {
+    reserved = modes.reserveExecution({
     workspaceSlug: input.workspaceSlug,
     agentId: input.agentId,
     pluginId: input.connectorKey,
@@ -466,9 +501,13 @@ export function decideOutward(
     traceId: input.traceId ?? "",
     now,
     day: utcDay(now),
-    dailyCap: setting.dailyCap,
-    connectorDailyCap: setting.connectorDailyCap,
-  });
+    dailyCap: capOf(setting.dailyCap),
+    connectorDailyCap: capOf(setting.connectorDailyCap),
+    });
+  } catch {
+    // The cap store is unavailable: the limit cannot be checked, so the call waits.
+    return { kind: "hold", reason: "cap_agent", capUnavailable: true };
+  }
   if (reserved.kind === "cap") return { kind: "hold", reason: reserved.limit === "agent" ? "cap_agent" : "cap_connector" };
   return { kind: "run", reason: "assistant", capReservation: reserved.receipt.id, ...(reserved.kind === "replay" ? { replay: true } : {}) };
 }
