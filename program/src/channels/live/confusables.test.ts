@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { CONFUSABLE_SKELETON, HAND_FIRST_SKELETON } from "./confusables.js";
 import { UTS39_SKELETON } from "./confusables-data.js";
+import { MAIN_SNAPSHOT, MAIN_SNAPSHOT_SIZE } from "./confusables-main-snapshot.js";
 import { forbiddenTermsIn } from "./sessions.js";
 
 describe("forbidden-term confusables", () => {
@@ -66,6 +67,47 @@ describe("forbidden-term confusables", () => {
     ];
     for (const [text, term] of cases) expect(forbiddenTermsIn(text, [term]), `${text} vs ${term}`).toEqual([term]);
     expect(forbiddenTermsIn("nothing to see here", ["invest", "hidden", "hire"])).toEqual([]);
+  });
+
+  // Snapshot of the mapping before this PR (origin/main db9c8ed): every key stays in the generated table, and its old
+  // prototype stays a reading of it (some prototypes changed, e.g. Greek beta -> "ss"; the hand table keeps "b").
+  it("loses no confusable from the previous mapping (origin/main snapshot)", () => {
+    const snapshot = MAIN_SNAPSHOT.split(",").map((entry) => {
+      const [from, to] = entry.split(":");
+      return [String.fromCodePoint(Number.parseInt(from!, 16)), to!] as const;
+    });
+    expect(snapshot.length).toBe(MAIN_SNAPSHOT_SIZE);
+    expect(snapshot.length).toBe(2149);
+    const missing = snapshot.filter(([char]) => UTS39_SKELETON[char] === undefined).map(([char]) => char.codePointAt(0)!.toString(16));
+    expect(missing).toEqual([]);
+    const lost = snapshot
+      .filter(([char, prototype]) => forbiddenTermsIn(`qz${char}zq`, [`qz${prototype}zq`]).length !== 1)
+      .map(([char, prototype]) => `${char.codePointAt(0)!.toString(16)}:${prototype}`);
+    expect(lost).toEqual([]);
+  });
+
+  // Dotless ı (U+0131) and dotted İ (U+0130): both read "i", in text and in terms, in either case. İ lowercases to
+  // i + U+0307 and folds the same way (CaseFolding.txt F; the Turkic T entries are not used); ı reads "i" through the
+  // UTS #39 and hand tables. İ also reads "l" (its NFD base I is the UTS #39 lookalike of l); ı does not. Over-matching
+  // is accepted; İ is not a lookalike for e.
+  it("reads dotless ı and dotted İ as i (current behaviour)", () => {
+    const matches: Array<[string, string]> = [
+      ["ıd", "id"], ["İd", "id"], ["İD", "id"], ["admın", "admin"], ["ADMİN", "admin"], ["admİn", "admin"], ["secrİt", "secrit"],
+      ["KİŞİ", "kisi"], ["DIŞ", "dis"], ["İd", "ld"], ["admin", "admİn"], ["admin", "admın"], ["id", "ıd"], ["ld", "İd"],
+    ];
+    for (const [text, term] of matches) expect(forbiddenTermsIn(text, [term]), `${text} vs ${term}`).toEqual([term]);
+    for (const [text, term] of [["secrİt", "secret"], ["ıd", "ld"]] as const) {
+      expect(forbiddenTermsIn(text, [term]), `${text} vs ${term}`).toEqual([]);
+    }
+  });
+
+  // Cherokee Ᏸ / ᏸ (U+13F0 / U+13F8): UTS #39 maps them to sharp s ("ss" after folding); the hand table adds "b",
+  // like Latin small beta ꞵ.
+  it("reads Cherokee Ᏸ / ᏸ as both b and ss", () => {
+    for (const char of ["\u{13F0}", "\u{13F8}"]) {
+      expect(forbiddenTermsIn(`${char}et`, ["bet"]), char).toEqual(["bet"]);
+      expect(forbiddenTermsIn(`${char}et`, ["sset"]), char).toEqual(["sset"]);
+    }
   });
 
   it("stays within a time budget at the grant maxima (64 terms × 200 chars, 4096-char text)", () => {

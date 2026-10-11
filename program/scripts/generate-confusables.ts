@@ -1,56 +1,87 @@
 // Generates program/src/channels/live/confusables-data.ts from Unicode's UTS #39 confusables.txt.
-// Usage: pnpm exec tsx scripts/generate-confusables.ts <path/to/confusables.txt>
-// Keeps single-code-point sources (not ASCII) whose prototype is ASCII letters/digits after removing combining
-// marks (forbiddenSkeleton strips them too) and lowercasing,
-// keyed by the source, plus a lowercase alias only where Unicode has no direct entry for the lowercase letter.
-import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+// Usage: pnpm exec tsx scripts/generate-confusables.ts <path/to/confusables.txt> <path/to/CaseFolding.txt> <path/to/UnicodeData.txt>
+//
+// Subset criterion (asserted by forbidden-corpus.test.ts through the stored UTS39_SUBSET_SIZE / UTS39_SKELETON_SIZE):
+// every confusables.txt mapping with a single-code-point source whose prototype, after mark removal (canonical
+// decomposition, then General_Category Mn/Mc/Me removed, both from UnicodeData.txt; the prototype is only a target) and
+// full case folding (CaseFolding.txt C + F), consists only of ASCII letters/digits; ASCII sources only when the
+// prototype differs from their folded form (I -> l, 0 -> o, m -> rn).
+// Keyed by the source, plus a lowercase alias (UnicodeData.txt Simple_Lowercase_Mapping) only where Unicode has no
+// direct entry for the lowercase letter. Nothing here uses the runtime's normalize, toLowerCase or \p{...}.
+import { writeFileSync } from "node:fs";
 import path from "node:path";
 
-const input = process.argv[2];
-if (!input) throw new Error("usage: tsx scripts/generate-confusables.ts <confusables.txt>");
-const text = readFileSync(input, "utf8");
-const version = /# Version: (\S+)/u.exec(text)?.[1] ?? "unknown";
-const date = /# Date: ([^\n]+)/u.exec(text)?.[1]?.trim() ?? "unknown";
-const sha256 = createHash("sha256").update(text).digest("hex");
+import { ALL_MARKS, assertFloor, escapeCodes, fullCaseFolding, parseUnicodeData, PINS, readUcd, stripMarks } from "./lib/ucd.js";
 
-const direct = new Map<string, string>();
+const [input, foldingInput, dataInput] = process.argv.slice(2);
+if (!input || !foldingInput || !dataInput) {
+  throw new Error("usage: tsx scripts/generate-confusables.ts <confusables.txt> <CaseFolding.txt> <UnicodeData.txt>");
+}
+const { text, sha256, version } = readUcd(input, PINS.confusables);
+const date = /# Date: ([^\n]+)/u.exec(text)?.[1]?.trim();
+if (!date) throw new Error("confusables.txt: no '# Date:' header");
+const folding = readUcd(foldingInput, PINS.caseFolding);
+const ucd = readUcd(dataInput, PINS.unicodeData);
+const foldMap = fullCaseFolding(folding.text);
+const data = parseUnicodeData(ucd.text);
+const fold = (codes: number[]) => codes.flatMap((code) => foldMap.get(code) ?? [code]);
+const isTermCode = (code: number) => (code >= 0x30 && code <= 0x39) || (code >= 0x61 && code <= 0x7a);
+const hexCodes = (field: string) => field.split(" ").filter(Boolean).map((part) => Number.parseInt(part, 16));
+
+assertFloor("CaseFolding.txt C + F", foldMap.size, 1606);
+assertFloor("UnicodeData.txt code points", data.codes.length, 41_297);
+assertFloor("UnicodeData.txt lowercase mappings", data.lowercase.size, 1_508);
+
+const direct = new Map<number, string>();
+let mappings = 0;
 for (const line of text.split("\n")) {
   const body = line.split("#")[0]?.trim();
   if (!body) continue;
   const [source, target] = body.split(";").map((part) => part.trim());
   if (!source || !target || source.includes(" ")) continue;
-  const from = String.fromCodePoint(Number.parseInt(source, 16));
-  if (from.codePointAt(0)! < 0x80) continue;
-  const to = target
-    .split(" ")
-    .map((hex) => String.fromCodePoint(Number.parseInt(hex, 16)))
-    .join("")
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "")
-    .toLowerCase();
-  if (!/^[a-z0-9]+$/u.test(to)) continue;
-  if (!direct.has(from)) direct.set(from, to);
+  mappings += 1;
+  const from = Number.parseInt(source, 16);
+  // Mark removal (canonical decomposition, General_Category Mn/Mc/Me removed, from UnicodeData.txt), then full case
+  // folding, then mark removal again (a fold can produce a decomposable letter): no runtime normalize/\p{M}/toLowerCase.
+  // All marks (not only Mn) leave the prototype, as \p{M} did before: U+1F16D -> C + U+20DD (Me) still reads "cc".
+  const folded = stripMarks(data, fold(stripMarks(data, hexCodes(target), ALL_MARKS)), ALL_MARKS);
+  if (folded.length === 0 || !folded.every(isTermCode)) continue;
+  const term = String.fromCodePoint(...folded);
+  // ASCII sources are kept only when the prototype differs from their folded form (e.g. I -> l, 0 -> o).
+  if (from < 0x80 && term === String.fromCodePoint(...fold([from]))) continue;
+  if (!direct.has(from)) direct.set(from, term);
 }
 // Direct entries first; a lowercase alias only where Unicode has no direct entry for that lowercase letter
 // (otherwise a capital's prototype would replace the lowercase letter's own, e.g. Greek capital Eta -> h over eta -> n).
+// The lowercase letter is UnicodeData.txt field 13 (Simple_Lowercase_Mapping), not the runtime's toLowerCase: Node's
+// ICU can be a Unicode version behind (Node 26 has Unicode 17, so U+1DF6A -> U+1DF6B would get no alias).
 const map = new Map(direct);
 for (const [from, to] of direct) {
-  const lower = from.toLowerCase();
-  if ([...lower].length !== 1 || lower.codePointAt(0)! < 0x80 || map.has(lower)) continue;
+  const lower = data.lowercase.get(from);
+  if (lower === undefined || lower < 0x80 || map.has(lower)) continue;
   map.set(lower, to);
 }
 
-const escape = (value: string) => [...value].map((char) => `\\u{${char.codePointAt(0)!.toString(16)}}`).join("");
-const entries = [...map.entries()].sort(([a], [b]) => a.codePointAt(0)! - b.codePointAt(0)!);
+const entries = [...map.entries()].sort(([a], [b]) => a - b);
+// Floors: the counts from the pinned 18.0.0 files. A parse or criterion change that loses entries fails here.
+assertFloor("confusables.txt single-code-point mappings", mappings, 6_712);
+assertFloor("UTS #39 subset", direct.size, 2065);
+assertFloor("UTS #39 skeleton (subset + lowercase aliases)", entries.length, 2171);
 const out = `// GENERATED by scripts/generate-confusables.ts — do not edit by hand.
 // Source: Unicode UTS #39 confusables.txt, version ${version} (${date}), sha256 ${sha256}.
 // https://www.unicode.org/Public/security/${version}/confusables.txt — Unicode terms of use apply.
-// Subset: single code point sources (not ASCII) whose prototype is ASCII letters/digits after removing marks and lowercasing.
+// Case folding: Unicode CaseFolding.txt ${folding.version} (C + F), sha256 ${folding.sha256}.
+// Marks and lowercase aliases: Unicode UnicodeData.txt ${folding.version}, sha256 ${ucd.sha256}.
+// Subset criterion: every confusables.txt mapping with a single-code-point source whose prototype, after mark removal
+// and full case folding, consists only of ASCII letters/digits; ASCII sources only when the prototype differs from
+// their folded form. UTS39_SUBSET_SIZE counts those mappings; UTS39_SKELETON_SIZE adds the lowercase aliases.
+export const UTS39_VERSION = "${version}";
+export const UTS39_SUBSET_SIZE = ${direct.size};
+export const UTS39_SKELETON_SIZE = ${entries.length};
 export const UTS39_SKELETON: Readonly<Record<string, string>> = Object.freeze({
-${entries.map(([from, to]) => `  "${escape(from)}": "${to}",`).join("\n")}
+${entries.map(([from, to]) => `  "${escapeCodes([from])}": "${to}",`).join("\n")}
 });
 `;
 const target = path.resolve(import.meta.dirname, "../src/channels/live/confusables-data.ts");
 writeFileSync(target, out);
-console.log(`wrote ${entries.length} entries (UTS #39 ${version}) to ${target}`);
+console.log(`wrote ${entries.length} entries (${direct.size} direct) (UTS #39 ${version}) to ${target}`);

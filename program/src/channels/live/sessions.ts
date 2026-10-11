@@ -10,7 +10,7 @@ import { createHuddleSession, type HuddleSession } from "../huddle/session.js";
 import { SPEAK_TEXT_MAX_CHARS } from "../huddle/speak.js";
 import type { SpeechProvider } from "../huddle/speech.js";
 import type { ChannelRecord } from "../store.js";
-import { CONFUSABLE_SKELETON, HAND_FIRST_SKELETON, INVISIBLE_LETTERS } from "./confusables.js";
+import { compatReading, compatSpelling, CONFUSABLE_SKELETON, fullCaseFold, HAND_FIRST_SKELETON, INVISIBLE_LETTERS } from "./confusables.js";
 import { modesOf, type LiveGrant, type LiveGrantService } from "./grants.js";
 import type { LiveGrantRecord, LiveModes, LiveSessionRecord, LiveStore } from "./store.js";
 
@@ -92,42 +92,90 @@ export function sha256Hex(value: string | Uint8Array): string {
 }
 
 /**
- * The comparison skeleton of a text or a forbidden term (UTS #39 style): NFKC (ligatures, full-width), lowercase
- * (casefold; Turkish `İ` becomes `i` + a combining dot), NFD and removal of combining marks (Mn), format characters
- * (Cf: zero-width, soft hyphen) and invisible letters (Hangul fillers, braille blank), folding of the vendored
- * confusables subset (`confusables.ts`: Latin extensions and small capitals, Greek, Cyrillic, Cherokee), then letters
- * and digits only (spaces and punctuation cannot split a term).
+ * The comparison skeleton of a text or a forbidden term (UTS #39 style): NFKC (ligatures, full-width), then as written,
+ * lowercased (Turkish `İ` becomes `i` + a combining dot) or fully case folded (Unicode CaseFolding.txt C + F: `ẞ` and
+ * `ß` become `ss`), NFD and removal of combining marks (Mn), format characters (Cf: zero-width, soft hyphen) and
+ * invisible letters (Hangul fillers, braille blank), folding of the vendored confusables subset (`confusables.ts`:
+ * Latin extensions and small capitals, Greek, Cyrillic, Cherokee), then letters and digits only (spaces and
+ * punctuation cannot split a term).
  */
-export function forbiddenSkeleton(value: string, table: Readonly<Record<string, string>> = CONFUSABLE_SKELETON, lower = true): string {
+export type SkeletonCase = "written" | "lower" | "fold";
+
+// Runtime Unicode version (Node 26 ships Unicode 17; the generated tables are Unicode 18). Each runtime Unicode call
+// below is either backed by a generated table or fails safe (over-matching) for characters the runtime does not know:
+// - toLowerCase / normalize("NFKC" | "NFD" | "NFC") leave unknown characters unchanged. Case: every mode is tried and
+//   "fold" uses the generated CaseFolding table; the UTS #39 table carries lowercase aliases from UnicodeData.txt
+//   (U+1DF6B reads "a" like U+1DF6A). Decompositions: compatReading/compatSpelling (generated) give their readings.
+// - \p{Mn} / \p{Cf} do not match unknown characters (General_Category Cn to the runtime), but finalFold removes every
+//   non-\p{L}\p{N} character, so an unknown mark or letter becomes an empty (skippable) reading, never a blocker.
+//   Unicode 18 adds no Cf characters; forbidden-corpus.test.ts checks every Mn and Default_Ignorable code point.
+
+export function forbiddenSkeleton(value: string, table: Readonly<Record<string, string>> = CONFUSABLE_SKELETON, mode: SkeletonCase = "lower"): string {
   const nfkc = value.normalize("NFKC");
-  const folded = (lower ? nfkc.toLowerCase() : nfkc).normalize("NFD").replace(/[\p{Mn}\p{Cf}]/gu, "").replace(INVISIBLE_LETTERS, "");
+  const cased = mode === "fold" ? fullCaseFold(nfkc) : mode === "lower" ? nfkc.toLowerCase() : nfkc;
+  const folded = cased.normalize("NFD").replace(/[\p{Mn}\p{Cf}]/gu, "").replace(INVISIBLE_LETTERS, "");
   let out = "";
   for (const char of folded) out += table[char] ?? char;
-  return out.toLowerCase().normalize("NFD").replace(/\p{Mn}/gu, "").replace(/[^\p{L}\p{N}]/gu, "");
+  return finalFold(out);
 }
 
-/** Every comparison skeleton of a value: both tables, as written and lowercased. */
+/** Every comparison skeleton of a value: both tables, as written, lowercased and fully case folded. */
 export function forbiddenSkeletons(value: string): string[] {
   const out = new Set<string>();
   for (const table of [CONFUSABLE_SKELETON, HAND_FIRST_SKELETON]) {
-    for (const lower of [false, true]) out.add(forbiddenSkeleton(value, table, lower));
+    for (const mode of ["written", "lower", "fold"] as const) out.add(forbiddenSkeleton(value, table, mode));
   }
+  // The plain spelling too: UTS #39 maps some ASCII letters to other ASCII (m -> rn, I -> l), and every text letter
+  // keeps its plain lowercase reading, so the term's plain form must stay a needle.
+  out.add(forbiddenSkeleton(value, {}, "lower"));
+  out.add(forbiddenSkeleton(value, {}, "fold"));
+  // The generated (version-exact) compatibility readings, for terms written with characters the runtime NFKC lacks.
+  const compat = compatSpelling(value);
+  if (compat !== value) out.add(forbiddenSkeleton(compat, {}, "fold"));
   return [...out];
 }
 
-const finalFold = (value: string) => value.toLowerCase().normalize("NFD").replace(/\p{Mn}/gu, "").replace(/[^\p{L}\p{N}]/gu, "");
+/** Lowercase, then full case folding (ß → ss), NFD, marks removed, letters and digits only. */
+function finalFold(value: string): string {
+  return fullCaseFold(value.toLowerCase()).normalize("NFD").replace(/\p{Mn}/gu, "").replace(/[^\p{L}\p{N}]/gu, "");
+}
 
 /**
- * Every reading of one character of the text (review of #53, mixed-mode bypass): both tables, as written and
- * lowercased, plus the plain lowercase letter. An empty reading means the character can be skipped (punctuation,
- * spaces, marks). A term matches when SOME choice of one reading per character spells it, so letters that need
- * different modes in one word ("ΙΝVEST") cannot slip through.
+ * Every reading of one character of the text (review of #53, mixed-mode bypass): both tables, looked up as written,
+ * lowercased and fully case folded, plus the plain folded letter. An empty reading means the character can be skipped
+ * (punctuation, spaces, marks). A term matches when SOME choice of one reading per character spells it, so letters
+ * that need different modes in one word ("ΙΝVEST") cannot slip through.
  */
+function tableReadings(char: string, out: Set<string>): void {
+  for (const key of new Set([char, char.toLowerCase(), fullCaseFold(char)])) {
+    for (const candidate of [CONFUSABLE_SKELETON[key], HAND_FIRST_SKELETON[key]]) {
+      if (candidate !== undefined) out.add(finalFold(candidate));
+    }
+  }
+}
+
+const MAX_READINGS = 64;
+
 function readingsOf(char: string): string[] {
-  const lower = char.toLowerCase();
   const out = new Set<string>();
-  for (const candidate of [CONFUSABLE_SKELETON[char], HAND_FIRST_SKELETON[char], CONFUSABLE_SKELETON[lower], HAND_FIRST_SKELETON[lower], lower]) {
-    if (candidate !== undefined) out.add(finalFold(candidate));
+  // Its Unicode compatibility decomposition from the generated table (version-exact; the runtime NFKC may lag).
+  const compat = compatReading(char);
+  if (compat !== undefined) out.add(compat);
+  // The character as written and fully case folded (before compatibility normalization: U+017F long s reads "f",
+  // U+0132 reads "lj"; U+1DF95 folds to "ss" even where the runtime does not know it).
+  for (const form of new Set([char, fullCaseFold(char)])) {
+    tableReadings(form, out);
+    // Its normalized form, one reading per resulting letter (fullwidth, ligatures, Roman numerals expand here).
+    const parts = [...form.normalize("NFKC").normalize("NFD").replace(/[\p{Mn}\p{Cf}]/gu, "").replace(INVISIBLE_LETTERS, "")];
+    let combos: string[] = [""];
+    for (const part of parts) {
+      const options = new Set<string>([finalFold(part)]);
+      tableReadings(part, options);
+      const next: string[] = [];
+      for (const prefix of combos) for (const option of options) if (next.length < MAX_READINGS) next.push(prefix + option);
+      combos = next;
+    }
+    for (const combo of combos) out.add(combo);
   }
   return [...out];
 }
@@ -152,7 +200,8 @@ function needleOf(term: string, skeleton: string): Needle {
  * a term), so the cost is text length × readings × needle words. Over-matching is accepted.
  */
 export function forbiddenTermsIn(text: string, terms: readonly string[]): string[] {
-  const letters = [...text.normalize("NFKC").normalize("NFD").replace(/[\p{Mn}\p{Cf}]/gu, "").replace(INVISIBLE_LETTERS, "")];
+  // Per character as written; each character carries its own readings (as written and normalized).
+  const letters = [...text.normalize("NFC")];
   const lattice = letters.map(readingsOf);
   const needles: Needle[] = [];
   for (const term of terms) {
