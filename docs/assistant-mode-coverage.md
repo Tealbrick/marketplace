@@ -19,19 +19,19 @@ An "unless quiet" Calendar tool is counted as outward.
 | Source | Tools | read-allowlisted | not outward (consent only) | assistant-runs | held: destructive | held: admin | held: sensitive:destructive | held: sensitive:money | held: sensitive:access-sharing | held: sensitive:bulk |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | composio:googlecalendar (curated) | 50 | 0 | 34 | 13 | 2 | 1 | 0 | 0 | 0 | 0 |
-| company-box:authentik (openapi) | 1091 | 0 | 1048 | 2 | 3 | 0 | 0 | 0 | 38 | 0 |
+| company-box:authentik (openapi) | 1091 | 0 | 1048 | 1 | 3 | 0 | 0 | 0 | 39 | 0 |
 | company-box:changedetection (openapi) | 23 | 0 | 16 | 5 | 1 | 0 | 0 | 0 | 1 | 0 |
-| company-box:chatwoot (openapi) | 448 | 0 | 390 | 24 | 1 | 0 | 0 | 0 | 27 | 6 |
-| company-box:documenso (openapi) | 89 | 0 | 78 | 6 | 1 | 0 | 1 | 0 | 3 | 0 |
+| company-box:chatwoot (openapi) | 448 | 0 | 390 | 20 | 1 | 0 | 2 | 0 | 29 | 6 |
+| company-box:documenso (openapi) | 89 | 0 | 78 | 2 | 1 | 0 | 1 | 4 | 3 | 0 |
 | company-box:easyappointments (openapi) | 51 | 0 | 46 | 2 | 1 | 0 | 0 | 0 | 2 | 0 |
-| company-box:forgejo (openapi) | 459 | 0 | 438 | 8 | 2 | 0 | 0 | 0 | 11 | 0 |
+| company-box:forgejo (openapi) | 459 | 0 | 438 | 5 | 2 | 0 | 1 | 0 | 13 | 0 |
 | company-box:formbricks (openapi) | 108 | 0 | 83 | 13 | 2 | 0 | 0 | 0 | 9 | 1 |
 | company-box:glitchtip (openapi) | 175 | 0 | 155 | 9 | 1 | 0 | 0 | 4 | 6 | 0 |
 | company-box:listmonk (openapi) | 104 | 0 | 95 | 6 | 1 | 0 | 0 | 0 | 0 | 2 |
 | company-box:nextcloud (openapi) | 284 | 0 | 251 | 5 | 5 | 0 | 2 | 0 | 21 | 0 |
-| company-box:postiz (openapi) | 31 | 0 | 18 | 10 | 3 | 0 | 0 | 0 | 0 | 0 |
-| company-box:pretix (openapi) | 370 | 0 | 317 | 11 | 15 | 0 | 0 | 18 | 6 | 3 |
-| **All** | **3283** | **0** | **2969** | **114** | **38** | **1** | **3** | **22** | **124** | **12** |
+| company-box:postiz (openapi) | 31 | 0 | 18 | 9 | 3 | 0 | 1 | 0 | 0 | 0 |
+| company-box:pretix (openapi) | 370 | 0 | 317 | 7 | 15 | 0 | 0 | 22 | 6 | 3 |
+| **All** | **3283** | **0** | **2969** | **97** | **38** | **1** | **7** | **30** | **129** | **12** |
 
 ## Near-misses: tools that run in Assistant mode and contain a sensitive word as a substring
 
@@ -69,7 +69,7 @@ Each outward operation of the shipped entries was reviewed by hand. `held` rows 
 | authentik | `events_transports_update` | held: access-sharing | reviewed family |
 | authentik | `events_transports_partial_update` | held: access-sharing | reviewed family |
 | authentik | `events_transports_test_create` | runs | reviewed: runs |
-| authentik | `flows_executor_solve` | runs | reviewed: runs |
+| authentik | `flows_executor_solve` | held: access-sharing | reviewed family |
 | authentik | `flows_instances_import_create` | held: access-sharing | reviewed family |
 | authentik | `outposts_service_connections_docker_create` | held: access-sharing | reviewed family |
 | authentik | `outposts_service_connections_docker_update` | held: access-sharing | reviewed family |
@@ -120,8 +120,8 @@ Each outward operation of the shipped entries was reviewed by hand. `held` rows 
 | chatwoot | `newConversation` | runs | reviewed: runs |
 | chatwoot | `toggle-status-of-a-conversation` | runs | reviewed: runs |
 | chatwoot | `toggle-typing-status-of-a-conversation` | runs | reviewed: runs |
-| chatwoot | `inboxCreation` | runs | reviewed: runs |
-| chatwoot | `updateInbox` | runs | reviewed: runs |
+| chatwoot | `inboxCreation` | held: access-sharing | reviewed family |
+| chatwoot | `updateInbox` | held: access-sharing | reviewed family |
 | chatwoot | `create-a-new-message-in-a-conversation` | runs | reviewed: runs |
 | chatwoot | `create-an-integration-hook` | held: access-sharing | reviewed family |
 | chatwoot | `update-an-integrations-hook` | held: access-sharing | reviewed family |
@@ -135,7 +135,7 @@ Each outward operation of the shipped entries was reviewed by hand. `held` rows 
 | chatwoot | `callbacks-facebook-pages` | held: access-sharing | reviewed family |
 | chatwoot | `callbacks-reauthorize-page` | held: access-sharing | reviewed family |
 | chatwoot | `automation-rules-clone` | held: bulk | reviewed family |
-| chatwoot | `macros-execute` | runs | reviewed: runs |
+| chatwoot | `macros-execute` | held: destructive | reviewed family |
 | chatwoot | `channels-twilio-channel-create` | held: access-sharing | reviewed family |
 | chatwoot | `conversations-messages-retry` | runs | reviewed: runs |
 | chatwoot | `conversations-contact-info-request-create` | runs | reviewed: runs |
@@ -145,7 +145,7 @@ Each outward operation of the shipped entries was reviewed by hand. `held` rows 
 | chatwoot | `inboxes-register-webhook` | held: access-sharing | reviewed family |
 | chatwoot | `whatsapp-manual-connect` | held: access-sharing | reviewed family |
 | chatwoot | `whatsapp-manual-setup-webhook` | held: access-sharing | reviewed family |
-| chatwoot | `integrations-hooks-process-event` | runs | reviewed: runs |
+| chatwoot | `integrations-hooks-process-event` | held: destructive | reviewed family |
 | chatwoot | `integrations-slack-create` | held: access-sharing | reviewed family |
 | chatwoot | `integrations-slack-update` | held: access-sharing | reviewed family |
 | chatwoot | `integrations-dyte-create-a-meeting` | runs | reviewed: runs |
@@ -163,10 +163,10 @@ Each outward operation of the shipped entries was reviewed by hand. `held` rows 
 | documenso | `envelope-recipient-rejectOnBehalfOf` | held: destructive | reviewed family |
 | documenso | `envelope-use` | runs | reviewed: runs |
 | documenso | `envelope-cancel` | held: destructive | curated destructive flag |
-| documenso | `envelope-distribute` | runs | reviewed: runs |
-| documenso | `envelope-redistribute` | runs | reviewed: runs |
-| documenso | `document-distribute` | runs | reviewed: runs |
-| documenso | `document-redistribute` | runs | reviewed: runs |
+| documenso | `envelope-distribute` | held: money | reviewed family |
+| documenso | `envelope-redistribute` | held: money | reviewed family |
+| documenso | `document-distribute` | held: money | reviewed family |
+| documenso | `document-redistribute` | held: money | reviewed family |
 | documenso | `template-createDocumentFromTemplate` | runs | reviewed: runs |
 | documenso | `template-createTemplateDirectLink` | held: access-sharing | reviewed family |
 | documenso | `template-toggleTemplateDirectLink` | held: access-sharing | reviewed family |
@@ -179,8 +179,8 @@ Each outward operation of the shipped entries was reviewed by hand. `held` rows 
 | forgejo | `adminCreateUser` | held: access-sharing | reviewed family |
 | forgejo | `orgCreateHook` | held: access-sharing | reviewed family |
 | forgejo | `orgEditHook` | held: access-sharing | reviewed family |
-| forgejo | `repoMigrate` | runs | reviewed: runs |
-| forgejo | `DispatchWorkflow` | runs | reviewed: runs |
+| forgejo | `repoMigrate` | held: access-sharing | reviewed family |
+| forgejo | `DispatchWorkflow` | held: destructive | reviewed family |
 | forgejo | `repoAddCollaborator` | held: access-sharing | reviewed family |
 | forgejo | `repoCreateHook` | held: access-sharing | reviewed family |
 | forgejo | `repoEditHook` | held: access-sharing | reviewed family |
@@ -188,7 +188,7 @@ Each outward operation of the shipped entries was reviewed by hand. `held` rows 
 | forgejo | `repoMirrorSync` | runs | reviewed: runs |
 | forgejo | `repoMergePullRequest` | held: destructive | curated destructive flag |
 | forgejo | `repoAddPushMirror` | held: access-sharing | reviewed family |
-| forgejo | `repoPushMirrorSync` | runs | reviewed: runs |
+| forgejo | `repoPushMirrorSync` | held: access-sharing | reviewed family |
 | forgejo | `repoCreateRelease` | runs | reviewed: runs |
 | forgejo | `repoEditRelease` | runs | reviewed: runs |
 | forgejo | `repoCreateReleaseAttachment` | runs | reviewed: runs |
@@ -296,7 +296,7 @@ Each outward operation of the shipped entries was reviewed by hand. `held` rows 
 | postiz | `PublicIntegrationsController_updatePostSettings` | runs | reviewed: runs |
 | postiz | `PublicIntegrationsController_changePostStatus` | runs | reviewed: runs |
 | postiz | `PublicIntegrationsController_updateReleaseId` | runs | reviewed: runs |
-| postiz | `PublicIntegrationsController_triggerIntegrationTool` | runs | reviewed: runs |
+| postiz | `PublicIntegrationsController_triggerIntegrationTool` | held: destructive | reviewed family |
 | pretix | `checkinrpc.redeem` | runs | reviewed: runs |
 | pretix | `customers.create` | runs | reviewed: runs |
 | pretix | `events.create` | runs | reviewed: runs |
@@ -306,8 +306,8 @@ Each outward operation of the shipped entries was reviewed by hand. `held` rows 
 | pretix | `clone.create` | runs | reviewed: runs |
 | pretix | `invoices.regenerate` | held: destructive | curated destructive flag |
 | pretix | `invoices.reissue` | held: destructive | curated destructive flag |
-| pretix | `invoices.retransmit` | runs | reviewed: runs |
-| pretix | `invoices.transmit` | runs | reviewed: runs |
+| pretix | `invoices.retransmit` | held: money | reviewed family |
+| pretix | `invoices.transmit` | held: money | reviewed family |
 | pretix | `orderpositions.regenerate_secrets` | held: destructive | curated destructive flag |
 | pretix | `orders.create` | held: money | word ORDER |
 | pretix | `orders.approve` | held: money | word ORDER |
@@ -342,8 +342,8 @@ Each outward operation of the shipped entries was reviewed by hand. `held` rows 
 | pretix | `giftcards.transact` | held: money | reviewed family |
 | pretix | `invoices.regenerate_organizer` | held: destructive | curated destructive flag |
 | pretix | `invoices.reissue_organizer` | held: destructive | curated destructive flag |
-| pretix | `invoices.retransmit_organizer` | runs | reviewed: runs |
-| pretix | `invoices.transmit_organizer` | runs | reviewed: runs |
+| pretix | `invoices.retransmit_organizer` | held: money | reviewed family |
+| pretix | `invoices.transmit_organizer` | held: money | reviewed family |
 | pretix | `scheduled_exports.create_organizer` | held: access-sharing | reviewed family |
 | pretix | `settings.update_organizer` | held: money | reviewed family |
 | pretix | `teams_invites.create` | held: access-sharing | word INVITE |

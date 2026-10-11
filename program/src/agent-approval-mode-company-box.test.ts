@@ -69,3 +69,26 @@ describe("reviewed Company Box families in Assistant mode", () => {
     expect((await pretix.run("events.create")).statusCode).toBe(200);
   });
 });
+
+describe("QA reclassifications (held in Assistant mode)", () => {
+  const cases: Record<string, Array<[string, string]>> = {
+    chatwoot: [["macros-execute", "destructive"], ["integrations-hooks-process-event", "destructive"], ["inboxCreation", "access-sharing"], ["updateInbox", "access-sharing"]],
+    postiz: [["PublicIntegrationsController_triggerIntegrationTool", "destructive"]],
+    forgejo: [["DispatchWorkflow", "destructive"], ["repoPushMirrorSync", "access-sharing"], ["repoMigrate", "access-sharing"]],
+    documenso: [["document-distribute", "money"], ["document-redistribute", "money"], ["envelope-distribute", "money"], ["envelope-redistribute", "money"]],
+    pretix: [["invoices.transmit", "money"], ["invoices.retransmit", "money"], ["invoices.transmit_organizer", "money"], ["invoices.retransmit_organizer", "money"]],
+    authentik: [["flows_executor_solve", "access-sharing"]],
+  };
+  for (const [id, operations] of Object.entries(cases)) {
+    it(`${id}: ${operations.map(([operationId]) => operationId).join(", ")} wait`, async () => {
+      const { f, run } = await assistant(id);
+      const before = f.rest.requests.length;
+      for (const [operationId, family] of operations) {
+        const held = await run(operationId);
+        expect(held.statusCode, `${operationId}: ${held.body}`).toBe(202);
+        expect(held.json(), operationId).toMatchObject({ heldBecause: `sensitive:${family}` });
+      }
+      expect(f.rest.requests.length).toBe(before);
+    });
+  }
+});
