@@ -1,3 +1,4 @@
+import { agentPolicyFrom } from "./agent-approval-mode.js";
 import { createPublicKey, verify as verifySignature } from "node:crypto";
 
 type JsonObject = Record<string, unknown>;
@@ -24,6 +25,8 @@ export type PortalAgentScope = {
   attachmentId: string;
   capabilities: string[];
   expiresAt: number;
+  /** Portal's raw `agentPolicy` claim when the verified attachment / agent token carries one (agent-approval-mode.ts). */
+  agentPolicy?: unknown;
 };
 
 export type PortalAgentScopeVerifier = (input: {
@@ -327,6 +330,7 @@ export function createPortalAgentScopeVerifier(input: {
       attachmentId: requiredString(attachment.claims.jti, "attachment id"),
       capabilities,
       expiresAt: Math.min(agent.expiresAt, attachment.expiresAt),
+      ...(agentPolicyFrom(attachment.claims, agent.claims) !== undefined ? { agentPolicy: agentPolicyFrom(attachment.claims, agent.claims) } : {}),
     };
   };
 }
