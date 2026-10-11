@@ -612,6 +612,19 @@
       "audience": "owner"
     },
     {
+      "id": "marketplace.hold-families.update",
+      "crud": [
+        "update"
+      ],
+      "method": "PATCH",
+      "path": "/api/marketplace/agents/hold-families/{familyId}",
+      "idempotency": "none",
+      "effects": "writes-app-state",
+      "review": "none",
+      "summary": "Turn a hold family on or off for Assistant agents in this workspace (owner launch session, pinned owner)",
+      "audience": "owner"
+    },
+    {
       "id": "marketplace.channels.browse",
       "crud": [
         "read"

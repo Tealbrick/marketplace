@@ -324,8 +324,9 @@ describe("tealbrick.app.json", () => {
       "marketplace.channel-receipts.purge",
     ]));
     // + 3: the owner Buzz approval key (marketplace.approval-owner-key.get|update|clear, Channels §6.3).
-    // + 7: agent approval modes (marketplace.agents.list|update|pause|resume|pause-all|resume-all, agent-receipts.list).
-    expect(owner.length).toBe(16 + 16 + 3 + 7);
+    // + 8: agent approval modes (marketplace.agents.list|update|pause|resume|pause-all|resume-all, agent-receipts.list,
+    // hold-families.update).
+    expect(owner.length).toBe(16 + 16 + 3 + 8);
     // Channels P1: the two account-sourced bot tokens arrive as provider env, never stored by Portal.
     const channels = MARKETPLACE_MANIFEST.settings?.groups.find((group) => group.id === "channels");
     expect(channels?.fields.map((field) => [field.key, field.env])).toEqual([

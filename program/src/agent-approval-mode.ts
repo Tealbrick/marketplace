@@ -1,0 +1,450 @@
+/**
+ * Per-agent approval mode in owner governance mode (no Rules service).
+ *
+ * - `system` (the default for every agent without an owner setting, fail closed): every outward call is held for
+ *   the owner (company_box_approval), as before.
+ * - `assistant`: outward calls run at once and leave a receipt in Activity, EXCEPT sensitive actions (the families
+ *   below, curated destructive flags, admin-by-name/hint tools) and calls over the agent's daily limits: those are
+ *   held exactly like `system`.
+ *
+ * Only the owner sets the mode (owner launch session + CSRF + pinned owner). The mode never widens a consent: the
+ * Portal consent class still decides what an agent may call at all. Rules mode is unchanged: Rules decides.
+ */
+import type { AgentOutwardReceipt } from "./agent-mode-store.js";
+import type { SqliteMarketplaceStore } from "./store.js";
+
+export type AgentApprovalMode = "assistant" | "system";
+
+export const DEFAULT_AGENT_DAILY_CAP = 100;
+export const DEFAULT_AGENT_CONNECTOR_DAILY_CAP = 50;
+export const MAX_AGENT_DAILY_CAP = 10_000;
+
+/** Families held in Assistant mode: four matched on tool names, two declared by the caller (Channels). */
+export type HoldFamilyId = "destructive" | "money" | "access-sharing" | "bulk" | "first-contact-dm" | "live-session-grant";
+/** The slug-matched families (the ones classifySensitive can return). */
+export type SensitiveFamily = "destructive" | "money" | "access-sharing" | "bulk";
+
+export type HoldFamilyDefinition = {
+  readonly id: HoldFamilyId;
+  readonly label: string;
+  readonly description: string;
+  /**
+   * Slug matcher: words matched against the tool name's word segments (Composio `GMAIL_SEND_EMAIL`, custom MCP
+   * `send_message` / `sendMessage`), case-insensitive, as whole segments; the last word may be plural (`REFUNDS`).
+   * `BULK_*` / `MASS_*`: the segment followed by another one; `*_ALL`: the last segment `ALL` after another one.
+   * Absent: a caller-declared family (decideOutward `families`).
+   */
+  readonly words?: readonly string[];
+  /** Held for Assistant agents unless the owner turns it off for the workspace. */
+  readonly defaultOn: true;
+};
+
+/**
+ * The registry of hold families. Which ones are ON is an owner setting per workspace (absent = default ON); System
+ * mode ignores families (every outward call is held); curated destructive flags and `connector.admin` tools stay held
+ * regardless (they are not a family toggle).
+ */
+export const HOLD_FAMILIES: ReadonlyArray<HoldFamilyDefinition> = Object.freeze(
+  ([
+    {
+      id: "destructive",
+      label: "Deletes and resets",
+      description: "Deleting, emptying, overwriting, revoking, disabling, banning or resetting things.",
+      words: ["DELETE", "REMOVE", "PURGE", "WIPE", "TRASH", "EMPTY", "OVERWRITE", "REPLACE_ALL", "REVOKE", "DISABLE", "BAN", "KICK", "RESET", "ARCHIVE_ALL"],
+      defaultOn: true,
+    },
+    {
+      id: "money",
+      label: "Payments and refunds",
+      description: "Paying, charging, transferring, ordering, subscribing or refunding.",
+      words: ["PAY", "CHARGE", "TRANSFER", "PAYOUT", "PURCHASE", "ORDER", "SUBSCRIBE", "CANCEL_SUBSCRIPTION", "REFUND"],
+      defaultOn: true,
+    },
+    {
+      id: "access-sharing",
+      label: "Sharing and permissions",
+      description: "Sharing, inviting, granting access, changing owners or permissions, forwarding, creating keys, webhooks or mail rules.",
+      words: [
+        "SHARE", "INVITE", "ADD_MEMBER", "GRANT", "SET_PERMISSION", "UPDATE_PERMISSIONS", "CHANGE_OWNER", "TRANSFER_OWNERSHIP",
+        "FORWARD", "CREATE_API_KEY", "CREATE_TOKEN", "ADD_WEBHOOK", "CREATE_FORWARDING_RULE", "CREATE_FILTER",
+      ],
+      defaultOn: true,
+    },
+    {
+      id: "bulk",
+      label: "Bulk and broadcast",
+      description: "Bulk actions and messages to everyone at once.",
+      words: ["BULK_*", "*_ALL", "SEND_TO_ALL", "BROADCAST", "MASS_*"],
+      defaultOn: true,
+    },
+    {
+      id: "first-contact-dm",
+      label: "First message to a new person",
+      description: "A direct message to someone the agent has not written to before (declared by Channels).",
+      defaultOn: true,
+    },
+    {
+      id: "live-session-grant",
+      label: "Live sessions",
+      description: "Starting or granting a live session such as a voice huddle (declared by Channels).",
+      defaultOn: true,
+    },
+  ] as HoldFamilyDefinition[]).map((entry) => Object.freeze({ ...entry, ...(entry.words ? { words: Object.freeze([...entry.words]) } : {}) })),
+);
+
+const HOLD_FAMILY_IDS: ReadonlySet<string> = new Set(HOLD_FAMILIES.map((family) => family.id));
+
+export function isHoldFamilyId(value: string): value is HoldFamilyId {
+  return HOLD_FAMILY_IDS.has(value);
+}
+
+/** The slug-matched families as `{family, label, words}` (the "What still waits?" word lists). */
+export const SENSITIVE_ACTION_FAMILIES: ReadonlyArray<{ readonly family: SensitiveFamily; readonly label: string; readonly words: readonly string[] }> =
+  Object.freeze(
+    HOLD_FAMILIES.filter((family) => family.words).map((family) =>
+      Object.freeze({ family: family.id as SensitiveFamily, label: family.label, words: family.words! }),
+    ),
+  );
+
+/** Upper-case word segments of a tool name; a leading `<TOOLKIT>_` (Composio) is dropped. */
+export function toolNameSegments(name: string, toolkit?: string): string[] {
+  const segments = name
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/gu, "$1_$2")
+    .split(/[^A-Za-z0-9]+/u)
+    .filter(Boolean)
+    .map((segment) => segment.toUpperCase());
+  const prefix = toolkit
+    ? toolkit
+        .split(/[^A-Za-z0-9]+/u)
+        .filter(Boolean)
+        .map((segment) => segment.toUpperCase())
+    : [];
+  if (prefix.length && segments.length > prefix.length && prefix.every((segment, index) => segments[index] === segment)) {
+    return segments.slice(prefix.length);
+  }
+  return segments;
+}
+
+/** The run's last word may be plural (`REFUNDS`, `INVITES`, `ORDERS`): holding more is the safe side. */
+function segmentMatches(actual: string | undefined, word: string, last: boolean) {
+  return actual === word || (last && (actual === `${word}S` || actual === `${word}ES`));
+}
+
+function containsRun(segments: readonly string[], run: readonly string[]) {
+  for (let start = 0; start + run.length <= segments.length; start += 1) {
+    if (run.every((segment, offset) => segmentMatches(segments[start + offset], segment, offset === run.length - 1))) return true;
+  }
+  return false;
+}
+
+function wordMatches(word: string, segments: readonly string[]) {
+  if (word.endsWith("_*")) {
+    const head = word.slice(0, -2);
+    return segments.slice(0, -1).includes(head);
+  }
+  if (word.startsWith("*_")) {
+    const tail = word.slice(2);
+    return segments.length > 1 && segments[segments.length - 1] === tail;
+  }
+  return containsRun(segments, word.split("_"));
+}
+
+export type SensitiveMatch = { family: SensitiveFamily; word: string };
+
+/** Every sensitive family word the tool name matches (empty: not sensitive by name). */
+export function sensitiveMatches(name: string, toolkit?: string): SensitiveMatch[] {
+  const segments = toolNameSegments(name, toolkit);
+  return SENSITIVE_ACTION_FAMILIES.flatMap((family) =>
+    family.words.filter((word) => wordMatches(word, segments)).map((word) => ({ family: family.family, word })),
+  );
+}
+
+/**
+ * Whether a tool name is sensitive (held in Assistant mode): the first matching slug family that is ON. `settings`:
+ * the workspace's family states (getHoldFamilies); without them every family is ON (the defaults).
+ */
+export function classifySensitive(
+  slug: string,
+  settings?: { toolkit?: string; families?: ReadonlyArray<{ id: string; on: boolean }> },
+): { sensitive: boolean; family?: SensitiveFamily; word?: string } {
+  const off = new Set((settings?.families ?? []).filter((family) => !family.on).map((family) => family.id));
+  const match = sensitiveMatches(slug, settings?.toolkit).find((candidate) => !off.has(candidate.family));
+  return match ? { sensitive: true, family: match.family, word: match.word } : { sensitive: false };
+}
+
+/**
+ * The risk decideOutward needs. `destructive`: a curated destructive flag or a `connector.admin` tool (destructive by
+ * name or hint). `sensitive`: classifySensitive(tool name).
+ */
+export type OutwardRisk = {
+  outward: boolean;
+  /** Curated destructive flag or `connector.admin`: held in Assistant mode regardless of family settings. */
+  destructive: boolean;
+  /** The caller already decided it is sensitive (always held in Assistant mode). */
+  sensitive: boolean;
+};
+
+export type OutwardReason =
+  | "paused"
+  | "system_mode"
+  | "sensitive"
+  | "destructive"
+  | "cap_agent"
+  | "cap_connector"
+  | "not_outward"
+  | "assistant";
+
+/** The UTC day a call counts against (`YYYY-MM-DD`); limits reset at 00:00 UTC. */
+export function utcDay(now: Date) {
+  return now.toISOString().slice(0, 10);
+}
+
+const SECRET_KEY = /key|token|secret|passw|authorization|credential|cookie|bearer|private|signature/iu;
+const SECRET_VALUE = /^(?:bearer\s+\S+|sk[-_][A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9]{8,}|xox[abprs]-[A-Za-z0-9-]{8,}|AKIA[A-Z0-9]{12,}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.?[A-Za-z0-9_-]*|[A-Za-z0-9+/_=-]{40,})$/iu;
+
+/** Token-looking runs inside free text (API keys, bearer tokens, JWTs, long opaque strings). */
+const SECRET_IN_TEXT = /(?:bearer\s+[A-Za-z0-9._~+/-]{8,}=*|\b(?:sk|pk|rk)[-_][A-Za-z0-9_-]{8,}|\bgh[pousr]_[A-Za-z0-9]{8,}|\bxox[abprs]-[A-Za-z0-9-]{8,}|\bAKIA[A-Z0-9]{12,}|\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?|\b[A-Za-z0-9_-]{32,})/giu;
+
+/** Arguments with secret-looking keys and token-looking values replaced; used for receipts. */
+export function redactArguments(value: unknown, depth = 0): unknown {
+  if (depth > 8) return "[truncated]";
+  if (typeof value === "string") {
+    return SECRET_VALUE.test(value.trim()) ? "[redacted]" : value.replace(SECRET_IN_TEXT, "[redacted]");
+  }
+  if (Array.isArray(value)) return value.slice(0, 50).map((entry) => redactArguments(entry, depth + 1));
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+      key,
+      SECRET_KEY.test(key) ? "[redacted]" : redactArguments(entry, depth + 1),
+    ]),
+  );
+}
+
+const DESTINATION_KEYS = [
+  "recipient_email", "recipient", "recipients", "to", "email", "cc", "channel", "channel_id", "channelId",
+  "chat_id", "chatId", "conversation_id", "user_id", "url", "repo", "repository", "owner", "calendar_id",
+];
+
+/** Where an outward call goes, when the arguments name it (bounded, redacted). */
+export function receiptDestination(args: Record<string, unknown>): string | null {
+  for (const key of DESTINATION_KEYS) {
+    const raw = args[key];
+    const value = Array.isArray(raw) ? raw.filter((entry) => typeof entry === "string").join(", ") : raw;
+    if (typeof value === "string" && value.trim()) {
+      const redacted = redactArguments(value.trim());
+      return `${key}: ${String(redacted).slice(0, 200)}`;
+    }
+  }
+  return null;
+}
+
+// --- Store-backed decisions: the ONE implementation every outward path uses (connectors now, Channels next). -------
+// Only consulted in owner governance mode (no Rules service): with Rules, Rules decides every outward call and
+// these functions are not called (the kill switch, isAgentPaused, still applies in both modes).
+
+export type ModeStore = Pick<SqliteMarketplaceStore, "agentModes" | "recordAudit">;
+type AgentRef = { workspaceSlug: string; agentId: string };
+
+/** The owner's mode for this agent; System when there is no setting (fail closed). */
+export function getAgentApprovalMode(store: ModeStore, ref: AgentRef): AgentApprovalMode {
+  return store.agentModes.getSetting(ref.workspaceSlug, ref.agentId).mode;
+}
+
+/** The owner's kill switch: this agent (`agent`) or all agents (`global`). */
+export function isAgentPaused(store: ModeStore, ref: AgentRef): { paused: boolean; scope: "agent" | "global" | null } {
+  const state = store.agentModes.pauseState(ref.workspaceSlug, ref.agentId);
+  return { paused: state !== null, scope: state === "all" ? "global" : state };
+}
+
+/** The registry with this workspace's owner settings (absent = default ON). */
+export function getHoldFamilies(store: ModeStore, workspaceSlug: string): Array<HoldFamilyDefinition & { on: boolean; updatedBy: string | null; updatedAt: string | null }> {
+  const settings = store.agentModes.getFamilySettings(workspaceSlug);
+  return HOLD_FAMILIES.map((family) => {
+    const setting = settings.get(family.id);
+    return { ...family, on: setting ? setting.enabled : family.defaultOn, updatedBy: setting?.updatedBy ?? null, updatedAt: setting?.updatedAt ?? null };
+  });
+}
+
+/**
+ * Why an outward call is held for an Assistant agent in this workspace, or null when it may run (limits aside):
+ * curated destructive / admin always; then any ON caller-declared family; then the first ON slug family.
+ */
+export function assistantHold(
+  store: ModeStore,
+  input: { workspaceSlug: string; risk: OutwardRisk; slug?: string; toolkit?: string; families?: readonly string[] },
+): { reason: "destructive" | "sensitive"; family?: HoldFamilyId } | null {
+  if (!input.risk.outward) return null;
+  if (input.risk.destructive) return { reason: "destructive" };
+  if (input.risk.sensitive) return { reason: "sensitive" };
+  const families = getHoldFamilies(store, input.workspaceSlug);
+  const declared = (input.families ?? []).find((id) => families.some((family) => family.id === id && family.on));
+  if (declared) return { reason: "sensitive", family: declared as HoldFamilyId };
+  if (input.slug) {
+    const match = classifySensitive(input.slug, { toolkit: input.toolkit, families });
+    if (match.sensitive) return { reason: "sensitive", family: match.family };
+  }
+  return null;
+}
+
+export type OutwardDecision = {
+  kind: "run" | "hold" | "refuse";
+  reason: OutwardReason;
+  /** Present on an Assistant run: commit it (provider reached) or release it (never reached). */
+  capReservation?: string;
+  /** The same replay key already ran under Assistant mode: return its stored outcome, never call the provider again. */
+  replay?: boolean;
+  /** For `sensitive`: the family that held it (slug-matched or caller-declared). */
+  family?: HoldFamilyId;
+};
+
+/**
+ * Decide one agent call in owner governance mode: refuse (paused), run (not outward, or Assistant within the daily
+ * limits) or hold (System mode, destructive, sensitive, or over a daily limit). An Assistant run reserves one
+ * execution against both daily limits atomically (one SQLite transaction, before the provider call) and returns the
+ * reservation. Counting rule: a reservation counts unless it is released; commit it when the provider was reached
+ * (succeeded OR failed: a failed provider call counts and leaves a receipt), release it when the call stopped before
+ * the provider. A replay with the same `replayKey` returns the first reservation and counts once.
+ */
+export function decideOutward(
+  store: ModeStore,
+  input: AgentRef & {
+    connectorKey: string;
+    actionKey: string;
+    risk: OutwardRisk;
+    /** Tool name matched against the ON slug families (`toolkit`: a Composio prefix to drop). */
+    slug?: string;
+    toolkit?: string;
+    /** Caller-declared families, e.g. `["first-contact-dm"]`: held when any is ON for the workspace. */
+    families?: readonly string[];
+    now?: Date;
+    /** Idempotency scope of the call (counts once, replays never re-run). */
+    replayKey?: string | null;
+    provider?: string;
+    accountRef?: string | null;
+    argumentsPreview?: string;
+    destination?: string | null;
+    traceId?: string | null;
+  },
+): OutwardDecision {
+  if (isAgentPaused(store, input).paused) return { kind: "refuse", reason: "paused" };
+  if (!input.risk.outward) return { kind: "run", reason: "not_outward" };
+  const modes = store.agentModes;
+  if (input.replayKey) {
+    const ran = modes.findReceiptByKey({ workspaceSlug: input.workspaceSlug, agentId: input.agentId, pluginId: input.connectorKey, replayKey: input.replayKey });
+    if (ran && ran.status !== "not_run") return { kind: "run", reason: "assistant", capReservation: ran.id, replay: true };
+  }
+  const setting = modes.getSetting(input.workspaceSlug, input.agentId);
+  // System mode ignores families: every outward call is held.
+  if (setting.mode !== "assistant") return { kind: "hold", reason: "system_mode" };
+  const held = assistantHold(store, input);
+  if (held) return { kind: "hold", reason: held.reason, ...(held.family ? { family: held.family } : {}) };
+  const now = input.now ?? new Date();
+  const reserved = modes.reserveExecution({
+    workspaceSlug: input.workspaceSlug,
+    agentId: input.agentId,
+    pluginId: input.connectorKey,
+    provider: input.provider ?? input.connectorKey,
+    actionKey: input.actionKey,
+    accountRef: input.accountRef ?? null,
+    destination: input.destination ?? null,
+    argumentsPreview: input.argumentsPreview ?? "",
+    replayKey: input.replayKey ?? null,
+    traceId: input.traceId ?? "",
+    now,
+    day: utcDay(now),
+    dailyCap: setting.dailyCap,
+    connectorDailyCap: setting.connectorDailyCap,
+  });
+  if (reserved.kind === "cap") return { kind: "hold", reason: reserved.limit === "agent" ? "cap_agent" : "cap_connector" };
+  return { kind: "run", reason: "assistant", capReservation: reserved.receipt.id, ...(reserved.kind === "replay" ? { replay: true } : {}) };
+}
+
+/** The provider was reached (succeeded or failed): the execution counts. Idempotent. */
+export function commitCapReservation(store: ModeStore, input: { reservationId: string; status: "ok" | "failed"; error?: string | null; now?: Date }) {
+  return store.agentModes.finishReceipt({
+    id: input.reservationId,
+    status: input.status === "ok" ? "succeeded" : "failed",
+    error: input.error ?? null,
+    now: input.now ?? new Date(),
+  });
+}
+
+/** The call stopped before the provider: the reservation does not count. Idempotent. */
+export function releaseCapReservation(store: ModeStore, input: { reservationId: string; error?: string | null; now?: Date }) {
+  return store.agentModes.finishReceipt({ id: input.reservationId, status: "not_run", error: input.error ?? null, now: input.now ?? new Date() });
+}
+
+/**
+ * The owner-visible receipt of one outward execution an agent ran without approval (Activity / audit trail).
+ * With `reservationId` it completes that reservation's row; without one it records a finished row (counted).
+ * `argumentsPreview` must already be redacted (receiptPreview).
+ */
+export function writeOutwardReceipt(
+  store: ModeStore,
+  input: AgentRef & {
+    connectorKey: string;
+    accountRef: string | null;
+    actionKey: string;
+    argumentsPreview: string;
+    destination?: string | null;
+    status: "ok" | "failed";
+    mode: AgentApprovalMode;
+    policyId?: string | null;
+    provider?: string;
+    reservationId?: string;
+    error?: string | null;
+    now?: Date;
+  },
+): AgentOutwardReceipt | null {
+  const now = input.now ?? new Date();
+  const modes = store.agentModes;
+  const receipt = input.reservationId
+    ? modes.getReceipt(input.reservationId)
+    : modes.recordFinishedReceipt({
+        workspaceSlug: input.workspaceSlug,
+        agentId: input.agentId,
+        pluginId: input.connectorKey,
+        provider: input.provider ?? input.connectorKey,
+        actionKey: input.actionKey,
+        accountRef: input.accountRef,
+        destination: input.destination ?? null,
+        argumentsPreview: input.argumentsPreview,
+        mode: input.mode,
+        status: input.status === "ok" ? "succeeded" : "failed",
+        error: input.error ?? null,
+        now,
+        day: utcDay(now),
+      });
+  store.recordAudit({
+    workspaceSlug: input.workspaceSlug,
+    pluginId: input.connectorKey,
+    eventType: OUTWARD_RECEIPT_EVENT,
+    actorId: `agent:${input.agentId}`,
+    metadata: {
+      ...(receipt ? { receiptId: receipt.id } : {}),
+      agentId: input.agentId,
+      pluginId: input.connectorKey,
+      provider: input.provider ?? receipt?.provider ?? input.connectorKey,
+      actionKey: input.actionKey,
+      account: input.accountRef,
+      destination: input.destination ?? null,
+      argumentsPreview: input.argumentsPreview,
+      status: input.status === "ok" ? "succeeded" : "failed",
+      ...(input.error ? { error: input.error } : {}),
+      mode: input.mode,
+      ...(input.policyId ? { policyId: input.policyId } : {}),
+      at: now.toISOString(),
+    },
+  });
+  return receipt;
+}
+
+export const OUTWARD_RECEIPT_EVENT = "marketplace.agent.outward.receipt";
+
+/** Redacted, bounded argument preview for receipts (400 characters, like approvals' arguments_preview). */
+export function receiptPreview(args: Record<string, unknown>) {
+  const json = JSON.stringify(redactArguments(args));
+  return json.length > 400 ? `${json.slice(0, 399)}…` : json;
+}

@@ -10,11 +10,12 @@ Composio catalog here; classifying uncurated toolkits tool by tool needs the liv
 Classes: `read-allowlisted` (reviewed read, uncurated Composio only; the allowlist ships empty); `not outward` (runs
 on the agent's consent in both modes, modes do not apply); `assistant-runs` (outward; held in System mode, runs at
 once in Assistant mode within the daily limits); `held: ...` (outward; held in both modes: curated destructive flag,
-`connector.admin`, or a sensitive family word). An "unless quiet" Calendar tool is counted as outward.
+`connector.admin`, or a word of a hold family; computed with the default family settings, every family ON).
+An "unless quiet" Calendar tool is counted as outward.
 
 ## Counts
 
-| Source | Tools | read-allowlisted | not outward (consent only) | assistant-runs | held: destructive | held: admin | held: sensitive:destructive | held: sensitive:money | held: sensitive:access | held: sensitive:bulk |
+| Source | Tools | read-allowlisted | not outward (consent only) | assistant-runs | held: destructive | held: admin | held: sensitive:destructive | held: sensitive:money | held: sensitive:access-sharing | held: sensitive:bulk |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | composio:googlecalendar (curated) | 50 | 0 | 34 | 13 | 2 | 1 | 0 | 0 | 0 | 0 |
 | company-box:authentik (openapi) | 1091 | 0 | 1048 | 40 | 3 | 0 | 0 | 0 | 0 | 0 |

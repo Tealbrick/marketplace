@@ -129,16 +129,19 @@ import {
 } from "./openapi-http.js";
 import { registerCompanyBoxRoutes } from "./company-box-routes.js";
 import { composioCallRisk } from "./composio-policy.js";
-import type { AgentOutwardReceipt } from "./agent-mode-store.js";
 import { registerAgentModeRoutes } from "./agent-mode-routes.js";
 import {
-  assistantHoldReason,
-  holdReasonCode,
+  assistantHold,
+  commitCapReservation,
+  decideOutward,
+  getAgentApprovalMode,
+  isAgentPaused,
   receiptDestination,
-  redactArguments,
-  sensitiveMatches,
-  utcDay,
-} from "./agent-modes.js";
+  receiptPreview,
+  releaseCapReservation,
+  writeOutwardReceipt,
+  type OutwardRisk,
+} from "./agent-approval-mode.js";
 import { OPENAPI_TOOL_SCHEMA_MAX_BYTES } from "./openapi-adapter.js";
 import { outputDigest } from "./usage-ledger.js";
 import { tailnetHealth } from "./tailnet.js";
@@ -2228,10 +2231,37 @@ function companyBoxRiskForAction(
 }
 
 /**
- * What happens to an outward tool in owner approval mode, per agent mode: System agents always wait; Assistant
- * agents run it unless it is sensitive (destructive, admin, or a sensitive family word) or over a daily limit.
+ * The decideOutward input of one governed action: curated destructive or `connector.admin` → destructive (held in
+ * Assistant mode regardless of family settings); the tool name for the owner's ON slug families.
+ */
+function outwardInputFor(
+  catalog: CompanyBoxCatalog,
+  listing: MarketplaceListing,
+  workspaceSlug: string,
+  actionKey: string,
+  risk: GovernedActionRisk,
+  capability: ConnectorCapability,
+): { risk: OutwardRisk; slug: string; toolkit?: string } {
+  const tool = riskToolName(catalog, listing, workspaceSlug, actionKey);
+  return {
+    risk: { outward: risk.outward, destructive: risk.destructive || capability === "connector.admin", sensitive: false },
+    slug: tool.name,
+    ...(tool.toolkit ? { toolkit: tool.toolkit } : {}),
+  };
+}
+
+/** `heldBecause` for the agent: the decision reason, with the hold family when there is one. */
+function heldBecause(reason: string, family?: string) {
+  return reason === "sensitive" && family ? `sensitive:${family}` : reason;
+}
+
+/**
+ * What happens to an outward tool in owner approval mode, per agent mode (assistantHold, the same rule decideOutward
+ * applies, with this workspace's hold-family settings): System agents always wait; Assistant agents run it unless it
+ * is destructive or in an ON family, and wait over a daily limit.
  */
 function outwardApproval(
+  store: SqliteMarketplaceStore,
   catalog: CompanyBoxCatalog,
   listing: MarketplaceListing,
   workspaceSlug: string,
@@ -2239,10 +2269,9 @@ function outwardApproval(
   risk: GovernedActionRisk,
   capability: ConnectorCapability,
 ): { system: "waits"; assistant: "runs" | "waits"; waitsBecause?: string; limits?: string } {
-  const tool = riskToolName(catalog, listing, workspaceSlug, actionKey);
-  const why = assistantHoldReason({ risk, capability, toolName: tool.name, toolkit: tool.toolkit });
+  const why = assistantHold(store, { workspaceSlug, ...outwardInputFor(catalog, listing, workspaceSlug, actionKey, risk, capability) });
   return why
-    ? { system: "waits", assistant: "waits", waitsBecause: holdReasonCode(why) }
+    ? { system: "waits", assistant: "waits", waitsBecause: heldBecause(why.reason, why.family) }
     : { system: "waits", assistant: "runs", limits: "Over the agent's daily limits (UTC day) a call waits for the owner." };
 }
 
@@ -2515,7 +2544,7 @@ function agentCapabilitiesForWorkspace(
       const outwardRisk = operation
         ? { write: operation.write, outward: operation.outward, destructive: operation.destructive }
         : declaredRisk;
-      const approval = outwardRisk?.outward ? outwardApproval(catalog, listing, workspaceSlug, action, outwardRisk, requirement.capability) : null;
+      const approval = outwardRisk?.outward ? outwardApproval(store, catalog, listing, workspaceSlug, action, outwardRisk, requirement.capability) : null;
       const heldNote = !approval
         ? ""
         : approval.assistant === "waits"
@@ -3550,23 +3579,22 @@ export async function buildMarketplaceApp(
     });
     return { ok: true, traceId: input.traceId, result, usage, rules: input.rules };
   };
-  // --- Agent approval modes (owner governance mode): Assistant / System, limits, pause, receipts ---------------
+  // --- Agent approval modes (owner governance mode), through agent-approval-mode.ts ---------------------------
   const agentModeClock = options.agentModeClock ?? (() => new Date());
   const agentModes = options.store.agentModes;
-  /** The owner's kill switch: a paused agent (or all agents) is refused before any provider call, reads included. */
+  /** The owner's kill switch (isAgentPaused): refused before any provider call, reads included, in both modes. */
   const agentPausedRefusal = (reply: FastifyReply, workspaceSlug: string, agentId: string) => {
-    const paused = agentModes.pauseState(workspaceSlug, agentId);
-    if (!paused) return null;
+    const paused = isAgentPaused(options.store, { workspaceSlug, agentId });
+    if (!paused.paused) return null;
     reply.code(423);
-    return { ok: false, error: "agent_paused", pausedBy: paused === "all" ? "all_agents" : "agent" };
+    return { ok: false, error: "agent_paused", pausedBy: paused.scope === "global" ? "all_agents" : "agent" };
   };
-  type OutwardPlan =
-    | { kind: "hold"; reason: string }
-    | { kind: "assistant"; receipt: AgentOutwardReceipt; replay: boolean };
+  type AssistantRun = { reservationId: string; replay: boolean; args: Record<string, unknown>; accountRef: string | null; connectorKey: string; provider: string; actionKey: string; workspaceSlug: string; agentId: string };
+  type OutwardPlan = { kind: "hold"; reason: string } | { kind: "refuse" } | ({ kind: "assistant" } & AssistantRun);
   /**
-   * An agent's outward call in owner mode: hold it (System mode, sensitive, over a daily limit, or already held
-   * under this key) or run it under Assistant mode with a reserved receipt. The limits are checked and the
-   * receipt reserved in one transaction before any provider call.
+   * An agent's outward call in owner mode, through decideOutward (agent-approval-mode.ts): hold it, refuse it
+   * (paused) or run it under Assistant mode with a cap reservation. A call already held under this idempotency key
+   * stays held: switching to Assistant never releases it.
    */
   const planOutwardCall = (input: {
     listing: MarketplaceListing;
@@ -3581,80 +3609,72 @@ export async function buildMarketplaceApp(
     replayKey: string | null;
     traceId: string;
   }): OutwardPlan => {
-    // A call already held under this key stays held: switching to Assistant never releases it.
     if (
       input.holdKey &&
       options.store.findCompanyBoxApprovalByKey({ workspaceSlug: input.workspaceSlug, agentId: input.agentId, idempotencyKey: input.holdKey })
     ) {
       return { kind: "hold", reason: "already_held" };
     }
-    if (input.replayKey) {
-      const executed = agentModes.findReceiptByKey({
-        workspaceSlug: input.workspaceSlug,
-        agentId: input.agentId,
-        pluginId: input.listing.pluginId,
-        replayKey: input.replayKey,
-      });
-      if (executed && executed.status !== "not_run") return { kind: "assistant", receipt: executed, replay: true };
-    }
-    const setting = agentModes.getSetting(input.workspaceSlug, input.agentId);
-    if (setting.mode !== "assistant") return { kind: "hold", reason: "system_mode" };
-    const tool = riskToolName(companyBox, input.listing, input.workspaceSlug, input.actionKey);
-    const sensitive = assistantHoldReason({ risk: input.risk, capability: input.capability, toolName: tool.name, toolkit: tool.toolkit });
-    if (sensitive) return { kind: "hold", reason: holdReasonCode(sensitive) };
-    const now = agentModeClock();
-    const reserved = agentModes.reserveExecution({
+    const outward = outwardInputFor(companyBox, input.listing, input.workspaceSlug, input.actionKey, input.risk, input.capability);
+    const decision = decideOutward(options.store, {
       workspaceSlug: input.workspaceSlug,
       agentId: input.agentId,
-      pluginId: input.listing.pluginId,
+      connectorKey: input.listing.pluginId,
       provider: input.listing.provider,
       actionKey: input.actionKey,
-      accountRef: input.accountRef,
-      destination: receiptDestination(input.args),
-      argumentsPreview: approvalPreview(redactArguments(input.args) as Record<string, unknown>),
+      ...outward,
+      now: agentModeClock(),
       replayKey: input.replayKey,
+      accountRef: input.accountRef,
+      argumentsPreview: receiptPreview(input.args),
+      destination: receiptDestination(input.args),
       traceId: input.traceId,
+    });
+    if (decision.kind === "refuse") return { kind: "refuse" };
+    if (decision.kind === "hold") return { kind: "hold", reason: heldBecause(decision.reason, decision.family) };
+    return {
+      kind: "assistant",
+      reservationId: decision.capReservation!,
+      replay: decision.replay === true,
+      args: input.args,
+      accountRef: input.accountRef,
+      connectorKey: input.listing.pluginId,
+      provider: input.listing.provider,
+      actionKey: input.actionKey,
+      workspaceSlug: input.workspaceSlug,
+      agentId: input.agentId,
+    };
+  };
+  /** After the call: commit (provider reached) + receipt, or release (never reached). */
+  const finishAssistantRun = (run: AssistantRun, outcome: "ok" | "failed" | "not_run", error?: string | null) => {
+    const now = agentModeClock();
+    if (outcome === "not_run") {
+      releaseCapReservation(options.store, { reservationId: run.reservationId, error: error ?? null, now });
+      return;
+    }
+    if (!commitCapReservation(options.store, { reservationId: run.reservationId, status: outcome, error: error ?? null, now })) return;
+    writeOutwardReceipt(options.store, {
+      workspaceSlug: run.workspaceSlug,
+      agentId: run.agentId,
+      connectorKey: run.connectorKey,
+      provider: run.provider,
+      accountRef: run.accountRef,
+      actionKey: run.actionKey,
+      argumentsPreview: receiptPreview(run.args),
+      destination: receiptDestination(run.args),
+      status: outcome,
+      mode: "assistant",
+      reservationId: run.reservationId,
+      error: error ?? null,
       now,
-      day: utcDay(now),
-      dailyCap: setting.dailyCap,
-      connectorDailyCap: setting.connectorDailyCap,
     });
-    if (reserved.kind === "cap") return { kind: "hold", reason: reserved.limit === "agent" ? "daily_limit" : "connector_daily_limit" };
-    return { kind: "assistant", receipt: reserved.receipt, replay: reserved.kind === "replay" };
   };
-  /** Close an Assistant-mode receipt; an executed call (succeeded or failed) is recorded in Activity. */
-  const finishAssistantReceipt = (receipt: AgentOutwardReceipt, status: "succeeded" | "failed" | "not_run", error?: string | null) => {
-    const finished = agentModes.finishReceipt({ id: receipt.id, status, error: error ?? null, now: agentModeClock() });
-    if (!finished || status === "not_run") return finished;
-    options.store.recordAudit({
-      workspaceSlug: finished.workspaceSlug,
-      pluginId: finished.pluginId,
-      eventType: "marketplace.agent.outward.receipt",
-      actorId: `agent:${finished.agentId}`,
-      metadata: {
-        receiptId: finished.id,
-        agentId: finished.agentId,
-        pluginId: finished.pluginId,
-        provider: finished.provider,
-        actionKey: finished.actionKey,
-        account: finished.accountRef,
-        destination: finished.destination,
-        argumentsPreview: finished.argumentsPreview,
-        status: finished.status,
-        ...(finished.error ? { error: finished.error } : {}),
-        mode: "assistant",
-        at: finished.finishedAt,
-      },
-    });
-    return finished;
+  const receiptView = (reservationId: string) => {
+    const receipt = options.store.agentModes.getReceipt(reservationId);
+    return receipt
+      ? { receiptId: receipt.id, status: receipt.status, mode: receipt.mode, actionKey: receipt.actionKey, at: receipt.finishedAt ?? receipt.createdAt }
+      : null;
   };
-  const receiptView = (receipt: AgentOutwardReceipt) => ({
-    receiptId: receipt.id,
-    status: receipt.status,
-    mode: receipt.mode,
-    actionKey: receipt.actionKey,
-    at: receipt.finishedAt ?? receipt.createdAt,
-  });
   /**
    * Owner approval mode: hold an agent's outward Company Box call for the
    * owner instead of refusing it. Arguments are validated, bounded and stored
@@ -3822,7 +3842,7 @@ export async function buildMarketplaceApp(
           : options.store.getMarketplaceAgentConsentById(approval.sourceRef)?.state === "active";
       if (!authorityActive) return fail("approval_authority_revoked");
       // The kill switch also holds back calls approved while the agent is paused (checked again at execution).
-      if (agentModes.pauseState(approval.workspaceSlug, approval.agentId)) return fail("agent_paused");
+      if (isAgentPaused(options.store, { workspaceSlug: approval.workspaceSlug, agentId: approval.agentId }).paused) return fail("agent_paused");
       const listing = options.store.getListingForWorkspace(approval.pluginId, approval.workspaceSlug);
       const published = listing
         ? resolvePublishedAgentAction({
@@ -4634,7 +4654,7 @@ export async function buildMarketplaceApp(
     const agentId = grant.agentId;
     if (!agentId) return agentGuidance();
     const setting = agentModes.getSetting(organizationId, agentId);
-    const paused = agentModes.pauseState(organizationId, agentId);
+    const paused = isAgentPaused(options.store, { workspaceSlug: organizationId, agentId }).paused;
     return `${agentGuidance()}\n## Your approval mode\n\n${
       governanceMode !== "owner"
         ? "A Rules service decides your outward actions."
@@ -7587,7 +7607,7 @@ export async function buildMarketplaceApp(
       }
       const { type: _riskType, ...riskArgs } = effectiveAction;
       const risk = companyBoxRiskForAction(companyBox, listing, input.workspaceSlug, input.action.type, riskArgs);
-      let assistant: AgentOutwardReceipt | null = null;
+      let assistant: AssistantRun | null = null;
       if (
         governanceMode === "owner" &&
         risk?.outward &&
@@ -7608,6 +7628,10 @@ export async function buildMarketplaceApp(
           replayKey: input.idempotencyKey ?? null,
           traceId,
         });
+        if (plan.kind === "refuse") {
+          reply.code(423);
+          return { ok: false, error: "agent_paused", traceId };
+        }
         if (plan.kind === "hold") {
           const held = holdCompanyBoxCall({
             listing,
@@ -7627,10 +7651,11 @@ export async function buildMarketplaceApp(
         }
         if (plan.replay) {
           // Already run under Assistant mode with this key: never run it again.
-          reply.code(plan.receipt.status === "succeeded" ? 200 : 409);
-          return { ok: plan.receipt.status === "succeeded", replayed: true, traceId, receipt: receiptView(plan.receipt) };
+          const receipt = receiptView(plan.reservationId);
+          reply.code(receipt?.status === "succeeded" ? 200 : 409);
+          return { ok: receipt?.status === "succeeded", replayed: true, traceId, receipt };
         }
-        assistant = plan.receipt;
+        assistant = plan;
       }
       const rules = await enforceRules({
         reply,
@@ -7660,7 +7685,7 @@ export async function buildMarketplaceApp(
         ...governed,
       });
       if ("ok" in rules && rules.ok === false) {
-        if (assistant) finishAssistantReceipt(assistant, "not_run", String(rules.error));
+        if (assistant) finishAssistantRun(assistant, "not_run", String(rules.error));
         options.store.recordEvent({
           type: "marketplace.execution.denied",
           traceId,
@@ -7698,16 +7723,16 @@ export async function buildMarketplaceApp(
       let outcome: Record<string, unknown> | null = null;
       try {
         outcome = await execute();
-        return { ...outcome, receipt: receiptView(outcome.ok === true ? { ...assistant, status: "succeeded" } : assistant) };
       } finally {
         // A call that recorded usage reached the provider: it counts and leaves a receipt, failed or not.
         const reached = outcome === null || outcome.ok === true || "usage" in outcome;
-        finishAssistantReceipt(
+        finishAssistantRun(
           assistant,
-          outcome?.ok === true ? "succeeded" : reached ? "failed" : "not_run",
+          outcome?.ok === true ? "ok" : reached ? "failed" : "not_run",
           outcome && outcome.ok !== true && typeof outcome.error === "string" ? outcome.error : outcome ? null : "execution_error",
         );
       }
+      return { ...outcome, receipt: receiptView(assistant.reservationId) };
     },
   );
 
@@ -8250,7 +8275,7 @@ export async function buildMarketplaceApp(
     }
     const { type: _runtimeType, ...runtimeArgs } = scopedAction.action;
     const runtimeRisk = companyBoxRiskForAction(companyBox, listing, organizationId, selection.actionKey, runtimeArgs);
-    let assistant: { receipt: AgentOutwardReceipt; replay: boolean } | null = null;
+    let assistant: AssistantRun | null = null;
     if (
       governanceMode === "owner" &&
       runtimeRisk?.outward &&
@@ -8270,6 +8295,10 @@ export async function buildMarketplaceApp(
         replayKey: `${input.consentId}:${input.idempotencyKey}`,
         traceId,
       });
+      if (plan.kind === "refuse") {
+        reply.code(423);
+        return runtimeResponse({ ok: false, traceId, error: "agent_paused" });
+      }
       if (plan.kind === "hold") {
         const held = holdCompanyBoxCall({
           listing,
@@ -8288,7 +8317,7 @@ export async function buildMarketplaceApp(
         return { ...held.body, schema: 1, traceId };
       }
       // A replay reaches the stored response of the first run (never a second provider call).
-      assistant = { receipt: plan.receipt, replay: plan.replay };
+      assistant = plan;
     }
     const reached = { provider: false };
     const executionContext: ConsentedExecutionContext = {
@@ -8355,9 +8384,9 @@ export async function buildMarketplaceApp(
     });
     if (assistant && !assistant.replay) {
       const body = dispatched as Record<string, unknown>;
-      finishAssistantReceipt(
-        assistant.receipt,
-        body.ok === true ? "succeeded" : reached.provider ? "failed" : "not_run",
+      finishAssistantRun(
+        assistant,
+        body.ok === true ? "ok" : reached.provider ? "failed" : "not_run",
         body.ok === true ? null : typeof body.error === "string" ? body.error : null,
       );
     }
@@ -9163,12 +9192,12 @@ export async function buildMarketplaceApp(
       return { ok: false, error: verified.error };
     }
     // For the verified agent: whether each outward call runs now or waits (its mode, pause), so it can tell the user.
-    const setting = agentModes.getSetting(query.workspaceSlug, grant.agentId);
-    const paused = agentModes.pauseState(query.workspaceSlug, grant.agentId);
+    const approvalMode = getAgentApprovalMode(options.store, { workspaceSlug: query.workspaceSlug, agentId: grant.agentId });
+    const paused = isAgentPaused(options.store, { workspaceSlug: query.workspaceSlug, agentId: grant.agentId }).paused;
     return {
       workspaceSlug: query.workspaceSlug,
       grant: sanitizeAgentConnectorGrant(grant),
-      agent: { agentId: grant.agentId, approvalMode: setting.mode, paused: Boolean(paused), governanceMode },
+      agent: { agentId: grant.agentId, approvalMode, paused, governanceMode },
       capabilities: capabilities
         .filter(
           (capability) =>
@@ -9181,7 +9210,7 @@ export async function buildMarketplaceApp(
             ? "refused: agent_paused"
             : !approval || governanceMode !== "owner"
               ? governanceMode === "owner" ? "runs" : "rules decide"
-              : setting.mode === "assistant" ? approval.assistant : "waits";
+              : approvalMode === "assistant" ? approval.assistant : "waits";
           return { ...capability, forThisAgent };
         }),
     };

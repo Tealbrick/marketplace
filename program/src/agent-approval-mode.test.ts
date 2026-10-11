@@ -9,7 +9,21 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { buildMarketplaceApp } from "./app.js";
-import { SENSITIVE_ACTION_FAMILIES, assistantHoldReason, redactArguments, sensitiveMatches, toolNameSegments } from "./agent-modes.js";
+import {
+  SENSITIVE_ACTION_FAMILIES,
+  classifySensitive,
+  commitCapReservation,
+  decideOutward,
+  getAgentApprovalMode,
+  assistantHold,
+  getHoldFamilies,
+  isAgentPaused,
+  redactArguments,
+  releaseCapReservation,
+  sensitiveMatches,
+  toolNameSegments,
+  writeOutwardReceipt,
+} from "./agent-approval-mode.js";
 import { seededPin } from "./channels/approval-test-support.js";
 import { AGENT_OPERATION } from "./contract.js";
 import { MARKETPLACE_OPERATOR_SESSION_COOKIE, MarketplaceOperatorSessionManager } from "./operator-auth.js";
@@ -164,6 +178,8 @@ async function modes(input: FixtureInput = {}) {
   const setMode = (agentId: string, body: Record<string, unknown>, headers: Record<string, string> = owner) =>
     app.inject({ method: "PATCH", url: `/api/marketplace/agents/${agentId}`, headers, payload: body });
   const ownerPost = (url: string, headers: Record<string, string> = owner) => app.inject({ method: "POST", url, headers, payload: {} });
+  const setFamily = (familyId: string, on: boolean, headers: Record<string, string> = owner) =>
+    app.inject({ method: "PATCH", url: `/api/marketplace/agents/hold-families/${familyId}`, headers, payload: { on } });
   const overview = async () => (await app.inject({ method: "GET", url: "/api/marketplace/agents", headers: owner })).json();
   const approve = (approvalId: string) => app.inject({ method: "POST", url: `/api/marketplace/company-box/approvals/${approvalId}/approve`, headers: owner });
   const consent = (pluginId: string, actionKey: string, capability: ConnectorCapability, consentId: string) => {
@@ -181,7 +197,7 @@ async function modes(input: FixtureInput = {}) {
     (store.listAudit({ workspaceSlug: TENANT, limit: 500 }) as Array<{ event_type: string; metadata: string }>)
       .filter((row) => row.event_type === "marketplace.agent.outward.receipt")
       .map((row) => JSON.parse(row.metadata) as Record<string, unknown>);
-  return { root, app, store, executions, rulesCalls, sessions, service, owner, agent, importToolkit, grant, call, setMode, ownerPost, overview, approve, consent, toolsCall, receiptAudit };
+  return { root, app, store, executions, rulesCalls, sessions, service, owner, agent, importToolkit, grant, call, setMode, ownerPost, setFamily, overview, approve, consent, toolsCall, receiptAudit };
 }
 
 type Fixture = Awaited<ReturnType<typeof modes>>;
@@ -194,7 +210,7 @@ const sendInput = { recipient_email: "client@example.invalid", subject: "Invoice
 
 describe("sensitive families", () => {
   it("keeps one exported list with the four families and matches whole word segments", () => {
-    expect(SENSITIVE_ACTION_FAMILIES.map((family) => family.family)).toEqual(["destructive", "money", "access", "bulk"]);
+    expect(SENSITIVE_ACTION_FAMILIES.map((family) => family.family)).toEqual(["destructive", "money", "access-sharing", "bulk"]);
     expect(toolNameSegments("GMAIL_SEND_EMAIL", "gmail")).toEqual(["SEND", "EMAIL"]);
     expect(toolNameSegments("sendMessageToAll")).toEqual(["SEND", "MESSAGE", "TO", "ALL"]);
     const samples: Array<[string, string | undefined, string]> = [
@@ -202,16 +218,16 @@ describe("sensitive families", () => {
       ["NOTION_ARCHIVE_ALL", "notion", "destructive"],
       ["STRIPE_CREATE_REFUND", "stripe", "money"],
       ["STRIPE_CANCEL_SUBSCRIPTION", "stripe", "money"],
-      ["GOOGLEDRIVE_SHARE_FILE", "googledrive", "access"],
-      ["GMAIL_CREATE_FORWARDING_RULE", "gmail", "access"],
-      ["GITHUB_CREATE_API_KEY", "github", "access"],
+      ["GOOGLEDRIVE_SHARE_FILE", "googledrive", "access-sharing"],
+      ["GMAIL_CREATE_FORWARDING_RULE", "gmail", "access-sharing"],
+      ["GITHUB_CREATE_API_KEY", "github", "access-sharing"],
       ["MAILCHIMP_BULK_SEND", "mailchimp", "bulk"],
       ["SLACK_BROADCAST_MESSAGE", "slack", "bulk"],
       ["notify_users_all", undefined, "bulk"],
       ["mass_email", undefined, "bulk"],
       // Plural last words (pretix `orders_refunds.create`, `teams_invites.create`).
       ["orders_refunds.create", undefined, "money"],
-      ["teams_invites.create", undefined, "access"],
+      ["teams_invites.create", undefined, "access-sharing"],
       ["GMAIL_DELETE_MESSAGES", "gmail", "destructive"],
     ];
     for (const [slug, toolkit, family] of samples) {
@@ -221,9 +237,10 @@ describe("sensitive families", () => {
     for (const [slug, toolkit] of [["GMAIL_SEND_EMAIL", "gmail"], ["SLACK_SEND_MESSAGE", "slack"], ["GOOGLEDRIVE_LIST_SHARED_DRIVES", "googledrive"], ["SHAREPOINT_LIST_FILES", "sharepoint"], ["SHOPIFY_ORDERLY_SYNC", "shopify"], ["PAYPAL_GET_BALANCE", "paypal"], ["BULK", undefined], ["ALL", undefined]] as const) {
       expect(sensitiveMatches(slug, toolkit), slug).toEqual([]);
     }
-    expect(assistantHoldReason({ risk: { write: true, outward: true, destructive: true }, capability: "connector.dispatch", toolName: "X_SEND" })).toEqual({ reason: "destructive" });
-    expect(assistantHoldReason({ risk: { write: true, outward: true, destructive: false }, capability: "connector.admin", toolName: "X_SEND" })).toEqual({ reason: "admin" });
-    expect(assistantHoldReason({ risk: { write: true, outward: true, destructive: false }, capability: "connector.dispatch", toolName: "GMAIL_SEND_EMAIL", toolkit: "gmail" })).toBeNull();
+    expect(classifySensitive("STRIPE_CREATE_REFUND", { toolkit: "stripe" })).toEqual({ sensitive: true, family: "money", word: "REFUND" });
+    expect(classifySensitive("GMAIL_SEND_EMAIL", { toolkit: "gmail" })).toEqual({ sensitive: false });
+    // A family the owner turned off no longer matches.
+    expect(classifySensitive("STRIPE_CREATE_REFUND", { toolkit: "stripe", families: [{ id: "money", on: false }] })).toEqual({ sensitive: false });
   });
 
   it("redacts secret keys and token-looking values", () => {
@@ -381,7 +398,7 @@ describe("System and Assistant", () => {
     expect((await f.toolsCall(body, "replay-key-0002")).statusCode).toBe(200);
     const over = await f.toolsCall(body, "replay-key-0003");
     expect(over.statusCode).toBe(202);
-    expect(over.json()).toMatchObject({ heldBecause: "daily_limit" });
+    expect(over.json()).toMatchObject({ heldBecause: "cap_agent" });
     expect(f.executions).toHaveLength(2);
   });
 });
@@ -393,9 +410,10 @@ describe("sensitive actions stay held in Assistant mode", () => {
     const cases: Array<[string, string, string, string]> = [
       ["gmail", "GMAIL_TRASH_MESSAGE", "gmail.trash.message", "sensitive:destructive"],
       ["stripe", "STRIPE_CREATE_REFUND", "stripe.create.refund", "sensitive:money"],
-      ["gmail", "GMAIL_FORWARD_MESSAGE", "gmail.forward.message", "sensitive:access"],
+      ["gmail", "GMAIL_FORWARD_MESSAGE", "gmail.forward.message", "sensitive:access-sharing"],
       ["slack", "SLACK_BROADCAST_MESSAGE", "slack.broadcast.message", "sensitive:bulk"],
-      ["gmail", "GMAIL_DELETE_MESSAGE", "gmail.delete.message", "admin"],
+      // Admin by name (DELETE): destructive.
+      ["gmail", "GMAIL_DELETE_MESSAGE", "gmail.delete.message", "destructive"],
       // Curated: outward (it notifies attendees) and destructive.
       ["googlecalendar", "GOOGLECALENDAR_DELETE_EVENT", "googlecalendar.delete.event", "destructive"],
     ];
@@ -424,7 +442,7 @@ describe("daily limits", () => {
     expect(responses.filter((response) => response.statusCode === 200)).toHaveLength(5);
     const held = responses.filter((response) => response.statusCode === 202);
     expect(held).toHaveLength(15);
-    expect(held.every((response) => response.json().heldBecause === "daily_limit")).toBe(true);
+    expect(held.every((response) => response.json().heldBecause === "cap_agent")).toBe(true);
     expect(f.executions).toHaveLength(5);
     expect(f.store.listCompanyBoxApprovals({ workspaceSlug: TENANT, state: "pending" })).toHaveLength(15);
   });
@@ -441,11 +459,11 @@ describe("daily limits", () => {
     expect((await f.call("agent-1", gmailId, "gmail.send.email", send, sendInput)).statusCode).toBe(200);
     const connectorCap = await f.call("agent-1", gmailId, "gmail.send.email", send, sendInput);
     expect(connectorCap.statusCode).toBe(202);
-    expect(connectorCap.json().heldBecause).toBe("connector_daily_limit");
+    expect(connectorCap.json().heldBecause).toBe("cap_connector");
     expect((await f.call("agent-1", slackId, "slack.send.message", slack, { channel: "#ops", text: "hi" })).statusCode).toBe(200);
     const agentCap = await f.call("agent-1", slackId, "slack.send.message", slack, { channel: "#ops", text: "hi" });
     expect(agentCap.statusCode).toBe(202);
-    expect(agentCap.json().heldBecause).toBe("daily_limit");
+    expect(agentCap.json().heldBecause).toBe("cap_agent");
     expect((await f.overview()).agents[0]).toMatchObject({ today: { day: "2026-10-11", executed: 3, byConnector: { [gmailId]: 2, [slackId]: 1 } } });
     now.value = new Date("2026-10-12T00:00:00.000Z");
     expect((await f.call("agent-1", gmailId, "gmail.send.email", send, sendInput)).statusCode).toBe(200);
@@ -624,5 +642,107 @@ describe("Rules mode is unchanged", () => {
     }
     expect(denied.executions).toEqual([]);
     expect(denied.store.agentModes.listReceipts({ workspaceSlug: TENANT })).toEqual([]);
+  });
+});
+
+describe("reusable interface (agent-approval-mode.ts, for Channels)", () => {
+  it("decides, reserves, commits or releases and writes receipts with the real store", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "marketplace-approval-mode-api-"));
+    cleanups.push(() => rm(root, { recursive: true, force: true }));
+    const store = new SqliteMarketplaceStore(path.join(root, "marketplace.sqlite"));
+    cleanups.push(() => store.close());
+    const ref = { workspaceSlug: TENANT, agentId: "agent-c" };
+    const now = new Date("2026-10-11T10:00:00.000Z");
+    const outward = { outward: true, destructive: false, sensitive: false };
+    const decide = (extra: Partial<Parameters<typeof decideOutward>[1]> = {}) =>
+      decideOutward(store, { ...ref, connectorKey: "telegram", actionKey: "channels.post", risk: outward, now, ...extra });
+    expect(getAgentApprovalMode(store, ref)).toBe("system");
+    expect(isAgentPaused(store, ref)).toEqual({ paused: false, scope: null });
+    expect(decide()).toEqual({ kind: "hold", reason: "system_mode" });
+    expect(decide({ risk: { outward: false, destructive: true, sensitive: true } })).toEqual({ kind: "run", reason: "not_outward" });
+    store.agentModes.updateSetting({ ...ref, mode: "assistant", dailyCap: 2, actor: "operator:owner-1", now });
+    expect(decide({ risk: { ...outward, sensitive: true } })).toEqual({ kind: "hold", reason: "sensitive" });
+    expect(decide({ risk: { ...outward, destructive: true } })).toEqual({ kind: "hold", reason: "destructive" });
+    // A released reservation (never reached the provider) does not count; a failed one does.
+    const first = decide({ replayKey: "post-1" });
+    expect(first).toMatchObject({ kind: "run", reason: "assistant", capReservation: expect.any(String) });
+    releaseCapReservation(store, { reservationId: first.capReservation!, now });
+    const second = decide({ replayKey: "post-2" });
+    commitCapReservation(store, { reservationId: second.capReservation!, status: "failed", error: "provider_error", now });
+    writeOutwardReceipt(store, { ...ref, connectorKey: "telegram", accountRef: "chat-1", actionKey: "channels.post", argumentsPreview: "{}", status: "failed", mode: "assistant", policyId: "grant-1", reservationId: second.capReservation!, now });
+    expect(decide({ replayKey: "post-2" })).toMatchObject({ kind: "run", replay: true, capReservation: second.capReservation });
+    const third = decide({ replayKey: "post-3" });
+    commitCapReservation(store, { reservationId: third.capReservation!, status: "ok", now });
+    expect(store.agentModes.usedToday(TENANT, "agent-c", "2026-10-11").total).toBe(2);
+    expect(decide({ replayKey: "post-4" })).toEqual({ kind: "hold", reason: "cap_agent" });
+    expect(decide({ now: new Date("2026-10-12T00:00:00.000Z"), replayKey: "post-5" })).toMatchObject({ kind: "run" });
+    // Without a reservation the receipt is recorded as a finished, counted row.
+    writeOutwardReceipt(store, { ...ref, connectorKey: "discord", accountRef: null, actionKey: "channels.react", argumentsPreview: "{}", status: "ok", mode: "assistant", now });
+    const audit = (store.listAudit({ workspaceSlug: TENANT, limit: 20 }) as Array<{ event_type: string; metadata: string }>).filter((row) => row.event_type === "marketplace.agent.outward.receipt");
+    expect(audit.map((row) => JSON.parse(row.metadata))).toEqual(expect.arrayContaining([expect.objectContaining({ policyId: "grant-1", status: "failed" }), expect.objectContaining({ pluginId: "discord", status: "succeeded" })]));
+    store.agentModes.setPausedAll({ workspaceSlug: TENANT, paused: true, actor: "operator:owner-1", now });
+    expect(isAgentPaused(store, ref)).toEqual({ paused: true, scope: "global" });
+    expect(decide({ risk: { outward: false, destructive: false, sensitive: false } })).toEqual({ kind: "refuse", reason: "paused" });
+  });
+});
+
+describe("hold families are owner settings", () => {
+  it("start ON for a fresh workspace; only the owner turns one off (audited); then that verb runs in Assistant with a receipt", async () => {
+    const f = await modes();
+    const pluginId = await gmail(f);
+    expect(getHoldFamilies(f.store, TENANT).map((family) => [family.id, family.on])).toEqual([
+      ["destructive", true], ["money", true], ["access-sharing", true], ["bulk", true], ["first-contact-dm", true], ["live-session-grant", true],
+    ]);
+    expect((await f.overview()).holdFamilies).toHaveLength(6);
+    const accessTokenLogin = f.sessions.exchange("operator-access-token", "static-operator");
+    for (const [label, headers] of [
+      ["agent app grant", { authorization: `Bearer ${APP_GRANT}` }],
+      ["service bearer", f.agent("agent-1")],
+      ["Portal runtime lease", { authorization: "Bearer portal-runtime-lease-token" }],
+      ["static operator access token", { origin: "http://localhost", cookie: `${MARKETPLACE_OPERATOR_SESSION_COOKIE}=${accessTokenLogin.token}`, "x-csrf-token": accessTokenLogin.status.csrfToken! }],
+    ] as Array<[string, Record<string, string>]>) {
+      const response = await f.setFamily("destructive", false, headers);
+      expect(response.statusCode, label).toBeGreaterThanOrEqual(401);
+      expect(response.statusCode, label).toBeLessThan(500);
+    }
+    expect(getHoldFamilies(f.store, TENANT).find((family) => family.id === "destructive")?.on).toBe(true);
+    expect((await f.setFamily("not-a-family", false)).statusCode).toBe(400);
+
+    await f.setMode("agent-1", { mode: "assistant" });
+    const trash = await f.grant("agent-1", pluginId, "gmail.trash.message");
+    expect((await f.call("agent-1", pluginId, "gmail.trash.message", trash, { id: "m1" })).json()).toMatchObject({ heldBecause: "sensitive:destructive" });
+    const off = await f.setFamily("destructive", false);
+    expect(off.statusCode, off.body).toBe(200);
+    expect(off.json().holdFamilies.find((family: { id: string }) => family.id === "destructive")).toMatchObject({ on: false, updatedBy: "operator:owner-1" });
+    const audit = f.store.listAudit({ workspaceSlug: TENANT, limit: 50 }) as Array<{ event_type: string; actor_id: string; metadata: string }>;
+    expect(audit.find((row) => row.event_type === "marketplace.agent.hold_family.changed")).toMatchObject({ actor_id: "operator:owner-1" });
+    expect(JSON.parse(audit.find((row) => row.event_type === "marketplace.agent.hold_family.changed")!.metadata)).toMatchObject({ familyId: "destructive", from: null, to: false });
+    const ran = await f.call("agent-1", pluginId, "gmail.trash.message", trash, { id: "m1" });
+    expect(ran.statusCode, ran.body).toBe(200);
+    expect(f.receiptAudit()).toEqual([expect.objectContaining({ actionKey: "gmail.trash.message", status: "succeeded", mode: "assistant" })]);
+    // Destructive by name (connector.admin) is not a family toggle: still held.
+    const del = await f.grant("agent-1", pluginId, "gmail.delete.message");
+    expect((await f.call("agent-1", pluginId, "gmail.delete.message", del, { id: "m1" })).json()).toMatchObject({ heldBecause: "destructive" });
+    // System mode ignores families.
+    await f.setMode("agent-1", { mode: "system" });
+    expect((await f.call("agent-1", pluginId, "gmail.trash.message", trash, { id: "m2" })).json()).toMatchObject({ heldBecause: "system_mode" });
+    expect(f.executions.map((execution) => execution.tool)).toEqual(["GMAIL_TRASH_MESSAGE"]);
+  });
+
+  it("holds a caller-declared family while it is ON and runs it once the owner turns it off", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "marketplace-hold-families-"));
+    cleanups.push(() => rm(root, { recursive: true, force: true }));
+    const store = new SqliteMarketplaceStore(path.join(root, "marketplace.sqlite"));
+    cleanups.push(() => store.close());
+    const now = new Date("2026-10-11T10:00:00.000Z");
+    store.agentModes.updateSetting({ workspaceSlug: TENANT, agentId: "agent-d", mode: "assistant", actor: "operator:owner-1", now });
+    const input = { workspaceSlug: TENANT, agentId: "agent-d", connectorKey: "telegram", actionKey: "channels.dm", risk: { outward: true, destructive: false, sensitive: false }, now, families: ["first-contact-dm"] };
+    expect(decideOutward(store, input)).toEqual({ kind: "hold", reason: "sensitive", family: "first-contact-dm" });
+    expect(assistantHold(store, { workspaceSlug: TENANT, risk: input.risk, families: ["live-session-grant"] })).toEqual({ reason: "sensitive", family: "live-session-grant" });
+    store.agentModes.setFamily({ workspaceSlug: TENANT, familyId: "first-contact-dm", enabled: false, actor: "operator:owner-1", now });
+    expect(decideOutward(store, input)).toMatchObject({ kind: "run", reason: "assistant" });
+    // Another workspace keeps its default (ON).
+    expect(decideOutward(store, { ...input, workspaceSlug: "other", agentId: "agent-d" })).toEqual({ kind: "hold", reason: "system_mode" });
+    expect(getHoldFamilies(store, "other").every((family) => family.on)).toBe(true);
   });
 });

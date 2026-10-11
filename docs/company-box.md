@@ -254,11 +254,17 @@ two approval modes. Rules mode is unchanged: Rules decides every outward call.
   Activity (agent, connector and account, action, destination when the
   arguments name one, a redacted argument preview, result status, mode, time).
   A failed provider call also leaves a receipt. These still wait for the owner:
-  - **sensitive actions**: a connector's curated destructive flag,
-    `connector.admin` tools (destructive by name or hint), and tool names with a
-    word from `SENSITIVE_ACTION_FAMILIES` (`program/src/agent-modes.ts`):
-    deletes and resets, payments and refunds, sharing and permissions, bulk and
-    broadcast. The owner UI shows the same list under "What still waits?";
+  - **destructive actions**: a connector's curated destructive flag and
+    `connector.admin` tools (destructive by name or hint). Always held; this is
+    not a family toggle;
+  - **hold families** (`HOLD_FAMILIES` in `program/src/agent-approval-mode.ts`),
+    each ON by default and switchable per workspace by the owner (Agent grants
+    → "What still waits?", warning "Assistant agents will do this without
+    asking you." when off): four matched on tool-name words (deletes and
+    resets, payments and refunds, sharing and permissions, bulk and broadcast;
+    whole word segments, the last word may be plural, e.g. `REFUNDS`) and two
+    declared by the caller (`first-contact-dm`, `live-session-grant`, passed by
+    Channels). System mode ignores families;
   - **daily limits**: 100 outward executions per agent and 50 per agent and
     connector per **UTC day** (reset at 00:00 UTC), editable by the owner. The
     limit is checked and the execution reserved in one SQLite transaction
@@ -279,6 +285,23 @@ two approval modes. Rules mode is unchanged: Rules decides every outward call.
   Buzz key). Agents, the service bearer, runtime leases and the operator
   access-token session are refused. Every change is audited. Agents cannot
   write, edit or delete receipts.
+- The 202 says why: `heldBecause` is `system_mode`, `destructive` (curated
+  flag or `connector.admin`), `sensitive:<family>`, `cap_agent` or
+  `cap_connector`.
+- Hold-family settings: `PATCH /api/marketplace/agents/hold-families/{familyId}`
+  `{on}` (owner audience `marketplace.hold-families.update`, same strict owner
+  gate), audited as `marketplace.agent.hold_family.changed`; `GET
+  /api/marketplace/agents` returns `holdFamilies` with the current state.
+- **Reusable by Channels:** all mode logic is in `program/src/agent-approval-mode.ts`:
+  `getAgentApprovalMode`, `isAgentPaused`, `decideOutward` (refuse / run / hold,
+  with the atomic cap reservation; `slug` and caller-declared `families` are
+  matched against the workspace's ON families), `commitCapReservation` /
+  `releaseCapReservation`, `writeOutwardReceipt`, `getHoldFamilies`,
+  `classifySensitive(slug, settings)` and `HOLD_FAMILIES`. Counting rule: a reservation counts unless it is
+  released; commit it when the provider was reached (a failed provider call
+  counts and leaves a receipt), release it when the call stopped before the
+  provider. `decideOutward` is consulted only in owner governance mode; with
+  Rules, Rules decides (the pause applies in both modes).
 - Agents see what applies: `/api/agent/capabilities` gives each outward tool
   `approval: { system, assistant, waitsBecause? }` (and `forThisAgent` with a
   verified grant), the 202 carries `heldBecause`, and the guidance ends with the
