@@ -215,6 +215,144 @@ governance (the same gate every connector execute uses):
   (`owner_approval_required_for_outward`); the owner's own session runs them
   directly.
 
+The same queue and the same risk apply to two connector kinds whose risk
+nobody has reviewed (0.2.1, QA findings F3-1 and F3-4):
+
+- **Composio toolkits without a curated policy** (every toolkit except
+  `googlecalendar`, see [google-calendar.md](google-calendar.md)): every tool
+  needs `connector.dispatch` and every call is outward
+  (`{ write: true, outward: true, destructive: false }`): held for the owner in
+  owner approval mode, sent to Rules as outward otherwise. Tool names do not
+  change this (`*_LIST_*`, `*_FETCH_*` are not trusted as reads), and a
+  Portal consent at `connector.observe` cannot run such a tool. The only
+  exception is the reviewed read allowlist,
+  `program/catalog/composio-read-allowlist.json` (toolkit → exact tool slugs,
+  observe, not outward), which ships empty. Stored listings are re-classified
+  at start-up; consents minted at observe for these tools must be granted
+  again at dispatch. Name-inferred admin tools stay admin.
+- **Custom MCP connectors** (an operator's own server, not a Company Box
+  `mcp` entry): the server's `readOnlyHint` and tool names are ignored, so
+  every tool needs at least `connector.dispatch` (`destructiveHint` or a
+  destructive name still means `connector.admin`) and every call is outward.
+  A Company Box `mcp` entry that no longer loads is outward too. The code
+  keeps one hook (`customMcpToolCapability(..., { readOnly })`) for a later
+  owner-confirmed read-only flag; nothing sets it yet.
+
+Agents see this before they call: `/api/agent/capabilities` lists `risk` for
+Composio and custom MCP tools and says in the description that an outward
+tool waits for the owner's approval.
+
+## Assistant and System agents
+
+In owner approval mode (no Rules service) each agent has one of two approval
+modes. Rules mode is unchanged: Rules decides every outward call.
+
+**Source of truth: Teal Brick Portal.** A verified app grant (introspection
+answer or JWT), credential lease or handoff attachment can carry
+`agentPolicy: { v: 1, approvalMode, paused, holdFamilies?, rev }`. When the
+claim is present it wins over Marketplace's own settings, and the local
+setting can only make it stricter: System beats Assistant, either source can
+pause, and an overridable family is off only when both turn it off. A claim
+with `v` other than 1, a bad `rev`, an unknown mode or a wrong type on a known
+key counts as System; `paused` is true only when exactly `true`; `destructive`
+and `money` in `holdFamilies` are ignored; a `rev` lower than the highest seen
+for that agent is stale and counts as System for that call. Parsing lives in
+one function (`parseAgentPolicy`) so it can move to
+`@tealbrick/contract/approval-mode` mechanically. **The local owner settings
+below (mode, pause, hold families, limits) are a temporary fallback until
+Portal ships the claim; they will be removed in the next release.** Until the
+contract kit passes `agentPolicy` through the app-grant introspection, the
+agent-grant attachment and the runtime lease are the paths that read it.
+
+- **System** (the default for every agent without a setting, and for an agent
+  id that was removed and registered again): every outward call is held in the
+  approval queue, as described above.
+- **Assistant**: outward calls run at once and each one leaves a **receipt** in
+  Activity (agent, connector and account, action, destination when the
+  arguments name one, a redacted argument preview, result status, mode, time).
+  A failed provider call also leaves a receipt. These still wait for the owner:
+  - **destructive actions**: a connector's curated destructive flag and
+    `connector.admin` tools (destructive by name or hint). Always held; this is
+    not a family toggle;
+  - **hold families** (`HOLD_FAMILIES` in `program/src/agent-approval-mode.ts`),
+    all ON by default: four matched on tool-name words (deletes and resets,
+    payments and refunds, sharing and permissions, bulk and broadcast; whole
+    word segments, the last word may be plural, e.g. `REFUNDS`) and two
+    declared by the caller (`first-contact-dm`, `live-session-grant`, passed by
+    Channels). **Deletes and payments are locked ON.** The owner can turn the
+    others off per workspace (Agent grants → "What still waits?", warning
+    "Assistant agents will do this without asking you."). System mode ignores
+    families;
+  - **hand-reviewed Company Box families**: each entry's `entry.json`
+    `sensitiveFamilies` maps outward operations (operationId or `METHOD /path`,
+    exact) to a family where the name says nothing (listmonk
+    `testCampaignById` → bulk, pretix `giftcards.create` → money, webhooks →
+    access-sharing). Every outward operation of the shipped entries was
+    reviewed; the table is in [assistant-mode-coverage.md](assistant-mode-coverage.md).
+    The catalog refuses a key that names no exposed outward operation. They
+    follow the family settings (destructive and money locked ON);
+  - **daily limits**: 100 outward executions per agent and 50 per agent and
+    connector per **UTC day** (reset at 00:00 UTC), editable by the owner. The
+    limit is checked and the execution reserved in one SQLite transaction
+    before the provider call; at the limit a call is held, never dropped. Only
+    executed calls count; a replay with the same idempotency key counts once.
+    A cap is never "unlimited": a missing or invalid cap counts as 0, and a
+    cap store that cannot be read holds the call (`heldBecause:
+    cap_unavailable`).
+- A hold made under System stays held after a switch to Assistant (never
+  released automatically). Switching to System holds the next call.
+- The mode never widens a consent: an observe consent still cannot run a
+  dispatch or outward tool. Non-outward actions follow the consent in both
+  modes.
+- **Pause** (per agent) and **Pause all agents** are persisted kill switches
+  (a pause set here also overrides a Portal claim `paused: false`; the owner UI
+  says so):
+  every call of a paused agent answers `403 agent_paused` before any provider
+  call (reads and channel posts included; a scheduled post due while paused is
+  skipped, not sent later), and a held call
+  cannot be approved while its agent is paused. Pause also applies with Rules.
+  The answer is `403 {error: "agent_paused"}` (contract approval-mode API).
+- **Approved holds re-check a fresh policy at execution:** when Portal has
+  sent an `agentPolicy` for the agent, an owner-approved held call runs only
+  if the last verified read of it (the agent's grant, lease or status poll) is
+  at most 60 s old and not paused. Otherwise the approval answers
+  `409 approval_policy_stale` (the call stays pending; the agent's next call or
+  poll refreshes the read) or `403 agent_paused`. Without any claim the local
+  pause alone applies.
+- Only the owner changes modes, limits and pauses: the owner's Portal launch
+  session with its CSRF token and the pinned owner (the same gate as the owner
+  Buzz key). Agents, the service bearer, runtime leases and the operator
+  access-token session are refused. Every change is audited. Agents cannot
+  write, edit or delete receipts.
+- The 202 says why: `heldBecause` is `system_mode`, `destructive` (curated
+  flag or `connector.admin`), `sensitive:<family>`, `cap_agent` or
+  `cap_connector`.
+- Hold-family settings: `PATCH /api/marketplace/agents/hold-families/{familyId}`
+  `{on}` (owner audience `marketplace.hold-families.update`, same strict owner
+  gate), audited as `marketplace.agent.hold_family.changed`; `GET
+  /api/marketplace/agents` returns `holdFamilies` with the current state.
+- **Reusable by Channels:** all mode logic is in `program/src/agent-approval-mode.ts`:
+  `getAgentApprovalMode`, `isAgentPaused`, `decideOutward` (refuse / run / hold,
+  with the atomic cap reservation; `slug` and caller-declared `families` are
+  matched against the workspace's ON families), `commitCapReservation` /
+  `releaseCapReservation`, `writeOutwardReceipt`, `getHoldFamilies`,
+  `classifySensitive(slug, settings)` and `HOLD_FAMILIES`. Counting rule: a reservation counts unless it is
+  released; commit it when the provider was reached (a failed provider call
+  counts and leaves a receipt), release it when the call stopped before the
+  provider. `decideOutward` is consulted only in owner governance mode; with
+  Rules, Rules decides (the pause applies in both modes).
+- Agents see what applies: `/api/agent/capabilities` gives each outward tool
+  `approval: { system, assistant, waitsBecause? }` (and `forThisAgent` with a
+  verified grant), the 202 carries `heldBecause`, and the guidance ends with the
+  agent's own mode.
+
+Owner routes (owner audience): `GET /api/marketplace/agents`,
+`PATCH /api/marketplace/agents/{agentId}` `{mode?, dailyCap?, connectorDailyCap?}`,
+`POST /api/marketplace/agents/{agentId}/pause|resume`,
+`POST /api/marketplace/agents/pause-all|resume-all`,
+`GET /api/marketplace/agents/receipts`. Coverage of the classes over the catalog
+snapshots: [assistant-mode-coverage.md](assistant-mode-coverage.md).
+
 ## Install, credentials and connection test
 
 `POST /api/marketplace/company-box/<id>/setup` with `{ baseUrl, credentials }`

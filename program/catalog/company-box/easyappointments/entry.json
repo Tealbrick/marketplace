@@ -31,6 +31,10 @@
     "PUT /webhooks/{webhookId}"
   ],
   "destructive": [],
+  "sensitiveFamilies": {
+    "POST /webhooks": "access-sharing",
+    "PUT /webhooks/{webhookId}": "access-sharing"
+  },
   "exposure": "auto",
   "excluded": [
     {

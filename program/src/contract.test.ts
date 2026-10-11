@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { generateEmergencyCode } from "@tealbrick/contract";
-import { afterEach, describe, expect, it } from "vitest";
+import { beforeAll, afterAll, afterEach, describe, expect, it } from "vitest";
 
 import { buildMarketplaceApp, type BuildMarketplaceAppOptions } from "./app.js";
 import {
@@ -15,6 +15,16 @@ import {
 import { CHANNEL_AGENT_OPERATION } from "./channels/routes.js";
 import { MarketplaceOperatorSessionManager } from "./operator-auth.js";
 import { SqliteMarketplaceStore } from "./store.js";
+import { setComposioReadAllowlistForTests } from "./composio-policy.js";
+
+// F3-1: the shipped Composio read allowlist is empty, so every tool of an uncurated toolkit is
+// outward and needs connector.dispatch. This file exercises grant/consent/execution plumbing with
+// a read action, so it marks that read as reviewed for the duration of the file only.
+let restoreComposioReadAllowlist: () => void = () => {};
+beforeAll(() => {
+  restoreComposioReadAllowlist = setComposioReadAllowlistForTests({ github: ["GITHUB_LIST_REPOSITORIES"] });
+});
+afterAll(() => restoreComposioReadAllowlist());
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const roots: string[] = [];
@@ -314,7 +324,9 @@ describe("tealbrick.app.json", () => {
       "marketplace.channel-receipts.purge",
     ]));
     // + 3: the owner Buzz approval key (marketplace.approval-owner-key.get|update|clear, Channels §6.3).
-    expect(owner.length).toBe(16 + 16 + 3);
+    // + 8: agent approval modes (marketplace.agents.list|update|pause|resume|pause-all|resume-all, agent-receipts.list,
+    // hold-families.update).
+    expect(owner.length).toBe(16 + 16 + 3 + 8);
     // Channels P1: the two account-sourced bot tokens arrive as provider env, never stored by Portal.
     const channels = MARKETPLACE_MANIFEST.settings?.groups.find((group) => group.id === "channels");
     expect(channels?.fields.map((field) => [field.key, field.env])).toEqual([

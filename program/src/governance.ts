@@ -31,7 +31,14 @@ export type AgentAttestation =
    * covers it (Channels spec §4.4, §6 3c). Set only by the channel path after
    * that authority is resolved, never from request input.
    */
-  | "owner-approval";
+  | "owner-approval"
+  /**
+   * Outward connector execute in owner mode under the owner's per-agent
+   * Assistant setting (agent-approval-mode.ts): not sensitive, within the daily
+   * limits, receipt reserved. Set only by the execution path after reading the
+   * owner-written setting, never from request input.
+   */
+  | "assistant-mode";
 
 /**
  * The authenticated actor behind a governed action, resolved from the request
@@ -72,7 +79,7 @@ export type OwnerGovernedDecision =
       effect: "allow";
       decisionId: string;
       reason: string;
-      basis: "operator" | "service-admin" | "portal-consent" | "owner-approval";
+      basis: "operator" | "service-admin" | "portal-consent" | "owner-approval" | "assistant-mode";
     }
   | {
       effect: "deny";
@@ -112,6 +119,14 @@ export function ownerGovernedDecision(input: {
       decisionId: `owner-governed:owner-approval:${operation}:${pluginId}`,
       reason: "Outward action approved by the workspace owner (exact payload approval or owner-approved standing grant).",
       basis: "owner-approval",
+    };
+  }
+  if (actor?.kind === "agent" && actor.attestation === "assistant-mode" && operation === "execute") {
+    return {
+      effect: "allow",
+      decisionId: `owner-governed:assistant-mode:${operation}:${pluginId}`,
+      reason: "Outward action run under the owner's Assistant setting for this agent (receipt in Activity).",
+      basis: "assistant-mode",
     };
   }
   if (input.risk?.outward && operation === "execute" && actor?.kind !== "operator") {

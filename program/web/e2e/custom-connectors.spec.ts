@@ -47,7 +47,9 @@ test("custom connector: add, refresh tools, edit the secret, and delete", async 
   await card.getByRole("button", { name: "Refresh tools" }).click();
   await expect(card).toContainText("4 loaded");
   await expect(card.getByText("Echo", { exact: true })).toBeVisible();
-  await expect(card.getByText("Read only").first()).toBeVisible();
+  // F3-4: the server's readOnlyHint is not trusted, so even Echo makes changes (held as outward).
+  await expect(card.getByText("Read only")).toHaveCount(0);
+  await expect(card.getByText("Makes changes").first()).toBeVisible();
   await expect(card.getByText("Admin / destructive")).toBeVisible();
   await expect(card.getByText("Connected", { exact: true })).toBeVisible();
   await page.screenshot({ path: test.info().outputPath("custom-connector-refreshed.png"), fullPage: true });
@@ -124,7 +126,8 @@ test("agent grants picker offers a refreshed custom connector's tools from the l
   await expect(page.getByLabel("Resource scope")).toHaveValue("account:connector");
   await expect(page.getByTestId("grant-capability")).toContainText("Can make changes");
   await page.getByLabel("Action", { exact: true }).selectOption(`${pluginId}.echo`);
-  await expect(page.getByTestId("grant-capability")).toContainText("Read only");
+  // F3-4: readOnlyHint is not trusted: Echo needs a "can make changes" grant too.
+  await expect(page.getByTestId("grant-capability")).toContainText("Can make changes");
   await expect(page.locator("body")).not.toContainText(E2E_MCP_SECRET);
 
   // Deleting the connector removes it from the picker.

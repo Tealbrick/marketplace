@@ -195,7 +195,8 @@ describe("custom MCP connector routes", () => {
     expect(refreshed.statusCode).toBe(200);
     const tools = refreshed.json().connector.tools as Array<{ name: string; action: string; capability: string }>;
     expect(tools.map((tool) => [tool.name, tool.action, tool.capability])).toEqual([
-      ["echo", `${pluginId}.echo`, "connector.observe"],
+      // F3-4: the server's readOnlyHint never makes a custom MCP tool read-only.
+      ["echo", `${pluginId}.echo`, "connector.dispatch"],
       ["create_issue", `${pluginId}.create-issue`, "connector.dispatch"],
       ["Delete Everything!", `${pluginId}.delete-everything`, "connector.admin"],
       ["fail_tool", `${pluginId}.fail-tool`, "connector.dispatch"],
@@ -217,7 +218,7 @@ describe("custom MCP connector routes", () => {
     expect(card.state).toMatchObject({ status: "ready", ready: true });
 
     const executed = await call("POST", `/api/marketplace/plugins/${pluginId}/execute`, a, {
-      capability: "connector.observe",
+      capability: "connector.dispatch",
       action: { type: `${pluginId}.echo`, message: "hello" },
     });
     expect(executed.statusCode).toBe(200);
@@ -226,7 +227,7 @@ describe("custom MCP connector routes", () => {
       result: { simulated: false, details: { toolName: "echo", result: { structuredContent: { tool: "echo", arguments: { message: "hello" } } } } },
       usage: { status: "succeeded", sourceExecutor: "mcp", provider: pluginId },
     });
-    expect(rules.calls.at(-1)).toMatchObject({ operation: "execute", capability: "connector.observe", pluginId });
+    expect(rules.calls.at(-1)).toMatchObject({ operation: "execute", capability: "connector.dispatch", pluginId, payload: { risk: { write: true, outward: true } } });
 
     const viaAgentTool = await call("POST", `/api/agent/tools/marketplace.${pluginId}.create-issue`, a, { pluginId, input: { title: "Bug" } });
     expect(viaAgentTool.statusCode).toBe(200);
@@ -240,8 +241,8 @@ describe("custom MCP connector routes", () => {
     expect(toolFailure.json()).toMatchObject({ ok: false, error: "mcp_tool_failed", usage: { status: "failed", error: "mcp_tool_failed" } });
     expect(toolFailure.body).not.toContain("upstream exploded");
 
-    const wrongCapability = await call("POST", `/api/marketplace/plugins/${pluginId}/execute`, a, { capability: "connector.dispatch", action: { type: `${pluginId}.echo` } });
-    expect(wrongCapability.json()).toMatchObject({ error: "connector_capability_mismatch", requiredCapability: "connector.observe" });
+    const wrongCapability = await call("POST", `/api/marketplace/plugins/${pluginId}/execute`, a, { capability: "connector.observe", action: { type: `${pluginId}.echo` } });
+    expect(wrongCapability.json()).toMatchObject({ error: "connector_capability_mismatch", requiredCapability: "connector.dispatch" });
 
     const usage = store.listUsage({ workspaceSlug: "ws-a", provider: pluginId });
     expect(usage.map((entry) => entry.status).sort()).toEqual(["failed", "succeeded", "succeeded"]);
@@ -255,7 +256,7 @@ describe("custom MCP connector routes", () => {
     const rejected = await call("POST", `/api/marketplace/connectors/custom/${pluginId}/refresh`, a);
     expect(rejected.statusCode).toBe(502);
     expect(rejected.json()).toMatchObject({ ok: false, error: "mcp_auth_rejected", connector: { lastRefresh: { ok: false, errorCode: "mcp_auth_rejected" }, connection: { state: "blocked" } } });
-    const blockedExecute = await call("POST", `/api/marketplace/plugins/${pluginId}/execute`, a, { capability: "connector.observe", action: { type: `${pluginId}.echo` } });
+    const blockedExecute = await call("POST", `/api/marketplace/plugins/${pluginId}/execute`, a, { capability: "connector.dispatch", action: { type: `${pluginId}.echo` } });
     expect(blockedExecute.statusCode).toBe(409);
     expect(blockedExecute.json()).toMatchObject({ error: "connector_not_connected" });
     expect((await call("GET", "/api/agent/capabilities", a)).json().capabilities.filter((entry: { pluginId: string }) => entry.pluginId === pluginId)).toEqual([]);
@@ -275,7 +276,7 @@ describe("custom MCP connector routes", () => {
     const sseRefresh = await call("POST", `/api/marketplace/connectors/custom/${pluginId}/refresh`, a);
     expect(sseRefresh.statusCode).toBe(200);
     expect(sseRefresh.json().connector.tools).toHaveLength(4);
-    const sseExecute = await call("POST", `/api/marketplace/plugins/${pluginId}/execute`, a, { capability: "connector.observe", action: { type: `${pluginId}.echo`, n: 2 } });
+    const sseExecute = await call("POST", `/api/marketplace/plugins/${pluginId}/execute`, a, { capability: "connector.dispatch", action: { type: `${pluginId}.echo`, n: 2 } });
     expect(sseExecute.json()).toMatchObject({ ok: true, result: { details: { result: { structuredContent: { arguments: { n: 2 } } } } } });
 
     // Secret values never appear in responses, the database, audit/events, usage, logs, or Rules payloads.
@@ -373,7 +374,7 @@ describe("custom MCP connector routes", () => {
         ["PATCH", `/api/marketplace/connectors/custom/${pluginId}`, { displayName: "Renamed" }],
         ["DELETE", `/api/marketplace/connectors/custom/${pluginId}`],
         ["POST", `/api/marketplace/connectors/custom/${pluginId}/refresh`],
-        ["POST", `/api/marketplace/plugins/${pluginId}/execute`, { capability: "connector.observe", action: { type: `${pluginId}.echo` } }],
+        ["POST", `/api/marketplace/plugins/${pluginId}/execute`, { capability: "connector.dispatch", action: { type: `${pluginId}.echo` } }],
       ] as const) {
         const response = await call(method, url, a, payload);
         expect(response.statusCode, `${method} ${url}`).toBe(status);
