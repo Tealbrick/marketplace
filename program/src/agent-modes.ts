@@ -24,7 +24,8 @@ export type SensitiveFamily = "destructive" | "money" | "access" | "bulk";
 /**
  * The words that keep an outward action held in Assistant mode (System mode holds every outward action anyway).
  * Matched against the tool name's word segments (Composio `GMAIL_SEND_EMAIL` style, custom MCP `send_message` or
- * `sendMessage`), case-insensitive, as whole segments. `BULK_*` / `MASS_*`: the segment followed by another one;
+ * `sendMessage`), case-insensitive, as whole segments (the last word may be plural: `REFUNDS`, `INVITES`).
+ * `BULK_*` / `MASS_*`: the segment followed by another one;
  * `*_ALL`: the last segment `ALL` after another one. The owner UI renders this list ("What still waits?").
  */
 export const SENSITIVE_ACTION_FAMILIES: ReadonlyArray<{
@@ -79,9 +80,14 @@ export function toolNameSegments(name: string, toolkit?: string): string[] {
   return segments;
 }
 
+/** The run's last word may be plural (`REFUNDS`, `INVITES`, `ORDERS`): holding more is the safe side. */
+function segmentMatches(actual: string | undefined, word: string, last: boolean) {
+  return actual === word || (last && (actual === `${word}S` || actual === `${word}ES`));
+}
+
 function containsRun(segments: readonly string[], run: readonly string[]) {
   for (let start = 0; start + run.length <= segments.length; start += 1) {
-    if (run.every((segment, offset) => segments[start + offset] === segment)) return true;
+    if (run.every((segment, offset) => segmentMatches(segments[start + offset], segment, offset === run.length - 1))) return true;
   }
   return false;
 }
