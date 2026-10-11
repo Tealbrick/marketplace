@@ -101,6 +101,15 @@ export function sha256Hex(value: string | Uint8Array): string {
  */
 export type SkeletonCase = "written" | "lower" | "fold";
 
+// Runtime Unicode version (Node 26 ships Unicode 17; the generated tables are Unicode 18). Each runtime Unicode call
+// below is either backed by a generated table or fails safe (over-matching) for characters the runtime does not know:
+// - toLowerCase / normalize("NFKC" | "NFD" | "NFC") leave unknown characters unchanged. Case: every mode is tried and
+//   "fold" uses the generated CaseFolding table; the UTS #39 table carries lowercase aliases from UnicodeData.txt
+//   (U+1DF6B reads "a" like U+1DF6A). Decompositions: compatReading/compatSpelling (generated) give their readings.
+// - \p{Mn} / \p{Cf} do not match unknown characters (General_Category Cn to the runtime), but finalFold removes every
+//   non-\p{L}\p{N} character, so an unknown mark or letter becomes an empty (skippable) reading, never a blocker.
+//   Unicode 18 adds no Cf characters; forbidden-corpus.test.ts checks every Mn and Default_Ignorable code point.
+
 export function forbiddenSkeleton(value: string, table: Readonly<Record<string, string>> = CONFUSABLE_SKELETON, mode: SkeletonCase = "lower"): string {
   const nfkc = value.normalize("NFKC");
   const cased = mode === "fold" ? fullCaseFold(nfkc) : mode === "lower" ? nfkc.toLowerCase() : nfkc;

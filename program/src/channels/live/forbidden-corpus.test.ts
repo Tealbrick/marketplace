@@ -42,7 +42,7 @@ describe("forbidden-term matcher against Unicode data", () => {
   it("keeps the whole UTS #39 subset (stored counts and floors)", () => {
     expect(Object.keys(UTS39_SKELETON).length).toBe(UTS39_SKELETON_SIZE);
     expect(UTS39_SUBSET_SIZE).toBeGreaterThanOrEqual(2065);
-    expect(UTS39_SKELETON_SIZE).toBeGreaterThanOrEqual(2169);
+    expect(UTS39_SKELETON_SIZE).toBeGreaterThanOrEqual(2171);
     expect(UTS39_SKELETON_SIZE).toBeGreaterThanOrEqual(UTS39_SUBSET_SIZE);
   });
 
@@ -105,6 +105,20 @@ describe("forbidden-term matcher against Unicode data", () => {
     // Latin small beta keeps both readings: UTS #39 (sharp s → "ss") and its capital's "b".
     expect(forbiddenTermsIn("\u{A7B5}et", ["bet"])).toEqual(["bet"]);
     expect(forbiddenTermsIn("\u{A7B5}et", ["sset"])).toEqual(["sset"]);
+  });
+
+  // Unicode 18 case pairs (UnicodeData.txt field 13): U+1DF6A -> U+1DF6B (UTS #39: A) and U+1DF6E -> U+1DF6F (UTS #39:
+  // l + U+0335). A Unicode 17 runtime has no lowercase mapping for them, so a lowercase alias built with toLowerCase
+  // was missing and "d\u{1DF6B}t\u{1DF6B}" did not match "data" (bypass before the generator used UnicodeData.txt).
+  it("reads Unicode 18 small letters like their capitals (case pairs the runtime does not know)", () => {
+    expect(UTS39_SKELETON["\u{1DF6B}"]).toBe("a");
+    expect(UTS39_SKELETON["\u{1DF6F}"]).toBe("l");
+    expect(forbiddenTermsIn("d\u{1DF6B}t\u{1DF6B}", ["data"])).toEqual(["data"]);
+    expect(forbiddenTermsIn("D\u{1DF6A}T\u{1DF6A}", ["data"])).toEqual(["data"]);
+    expect(forbiddenTermsIn("\u{1DF6F}eak", ["leak"])).toEqual(["leak"]);
+    expect(forbiddenTermsIn("\u{1DF6E}eak", ["leak"])).toEqual(["leak"]);
+    // Term side: a term written with the small letter matches the plain spelling.
+    expect(forbiddenTermsIn("data", ["d\u{1DF6B}t\u{1DF6B}"])).toEqual(["d\u{1DF6B}t\u{1DF6B}"]);
   });
 
   // Criterion: every code point with a Decomposition_Mapping whose full compatibility decomposition (NFKD, i.e. the

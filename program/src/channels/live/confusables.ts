@@ -2,11 +2,12 @@
  * Forbidden-term skeleton data (review of PR #53, M4).
  *
  * The base is generated from Unicode's UTS #39 `confusables.txt` (see confusables-data.ts for version and sha256;
- * regenerate with `pnpm exec tsx scripts/generate-confusables.ts <confusables.txt>`). The small tables below were
- * written by hand (not generated) and only ADD lookalikes that UTS #39 does not list, mainly small capitals and a few
- * Latin, Greek, Cyrillic and Cherokee letters; where UTS #39 has an entry, it wins. Lookups run AFTER NFKC,
- * lowercasing or full case folding, and mark removal (Cherokee capitals are listed in both cases because `toLowerCase` maps them to the
- * U+AB70 block). Matching over-folds on purpose: a forbidden-term refusal may be a false positive, never a bypass.
+ * regenerate with `pnpm exec tsx scripts/generate-confusables.ts <confusables.txt> <CaseFolding.txt> <UnicodeData.txt>`).
+ * The small tables below were written by hand (not generated) and only ADD lookalikes that UTS #39 does not list,
+ * mainly small capitals and a few Latin, Greek, Cyrillic and Cherokee letters; where UTS #39 has an entry, it wins.
+ * Lookups run AFTER NFKC, lowercasing or full case folding, and mark removal (Cherokee capitals are listed in both
+ * cases because `toLowerCase` maps them to the U+AB70 block; the small letters come from the generated case-folding
+ * table). Matching over-folds on purpose: a forbidden-term refusal may be a false positive, never a bypass.
  * Keys that decompose under NFD (ё, й, ї: the base letter is looked up after mark removal) or that are more than one
  * code point are not listed: they could never match.
  */
@@ -31,6 +32,13 @@ const CASE_FOLDING: ReadonlyMap<string, string> = new Map(
  * generated UnicodeData table (compat-readings-data.ts), so U+209D LATIN SUBSCRIPT SMALL LETTER W reads "w" even where
  * the runtime's NFKC is a Unicode version behind and leaves it alone.
  */
+/** The inverse of CASE_FOLDING for single-character folds: folded character -> the characters that fold to it. */
+const FOLDS_TO: ReadonlyMap<string, readonly string[]> = (() => {
+  const out = new Map<string, string[]>();
+  for (const [from, to] of CASE_FOLDING) out.set(to, [...(out.get(to) ?? []), from]);
+  return out;
+})();
+
 const COMPAT_READINGS: ReadonlyMap<string, string> = new Map([...unpack(COMPAT_STRICT, (to) => to), ...unpack(COMPAT_MARKED, (to) => to)]);
 
 export function compatReading(char: string): string | undefined {
@@ -93,8 +101,10 @@ function cherokee(): Record<string, string> {
   for (const [code, latin] of Object.entries(CHEROKEE_CAPITALS)) {
     const capital = String.fromCodePoint(Number(code));
     out[capital] = latin;
-    // `toLowerCase` maps a Cherokee capital to its small letter (U+AB70 block / U+13F8 block): fold that form too.
-    out[capital.toLowerCase()] = latin;
+    // Cherokee case folding maps the small letter (U+AB70 block / U+13F8 block) TO the capital, and `toLowerCase` maps
+    // the capital to it: list the small letter too. Taken from the generated folding table (inverted), not from the
+    // runtime's `toLowerCase`, so it does not depend on the runtime's Unicode version.
+    for (const small of FOLDS_TO.get(capital) ?? []) out[small] = latin;
   }
   return out;
 }

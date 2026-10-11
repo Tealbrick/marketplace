@@ -33,6 +33,8 @@ export type UnicodeData = {
   mnRanges: Array<[number, number]>;
   /** Decomposition_Mapping per code point; `compat` is true for tagged (<font>, <circle>, ...) mappings. */
   decomposition: Map<number, { compat: boolean; mapping: number[] }>;
+  /** Simple_Lowercase_Mapping (field 13) per code point that has one. */
+  lowercase: Map<number, number>;
   codes: number[];
 };
 
@@ -40,6 +42,7 @@ export function parseUnicodeData(text: string): UnicodeData {
   const single = new Map<number, string>();
   const ranges: Array<[number, number, string]> = [];
   const decomposition = new Map<number, { compat: boolean; mapping: number[] }>();
+  const lowercase = new Map<number, number>();
   const codes: number[] = [];
   let rangeStart: number | undefined;
   for (const line of text.split("\n")) {
@@ -64,6 +67,8 @@ export function parseUnicodeData(text: string): UnicodeData {
       const compat = decomp.startsWith("<");
       decomposition.set(code, { compat, mapping: cps(compat ? decomp.replace(/^<[^>]+>/u, "") : decomp) });
     }
+    const lower = (fields[13] ?? "").trim();
+    if (lower) lowercase.set(code, Number.parseInt(lower, 16));
   }
   const mnRanges: Array<[number, number]> = [];
   for (const code of codes) {
@@ -73,7 +78,7 @@ export function parseUnicodeData(text: string): UnicodeData {
     else mnRanges.push([code, code]);
   }
   const category = (code: number) => single.get(code) ?? ranges.find(([from, to]) => code >= from && code <= to)?.[2];
-  return { category, mnRanges, decomposition, codes };
+  return { category, mnRanges, decomposition, lowercase, codes };
 }
 
 /** Full decomposition (NFKD when `compat`, NFD otherwise) without canonical reordering (callers only strip marks). */
@@ -110,9 +115,13 @@ export function asTerm(codes: number[]): string | undefined {
   return codes.length > 0 && /^[A-Za-z0-9]+$/u.test(text) ? text.toLowerCase() : undefined;
 }
 
-/** Canonical decomposition, then General_Category=Mn removed. */
-export function stripMarks(data: UnicodeData, codes: number[]): number[] {
-  return decompose(data, codes, false).filter((code) => data.category(code) !== "Mn");
+const NONSPACING: ReadonlySet<string> = new Set(["Mn"]);
+/** General_Category=M (Mn, Mc, Me): the UCD equivalent of the regex class \p{M}. */
+export const ALL_MARKS: ReadonlySet<string> = new Set(["Mn", "Mc", "Me"]);
+
+/** Canonical decomposition, then the given mark categories (default General_Category=Mn) removed. */
+export function stripMarks(data: UnicodeData, codes: number[], marks: ReadonlySet<string> = NONSPACING): number[] {
+  return decompose(data, codes, false).filter((code) => !marks.has(data.category(code) ?? ""));
 }
 
 /**

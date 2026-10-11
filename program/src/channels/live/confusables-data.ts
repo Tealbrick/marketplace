@@ -2,12 +2,13 @@
 // Source: Unicode UTS #39 confusables.txt, version 18.0.0 (2026-08-06, 01:05:35 GMT), sha256 6ed3ee967c9dfdf6677d563c9985182fbc50a2efb7d6059cd57b2e2ce18f5b92.
 // https://www.unicode.org/Public/security/18.0.0/confusables.txt — Unicode terms of use apply.
 // Case folding: Unicode CaseFolding.txt 18.0.0 (C + F), sha256 a004797658a457bec4dc11683e39f69249ea3b595b752dbea6721c4c9f587b0d.
+// Marks and lowercase aliases: Unicode UnicodeData.txt 18.0.0, sha256 0736451de439ae7baf1425136617da495e09ee5afbe6e394374db7009ea08950.
 // Subset criterion: every confusables.txt mapping with a single-code-point source whose prototype, after mark removal
 // and full case folding, consists only of ASCII letters/digits; ASCII sources only when the prototype differs from
 // their folded form. UTS39_SUBSET_SIZE counts those mappings; UTS39_SKELETON_SIZE adds the lowercase aliases.
 export const UTS39_VERSION = "18.0.0";
 export const UTS39_SUBSET_SIZE = 2065;
-export const UTS39_SKELETON_SIZE = 2169;
+export const UTS39_SKELETON_SIZE = 2171;
 export const UTS39_SKELETON: Readonly<Record<string, string>> = Object.freeze({
   "\u{30}": "o",
   "\u{31}": "l",
@@ -2139,7 +2140,9 @@ export const UTS39_SKELETON: Readonly<Record<string, string>> = Object.freeze({
   "\u{1df64}": "th",
   "\u{1df65}": "wh",
   "\u{1df6a}": "a",
+  "\u{1df6b}": "a",
   "\u{1df6e}": "l",
+  "\u{1df6f}": "l",
   "\u{1df7d}": "w",
   "\u{1df81}": "e",
   "\u{1df95}": "ss",
