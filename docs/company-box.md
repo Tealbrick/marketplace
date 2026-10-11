@@ -276,7 +276,8 @@ agent-grant attachment and the runtime lease are the paths that read it.
     not a family toggle;
   - **hold families** (`HOLD_FAMILIES` in `program/src/agent-approval-mode.ts`),
     all ON by default: four matched on tool-name words (deletes and resets,
-    payments and refunds, sharing and permissions, bulk and broadcast; whole
+    payments and refunds, sharing and permissions, bulk and broadcast, profile
+    changes; whole
     word segments, the last word may be plural, e.g. `REFUNDS`) and two
     declared by the caller (`first-contact-dm`, `live-session-grant`, passed by
     Channels). **Deletes and payments are locked ON.** The owner can turn the

@@ -70,7 +70,7 @@ test("owner switches an agent between System and Assistant, pauses it, and sees 
   await expect(row).toContainText("UTC day");
   await row.getByRole("button", { name: "Assistant" }).click();
   await expect(row).toContainText("Assistant: this agent sends and changes things without asking you.");
-  await expect(row).toContainText("Deletes, payments, refunds, and sharing or permission changes still wait for you.");
+  await expect(row).toContainText("Deletes, payments, refunds, sharing or permission changes, and profile changes still wait for you.");
   expect(calls[0]).toContain('"mode":"assistant"');
   await panel.getByText("What still waits?").click();
   await expect(panel).toContainText("Payments and refunds");

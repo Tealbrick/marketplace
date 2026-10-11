@@ -55,7 +55,9 @@
   "sensitiveFamilies": {
     "updateCampaignStatusById": "bulk",
     "testCampaignById": "bulk",
-    "transactWithSubscriber": "bulk"
+    "transactWithSubscriber": "bulk",
+    "updateSubscriberById": "profile-change",
+    "patchSubscriber": "profile-change"
   },
   "exposure": "auto",
   "excluded": [

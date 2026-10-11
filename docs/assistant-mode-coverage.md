@@ -16,22 +16,22 @@ An "unless quiet" Calendar tool is counted as outward.
 
 ## Counts
 
-| Source | Tools | read-allowlisted | not outward (consent only) | assistant-runs | held: destructive | held: admin | held: sensitive:destructive | held: sensitive:money | held: sensitive:access-sharing | held: sensitive:bulk |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| composio:googlecalendar (curated) | 50 | 0 | 34 | 13 | 2 | 1 | 0 | 0 | 0 | 0 |
-| company-box:authentik (openapi) | 1091 | 0 | 1048 | 1 | 3 | 0 | 0 | 0 | 39 | 0 |
-| company-box:changedetection (openapi) | 23 | 0 | 16 | 5 | 1 | 0 | 0 | 0 | 1 | 0 |
-| company-box:chatwoot (openapi) | 448 | 0 | 390 | 20 | 1 | 0 | 2 | 0 | 29 | 6 |
-| company-box:documenso (openapi) | 89 | 0 | 78 | 2 | 1 | 0 | 1 | 4 | 3 | 0 |
-| company-box:easyappointments (openapi) | 51 | 0 | 46 | 2 | 1 | 0 | 0 | 0 | 2 | 0 |
-| company-box:forgejo (openapi) | 459 | 0 | 438 | 5 | 2 | 0 | 1 | 0 | 13 | 0 |
-| company-box:formbricks (openapi) | 108 | 0 | 83 | 13 | 2 | 0 | 0 | 0 | 9 | 1 |
-| company-box:glitchtip (openapi) | 175 | 0 | 155 | 9 | 1 | 0 | 0 | 4 | 6 | 0 |
-| company-box:listmonk (openapi) | 104 | 0 | 95 | 6 | 1 | 0 | 0 | 0 | 0 | 2 |
-| company-box:nextcloud (openapi) | 284 | 0 | 251 | 5 | 5 | 0 | 2 | 0 | 21 | 0 |
-| company-box:postiz (openapi) | 31 | 0 | 18 | 9 | 3 | 0 | 1 | 0 | 0 | 0 |
-| company-box:pretix (openapi) | 370 | 0 | 317 | 7 | 15 | 0 | 0 | 22 | 6 | 3 |
-| **All** | **3283** | **0** | **2969** | **97** | **38** | **1** | **7** | **30** | **129** | **12** |
+| Source | Tools | read-allowlisted | not outward (consent only) | assistant-runs | held: destructive | held: admin | held: sensitive:destructive | held: sensitive:money | held: sensitive:access-sharing | held: sensitive:bulk | held: sensitive:profile-change |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| composio:googlecalendar (curated) | 50 | 0 | 34 | 13 | 2 | 1 | 0 | 0 | 0 | 0 | 0 |
+| company-box:authentik (openapi) | 1091 | 0 | 1048 | 1 | 3 | 0 | 0 | 0 | 39 | 0 | 0 |
+| company-box:changedetection (openapi) | 23 | 0 | 16 | 5 | 1 | 0 | 0 | 0 | 1 | 0 | 0 |
+| company-box:chatwoot (openapi) | 448 | 0 | 390 | 19 | 1 | 0 | 2 | 0 | 29 | 6 | 1 |
+| company-box:documenso (openapi) | 89 | 0 | 78 | 2 | 1 | 0 | 1 | 4 | 3 | 0 | 0 |
+| company-box:easyappointments (openapi) | 51 | 0 | 46 | 2 | 1 | 0 | 0 | 0 | 2 | 0 | 0 |
+| company-box:forgejo (openapi) | 459 | 0 | 438 | 5 | 2 | 0 | 1 | 0 | 13 | 0 | 0 |
+| company-box:formbricks (openapi) | 108 | 0 | 83 | 13 | 2 | 0 | 0 | 0 | 9 | 1 | 0 |
+| company-box:glitchtip (openapi) | 175 | 0 | 155 | 8 | 1 | 0 | 0 | 4 | 6 | 0 | 1 |
+| company-box:listmonk (openapi) | 104 | 0 | 95 | 4 | 1 | 0 | 0 | 0 | 0 | 2 | 2 |
+| company-box:nextcloud (openapi) | 284 | 0 | 251 | 5 | 5 | 0 | 2 | 0 | 21 | 0 | 0 |
+| company-box:postiz (openapi) | 31 | 0 | 18 | 9 | 3 | 0 | 1 | 0 | 0 | 0 | 0 |
+| company-box:pretix (openapi) | 370 | 0 | 317 | 7 | 15 | 0 | 0 | 22 | 6 | 3 | 0 |
+| **All** | **3283** | **0** | **2969** | **93** | **38** | **1** | **7** | **30** | **129** | **12** | **4** |
 
 ## Near-misses: tools that run in Assistant mode and contain a sensitive word as a substring
 
@@ -40,8 +40,6 @@ For manual review: the word matches only inside another word, so the tool is not
 | Source | Tool | Substrings |
 | --- | --- | --- |
 | company-box:listmonk (openapi) | `createSubscriber` | SUBSCRIBE |
-| company-box:listmonk (openapi) | `updateSubscriberById` | SUBSCRIBE |
-| company-box:listmonk (openapi) | `patchSubscriber` | SUBSCRIBE |
 | company-box:listmonk (openapi) | `subscriberSendOptinById` | SUBSCRIBE |
 
 ## Reviewed: every outward Company Box operation
@@ -156,7 +154,7 @@ Each outward operation of the shipped entries was reviewed by hand. `held` rows 
 | chatwoot | `integrations-linear-unlink-issue` | runs | reviewed: runs |
 | chatwoot | `portals-send-instructions` | runs | reviewed: runs |
 | chatwoot | `portals-articles-update` | runs | reviewed: runs |
-| chatwoot | `v1-profile-resend-confirmation` | runs | reviewed: runs |
+| chatwoot | `v1-profile-resend-confirmation` | held: profile-change | word PROFILE |
 | chatwoot | `v2-accounts-create` | held: access-sharing | reviewed family |
 | chatwoot | `platform-users-token` | held: destructive | curated destructive flag |
 | chatwoot | `platform-accounts-email-channel-migrations-create` | held: access-sharing | reviewed family |
@@ -239,7 +237,7 @@ Each outward operation of the shipped entries was reviewed by hand. `held` rows 
 | glitchtip | `apps_uptime_api_update_monitor` | runs | reviewed: runs |
 | glitchtip | `apps_uptime_api_create_status_page` | runs | reviewed: runs |
 | glitchtip | `apps_users_api_create_email` | held: access-sharing | reviewed family |
-| glitchtip | `apps_users_api_send_confirm_email` | runs | reviewed: runs |
+| glitchtip | `apps_users_api_send_confirm_email` | held: profile-change | reviewed family |
 | glitchtip | `apps_wizard_api_setup_wizard_set_token` | held: access-sharing | reviewed family |
 | glitchtip | `apps_event_ingest_embed_api_submit_embed_error_page` | runs | reviewed: runs |
 | listmonk | `updateCampaignStatusById` | held: destructive | curated destructive flag |
@@ -247,8 +245,8 @@ Each outward operation of the shipped entries was reviewed by hand. `held` rows 
 | listmonk | `handlePublicSubscription` | runs | reviewed: runs |
 | listmonk | `testSMTPSettings` | runs | reviewed: runs |
 | listmonk | `createSubscriber` | runs | reviewed: runs |
-| listmonk | `updateSubscriberById` | runs | reviewed: runs |
-| listmonk | `patchSubscriber` | runs | reviewed: runs |
+| listmonk | `updateSubscriberById` | held: profile-change | reviewed family |
+| listmonk | `patchSubscriber` | held: profile-change | reviewed family |
 | listmonk | `subscriberSendOptinById` | runs | reviewed: runs |
 | listmonk | `transactWithSubscriber` | held: bulk | reviewed family |
 | nextcloud | `mount_public_link-create-federated-share` | held: access-sharing | word SHARE |

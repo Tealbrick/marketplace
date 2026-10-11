@@ -92,3 +92,22 @@ describe("QA reclassifications (held in Assistant mode)", () => {
     });
   }
 });
+
+describe("profile-change family (Martin's hold defaults)", () => {
+  it("holds a profile slug and a curated profile operation in Assistant mode", async () => {
+    const { classifySensitive } = await import("./agent-approval-mode.js");
+    expect(classifySensitive("SLACK_SET_PROFILE_PHOTO", { toolkit: "slack" })).toMatchObject({ sensitive: true, family: "profile-change" });
+    expect(classifySensitive("GITHUB_UPDATE_THE_AUTHENTICATED_USER_BIO", { toolkit: "github" })).toMatchObject({ family: "profile-change" });
+    expect(classifySensitive("updateUsernames")).toMatchObject({ family: "profile-change" });
+    expect(classifySensitive("GMAIL_SEND_EMAIL", { toolkit: "gmail" })).toEqual({ sensitive: false });
+    const { f, run } = await assistant("listmonk");
+    const before = f.rest.requests.length;
+    const held = await run("updateSubscriberById");
+    expect(held.statusCode, held.body).toBe(202);
+    expect(held.json()).toMatchObject({ heldBecause: "sensitive:profile-change" });
+    expect(f.rest.requests.length).toBe(before);
+    // Owner-overridable: with the family off it runs.
+    f.store.agentModes.setFamily({ workspaceSlug: "ws-a", familyId: "profile-change", enabled: false, actor: "operator:owner-1", now: new Date() });
+    expect((await run("updateSubscriberById")).statusCode).toBe(200);
+  });
+});
