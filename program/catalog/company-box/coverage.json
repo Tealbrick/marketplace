@@ -2840,7 +2840,8 @@
           "key": "company-box-authentik.flows-executor-solve",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "flows_inspector_get",
@@ -12303,7 +12304,8 @@
           "key": "company-box-chatwoot.inbox-creation",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "GetInbox",
@@ -12333,7 +12335,8 @@
           "key": "company-box-chatwoot.update-inbox",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "listWhatsappMessageTemplates",
@@ -13781,7 +13784,8 @@
           "key": "company-box-chatwoot.macros-execute",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "destructive"
         },
         {
           "ref": "sla-policies-index",
@@ -15146,7 +15150,8 @@
           "key": "company-box-chatwoot.integrations-hooks-process-event",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "destructive"
         },
         {
           "ref": "integrations-slack-create",
@@ -16142,7 +16147,8 @@
           "key": "company-box-documenso.envelope-distribute",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "money"
         },
         {
           "ref": "envelope-redistribute",
@@ -16152,7 +16158,8 @@
           "key": "company-box-documenso.envelope-redistribute",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "money"
         },
         {
           "ref": "document-get",
@@ -16232,7 +16239,8 @@
           "key": "company-box-documenso.document-distribute",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "money"
         },
         {
           "ref": "document-redistribute",
@@ -16242,7 +16250,8 @@
           "key": "company-box-documenso.document-redistribute",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "money"
         },
         {
           "ref": "document-download",
@@ -18546,7 +18555,8 @@
           "key": "company-box-forgejo.repo-migrate",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "repoSearch",
@@ -18726,7 +18736,8 @@
           "key": "company-box-forgejo.dispatch-workflow",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "destructive"
         },
         {
           "ref": "repoListActivityFeeds",
@@ -20447,7 +20458,8 @@
           "key": "company-box-forgejo.repo-push-mirror-sync",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "repoGetPushMirrorByRemoteName",
@@ -29360,7 +29372,8 @@
           "key": "company-box-postiz.public-integrations-controller-trigger-integration-tool",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "destructive"
         }
       ]
     },
@@ -30379,7 +30392,8 @@
           "key": "company-box-pretix.invoices-retransmit",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "money"
         },
         {
           "ref": "invoices.transmit",
@@ -30389,7 +30403,8 @@
           "key": "company-box-pretix.invoices-transmit",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "money"
         },
         {
           "ref": "item_meta_properties.list",
@@ -32317,7 +32332,8 @@
           "key": "company-box-pretix.invoices-retransmit-organizer",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "money"
         },
         {
           "ref": "invoices.transmit_organizer",
@@ -32327,7 +32343,8 @@
           "key": "company-box-pretix.invoices-transmit-organizer",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "money"
         },
         {
           "ref": "memberships.list",

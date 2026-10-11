@@ -70,7 +70,10 @@
     "orgAddTeamMember": "access-sharing",
     "userAddEmail": "access-sharing",
     "userCreateHook": "access-sharing",
-    "userEditHook": "access-sharing"
+    "userEditHook": "access-sharing",
+    "DispatchWorkflow": "destructive",
+    "repoPushMirrorSync": "access-sharing",
+    "repoMigrate": "access-sharing"
   },
   "exposure": "auto",
   "excluded": [

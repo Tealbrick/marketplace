@@ -129,7 +129,8 @@
     "stages_authenticator_duo_import_devices_automatic_create": "access-sharing",
     "stages_email_create": "access-sharing",
     "stages_email_update": "access-sharing",
-    "stages_email_partial_update": "access-sharing"
+    "stages_email_partial_update": "access-sharing",
+    "flows_executor_solve": "access-sharing"
   },
   "exposure": "discovery",
   "excluded": [

@@ -117,7 +117,11 @@
     "giftcards.transact": "money",
     "webhooks.create": "access-sharing",
     "webhooks.replace": "access-sharing",
-    "webhooks.update": "access-sharing"
+    "webhooks.update": "access-sharing",
+    "invoices.transmit": "money",
+    "invoices.retransmit": "money",
+    "invoices.transmit_organizer": "money",
+    "invoices.retransmit_organizer": "money"
   },
   "exposure": "auto",
   "excluded": []

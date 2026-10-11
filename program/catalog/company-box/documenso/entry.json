@@ -50,7 +50,11 @@
     "envelope-recipient-rejectOnBehalfOf": "destructive",
     "template-createTemplateDirectLink": "access-sharing",
     "template-toggleTemplateDirectLink": "access-sharing",
-    "embeddingPresign-createEmbeddingPresignToken": "access-sharing"
+    "embeddingPresign-createEmbeddingPresignToken": "access-sharing",
+    "document-distribute": "money",
+    "document-redistribute": "money",
+    "envelope-distribute": "money",
+    "envelope-redistribute": "money"
   },
   "exposure": "auto",
   "excluded": []

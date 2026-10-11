@@ -42,6 +42,9 @@
     "PublicIntegrationsController_startClipping"
   ],
   "destructive": [],
+  "sensitiveFamilies": {
+    "PublicIntegrationsController_triggerIntegrationTool": "destructive"
+  },
   "exposure": "auto",
   "excluded": []
 }
