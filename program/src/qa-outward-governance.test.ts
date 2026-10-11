@@ -6,7 +6,8 @@
  * F3-1 (2026-10-11): only toolkits with a curated Composio policy (googlecalendar) derive `risk`; every other toolkit
  * fell through to "covered by consent granted in Portal", so GMAIL_SEND_EMAIL executed with no hold.
  * F3-4: a custom MCP server's own `readOnlyHint` made a sending tool "observe": grantable on a read-only consent and
- * never outward.
+ * never outward. (The fake Portal scope verifier here does not check the required capability; observe vs dispatch
+ * consents are covered by Marketplace's own outward-default.test.ts.)
  *
  * Both tests assert only what reaches the provider (Composio execute / MCP tools/call), not how the refusal is shaped,
  * so a hold, a 403 or an approval prompt all satisfy them.
@@ -112,43 +113,42 @@ describe("owner mode: an agent's outward action needs the owner's approval", () 
     expect(sent.statusCode).not.toBe(200);
   });
 
-  it("F3-4: a custom MCP tool the server marks readOnlyHint:true is not executed as a read on a read-only consent", async () => {
-    // `list_tickets` is an honest read: the control that this path does execute a read on a read-only consent.
+  it("F3-4: a custom MCP tool the server marks readOnlyHint:true reaches the server only through the owner", async () => {
+    // The server, not the owner, says "read-only". Only the owner may make a custom MCP tool read-only (Marketplace
+    // fix: an owner flag, no hint or name). Control (non-blind): through the owner the same call does reach the server
+    // once (the owner approves the hold, or, when the agent call is refused outright, the owner's session runs it).
     const server = await startFakeMcpServer({
-      tools: [
-        { name: "list_tickets", description: "List support tickets.", annotations: { readOnlyHint: true } },
-        { name: "send_message", description: "Send a message to a customer.", inputSchema: { type: "object", properties: { to: { type: "string" }, text: { type: "string" } } }, annotations: { readOnlyHint: true } },
-      ],
+      tools: [{ name: "send_message", description: "Send a message to a customer.", inputSchema: { type: "object", properties: { to: { type: "string" }, text: { type: "string" } } }, annotations: { readOnlyHint: true } }],
     });
     cleanups.push(() => server.close());
-    const f = await ownerMode(["connector.observe"], { mcpOrigin: server.origin });
+    const f = await ownerMode(["connector.observe", "connector.dispatch"], { mcpOrigin: server.origin });
     const created = await f.app.inject({ method: "POST", url: "/api/marketplace/connectors/custom", headers: f.operator, payload: { displayName: "Support Desk", url: server.streamableUrl, transport: "streamable-http" } });
     expect(created.statusCode, created.body).toBe(201);
     const pluginId = created.json<{ connector: { pluginId: string } }>().connector.pluginId;
     expect((await f.app.inject({ method: "POST", url: `/api/marketplace/connectors/custom/${pluginId}/refresh`, headers: f.operator })).statusCode).toBe(200);
     expect((await f.app.inject({ method: "POST", url: `/api/marketplace/plugins/${pluginId}/install`, headers: f.operator, payload: {} })).statusCode).toBe(201);
     const toolCalls = () => server.requests.filter((r) => r.rpcMethod === "tools/call").length;
-    const callAsAgent = async (tool: string, input: Record<string, unknown>) => {
-      const grant = await f.app.inject({
-        method: "POST",
-        url: "/api/marketplace/agent/grants",
-        headers: f.agent("agent-1"),
-        payload: { workspaceSlug: "atlas", pluginId, actionKey: `${pluginId}.${tool}`, accountId: "connector", resourceKind: `${pluginId}.connected-account`, resourceRef: "account:connector" },
-      });
-      const grantId = grant.statusCode === 201 ? grant.json<{ grant: { id: string } }>().grant.id : undefined;
-      const before = toolCalls();
-      const response = await f.app.inject({
-        method: "POST",
-        url: `/api/agent/tools/marketplace.${pluginId}.${tool}`,
-        headers: f.agent("agent-1"),
-        payload: { workspaceSlug: "atlas", pluginId, ...(grantId ? { grantId } : {}), input },
-      });
-      return { calls: toolCalls() - before, trace: `grant ${grant.statusCode} ${grant.body}\ncall ${response.statusCode} ${response.body}`, status: response.statusCode };
-    };
-    const read = await callAsAgent("list-tickets", {});
-    expect(read.calls, `control: an honest read must execute on a read-only consent\n${read.trace}`).toBe(1);
-    const sent = await callAsAgent("send-message", { to: "customer@example.invalid", text: "sent by an agent" });
-    expect(sent.calls, sent.trace).toBe(0);
-    expect(sent.status).not.toBe(200);
+    const input = { to: "customer@example.invalid", text: "sent by an agent" };
+    const grant = await f.app.inject({
+      method: "POST",
+      url: "/api/marketplace/agent/grants",
+      headers: f.agent("agent-1"),
+      payload: { workspaceSlug: "atlas", pluginId, actionKey: `${pluginId}.send-message`, accountId: "connector", resourceKind: `${pluginId}.connected-account`, resourceRef: "account:connector" },
+    });
+    const grantId = grant.statusCode === 201 ? grant.json<{ grant: { id: string } }>().grant.id : undefined;
+    const sent = await f.app.inject({
+      method: "POST",
+      url: `/api/agent/tools/marketplace.${pluginId}.send-message`,
+      headers: f.agent("agent-1"),
+      payload: { workspaceSlug: "atlas", pluginId, ...(grantId ? { grantId } : {}), input },
+    });
+    const trace = `grant ${grant.statusCode} ${grant.body}\nsend ${sent.statusCode} ${sent.body}`;
+    expect(toolCalls(), trace).toBe(0);
+    expect(sent.statusCode, trace).not.toBe(200);
+    const approvalId = (sent.json() as { approvalId?: string }).approvalId;
+    const viaOwner = approvalId
+      ? await f.app.inject({ method: "POST", url: `/api/marketplace/company-box/approvals/${approvalId}/approve`, headers: f.operator })
+      : await f.app.inject({ method: "POST", url: `/api/marketplace/plugins/${pluginId}/execute`, headers: f.operator, payload: { workspaceSlug: "atlas", capability: "connector.dispatch", action: { type: `${pluginId}.send-message`, ...input } } });
+    expect(toolCalls(), `control: through the owner the call reaches the server once\n${trace}\nowner ${viaOwner.statusCode} ${viaOwner.body}`).toBe(1);
   });
 });
