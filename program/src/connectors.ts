@@ -266,6 +266,14 @@ function declaredActionRequirement(
   return null;
 }
 
+/**
+ * True for a real Composio tool slug (`GMAIL_SEND_EMAIL`). A listing without discovered tools stores the generic
+ * fallback `<toolkit>.tool.execute`, which names no tool: a call to it must never run unheld.
+ */
+export function isComposioToolSlug(value: string) {
+  return /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/u.test(value);
+}
+
 export function composioToolNameForAction(
   listing: MarketplaceListing,
   action: string,

@@ -13,6 +13,7 @@ import {
   buildComposioCatalogListing,
   buildComposioListingFromTools,
   composioToolNameForAction,
+  isComposioToolSlug,
   defaultSkillsForComposioToolkit,
   normalizeComposioTools,
   normalizeConnectorSlug,
@@ -2244,12 +2245,14 @@ function outwardInputFor(
   actionKey: string,
   risk: GovernedActionRisk,
   capability: ConnectorCapability,
-): { risk: OutwardRisk; slug: string; toolkit?: string } {
+): { risk: OutwardRisk; slug: string; toolkit?: string; slugUnknown?: true } {
   const tool = riskToolName(catalog, listing, workspaceSlug, actionKey);
   return {
-    risk: { outward: risk.outward, destructive: risk.destructive || capability === "connector.admin", sensitive: false },
+    // A tool that cannot be named is held in Assistant mode (decided sensitive by the caller; never overridable).
+    risk: { outward: risk.outward, destructive: risk.destructive || capability === "connector.admin", sensitive: tool.unknown === true },
     slug: tool.name,
     ...(tool.toolkit ? { toolkit: tool.toolkit } : {}),
+    ...(tool.unknown ? { slugUnknown: true as const } : {}),
   };
 }
 
@@ -2272,21 +2275,28 @@ function outwardApproval(
   risk: GovernedActionRisk,
   capability: ConnectorCapability,
 ): { system: "waits"; assistant: "runs" | "waits"; waitsBecause?: string; limits?: string } {
-  const why = assistantHold(store, { workspaceSlug, ...outwardInputFor(catalog, listing, workspaceSlug, actionKey, risk, capability) });
+  const input = outwardInputFor(catalog, listing, workspaceSlug, actionKey, risk, capability);
+  const why = assistantHold(store, { workspaceSlug, ...input });
   return why
-    ? { system: "waits", assistant: "waits", waitsBecause: heldBecause(why.reason, why.family) }
+    ? { system: "waits", assistant: "waits", waitsBecause: input.slugUnknown ? "tool_slug_unknown" : heldBecause(why.reason, why.family) }
     : { system: "waits", assistant: "runs", limits: "Over the agent's daily limits (UTC day) a call waits for the owner." };
 }
 
-/** The tool name the Assistant-mode sensitive words are matched against. */
+/**
+ * The tool the provider will receive, which the Assistant-mode hold families are matched against. Composio: exactly
+ * the slug the executors send to `/tools/execute/<slug>` (composioToolNameForAction, the same call
+ * executeComposioAction and the consented Composio target make); call arguments never choose the tool. A value that
+ * is not a real Composio slug (the generic `<toolkit>.tool.execute` fallback) is `unknown` and is held.
+ */
 function riskToolName(
   catalog: CompanyBoxCatalog,
   listing: MarketplaceListing,
   workspaceSlug: string,
   actionKey: string,
-): { name: string; toolkit?: string } {
+): { name: string; toolkit?: string; unknown?: true } {
   if (listing.executionOwner === "composio") {
-    return { name: composioToolNameForAction(listing, actionKey), toolkit: listing.provider };
+    const slug = composioToolNameForAction(listing, actionKey);
+    return { name: slug, toolkit: listing.provider, ...(isComposioToolSlug(slug) ? {} : { unknown: true as const }) };
   }
   const entry = companyBoxEntryForListing(catalog, listing, workspaceSlug);
   const suffix = actionKey.slice(listing.provider.length + 1);
@@ -3592,8 +3602,8 @@ export async function buildMarketplaceApp(
     reply.code(423);
     return { ok: false, error: "agent_paused", pausedBy: paused.scope === "global" ? "all_agents" : paused.scope === "claim" ? "portal" : "agent" };
   };
-  type AssistantRun = { reservationId: string; replay: boolean; args: Record<string, unknown>; accountRef: string | null; connectorKey: string; provider: string; actionKey: string; workspaceSlug: string; agentId: string };
-  type OutwardPlan = { kind: "hold"; reason: string } | { kind: "refuse" } | ({ kind: "assistant" } & AssistantRun);
+  type AssistantRun = { reservationId: string; replay: boolean; args: Record<string, unknown>; accountRef: string | null; connectorKey: string; provider: string; actionKey: string; toolSlug: string; workspaceSlug: string; agentId: string };
+  type OutwardPlan = { kind: "hold"; reason: string; toolSlug?: string } | { kind: "refuse" } | ({ kind: "assistant" } & AssistantRun);
   /**
    * An agent's outward call in owner mode, through decideOutward (agent-approval-mode.ts): hold it, refuse it
    * (paused) or run it under Assistant mode with a cap reservation. A call already held under this idempotency key
@@ -3637,7 +3647,13 @@ export async function buildMarketplaceApp(
       policy: input.policy,
     });
     if (decision.kind === "refuse") return { kind: "refuse" };
-    if (decision.kind === "hold") return { kind: "hold", reason: heldBecause(decision.reason, decision.family) };
+    if (decision.kind === "hold") {
+      return {
+        kind: "hold",
+        reason: outward.slugUnknown && decision.reason === "sensitive" ? "tool_slug_unknown" : heldBecause(decision.reason, decision.family),
+        toolSlug: outward.slug,
+      };
+    }
     return {
       kind: "assistant",
       reservationId: decision.capReservation!,
@@ -3647,6 +3663,7 @@ export async function buildMarketplaceApp(
       connectorKey: input.listing.pluginId,
       provider: input.listing.provider,
       actionKey: input.actionKey,
+      toolSlug: outward.slug,
       workspaceSlug: input.workspaceSlug,
       agentId: input.agentId,
     };
@@ -3666,6 +3683,7 @@ export async function buildMarketplaceApp(
       provider: run.provider,
       accountRef: run.accountRef,
       actionKey: run.actionKey,
+      toolSlug: run.toolSlug,
       argumentsPreview: receiptPreview(run.args),
       destination: receiptDestination(run.args),
       status: outcome,
@@ -3678,7 +3696,7 @@ export async function buildMarketplaceApp(
   const receiptView = (reservationId: string) => {
     const receipt = options.store.agentModes.getReceipt(reservationId);
     return receipt
-      ? { receiptId: receipt.id, status: receipt.status, mode: receipt.mode, actionKey: receipt.actionKey, at: receipt.finishedAt ?? receipt.createdAt }
+      ? { receiptId: receipt.id, status: receipt.status, mode: receipt.mode, actionKey: receipt.actionKey, toolSlug: receipt.toolSlug, at: receipt.finishedAt ?? receipt.createdAt }
       : null;
   };
   /**
@@ -3700,6 +3718,8 @@ export async function buildMarketplaceApp(
     traceId: string;
     /** Why it is held (System mode, sensitive, a daily limit); told to the agent in the 202. */
     reason?: string;
+    /** The tool the provider would receive (Composio slug); stored on the hold and checked again on approval. */
+    toolSlug?: string;
   }): { status: number; body: Record<string, unknown> } => {
     const held = holdCompanyBoxCallInner(input);
     return held.status === 202 && input.reason && input.reason !== "already_held"
@@ -3717,6 +3737,7 @@ export async function buildMarketplaceApp(
     sourceRef: string;
     idempotencyKey: string | null;
     traceId: string;
+    toolSlug?: string;
   }): { status: number; body: Record<string, unknown> } => {
     const fingerprint = approvalFingerprint(input.actionKey, input.args);
     if (input.idempotencyKey) {
@@ -3789,6 +3810,7 @@ export async function buildMarketplaceApp(
       fingerprint,
       arguments: input.args,
       argumentsPreview: approvalPreview(input.args),
+      toolSlug: input.toolSlug ?? null,
       ttlMs: COMPANY_BOX_APPROVAL_TTL_MS,
       });
     } catch (error) {
@@ -3860,6 +3882,10 @@ export async function buildMarketplaceApp(
         : null;
       if (!listing || !published || published.capability !== approval.capability) {
         return fail("approval_target_unavailable");
+      }
+      // The owner approved this tool: if the listing now maps the action to another tool, it is not run.
+      if (approval.toolSlug && listing.executionOwner === "composio" && composioToolNameForAction(listing, approval.actionKey) !== approval.toolSlug) {
+        return fail("approval_target_changed");
       }
       const risk = companyBoxRiskForAction(companyBox, listing, approval.workspaceSlug, approval.actionKey, approval.arguments);
       const rules = await enforceRules({
@@ -5656,6 +5682,7 @@ export async function buildMarketplaceApp(
           },
       capability: approval.capability,
       agentId: approval.agentId,
+      toolSlug: approval.toolSlug ?? null,
       argumentsPreview: approval.argumentsPreview,
       state: approval.state,
       createdAt: approval.createdAt,
@@ -7655,6 +7682,7 @@ export async function buildMarketplaceApp(
             idempotencyKey: input.idempotencyKey ?? null,
             traceId,
             reason: plan.reason,
+            ...(plan.toolSlug ? { toolSlug: plan.toolSlug } : {}),
           });
           reply.code(held.status);
           return { ...held.body, traceId };
@@ -8323,6 +8351,7 @@ export async function buildMarketplaceApp(
           idempotencyKey: input.idempotencyKey,
           traceId,
           reason: plan.reason,
+          ...(plan.toolSlug ? { toolSlug: plan.toolSlug } : {}),
         });
         reply.code(held.status);
         return { ...held.body, schema: 1, traceId };

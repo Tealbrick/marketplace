@@ -14,6 +14,15 @@ import {
 export const AGENT_MODE_TABLES = ["agent_approval_setting", "agent_pause_all", "agent_outward_receipt", "agent_hold_family_setting", "agent_policy_rev"] as const;
 
 export function migrateAgentModeTables(db: DatabaseSync): void {
+  migrateAgentModeTablesCreate(db);
+  try {
+    db.exec("ALTER TABLE agent_outward_receipt ADD COLUMN tool_slug TEXT");
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.includes("duplicate column name")) throw error;
+  }
+}
+
+function migrateAgentModeTablesCreate(db: DatabaseSync): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS agent_approval_setting (
       workspace_slug TEXT NOT NULL,
@@ -41,6 +50,7 @@ export function migrateAgentModeTables(db: DatabaseSync): void {
       plugin_id TEXT NOT NULL,
       provider TEXT NOT NULL,
       action_key TEXT NOT NULL,
+      tool_slug TEXT,
       account_ref TEXT,
       destination TEXT,
       arguments_preview TEXT NOT NULL,
@@ -96,6 +106,8 @@ export type AgentOutwardReceipt = {
   pluginId: string;
   provider: string;
   actionKey: string;
+  /** The tool the provider received (Composio slug sent to /tools/execute/<slug>), when known. */
+  toolSlug: string | null;
   accountRef: string | null;
   destination: string | null;
   argumentsPreview: string;
@@ -122,6 +134,7 @@ function receiptFromRow(row: Record<string, unknown>): AgentOutwardReceipt {
     pluginId: String(row.plugin_id),
     provider: String(row.provider),
     actionKey: String(row.action_key),
+    toolSlug: row.tool_slug === null || row.tool_slug === undefined ? null : String(row.tool_slug),
     accountRef: row.account_ref === null ? null : String(row.account_ref),
     destination: row.destination === null ? null : String(row.destination),
     argumentsPreview: String(row.arguments_preview),
@@ -316,6 +329,7 @@ export class AgentModeStore {
     pluginId: string;
     provider: string;
     actionKey: string;
+    toolSlug?: string | null;
     accountRef: string | null;
     destination: string | null;
     argumentsPreview: string;
@@ -359,9 +373,9 @@ export class AgentModeStore {
         this.db
           .prepare(
             `UPDATE agent_outward_receipt SET status = 'executing', error = NULL, finished_at = NULL, arguments_preview = ?,
-               destination = ?, trace_id = ?, day = ?, created_at = ? WHERE id = ?`,
+               destination = ?, tool_slug = ?, trace_id = ?, day = ?, created_at = ? WHERE id = ?`,
           )
-          .run(input.argumentsPreview, input.destination, input.traceId, input.day, input.now.toISOString(), existing.id);
+          .run(input.argumentsPreview, input.destination, input.toolSlug ?? null, input.traceId, input.day, input.now.toISOString(), existing.id);
         this.db.exec("COMMIT");
         return { kind: "reserved", receipt: this.getReceipt(existing.id)! };
       }
@@ -369,9 +383,9 @@ export class AgentModeStore {
       this.db
         .prepare(
           `INSERT INTO agent_outward_receipt (
-             id, workspace_slug, agent_id, plugin_id, provider, action_key, account_ref, destination, arguments_preview,
+             id, workspace_slug, agent_id, plugin_id, provider, action_key, tool_slug, account_ref, destination, arguments_preview,
              mode, status, error, replay_key, trace_id, day, created_at, finished_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'assistant', 'executing', NULL, ?, ?, ?, ?, NULL)`,
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'assistant', 'executing', NULL, ?, ?, ?, ?, NULL)`,
         )
         .run(
           id,
@@ -380,6 +394,7 @@ export class AgentModeStore {
           input.pluginId,
           input.provider,
           input.actionKey,
+          input.toolSlug ?? null,
           input.accountRef,
           input.destination,
           input.argumentsPreview,
@@ -403,6 +418,7 @@ export class AgentModeStore {
     pluginId: string;
     provider: string;
     actionKey: string;
+    toolSlug?: string | null;
     accountRef: string | null;
     destination: string | null;
     argumentsPreview: string;
@@ -416,12 +432,12 @@ export class AgentModeStore {
     this.db
       .prepare(
         `INSERT INTO agent_outward_receipt (
-           id, workspace_slug, agent_id, plugin_id, provider, action_key, account_ref, destination, arguments_preview,
+           id, workspace_slug, agent_id, plugin_id, provider, action_key, tool_slug, account_ref, destination, arguments_preview,
            mode, status, error, replay_key, trace_id, day, created_at, finished_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?)`,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?)`,
       )
       .run(
-        id, input.workspaceSlug, input.agentId, input.pluginId, input.provider, input.actionKey, input.accountRef,
+        id, input.workspaceSlug, input.agentId, input.pluginId, input.provider, input.actionKey, input.toolSlug ?? null, input.accountRef,
         input.destination, input.argumentsPreview, input.mode, input.status, input.error, input.day,
         input.now.toISOString(), input.now.toISOString(),
       );

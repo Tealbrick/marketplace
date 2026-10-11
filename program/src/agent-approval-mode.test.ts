@@ -859,3 +859,64 @@ describe("Portal agentPolicy claim (source of truth; local setting is the tempor
     expect(f.executions).toHaveLength(1);
   });
 });
+
+describe("runtime tool slug (QA pre-GO)", () => {
+  it("classifies the slug the executor sends to /tools/execute/<SLUG>, never the arguments; an unnamed tool is held", async () => {
+    const f = await modes();
+    await f.setMode("agent-1", { mode: "assistant" });
+    const acme = await f.importToolkit("acme", ["ACME_SEND_MONEY", "ACME_ADD_MEMBER", "ACME_BULK_DELETE"]);
+    for (const [actionKey, slug, heldBecause] of [
+      ["acme.send.money", "ACME_SEND_MONEY", "sensitive:money"],
+      ["acme.add.member", "ACME_ADD_MEMBER", "sensitive:access-sharing"],
+      // DELETE makes it admin by name, which is checked before the bulk family.
+      ["acme.bulk.delete", "ACME_BULK_DELETE", "destructive"],
+    ] as const) {
+      const grantId = await f.grant("agent-1", acme, actionKey);
+      const held = await f.call("agent-1", acme, actionKey, grantId, { amount: 5 });
+      expect(held.statusCode, held.body).toBe(202);
+      expect(held.json()).toMatchObject({ heldBecause });
+      // The hold record carries the runtime slug.
+      expect(f.store.getCompanyBoxApproval(held.json().approvalId)?.toolSlug).toBe(slug);
+    }
+    expect(f.executions).toEqual([]);
+
+    const gmailId = await gmail(f);
+    const send = await f.grant("agent-1", gmailId, "gmail.send.email");
+    // An argument naming another tool changes nothing: the slug comes from the listing, as the executor reads it.
+    const ran = await f.call("agent-1", gmailId, "gmail.send.email", send, { ...sendInput, tool_slug: "GMAIL_DELETE_MESSAGE", toolName: "GMAIL_DELETE_MESSAGE" });
+    expect(ran.statusCode, ran.body).toBe(200);
+    expect(ran.json().receipt).toMatchObject({ toolSlug: "GMAIL_SEND_EMAIL", status: "succeeded" });
+    expect(f.executions.map((execution) => execution.tool)).toEqual(["GMAIL_SEND_EMAIL"]);
+    expect(f.receiptAudit()).toEqual([expect.objectContaining({ toolSlug: "GMAIL_SEND_EMAIL", actionKey: "gmail.send.email" })]);
+    expect(f.store.agentModes.listReceipts({ workspaceSlug: TENANT })[0]).toMatchObject({ toolSlug: "GMAIL_SEND_EMAIL" });
+
+    // A listing imported without tools stores the generic `<toolkit>.tool.execute`: no tool slug, so it is held.
+    const generic = await f.importToolkit("acmegeneric", []);
+    expect(f.store.getListing(generic)?.actions).toEqual(["acmegeneric.tool.execute"]);
+    const genericGrant = await f.grant("agent-1", generic, "acmegeneric.tool.execute");
+    const missing = await f.call("agent-1", generic, "acmegeneric.tool.execute", genericGrant, { tool_slug: "ACMEGENERIC_SEND_EMAIL", text: "hi" });
+    expect(missing.statusCode, missing.body).toBe(202);
+    expect(missing.json()).toMatchObject({ heldBecause: "tool_slug_unknown" });
+    expect(f.store.getCompanyBoxApproval(missing.json().approvalId)?.toolSlug).toBe("acmegeneric.tool.execute");
+    const caps = (await f.app.inject({ method: "GET", url: `/api/agent/capabilities?workspaceSlug=${TENANT}`, headers: f.service })).json().capabilities as Array<Record<string, unknown>>;
+    expect(caps.find((tool) => tool.actionType === "acmegeneric.tool.execute")).toMatchObject({ approval: { assistant: "waits", waitsBecause: "tool_slug_unknown" } });
+    expect(f.executions).toHaveLength(1);
+  });
+
+  it("does not run an approved hold whose listing now maps the action to another tool", async () => {
+    const f = await modes();
+    const gmailId = await gmail(f);
+    const send = await f.grant("agent-1", gmailId, "gmail.send.email");
+    const held = await f.call("agent-1", gmailId, "gmail.send.email", send, sendInput);
+    expect(held.statusCode).toBe(202);
+    const listing = f.store.getListing(gmailId)!;
+    const composio = listing.manifest.composio as { tools: Array<Record<string, unknown>> };
+    f.store.upsertListing({
+      ...listing,
+      manifest: { ...listing.manifest, composio: { ...composio, tools: composio.tools.map((tool) => (tool.action === "gmail.send.email" ? { ...tool, toolName: "GMAIL_SEND_TO_EVERYONE" } : tool)) } },
+    });
+    const approved = await f.approve(held.json().approvalId);
+    expect(approved.json()).toMatchObject({ ok: false, approval: { state: "failed", error: "approval_target_changed", toolSlug: "GMAIL_SEND_EMAIL" } });
+    expect(f.executions).toEqual([]);
+  });
+});
