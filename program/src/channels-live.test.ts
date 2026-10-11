@@ -1,11 +1,11 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { DatabaseSync } from "node:sqlite";
 
 import { canonicalGrant, grantDigest, parseGrant } from "@tealbrick/contract";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ownerAssertion, portalSigner, seededPin, type PortalSigner } from "./channels/approval-test-support.js";
 import { DISCORD_TOKEN, GRANT_B, PORTAL, TELEGRAM_TOKEN, TENANT, channelFixture, fakeProvider, type ChannelFixture } from "./channels/app-fixture.js";
@@ -23,6 +23,23 @@ import { writeOggOpus } from "./channels/providers/ogg-opus.js";
 
 // Channels P2 live sessions (scope §2.3): live-session grants (contract alpha.8) and Buzz huddle sessions, end to end
 // through the app over a fake Buzz relay, a fake huddle relay (127.0.0.1) and a fake speech provider. No network.
+
+// L3: lets one test flip a byte of the clip AFTER the route verified the stored file (the swap the re-assert guards).
+const tamper = vi.hoisted(() => ({ next: false }));
+vi.mock("./channels/store.js", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./channels/store.js")>();
+  return {
+    ...original,
+    readAttachmentBytes: (root: string, sha256: string) => {
+      const bytes = original.readAttachmentBytes(root, sha256);
+      if (tamper.next) {
+        tamper.next = false;
+        bytes[bytes.length - 1] = bytes[bytes.length - 1]! ^ 0xff;
+      }
+      return bytes;
+    },
+  };
+});
 
 const OWNER_SECRET = "0000000000000000000000000000000000000000000000000000000000000003";
 const OWNER = publicKeyOf(OWNER_SECRET)!;
@@ -896,5 +913,159 @@ describe("live sessions: capability and inert mode", () => {
     expect(join.statusCode).toBe(409);
     expect(join.json().error).toBe("live_buzz_identity_missing");
     expect(t.huddleRelay.upgrades).toHaveLength(upgrades);
+  });
+});
+
+describe("pre-0.3.0 security digest of the live-voice feature", () => {
+  it("M1: an owner Stop also pauses the grant; a rejoin is refused until the pinned owner presses Resume", async () => {
+    const t = await setup();
+    const grant = await t.active();
+    const { sessionId } = await t.joined(grant.id);
+    const stopped = await t.f.owner("POST", `${O}/sessions/${sessionId}/stop`, {});
+    expect(stopped.statusCode, stopped.body).toBe(200);
+    await waitFor(() => t.sessionRow(sessionId).status === "left", 5000, "left");
+    expect(t.sessionRow(sessionId).endReason).toBe("stopped_by_owner");
+    expect(t.f.store.channels.live.getGrant(TENANT, grant.id)).toMatchObject({ status: "paused", decidedReason: "stopped_by_owner" });
+    const refused = await t.join(grant.id, t.huddle());
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json()).toMatchObject({ error: "live_grant_not_active", reason: "grant_stopped_by_owner_resume_required" });
+    // Resume is the strict owner gate: another operator session cannot do it.
+    expect((await t.f.owner("POST", `${O}/grants/${grant.id}/resume`, {})).statusCode).not.toBe(200);
+    expect(t.f.store.channels.live.getGrant(TENANT, grant.id)?.status).toBe("paused");
+    const resumed = await t.strict("POST", `${O}/grants/${grant.id}/resume`, {});
+    expect(resumed.statusCode, resumed.body).toBe(200);
+    expect((await t.join(grant.id, t.huddle())).statusCode).toBe(201);
+  });
+
+  it("L2: disclosure notices count against the channel post caps and window; a refused reservation refuses the join and sends nothing", async () => {
+    const t = await setup();
+    const tighten = (caps: Record<string, unknown>) => {
+      const current = t.f.store.channels.getChannel(TENANT, t.channel.id)!;
+      t.f.store.channels.updateChannel(TENANT, t.channel.id, { policy: { ...current.policy, caps: { ...current.policy.caps, ...caps } } });
+    };
+    // Three posts a day: one join takes two (parent channel + huddle); the second join needs two more.
+    tighten({ perDay: 3, minIntervalSeconds: 600 });
+    const grant = await t.active({ caps: { perDay: 10 } });
+    const counted = () => t.f.store.channels.listPosts(TENANT, { channelId: t.channel.id, limit: 100 }).filter((post) => ["sending", "sent", "uncertain"].includes(post.status));
+    const first = await t.join(grant.id, t.huddle());
+    expect(first.statusCode, first.body).toBe(201);
+    // Both notices of the join were counted (the second is the same burst, so it skips the minimum gap).
+    expect(counted()).toHaveLength(2);
+    expect(counted().every((post) => post.status === "sent" && post.reason === "live_disclosure_notice")).toBe(true);
+    const notices = t.relay.eventsOfKind(9).filter((event) => event.pubkey === AGENT_KEY).length;
+    expect(notices).toBe(2);
+    const sessions = t.f.store.channels.live.listSessions(TENANT, { limit: 50 }).length;
+    const upgrades = t.huddleRelay.upgrades.length;
+    // The minimum gap of the channel window refuses the next join.
+    const gap = await t.join(grant.id, t.huddle());
+    expect(gap.statusCode).toBe(429);
+    expect(gap.json()).toMatchObject({ error: "channel_min_interval" });
+    // With the gap off, the day cap (3) still refuses: the first notice would fit, the second would not, so none is kept.
+    tighten({ minIntervalSeconds: 0 });
+    const day = await t.join(grant.id, t.huddle());
+    expect(day.statusCode).toBe(429);
+    expect(day.json()).toMatchObject({ error: "channel_cap_per_day" });
+    expect(counted()).toHaveLength(2);
+    expect(t.relay.eventsOfKind(9).filter((event) => event.pubkey === AGENT_KEY)).toHaveLength(notices);
+    expect(t.f.store.channels.live.listSessions(TENANT, { limit: 50 })).toHaveLength(sessions);
+    expect(t.huddleRelay.upgrades).toHaveLength(upgrades);
+  });
+
+  it("L3: speak-approved re-asserts the clip SHA-256 right before speaking; a swapped clip is refused and the approval is not burned", async () => {
+    const t = await setup();
+    const grant = await t.active({ modes: { speakApproved: true } });
+    const { sessionId } = await t.joined(grant.id, { speakApproved: true });
+    const clip = Buffer.from(writeOggOpus(Array.from({ length: 5 }, (_unused, index) => opusPacket(index + 1))));
+    const uploaded = await t.f.app.inject({
+      method: "POST",
+      url: `${A}/attachments?name=clip.ogg`,
+      headers: { authorization: `Bearer tbag_${"a".repeat(43)}`, "idempotency-key": key("upload"), "content-type": "audio/ogg" },
+      payload: clip,
+    });
+    expect(uploaded.statusCode, uploaded.body).toBe(201);
+    const attachmentId = uploaded.json().attachmentId as string;
+    const sha = uploaded.json().sha256 as string;
+    const speak = () => t.f.agent("POST", `${A}/${t.channel.id}/live/sessions/${sessionId}/speak`, { key: key("speak"), payload: { attachmentId, transcript: "Welcome to the call" } });
+    const held = await speak();
+    expect(held.statusCode, held.body).toBe(202);
+    const approvalId = held.json().approvalId as string;
+    expect((await t.f.app.inject({ method: "GET", url: `${O}/clips/${approvalId}`, headers: await t.strictHeaders() })).statusCode).toBe(200);
+    const approved = await t.f.app.inject({ method: "POST", url: `/api/marketplace/company-box/approvals/${approvalId}/approve`, headers: await t.strictHeaders(), payload: { playedSha256: sha } });
+    expect(approved.statusCode, approved.body).toBe(200);
+    // The stored file itself is swapped: the route's own read refuses it (nothing is spoken).
+    const file = (await readdir(t.f.root, { recursive: true })).map((entry) => path.join(t.f.root, entry)).find((entry) => path.basename(entry) === sha);
+    expect(file, "stored clip file").toBeTruthy();
+    const original = await readFile(file!);
+    await writeFile(file!, Buffer.concat([original.subarray(0, -1), Buffer.from([original[original.length - 1]! ^ 0xff])]));
+    expect((await speak()).statusCode).toBe(410);
+    await writeFile(file!, original);
+    // The bytes change after the route's read: the speak path refuses them before the first packet.
+    tamper.next = true;
+    const swapped = await speak();
+    expect(swapped.statusCode, swapped.body).toBe(422);
+    expect(swapped.json().error).toBe("live_clip_digest_mismatch");
+    expect(t.huddleRelay.conns.every((conn) => conn.framesIn.length === 0)).toBe(true);
+    expect(t.f.store.channels.live.listTranscript(TENANT, sessionId)).toHaveLength(0);
+    // The approval was not claimed: the genuine clip still plays, once.
+    const played = await speak();
+    expect(played.statusCode, played.body).toBe(200);
+    expect(played.json().spoken).toMatchObject({ kind: "clip", sha256: sha });
+  });
+
+  it("L4: the owner reads a transcript only in the pinned owner's own launch session", async () => {
+    const t = await setup();
+    const grant = await t.active();
+    const { sessionId } = await t.joined(grant.id);
+    t.f.store.channels.live.addTranscript({ workspaceSlug: TENANT, sessionId, grantId: grant.id, agentId: "agent-1", kind: "heard", speakerPubkey: PEER, text: "private words", textSha256: "a".repeat(64), flaggedTerms: [], startedAt: new Date(), endedAt: new Date(), now: new Date() });
+    const url = `${O}/sessions/${sessionId}/transcript`;
+    // Any other operator session (not the pinned owner's own launch session) is refused.
+    const operator = await t.f.owner("GET", url);
+    expect(operator.statusCode).toBe(403);
+    expect(operator.body).not.toContain("private words");
+    expect((await t.f.app.inject({ method: "GET", url, headers: { origin: BROWSER, cookie: "marketplace_session=bogus" } })).statusCode).toBeGreaterThanOrEqual(401);
+    const pinned = await t.f.app.inject({ method: "GET", url, headers: await t.strictHeaders() });
+    expect(pinned.statusCode, pinned.body).toBe(200);
+    expect(pinned.json().lines.map((line: { text: string }) => line.text)).toEqual(["private words"]);
+    // Another browser session of the same pinned owner is the owner too.
+    expect((await t.f.app.inject({ method: "GET", url, headers: await t.otherOwnerSession() })).statusCode).toBe(200);
+  });
+
+  it("L4: the retention purge drops the text and its SHA-256 and keeps metadata only", async () => {
+    const t = await setup();
+    const grant = await t.active();
+    const { sessionId } = await t.joined(grant.id);
+    const live = t.f.store.channels.live;
+    const written = live.addTranscript({ workspaceSlug: TENANT, sessionId, grantId: grant.id, agentId: "agent-1", kind: "heard", speakerPubkey: PEER, text: "yes", textSha256: "b".repeat(64), flaggedTerms: ["secret-project"], startedAt: new Date(), endedAt: new Date(), now: new Date() });
+    live.addTranscript({ workspaceSlug: TENANT, sessionId, grantId: grant.id, agentId: "agent-1", kind: "said", speakerPubkey: null, text: "clip words", textSha256: "c".repeat(64), clipSha256: "d".repeat(64), flaggedTerms: [], startedAt: new Date(), endedAt: new Date(), now: new Date() });
+    expect(live.purgeTranscripts(TENANT, new Date(Date.now() + 60_000), new Date())).toBe(2);
+    const lines = live.listTranscript(TENANT, sessionId);
+    expect(lines).toHaveLength(2);
+    for (const line of lines) expect(line).toMatchObject({ text: "", textSha256: null, purgedAt: expect.any(String) });
+    expect(lines.find((line) => line.id === written.id)).toMatchObject({ kind: "heard", speakerPubkey: PEER, flaggedTerms: ["secret-project"] });
+    expect(lines.find((line) => line.kind === "said")?.clipSha256).toBe("d".repeat(64));
+    // Neither the text nor its hash is left in the database file.
+    const db = (live as unknown as { db: DatabaseSync }).db;
+    expect(db.prepare("SELECT COUNT(*) AS n FROM channel_live_transcript WHERE text_sha256 IS NOT NULL OR text <> ''").get()).toEqual({ n: 0 });
+  });
+
+  it("L4: a database made with the old NOT NULL text_sha256 column is rebuilt in place, keeping its rows", async () => {
+    const { DatabaseSync: Sqlite } = await import("node:sqlite");
+    const { migrateLiveTables } = await import("./channels/live/store.js");
+    const db = new Sqlite(":memory:");
+    migrateLiveTables(db);
+    // A legacy table: same columns, text_sha256 NOT NULL.
+    db.exec(`DROP TABLE channel_live_transcript; CREATE TABLE channel_live_transcript (
+      id TEXT PRIMARY KEY, workspace_slug TEXT NOT NULL, session_id TEXT NOT NULL, grant_id TEXT NOT NULL, agent_id TEXT NOT NULL, kind TEXT NOT NULL,
+      speaker_pubkey TEXT, text TEXT NOT NULL, text_sha256 TEXT NOT NULL, clip_sha256 TEXT, flagged_terms_json TEXT NOT NULL DEFAULT '[]',
+      started_at TEXT NOT NULL, ended_at TEXT NOT NULL, purged_at TEXT, created_at TEXT NOT NULL);
+      INSERT INTO channel_live_transcript VALUES ('lvt_1', 'ws', 's', 'g', 'a', 'heard', NULL, 'hi', 'e', NULL, '[]', 't', 't', NULL, 't');`);
+    migrateLiveTables(db);
+    const info = (db.prepare("PRAGMA table_info(channel_live_transcript)").all() as Array<{ name: string; notnull: number }>).find((column) => column.name === "text_sha256");
+    expect(info?.notnull).toBe(0);
+    expect(db.prepare("SELECT id, text, text_sha256 FROM channel_live_transcript").all()).toEqual([{ id: "lvt_1", text: "hi", text_sha256: "e" }]);
+    db.prepare("UPDATE channel_live_transcript SET text_sha256 = NULL").run();
+    expect(db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name LIKE 'idx_channel_live_transcript%'").get()).toEqual({ n: 2 });
+    migrateLiveTables(db);
+    db.close();
   });
 });

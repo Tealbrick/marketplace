@@ -162,7 +162,7 @@ function SessionRow({ session, onNotice }: { session: LiveSessionView; onNotice:
   const stop = useMutation({
     mutationFn: () => stopLiveSession(session.sessionId),
     onSuccess: () => {
-      onNotice("The agent left the huddle.");
+      onNotice("The agent left the huddle. Its grant is paused until you press Resume.");
       void queryClient.invalidateQueries({ queryKey: ["channel-live"] });
     },
   });
@@ -173,7 +173,8 @@ function SessionRow({ session, onNotice }: { session: LiveSessionView; onNotice:
       <small className="muted-detail"> joined {formatWhen(session.joinedAt ?? session.startedAt)}{session.leftAt ? `, left ${formatWhen(session.leftAt)} (${(session.endReason ?? "").replace(/_/gu, " ")})` : ""} · listened {session.minutesListened} min · spoke {session.minutesSpoken} min</small>
     </div>
     <div className="dialog-actions">
-      {live && <Button size="small" tone="danger" disabled={stop.isPending} onClick={() => stop.mutate()} aria-label={`Stop the session of ${session.agentId}`}><Square size={14} />Stop</Button>}
+      {live && <Button size="small" tone="danger" disabled={stop.isPending} onClick={() => stop.mutate()} aria-label={`Stop the session of ${session.agentId}`} title="Ends the session and also pauses the grant until you press Resume."><Square size={14} />Stop</Button>}
+      {live && <small className="muted-detail">Stop also pauses the grant until Resume.</small>}
       <Button size="small" onClick={() => setOpen((value) => !value)}>{open ? "Hide transcript" : "Transcript"}</Button>
     </div>
     {stop.error && <InlineError error={stop.error} />}
@@ -206,7 +207,7 @@ export function LivePanel({ onNotice }: { onNotice: (notice: string) => void }) 
         {data.control.paused ? <><Play size={14} />Resume all grants</> : <><Pause size={14} />Pause all grants</>}
       </Button>
     </div>
-    <p className="muted-detail" role="note">To stop a session reliably, use Stop, Pause or Revoke here. Signed Buzz commands work only when an agent forwards them.</p>
+    <p className="muted-detail" role="note">A signed Buzz pause or revoke takes effect only when an agent relays it. Use Pause or Revoke here to stop at once.</p>
     {data.control.paused && <p role="status"><Tag tone="warning">All live-session grants are paused</Tag></p>}
     {control.error && <InlineError error={control.error} />}
     <h3>Grants</h3>

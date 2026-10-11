@@ -463,7 +463,7 @@ provider-env or account field.
 | `marketplace.channel-live-grants.approve` / `.restrict` | `POST /api/marketplace/channels/live/grants/{grantId}/approve` `{digest}`, `POST .../narrow` `{terms}` (pinned owner's launch session) |
 | `marketplace.channel-live-grants.decline` / `.revoke` / `.pause` / `.resume` | `POST /api/marketplace/channels/live/grants/{grantId}/decline|revoke|pause|resume` (resume: pinned owner) |
 | `marketplace.channel-live-control.update` | `PUT /api/marketplace/channels/live/control` `{paused?, commandChannel?}` (resume and command channel: pinned owner) |
-| `marketplace.channel-live-sessions.stop` / `.transcript` | `POST /api/marketplace/channels/live/sessions/{sessionId}/stop`, `GET .../transcript` |
+| `marketplace.channel-live-sessions.stop` / `.transcript` | `POST /api/marketplace/channels/live/sessions/{sessionId}/stop` (any owner session; also pauses the grant until the pinned owner resumes it), `GET .../transcript` (pinned owner's launch session) |
 | `marketplace.channel-live-clips.get` | `GET /api/marketplace/channels/live/clips/{approvalId}` (the exact held clip bytes; pinned owner) |
 
 "Grant to agent" is `marketplace.consents.request` with the channel's class
@@ -1182,10 +1182,16 @@ joins; the notice is a fixed Marketplace template and the agent's topic follows 
 Marketplace queries the relay for the 48100 event and the huddle channel's 9007 create event and checks the 48100
 signature, `h` = the channel, `ephemeral_channel_id` = the huddle and signer = the 9007 signer (the huddle's
 creator) (`live_huddle_not_in_channel` otherwise); the notice is posted in the parent
-channel and in the huddle itself. `listen` is refused while `perParticipantConsent` is true (no per-participant gate yet) and while no speech
+channel and in the huddle itself. Both notices count against the channel's post caps like posts (`perDay`,
+`perHour` and the minimum gap of the channel policy, shared by all agents; the second notice of a join skips the
+gap): they are reserved before anything starts, a refused reservation refuses the join with the cap error
+(`429 channel_cap_per_day` / `channel_cap_per_hour` / `channel_min_interval`) and nothing is sent or joined; a notice
+that was sent counts, one that was cleanly refused by the provider does not. `listen` is refused while `perParticipantConsent` is true (no per-participant gate yet) and while no speech
 provider is wired. Every 250 ms the session re-reads the grant record, the owner switch, the consent and the channel;
 revoke, pause, expiry, narrowing, consent loss, channel pause, `maxSessionMinutes`, `maxDayMinutes` and the cost cap
-stop it, and the client leaves within 5 s. `speak`: `{attachmentId}` of an uploaded `audio/ogg` clip is held once in the
+stop it, and the client leaves within 5 s. An owner Stop (`POST .../sessions/{id}/stop`) also pauses the grant
+(`decidedReason` `stopped_by_owner`): a rejoin is refused (`409 live_grant_not_active`, reason
+`grant_stopped_by_owner_resume_required`) until the pinned owner presses Resume (strict gate). `speak`: `{attachmentId}` of an uploaded `audio/ogg` clip is held once in the
 approvals queue (`live.speak-clip`, digest `sha256("tealbrick-live-clip/v1\n" + grantId + "\n" + clipSha256)`, owner
 approval in the UI, Buzz or TBD) and plays once after approval; `{text}` (speak-live) refuses forbidden terms before any
 provider call and is refused (`live_tts_unavailable`) until `@tealbrick/voice` ships Ogg/Opus synthesis (rc.19).
@@ -1194,7 +1200,8 @@ terms and shown to the owner, who plays the exact stored bytes (`GET /api/market
 `marketplace.channel-live-clips.get`, pinned owner's launch session, `audio/ogg`, inline, no-store, `x-content-sha256`)
 before approving. The clip digest is `sha256("tealbrick-live-clip/v1\n" + grantDigest + "\n" + sessionId + "\n" +
 clipSha256)`: a narrowed and re-approved grant, another session or the 24 h hold expiry invalidate it, and an
-approved clip plays once (`live_clip_already_played`). Approving a clip hold (re-review of PR #53) needs the pinned
+approved clip plays once (`live_clip_already_played`). Right before speaking, the clip bytes are hashed again and must equal the approved `clipSha256`
+(`422 live_clip_digest_mismatch`, before the single use is claimed). Approving a clip hold (re-review of PR #53) needs the pinned
 owner's own launch session (strict gate) AND a server-side record that the playback route served this hold's exact
 clip (whole body; `Range` requests are refused) to that same session after the hold was created and within its TTL,
 plus the page's SHA-256 of the played bytes (`{playedSha256}`); otherwise `409 live_clip_requires_playback` /
@@ -1214,7 +1221,9 @@ The bound consent must stay active and `outward`.
 
 Receipts. `channel_live_transcript` keeps what the agent heard (other participants: `framing:
 "untrusted-external-speech"` with the speaker key; forbidden terms flagged, never refused) and said (text, or the
-SHA-256 of an approved clip), with times; text is emptied after the inbound text retention. Sessions keep join and
+SHA-256 of an approved clip), with times; text AND its SHA-256 (`text_sha256`, set to null) are removed after the inbound text retention, only
+metadata and the clip SHA-256 stay. The owner reads a transcript only in the pinned owner's own launch session (strict
+gate, like clip playback). Sessions keep join and
 leave times and minutes. Raw audio is never written anywhere. The audit gets metadata and SHA-256 only (the session
 end records the transcript digest).
 
