@@ -10,7 +10,8 @@ Composio catalog here; classifying uncurated toolkits tool by tool needs the liv
 Classes: `read-allowlisted` (reviewed read, uncurated Composio only; the allowlist ships empty); `not outward` (runs
 on the agent's consent in both modes, modes do not apply); `assistant-runs` (outward; held in System mode, runs at
 once in Assistant mode within the daily limits); `held: ...` (outward; held in both modes: curated destructive flag,
-`connector.admin`, or a word of a hold family; computed with the default family settings, every family ON).
+`connector.admin`, a hand-reviewed family (Company Box entry.json `sensitiveFamilies`) or a word of a hold family;
+computed with the default family settings, every family ON).
 An "unless quiet" Calendar tool is counted as outward.
 
 ## Counts
@@ -18,19 +19,19 @@ An "unless quiet" Calendar tool is counted as outward.
 | Source | Tools | read-allowlisted | not outward (consent only) | assistant-runs | held: destructive | held: admin | held: sensitive:destructive | held: sensitive:money | held: sensitive:access-sharing | held: sensitive:bulk |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | composio:googlecalendar (curated) | 50 | 0 | 34 | 13 | 2 | 1 | 0 | 0 | 0 | 0 |
-| company-box:authentik (openapi) | 1091 | 0 | 1048 | 40 | 3 | 0 | 0 | 0 | 0 | 0 |
-| company-box:changedetection (openapi) | 23 | 0 | 16 | 6 | 1 | 0 | 0 | 0 | 0 | 0 |
-| company-box:chatwoot (openapi) | 448 | 0 | 390 | 56 | 1 | 0 | 0 | 0 | 0 | 1 |
-| company-box:documenso (openapi) | 89 | 0 | 78 | 10 | 1 | 0 | 0 | 0 | 0 | 0 |
-| company-box:easyappointments (openapi) | 51 | 0 | 46 | 4 | 1 | 0 | 0 | 0 | 0 | 0 |
-| company-box:forgejo (openapi) | 459 | 0 | 438 | 19 | 2 | 0 | 0 | 0 | 0 | 0 |
-| company-box:formbricks (openapi) | 108 | 0 | 83 | 23 | 2 | 0 | 0 | 0 | 0 | 0 |
-| company-box:glitchtip (openapi) | 175 | 0 | 155 | 19 | 1 | 0 | 0 | 0 | 0 | 0 |
-| company-box:listmonk (openapi) | 104 | 0 | 95 | 8 | 1 | 0 | 0 | 0 | 0 | 0 |
-| company-box:nextcloud (openapi) | 284 | 0 | 251 | 16 | 5 | 0 | 1 | 0 | 11 | 0 |
+| company-box:authentik (openapi) | 1091 | 0 | 1048 | 2 | 3 | 0 | 0 | 0 | 38 | 0 |
+| company-box:changedetection (openapi) | 23 | 0 | 16 | 5 | 1 | 0 | 0 | 0 | 1 | 0 |
+| company-box:chatwoot (openapi) | 448 | 0 | 390 | 24 | 1 | 0 | 0 | 0 | 27 | 6 |
+| company-box:documenso (openapi) | 89 | 0 | 78 | 6 | 1 | 0 | 1 | 0 | 3 | 0 |
+| company-box:easyappointments (openapi) | 51 | 0 | 46 | 2 | 1 | 0 | 0 | 0 | 2 | 0 |
+| company-box:forgejo (openapi) | 459 | 0 | 438 | 8 | 2 | 0 | 0 | 0 | 11 | 0 |
+| company-box:formbricks (openapi) | 108 | 0 | 83 | 13 | 2 | 0 | 0 | 0 | 9 | 1 |
+| company-box:glitchtip (openapi) | 175 | 0 | 155 | 9 | 1 | 0 | 0 | 4 | 6 | 0 |
+| company-box:listmonk (openapi) | 104 | 0 | 95 | 6 | 1 | 0 | 0 | 0 | 0 | 2 |
+| company-box:nextcloud (openapi) | 284 | 0 | 251 | 5 | 5 | 0 | 2 | 0 | 21 | 0 |
 | company-box:postiz (openapi) | 31 | 0 | 18 | 10 | 3 | 0 | 0 | 0 | 0 | 0 |
-| company-box:pretix (openapi) | 370 | 0 | 317 | 24 | 15 | 0 | 0 | 13 | 1 | 0 |
-| **All** | **3283** | **0** | **2969** | **248** | **38** | **1** | **1** | **13** | **12** | **1** |
+| company-box:pretix (openapi) | 370 | 0 | 317 | 11 | 15 | 0 | 0 | 18 | 6 | 3 |
+| **All** | **3283** | **0** | **2969** | **114** | **38** | **1** | **3** | **22** | **124** | **12** |
 
 ## Near-misses: tools that run in Assistant mode and contain a sensitive word as a substring
 
@@ -42,8 +43,310 @@ For manual review: the word matches only inside another word, so the tool is not
 | company-box:listmonk (openapi) | `updateSubscriberById` | SUBSCRIBE |
 | company-box:listmonk (openapi) | `patchSubscriber` | SUBSCRIBE |
 | company-box:listmonk (openapi) | `subscriberSendOptinById` | SUBSCRIBE |
-| company-box:listmonk (openapi) | `transactWithSubscriber` | SUBSCRIBE |
-| company-box:nextcloud (openapi) | `ocs_authapi-request-shared-secret-legacy` | SHARE |
-| company-box:nextcloud (openapi) | `deleted_shareapi-undelete` | DELETE, SHARE |
-| company-box:nextcloud (openapi) | `ocs_authapi-request-shared-secret` | SHARE |
-| company-box:nextcloud (openapi) | `request_handler-unshare` | SHARE |
+
+## Reviewed: every outward Company Box operation
+
+Each outward operation of the shipped entries was reviewed by hand. `held` rows wait for the owner in Assistant mode
+(System holds every row). Basis: the entry's curated destructive flag, `connector.admin`, a reviewed family
+(entry.json `sensitiveFamilies`), a tool-name word, or reviewed as runs.
+
+| Entry | Action | Assistant mode | Basis |
+| --- | --- | --- | --- |
+| authentik | `authenticators_admin_email_create` | held: access-sharing | reviewed family |
+| authentik | `authenticators_admin_sms_create` | held: access-sharing | reviewed family |
+| authentik | `core_tokens_create` | held: access-sharing | reviewed family |
+| authentik | `core_tokens_set_key_create` | held: destructive | curated destructive flag |
+| authentik | `core_users_impersonate_create` | held: destructive | curated destructive flag |
+| authentik | `core_users_recovery_create` | held: access-sharing | reviewed family |
+| authentik | `core_users_recovery_email_create` | held: access-sharing | reviewed family |
+| authentik | `core_users_set_password_create` | held: destructive | curated destructive flag |
+| authentik | `core_users_service_account_create` | held: access-sharing | reviewed family |
+| authentik | `endpoints_agents_enrollment_tokens_create` | held: access-sharing | reviewed family |
+| authentik | `events_rules_create` | held: access-sharing | reviewed family |
+| authentik | `events_rules_update` | held: access-sharing | reviewed family |
+| authentik | `events_rules_partial_update` | held: access-sharing | reviewed family |
+| authentik | `events_transports_create` | held: access-sharing | reviewed family |
+| authentik | `events_transports_update` | held: access-sharing | reviewed family |
+| authentik | `events_transports_partial_update` | held: access-sharing | reviewed family |
+| authentik | `events_transports_test_create` | runs | reviewed: runs |
+| authentik | `flows_executor_solve` | runs | reviewed: runs |
+| authentik | `flows_instances_import_create` | held: access-sharing | reviewed family |
+| authentik | `outposts_service_connections_docker_create` | held: access-sharing | reviewed family |
+| authentik | `outposts_service_connections_docker_update` | held: access-sharing | reviewed family |
+| authentik | `outposts_service_connections_docker_partial_update` | held: access-sharing | reviewed family |
+| authentik | `outposts_service_connections_kubernetes_create` | held: access-sharing | reviewed family |
+| authentik | `outposts_service_connections_kubernetes_update` | held: access-sharing | reviewed family |
+| authentik | `outposts_service_connections_kubernetes_partial_update` | held: access-sharing | reviewed family |
+| authentik | `providers_google_workspace_create` | held: access-sharing | reviewed family |
+| authentik | `providers_google_workspace_update` | held: access-sharing | reviewed family |
+| authentik | `providers_google_workspace_partial_update` | held: access-sharing | reviewed family |
+| authentik | `providers_google_workspace_sync_object_create` | held: access-sharing | reviewed family |
+| authentik | `providers_microsoft_entra_create` | held: access-sharing | reviewed family |
+| authentik | `providers_microsoft_entra_update` | held: access-sharing | reviewed family |
+| authentik | `providers_microsoft_entra_partial_update` | held: access-sharing | reviewed family |
+| authentik | `providers_microsoft_entra_sync_object_create` | held: access-sharing | reviewed family |
+| authentik | `providers_scim_create` | held: access-sharing | reviewed family |
+| authentik | `providers_scim_update` | held: access-sharing | reviewed family |
+| authentik | `providers_scim_partial_update` | held: access-sharing | reviewed family |
+| authentik | `providers_scim_sync_object_create` | held: access-sharing | reviewed family |
+| authentik | `sources_plex_redeem_token_create` | held: access-sharing | reviewed family |
+| authentik | `sources_plex_redeem_token_authenticated_create` | held: access-sharing | reviewed family |
+| authentik | `stages_authenticator_duo_import_devices_automatic_create` | held: access-sharing | reviewed family |
+| authentik | `stages_email_create` | held: access-sharing | reviewed family |
+| authentik | `stages_email_update` | held: access-sharing | reviewed family |
+| authentik | `stages_email_partial_update` | held: access-sharing | reviewed family |
+| changedetection | `importWatches` | runs | reviewed: runs |
+| changedetection | `replaceNotifications` | held: destructive | curated destructive flag |
+| changedetection | `addNotifications` | held: access-sharing | reviewed family |
+| changedetection | `createTag` | runs | reviewed: runs |
+| changedetection | `updateTag` | runs | reviewed: runs |
+| changedetection | `createWatch` | runs | reviewed: runs |
+| changedetection | `updateWatch` | runs | reviewed: runs |
+| chatwoot | `create-an-account` | held: access-sharing | reviewed family |
+| chatwoot | `create-an-account-user` | held: access-sharing | reviewed family |
+| chatwoot | `create-an-agent-bot` | held: access-sharing | reviewed family |
+| chatwoot | `update-an-agent-bot` | held: access-sharing | reviewed family |
+| chatwoot | `create-a-user` | held: access-sharing | reviewed family |
+| chatwoot | `create-a-conversation` | runs | reviewed: runs |
+| chatwoot | `create-a-message` | runs | reviewed: runs |
+| chatwoot | `create-an-account-agent-bot` | held: access-sharing | reviewed family |
+| chatwoot | `update-an-account-agent-bot` | held: access-sharing | reviewed family |
+| chatwoot | `add-new-agent-to-account` | held: access-sharing | reviewed family |
+| chatwoot | `add-new-automation-rule-to-account` | held: bulk | reviewed family |
+| chatwoot | `update-automation-rule-in-account` | held: bulk | reviewed family |
+| chatwoot | `add-new-portal-to-account` | runs | reviewed: runs |
+| chatwoot | `update-portal-to-account` | runs | reviewed: runs |
+| chatwoot | `add-new-article-to-account` | runs | reviewed: runs |
+| chatwoot | `newConversation` | runs | reviewed: runs |
+| chatwoot | `toggle-status-of-a-conversation` | runs | reviewed: runs |
+| chatwoot | `toggle-typing-status-of-a-conversation` | runs | reviewed: runs |
+| chatwoot | `inboxCreation` | runs | reviewed: runs |
+| chatwoot | `updateInbox` | runs | reviewed: runs |
+| chatwoot | `create-a-new-message-in-a-conversation` | runs | reviewed: runs |
+| chatwoot | `create-an-integration-hook` | held: access-sharing | reviewed family |
+| chatwoot | `update-an-integrations-hook` | held: access-sharing | reviewed family |
+| chatwoot | `create-a-webhook` | held: access-sharing | reviewed family |
+| chatwoot | `update-a-webhook` | held: access-sharing | reviewed family |
+| chatwoot | `create-campaign` | held: bulk | reviewed family |
+| chatwoot | `update-campaign` | held: bulk | reviewed family |
+| chatwoot | `v1-accounts-create` | held: access-sharing | reviewed family |
+| chatwoot | `agents-bulk-create` | held: bulk | word BULK_* |
+| chatwoot | `callbacks-register-facebook-page` | held: access-sharing | reviewed family |
+| chatwoot | `callbacks-facebook-pages` | held: access-sharing | reviewed family |
+| chatwoot | `callbacks-reauthorize-page` | held: access-sharing | reviewed family |
+| chatwoot | `automation-rules-clone` | held: bulk | reviewed family |
+| chatwoot | `macros-execute` | runs | reviewed: runs |
+| chatwoot | `channels-twilio-channel-create` | held: access-sharing | reviewed family |
+| chatwoot | `conversations-messages-retry` | runs | reviewed: runs |
+| chatwoot | `conversations-contact-info-request-create` | runs | reviewed: runs |
+| chatwoot | `conversations-transcript` | runs | reviewed: runs |
+| chatwoot | `contacts-export` | held: access-sharing | reviewed family |
+| chatwoot | `inboxes-sync-templates` | runs | reviewed: runs |
+| chatwoot | `inboxes-register-webhook` | held: access-sharing | reviewed family |
+| chatwoot | `whatsapp-manual-connect` | held: access-sharing | reviewed family |
+| chatwoot | `whatsapp-manual-setup-webhook` | held: access-sharing | reviewed family |
+| chatwoot | `integrations-hooks-process-event` | runs | reviewed: runs |
+| chatwoot | `integrations-slack-create` | held: access-sharing | reviewed family |
+| chatwoot | `integrations-slack-update` | held: access-sharing | reviewed family |
+| chatwoot | `integrations-dyte-create-a-meeting` | runs | reviewed: runs |
+| chatwoot | `integrations-dyte-add-participant-to-meeting` | held: access-sharing | reviewed family |
+| chatwoot | `integrations-shopify-auth` | held: access-sharing | reviewed family |
+| chatwoot | `integrations-linear-create-issue` | runs | reviewed: runs |
+| chatwoot | `integrations-linear-link-issue` | runs | reviewed: runs |
+| chatwoot | `integrations-linear-unlink-issue` | runs | reviewed: runs |
+| chatwoot | `portals-send-instructions` | runs | reviewed: runs |
+| chatwoot | `portals-articles-update` | runs | reviewed: runs |
+| chatwoot | `v1-profile-resend-confirmation` | runs | reviewed: runs |
+| chatwoot | `v2-accounts-create` | held: access-sharing | reviewed family |
+| chatwoot | `platform-users-token` | held: destructive | curated destructive flag |
+| chatwoot | `platform-accounts-email-channel-migrations-create` | held: access-sharing | reviewed family |
+| documenso | `envelope-recipient-rejectOnBehalfOf` | held: destructive | reviewed family |
+| documenso | `envelope-use` | runs | reviewed: runs |
+| documenso | `envelope-cancel` | held: destructive | curated destructive flag |
+| documenso | `envelope-distribute` | runs | reviewed: runs |
+| documenso | `envelope-redistribute` | runs | reviewed: runs |
+| documenso | `document-distribute` | runs | reviewed: runs |
+| documenso | `document-redistribute` | runs | reviewed: runs |
+| documenso | `template-createDocumentFromTemplate` | runs | reviewed: runs |
+| documenso | `template-createTemplateDirectLink` | held: access-sharing | reviewed family |
+| documenso | `template-toggleTemplateDirectLink` | held: access-sharing | reviewed family |
+| documenso | `embeddingPresign-createEmbeddingPresignToken` | held: access-sharing | reviewed family |
+| easyappointments | `POST /appointments` | runs | reviewed: runs |
+| easyappointments | `PUT /appointments/{appointmentId}` | runs | reviewed: runs |
+| easyappointments | `DELETE /appointments/{appointmentId}` | held: destructive | curated destructive flag |
+| easyappointments | `POST /webhooks` | held: access-sharing | reviewed family |
+| easyappointments | `PUT /webhooks/{webhookId}` | held: access-sharing | reviewed family |
+| forgejo | `adminCreateUser` | held: access-sharing | reviewed family |
+| forgejo | `orgCreateHook` | held: access-sharing | reviewed family |
+| forgejo | `orgEditHook` | held: access-sharing | reviewed family |
+| forgejo | `repoMigrate` | runs | reviewed: runs |
+| forgejo | `DispatchWorkflow` | runs | reviewed: runs |
+| forgejo | `repoAddCollaborator` | held: access-sharing | reviewed family |
+| forgejo | `repoCreateHook` | held: access-sharing | reviewed family |
+| forgejo | `repoEditHook` | held: access-sharing | reviewed family |
+| forgejo | `repoTestHook` | runs | reviewed: runs |
+| forgejo | `repoMirrorSync` | runs | reviewed: runs |
+| forgejo | `repoMergePullRequest` | held: destructive | curated destructive flag |
+| forgejo | `repoAddPushMirror` | held: access-sharing | reviewed family |
+| forgejo | `repoPushMirrorSync` | runs | reviewed: runs |
+| forgejo | `repoCreateRelease` | runs | reviewed: runs |
+| forgejo | `repoEditRelease` | runs | reviewed: runs |
+| forgejo | `repoCreateReleaseAttachment` | runs | reviewed: runs |
+| forgejo | `repoTransfer` | held: destructive | curated destructive flag |
+| forgejo | `orgAddTeamMember` | held: access-sharing | reviewed family |
+| forgejo | `userAddEmail` | held: access-sharing | reviewed family |
+| forgejo | `userCreateHook` | held: access-sharing | reviewed family |
+| forgejo | `userEditHook` | held: access-sharing | reviewed family |
+| formbricks | `POST /api/v1/client/{workspaceId}/responses` | runs | reviewed: runs |
+| formbricks | `PUT /api/v1/client/{workspaceId}/responses/{responseId}` | runs | reviewed: runs |
+| formbricks | `POST /api/v1/management/responses` | runs | reviewed: runs |
+| formbricks | `PUT /api/v1/management/responses/{responseId}` | runs | reviewed: runs |
+| formbricks | `POST /api/v1/management/storage` | runs | reviewed: runs |
+| formbricks | `POST /api/v1/management/surveys` | runs | reviewed: runs |
+| formbricks | `PUT /api/v1/management/surveys/{surveyId}` | runs | reviewed: runs |
+| formbricks | `POST /api/v1/webhooks` | held: access-sharing | reviewed family |
+| formbricks | `PUT /api/v2/client/{workspaceId}/responses/{responseId}` | runs | reviewed: runs |
+| formbricks | `POST /api/v2/client/{workspaceId}/responses` | runs | reviewed: runs |
+| formbricks | `createResponse` | runs | reviewed: runs |
+| formbricks | `updateResponse` | runs | reviewed: runs |
+| formbricks | `createWebhook` | held: access-sharing | reviewed family |
+| formbricks | `updateWebhook` | held: access-sharing | reviewed family |
+| formbricks | `createTeam` | held: access-sharing | reviewed family |
+| formbricks | `updateTeam` | held: access-sharing | reviewed family |
+| formbricks | `deleteTeam` | held: destructive | curated destructive flag |
+| formbricks | `updateWorkspaceTeam` | held: access-sharing | reviewed family |
+| formbricks | `createWorkspaceTeam` | held: access-sharing | reviewed family |
+| formbricks | `deleteWorkspaceTeam` | held: destructive | curated destructive flag |
+| formbricks | `createUser` | held: access-sharing | reviewed family |
+| formbricks | `updateUser` | held: access-sharing | reviewed family |
+| formbricks | `createSurveyV3` | runs | reviewed: runs |
+| formbricks | `patchSurveyV3` | runs | reviewed: runs |
+| formbricks | `enableWorkflowV3` | held: bulk | reviewed family |
+| glitchtip | `apps_event_ingest_api_event_store` | runs | reviewed: runs |
+| glitchtip | `apps_event_ingest_api_event_security` | runs | reviewed: runs |
+| glitchtip | `apps_alerts_api_create_project_alert` | held: access-sharing | reviewed family |
+| glitchtip | `apps_alerts_api_update_project_alert` | held: access-sharing | reviewed family |
+| glitchtip | `apps_alerts_api_test_project_alert` | runs | reviewed: runs |
+| glitchtip | `apps_importer_api_importer` | runs | reviewed: runs |
+| glitchtip | `apps_organizations_ext_api_create_organization_member` | held: access-sharing | reviewed family |
+| glitchtip | `apps_organizations_ext_api_update_organization_member` | held: access-sharing | reviewed family |
+| glitchtip | `apps_organizations_ext_api_set_organization_owner` | held: destructive | curated destructive flag |
+| glitchtip | `apps_stripe_api_create_stripe_session` | held: money | reviewed family |
+| glitchtip | `apps_stripe_api_stripe_billing_portal_session` | held: money | reviewed family |
+| glitchtip | `apps_stripe_api_stripe_create_subscription` | held: money | reviewed family |
+| glitchtip | `apps_stripe_api_configure_overage` | held: money | reviewed family |
+| glitchtip | `apps_uptime_api_create_monitor` | runs | reviewed: runs |
+| glitchtip | `apps_uptime_api_update_monitor` | runs | reviewed: runs |
+| glitchtip | `apps_uptime_api_create_status_page` | runs | reviewed: runs |
+| glitchtip | `apps_users_api_create_email` | held: access-sharing | reviewed family |
+| glitchtip | `apps_users_api_send_confirm_email` | runs | reviewed: runs |
+| glitchtip | `apps_wizard_api_setup_wizard_set_token` | held: access-sharing | reviewed family |
+| glitchtip | `apps_event_ingest_embed_api_submit_embed_error_page` | runs | reviewed: runs |
+| listmonk | `updateCampaignStatusById` | held: destructive | curated destructive flag |
+| listmonk | `testCampaignById` | held: bulk | reviewed family |
+| listmonk | `handlePublicSubscription` | runs | reviewed: runs |
+| listmonk | `testSMTPSettings` | runs | reviewed: runs |
+| listmonk | `createSubscriber` | runs | reviewed: runs |
+| listmonk | `updateSubscriberById` | runs | reviewed: runs |
+| listmonk | `patchSubscriber` | runs | reviewed: runs |
+| listmonk | `subscriberSendOptinById` | runs | reviewed: runs |
+| listmonk | `transactWithSubscriber` | held: bulk | reviewed family |
+| nextcloud | `mount_public_link-create-federated-share` | held: access-sharing | word SHARE |
+| nextcloud | `request_handler-receive-notification` | held: access-sharing | reviewed family |
+| nextcloud | `request_handler-add-share` | held: access-sharing | word SHARE |
+| nextcloud | `direct-get-url` | held: access-sharing | reviewed family |
+| nextcloud | `ocs_authapi-request-shared-secret-legacy` | held: access-sharing | reviewed family |
+| nextcloud | `transfer_ownership-transfer` | held: destructive | curated destructive flag |
+| nextcloud | `deleted_shareapi-undelete` | held: access-sharing | reviewed family |
+| nextcloud | `remote-accept-share` | held: access-sharing | word SHARE |
+| nextcloud | `remote-decline-share` | held: destructive | curated destructive flag |
+| nextcloud | `remote-unshare` | held: destructive | curated destructive flag |
+| nextcloud | `shareapi-create-share` | held: access-sharing | word SHARE |
+| nextcloud | `shareapi-update-share` | held: access-sharing | word SHARE |
+| nextcloud | `shareapi-send-share-email` | held: access-sharing | word SHARE |
+| nextcloud | `api-generate-notification-v3` | runs | reviewed: runs |
+| nextcloud | `api-self-test-push` | runs | reviewed: runs |
+| nextcloud | `api-generate-notification` | runs | reviewed: runs |
+| nextcloud | `push-register-device` | held: access-sharing | reviewed family |
+| nextcloud | `push-remove-device` | held: destructive | curated destructive flag |
+| nextcloud | `webhooks-create` | held: access-sharing | reviewed family |
+| nextcloud | `webhooks-update` | held: access-sharing | reviewed family |
+| nextcloud | `ocs_authapi-request-shared-secret` | held: access-sharing | reviewed family |
+| nextcloud | `request_handler-create-share` | held: access-sharing | word SHARE |
+| nextcloud | `request_handler-accept-share` | held: access-sharing | word SHARE |
+| nextcloud | `request_handler-decline-share` | held: access-sharing | word SHARE |
+| nextcloud | `request_handler-move` | held: access-sharing | reviewed family |
+| nextcloud | `request_handler-update-permissions` | held: access-sharing | word UPDATE_PERMISSIONS |
+| nextcloud | `request_handler-re-share` | held: access-sharing | word SHARE |
+| nextcloud | `request_handler-revoke` | held: destructive | word REVOKE |
+| nextcloud | `request_handler-unshare` | held: destructive | reviewed family |
+| nextcloud | `users-add-user` | held: access-sharing | reviewed family |
+| nextcloud | `users-resend-welcome-message` | runs | reviewed: runs |
+| nextcloud | `users-wipe-user-devices` | held: destructive | curated destructive flag |
+| nextcloud | `webdav-comments-create` | runs | reviewed: runs |
+| postiz | `PublicIntegrationsController_uploadSimple` | runs | reviewed: runs |
+| postiz | `PublicIntegrationsController_uploadsFromUrl` | runs | reviewed: runs |
+| postiz | `PublicIntegrationsController_createPost` | runs | reviewed: runs |
+| postiz | `PublicIntegrationsController_deletePost` | held: destructive | curated destructive flag |
+| postiz | `PublicIntegrationsController_deletePostByGroup` | held: destructive | curated destructive flag |
+| postiz | `PublicIntegrationsController_generateVideo` | runs | reviewed: runs |
+| postiz | `PublicIntegrationsController_videoFunction` | runs | reviewed: runs |
+| postiz | `PublicIntegrationsController_startClipping` | runs | reviewed: runs |
+| postiz | `PublicIntegrationsController_deleteChannel` | held: destructive | curated destructive flag |
+| postiz | `PublicIntegrationsController_updatePostSettings` | runs | reviewed: runs |
+| postiz | `PublicIntegrationsController_changePostStatus` | runs | reviewed: runs |
+| postiz | `PublicIntegrationsController_updateReleaseId` | runs | reviewed: runs |
+| postiz | `PublicIntegrationsController_triggerIntegrationTool` | runs | reviewed: runs |
+| pretix | `checkinrpc.redeem` | runs | reviewed: runs |
+| pretix | `customers.create` | runs | reviewed: runs |
+| pretix | `events.create` | runs | reviewed: runs |
+| pretix | `events.replace` | runs | reviewed: runs |
+| pretix | `events.update` | runs | reviewed: runs |
+| pretix | `checkinlists_positions.redeem` | runs | reviewed: runs |
+| pretix | `clone.create` | runs | reviewed: runs |
+| pretix | `invoices.regenerate` | held: destructive | curated destructive flag |
+| pretix | `invoices.reissue` | held: destructive | curated destructive flag |
+| pretix | `invoices.retransmit` | runs | reviewed: runs |
+| pretix | `invoices.transmit` | runs | reviewed: runs |
+| pretix | `orderpositions.regenerate_secrets` | held: destructive | curated destructive flag |
+| pretix | `orders.create` | held: money | word ORDER |
+| pretix | `orders.approve` | held: money | word ORDER |
+| pretix | `orders.change` | held: destructive | curated destructive flag |
+| pretix | `orders.create_invoice` | held: money | word ORDER |
+| pretix | `orders.deny` | held: destructive | curated destructive flag |
+| pretix | `orders.extend` | held: money | word ORDER |
+| pretix | `orders.mark_canceled` | held: destructive | curated destructive flag |
+| pretix | `orders.mark_expired` | held: destructive | curated destructive flag |
+| pretix | `orders.mark_paid` | held: money | word ORDER |
+| pretix | `orders.mark_pending` | held: money | word ORDER |
+| pretix | `orders.mark_refunded` | held: destructive | curated destructive flag |
+| pretix | `orders_payments.create` | held: money | word ORDER |
+| pretix | `orders_payments.cancel` | held: destructive | curated destructive flag |
+| pretix | `orders_payments.confirm` | held: money | word ORDER |
+| pretix | `orders_payments.refund` | held: destructive | curated destructive flag |
+| pretix | `orders.reactivate` | held: money | word ORDER |
+| pretix | `orders_refunds.create` | held: money | word ORDER |
+| pretix | `orders_refunds.cancel` | held: destructive | curated destructive flag |
+| pretix | `orders_refunds.done` | held: money | word ORDER |
+| pretix | `orders_refunds.process` | held: money | word ORDER |
+| pretix | `orders.regenerate_secrets` | held: destructive | curated destructive flag |
+| pretix | `orders.resend_link` | held: money | word ORDER |
+| pretix | `scheduled_exports.create` | held: access-sharing | reviewed family |
+| pretix | `sendmail_rules.create` | held: bulk | reviewed family |
+| pretix | `sendmail_rules.replace` | held: bulk | reviewed family |
+| pretix | `sendmail_rules.update` | held: bulk | reviewed family |
+| pretix | `settings.update` | held: money | reviewed family |
+| pretix | `shredders.shred` | held: destructive | curated destructive flag |
+| pretix | `waitinglistentries.send_voucher` | held: money | reviewed family |
+| pretix | `giftcards.create` | held: money | reviewed family |
+| pretix | `giftcards.transact` | held: money | reviewed family |
+| pretix | `invoices.regenerate_organizer` | held: destructive | curated destructive flag |
+| pretix | `invoices.reissue_organizer` | held: destructive | curated destructive flag |
+| pretix | `invoices.retransmit_organizer` | runs | reviewed: runs |
+| pretix | `invoices.transmit_organizer` | runs | reviewed: runs |
+| pretix | `scheduled_exports.create_organizer` | held: access-sharing | reviewed family |
+| pretix | `settings.update_organizer` | held: money | reviewed family |
+| pretix | `teams_invites.create` | held: access-sharing | word INVITE |
+| pretix | `webhooks.create` | held: access-sharing | reviewed family |
+| pretix | `webhooks.replace` | held: access-sharing | reviewed family |
+| pretix | `webhooks.update` | held: access-sharing | reviewed family |

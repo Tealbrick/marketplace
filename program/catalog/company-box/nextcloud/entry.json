@@ -64,6 +64,19 @@
     "users-search-by-phone-numbers",
     "wipe-check-wipe"
   ],
+  "sensitiveFamilies": {
+    "request_handler-receive-notification": "access-sharing",
+    "direct-get-url": "access-sharing",
+    "ocs_authapi-request-shared-secret-legacy": "access-sharing",
+    "ocs_authapi-request-shared-secret": "access-sharing",
+    "deleted_shareapi-undelete": "access-sharing",
+    "push-register-device": "access-sharing",
+    "webhooks-create": "access-sharing",
+    "webhooks-update": "access-sharing",
+    "request_handler-move": "access-sharing",
+    "request_handler-unshare": "destructive",
+    "users-add-user": "access-sharing"
+  },
   "exposure": "discovery",
   "excluded": [
     {

@@ -283,6 +283,14 @@ agent-grant attachment and the runtime lease are the paths that read it.
     others off per workspace (Agent grants → "What still waits?", warning
     "Assistant agents will do this without asking you."). System mode ignores
     families;
+  - **hand-reviewed Company Box families**: each entry's `entry.json`
+    `sensitiveFamilies` maps outward operations (operationId or `METHOD /path`,
+    exact) to a family where the name says nothing (listmonk
+    `testCampaignById` → bulk, pretix `giftcards.create` → money, webhooks →
+    access-sharing). Every outward operation of the shipped entries was
+    reviewed; the table is in [assistant-mode-coverage.md](assistant-mode-coverage.md).
+    The catalog refuses a key that names no exposed outward operation. They
+    follow the family settings (destructive and money locked ON);
   - **daily limits**: 100 outward executions per agent and 50 per agent and
     connector per **UTC day** (reset at 00:00 UTC), editable by the owner. The
     limit is checked and the execution reserved in one SQLite transaction
@@ -293,7 +301,9 @@ agent-grant attachment and the runtime lease are the paths that read it.
 - The mode never widens a consent: an observe consent still cannot run a
   dispatch or outward tool. Non-outward actions follow the consent in both
   modes.
-- **Pause** (per agent) and **Pause all agents** are persisted kill switches:
+- **Pause** (per agent) and **Pause all agents** are persisted kill switches
+  (a pause set here also overrides a Portal claim `paused: false`; the owner UI
+  says so):
   every call of a paused agent answers `423 agent_paused` before any provider
   call (reads and channel posts included; a scheduled post due while paused is
   skipped, not sent later), and a held call

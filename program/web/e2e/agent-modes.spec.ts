@@ -63,6 +63,7 @@ test("owner switches an agent between System and Assistant, pauses it, and sees 
   await page.getByRole("navigation").getByRole("button", { name: "Agent grants" }).click();
   const panel = page.getByRole("region", { name: "Agent approval modes" });
   await expect(panel.getByRole("heading", { name: "Assistant and System agents" })).toBeVisible();
+  await expect(panel).toContainText("Pause here also overrides Portal");
   const row = page.getByTestId("agent-mode-tempo");
   await expect(row).toContainText("System: every outward action waits for your approval.");
   await expect(row).toContainText("3 of 100 outward actions");

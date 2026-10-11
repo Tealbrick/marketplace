@@ -104,6 +104,21 @@
     "ticketpdfrenderer.render_batch",
     "orderpositions.price_calc"
   ],
+  "sensitiveFamilies": {
+    "scheduled_exports.create": "access-sharing",
+    "scheduled_exports.create_organizer": "access-sharing",
+    "sendmail_rules.create": "bulk",
+    "sendmail_rules.replace": "bulk",
+    "sendmail_rules.update": "bulk",
+    "settings.update": "money",
+    "settings.update_organizer": "money",
+    "waitinglistentries.send_voucher": "money",
+    "giftcards.create": "money",
+    "giftcards.transact": "money",
+    "webhooks.create": "access-sharing",
+    "webhooks.replace": "access-sharing",
+    "webhooks.update": "access-sharing"
+  },
   "exposure": "auto",
   "excluded": []
 }

@@ -46,6 +46,18 @@
   "destructive": [
     "POST /api/0/organizations/*/members/*/set_owner/"
   ],
+  "sensitiveFamilies": {
+    "apps_alerts_api_create_project_alert": "access-sharing",
+    "apps_alerts_api_update_project_alert": "access-sharing",
+    "apps_organizations_ext_api_create_organization_member": "access-sharing",
+    "apps_organizations_ext_api_update_organization_member": "access-sharing",
+    "apps_stripe_api_create_stripe_session": "money",
+    "apps_stripe_api_stripe_billing_portal_session": "money",
+    "apps_stripe_api_stripe_create_subscription": "money",
+    "apps_stripe_api_configure_overage": "money",
+    "apps_users_api_create_email": "access-sharing",
+    "apps_wizard_api_setup_wizard_set_token": "access-sharing"
+  },
   "exposure": "auto",
   "excluded": []
 }

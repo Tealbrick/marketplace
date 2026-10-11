@@ -253,7 +253,8 @@
           "key": "company-box-authentik.authenticators-admin-email-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "authenticators_admin_email_retrieve",
@@ -373,7 +374,8 @@
           "key": "company-box-authentik.authenticators-admin-sms-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "authenticators_admin_sms_retrieve",
@@ -1383,7 +1385,8 @@
           "key": "company-box-authentik.core-tokens-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "core_tokens_retrieve",
@@ -1580,7 +1583,8 @@
           "key": "company-box-authentik.core-users-recovery-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "core_users_recovery_email_create",
@@ -1590,7 +1594,8 @@
           "key": "company-box-authentik.core-users-recovery-email-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "core_users_set_password_create",
@@ -1660,7 +1665,8 @@
           "key": "company-box-authentik.core-users-service-account-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "crypto_certificatekeypairs_list",
@@ -1910,7 +1916,8 @@
           "key": "company-box-authentik.endpoints-agents-enrollment-tokens-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "endpoints_agents_enrollment_tokens_retrieve",
@@ -2607,7 +2614,8 @@
           "key": "company-box-authentik.events-rules-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "events_rules_retrieve",
@@ -2627,7 +2635,8 @@
           "key": "company-box-authentik.events-rules-update",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "events_rules_destroy",
@@ -2647,7 +2656,8 @@
           "key": "company-box-authentik.events-rules-partial-update",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "events_rules_used_by_list",
@@ -2677,7 +2687,8 @@
           "key": "company-box-authentik.events-transports-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "events_transports_retrieve",
@@ -2697,7 +2708,8 @@
           "key": "company-box-authentik.events-transports-update",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "events_transports_destroy",
@@ -2717,7 +2729,8 @@
           "key": "company-box-authentik.events-transports-partial-update",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "events_transports_test_create",
@@ -2967,7 +2980,8 @@
           "key": "company-box-authentik.flows-instances-import-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "lifecycle_iterations_create",
@@ -3485,7 +3499,8 @@
           "key": "company-box-authentik.outposts-service-connections-docker-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "outposts_service_connections_docker_retrieve",
@@ -3505,7 +3520,8 @@
           "key": "company-box-authentik.outposts-service-connections-docker-update",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "outposts_service_connections_docker_destroy",
@@ -3525,7 +3541,8 @@
           "key": "company-box-authentik.outposts-service-connections-docker-partial-update",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "outposts_service_connections_docker_used_by_list",
@@ -3555,7 +3572,8 @@
           "key": "company-box-authentik.outposts-service-connections-kubernetes-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "outposts_service_connections_kubernetes_retrieve",
@@ -3575,7 +3593,8 @@
           "key": "company-box-authentik.outposts-service-connections-kubernetes-update",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "outposts_service_connections_kubernetes_destroy",
@@ -3595,7 +3614,8 @@
           "key": "company-box-authentik.outposts-service-connections-kubernetes-partial-update",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "outposts_service_connections_kubernetes_used_by_list",
@@ -5545,7 +5565,8 @@
           "key": "company-box-authentik.providers-google-workspace-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "providers_google_workspace_retrieve",
@@ -5565,7 +5586,8 @@
           "key": "company-box-authentik.providers-google-workspace-update",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "providers_google_workspace_destroy",
@@ -5585,7 +5607,8 @@
           "key": "company-box-authentik.providers-google-workspace-partial-update",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "providers_google_workspace_sync_object_create",
@@ -5595,7 +5618,8 @@
           "key": "company-box-authentik.providers-google-workspace-sync-object-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "providers_google_workspace_sync_status_retrieve",
@@ -5805,7 +5829,8 @@
           "key": "company-box-authentik.providers-microsoft-entra-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "providers_microsoft_entra_retrieve",
@@ -5825,7 +5850,8 @@
           "key": "company-box-authentik.providers-microsoft-entra-update",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "providers_microsoft_entra_destroy",
@@ -5845,7 +5871,8 @@
           "key": "company-box-authentik.providers-microsoft-entra-partial-update",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "providers_microsoft_entra_sync_object_create",
@@ -5855,7 +5882,8 @@
           "key": "company-box-authentik.providers-microsoft-entra-sync-object-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "providers_microsoft_entra_sync_status_retrieve",
@@ -6395,7 +6423,8 @@
           "key": "company-box-authentik.providers-scim-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "providers_scim_retrieve",
@@ -6415,7 +6444,8 @@
           "key": "company-box-authentik.providers-scim-update",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "providers_scim_destroy",
@@ -6435,7 +6465,8 @@
           "key": "company-box-authentik.providers-scim-partial-update",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "providers_scim_sync_object_create",
@@ -6445,7 +6476,8 @@
           "key": "company-box-authentik.providers-scim-sync-object-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "providers_scim_sync_status_retrieve",
@@ -7995,7 +8027,8 @@
           "key": "company-box-authentik.sources-plex-redeem-token-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "sources_plex_redeem_token_authenticated_create",
@@ -8005,7 +8038,8 @@
           "key": "company-box-authentik.sources-plex-redeem-token-authenticated-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "sources_saml_list",
@@ -9025,7 +9059,8 @@
           "key": "company-box-authentik.stages-authenticator-duo-import-devices-automatic-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "stages_authenticator_duo_used_by_list",
@@ -9845,7 +9880,8 @@
           "key": "company-box-authentik.stages-email-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "stages_email_retrieve",
@@ -9865,7 +9901,8 @@
           "key": "company-box-authentik.stages-email-update",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "stages_email_destroy",
@@ -9885,7 +9922,8 @@
           "key": "company-box-authentik.stages-email-partial-update",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "stages_email_used_by_list",
@@ -11058,7 +11096,8 @@
           "key": "company-box-changedetection.add-notifications",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "deleteNotifications",
@@ -11277,7 +11316,8 @@
           "key": "company-box-chatwoot.create-an-account",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "get-details-of-an-account",
@@ -11327,7 +11367,8 @@
           "key": "company-box-chatwoot.create-an-account-user",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "delete-an-account-user",
@@ -11357,7 +11398,8 @@
           "key": "company-box-chatwoot.create-an-agent-bot",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "get-details-of-a-single-agent-bot",
@@ -11387,7 +11429,8 @@
           "key": "company-box-chatwoot.update-an-agent-bot",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "create-a-user",
@@ -11397,7 +11440,8 @@
           "key": "company-box-chatwoot.create-a-user",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "get-details-of-a-user",
@@ -11624,7 +11668,8 @@
           "key": "company-box-chatwoot.create-an-account-agent-bot",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "get-details-of-a-single-account-agent-bot",
@@ -11654,7 +11699,8 @@
           "key": "company-box-chatwoot.update-an-account-agent-bot",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "get-account-agents",
@@ -11674,7 +11720,8 @@
           "key": "company-box-chatwoot.add-new-agent-to-account",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "delete-agent-from-account",
@@ -11934,7 +11981,8 @@
           "key": "company-box-chatwoot.add-new-automation-rule-to-account",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "bulk"
         },
         {
           "ref": "get-details-of-a-single-automation-rule",
@@ -11964,7 +12012,8 @@
           "key": "company-box-chatwoot.update-automation-rule-in-account",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "bulk"
         },
         {
           "ref": "get-portal",
@@ -12464,7 +12513,8 @@
           "key": "company-box-chatwoot.create-an-integration-hook",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "delete-an-integration-hook",
@@ -12484,7 +12534,8 @@
           "key": "company-box-chatwoot.update-an-integrations-hook",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "fetchProfile",
@@ -12664,7 +12715,8 @@
           "key": "company-box-chatwoot.create-a-webhook",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "delete-a-webhook",
@@ -12684,7 +12736,8 @@
           "key": "company-box-chatwoot.update-a-webhook",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "get-account-reporting-events",
@@ -12831,7 +12884,8 @@
           "key": "company-box-chatwoot.create-campaign",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "bulk"
         },
         {
           "ref": "get-campaign",
@@ -12861,7 +12915,8 @@
           "key": "company-box-chatwoot.update-campaign",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "bulk"
         },
         {
           "ref": "v1-accounts-create",
@@ -12871,7 +12926,8 @@
           "key": "company-box-chatwoot.v1-accounts-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "v1-accounts-update-active-at",
@@ -13631,7 +13687,8 @@
           "key": "company-box-chatwoot.callbacks-register-facebook-page",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "callbacks-facebook-pages",
@@ -13641,7 +13698,8 @@
           "key": "company-box-chatwoot.callbacks-facebook-pages",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "callbacks-reauthorize-page",
@@ -13651,7 +13709,8 @@
           "key": "company-box-chatwoot.callbacks-reauthorize-page",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "automation-rules-clone",
@@ -13661,7 +13720,8 @@
           "key": "company-box-chatwoot.automation-rules-clone",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "bulk"
         },
         {
           "ref": "macros-index",
@@ -13991,7 +14051,8 @@
           "key": "company-box-chatwoot.channels-twilio-channel-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "conversations-search",
@@ -14411,7 +14472,8 @@
           "key": "company-box-chatwoot.contacts-export",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "contacts-destroy-custom-attributes",
@@ -14711,7 +14773,8 @@
           "key": "company-box-chatwoot.inboxes-register-webhook",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "inboxes-reset-secret",
@@ -15041,7 +15104,8 @@
           "key": "company-box-chatwoot.whatsapp-manual-connect",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "whatsapp-manual-webhook-status",
@@ -15061,7 +15125,8 @@
           "key": "company-box-chatwoot.whatsapp-manual-setup-webhook",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "integrations-apps-show",
@@ -15091,7 +15156,8 @@
           "key": "company-box-chatwoot.integrations-slack-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "integrations-slack-destroy",
@@ -15111,7 +15177,8 @@
           "key": "company-box-chatwoot.integrations-slack-update",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "integrations-slack-list-all-channels",
@@ -15141,7 +15208,8 @@
           "key": "company-box-chatwoot.integrations-dyte-add-participant-to-meeting",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "integrations-shopify-destroy",
@@ -15161,7 +15229,8 @@
           "key": "company-box-chatwoot.integrations-shopify-auth",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "integrations-shopify-orders",
@@ -15571,7 +15640,8 @@
           "key": "company-box-chatwoot.v2-accounts-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "v2-summary-reports-label",
@@ -15731,7 +15801,8 @@
           "key": "company-box-chatwoot.platform-accounts-email-channel-migrations-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "public-csat-survey-show",
@@ -15900,7 +15971,8 @@
           "key": "company-box-documenso.envelope-recipient-reject-on-behalf-of",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "destructive"
         },
         {
           "ref": "envelope-field-get",
@@ -16620,7 +16692,8 @@
           "key": "company-box-documenso.template-create-template-direct-link",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "template-deleteTemplateDirectLink",
@@ -16640,7 +16713,8 @@
           "key": "company-box-documenso.template-toggle-template-direct-link",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "embeddingPresign-createEmbeddingPresignToken",
@@ -16650,7 +16724,8 @@
           "key": "company-box-documenso.embedding-presign-create-embedding-presign-token",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "embeddingPresign-verifyEmbeddingPresignToken",
@@ -17115,7 +17190,8 @@
           "key": "company-box-easyappointments.post-webhooks",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "GET /webhooks/{webhookId}",
@@ -17135,7 +17211,8 @@
           "key": "company-box-easyappointments.put-webhooks-by-webhook-id",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "DELETE /webhooks/{webhookId}",
@@ -17646,7 +17723,8 @@
           "key": "company-box-forgejo.admin-create-user",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "adminDeleteUser",
@@ -18106,7 +18184,8 @@
           "key": "company-box-forgejo.org-create-hook",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "orgGetHook",
@@ -18136,7 +18215,8 @@
           "key": "company-box-forgejo.org-edit-hook",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "orgListLabels",
@@ -18826,7 +18906,8 @@
           "key": "company-box-forgejo.repo-add-collaborator",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "repoDeleteCollaborator",
@@ -19196,7 +19277,8 @@
           "key": "company-box-forgejo.repo-create-hook",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "repoListGitHooks",
@@ -19263,7 +19345,8 @@
           "key": "company-box-forgejo.repo-edit-hook",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "repoTestHook",
@@ -20353,7 +20436,8 @@
           "key": "company-box-forgejo.repo-add-push-mirror",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "repoPushMirrorSync",
@@ -21083,7 +21167,8 @@
           "key": "company-box-forgejo.org-add-team-member",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "orgRemoveTeamMember",
@@ -21343,7 +21428,8 @@
           "key": "company-box-forgejo.user-add-email",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "userDeleteEmail",
@@ -21483,7 +21569,8 @@
           "key": "company-box-forgejo.user-create-hook",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "userGetHook",
@@ -21513,7 +21600,8 @@
           "key": "company-box-forgejo.user-edit-hook",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "userCurrentListKeys",
@@ -22235,7 +22323,8 @@
           "key": "company-box-formbricks.post-api-v1-webhooks",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "GET /api/v1/webhooks/{webhookId}",
@@ -22515,7 +22604,8 @@
           "key": "company-box-formbricks.create-webhook",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "getWebhook",
@@ -22535,7 +22625,8 @@
           "key": "company-box-formbricks.update-webhook",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "deleteWebhook",
@@ -22565,7 +22656,8 @@
           "key": "company-box-formbricks.create-team",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "getTeam",
@@ -22585,7 +22677,8 @@
           "key": "company-box-formbricks.update-team",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "deleteTeam",
@@ -22615,7 +22708,8 @@
           "key": "company-box-formbricks.update-workspace-team",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "createWorkspaceTeam",
@@ -22625,7 +22719,8 @@
           "key": "company-box-formbricks.create-workspace-team",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "deleteWorkspaceTeam",
@@ -22655,7 +22750,8 @@
           "key": "company-box-formbricks.create-user",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "updateUser",
@@ -22665,7 +22761,8 @@
           "key": "company-box-formbricks.update-user",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "getSurveysV3",
@@ -22845,7 +22942,8 @@
           "key": "company-box-formbricks.enable-workflow-v3",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "bulk"
         },
         {
           "ref": "disableWorkflowV3",
@@ -23199,7 +23297,8 @@
           "key": "company-box-glitchtip.apps-alerts-api-create-project-alert",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "apps_alerts_api_update_project_alert",
@@ -23209,7 +23308,8 @@
           "key": "company-box-glitchtip.apps-alerts-api-update-project-alert",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "apps_alerts_api_delete_project_alert",
@@ -23799,7 +23899,8 @@
           "key": "company-box-glitchtip.apps-organizations-ext-api-create-organization-member",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "apps_organizations_ext_api_list_team_organization_members",
@@ -23829,7 +23930,8 @@
           "key": "company-box-glitchtip.apps-organizations-ext-api-update-organization-member",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "apps_organizations_ext_api_delete_organization_member",
@@ -24149,7 +24251,8 @@
           "key": "company-box-glitchtip.apps-stripe-api-create-stripe-session",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "money"
         },
         {
           "ref": "apps_stripe_api_stripe_billing_portal_session",
@@ -24159,7 +24262,8 @@
           "key": "company-box-glitchtip.apps-stripe-api-stripe-billing-portal-session",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "money"
         },
         {
           "ref": "apps_stripe_api_stripe_create_subscription",
@@ -24169,7 +24273,8 @@
           "key": "company-box-glitchtip.apps-stripe-api-stripe-create-subscription",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "money"
         },
         {
           "ref": "apps_stripe_api_subscription_events_count_for_period",
@@ -24209,7 +24314,8 @@
           "key": "company-box-glitchtip.apps-stripe-api-configure-overage",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "money"
         },
         {
           "ref": "apps_sourcecode_api_list_repositories",
@@ -24499,7 +24605,8 @@
           "key": "company-box-glitchtip.apps-users-api-create-email",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "apps_users_api_delete_email",
@@ -24599,7 +24706,8 @@
           "key": "company-box-glitchtip.apps-wizard-api-setup-wizard-set-token",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "apps_releases_api_list_releases",
@@ -25058,7 +25166,8 @@
           "key": "company-box-listmonk.update-campaign-status-by-id",
           "capability": "connector.admin",
           "outward": true,
-          "destructive": true
+          "destructive": true,
+          "sensitiveFamily": "bulk"
         },
         {
           "ref": "testCampaignById",
@@ -25068,7 +25177,8 @@
           "key": "company-box-listmonk.test-campaign-by-id",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "bulk"
         },
         {
           "ref": "previewCampaignTextById",
@@ -25790,7 +25900,8 @@
           "key": "company-box-listmonk.transact-with-subscriber",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "bulk"
         },
         {
           "ref": "getUsers",
@@ -26244,7 +26355,8 @@
           "key": "company-box-nextcloud.request-handler-receive-notification",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "request_handler-add-share",
@@ -26384,7 +26496,8 @@
           "key": "company-box-nextcloud.direct-get-url",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "upcoming_events-get-events",
@@ -26444,7 +26557,8 @@
           "key": "company-box-nextcloud.ocs-authapi-request-shared-secret-legacy",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "ocs_authapi-get-shared-secret-legacy",
@@ -26688,7 +26802,8 @@
           "key": "company-box-nextcloud.deleted-shareapi-undelete",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "remote-get-shares",
@@ -26958,7 +27073,8 @@
           "key": "company-box-nextcloud.push-register-device",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "push-remove-device",
@@ -27430,7 +27546,8 @@
           "key": "company-box-nextcloud.webhooks-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "webhooks-delete-by-app-id",
@@ -27460,7 +27577,8 @@
           "key": "company-box-nextcloud.webhooks-update",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "webhooks-destroy",
@@ -27594,7 +27712,8 @@
           "key": "company-box-nextcloud.ocs-authapi-request-shared-secret",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "request_handler-create-share",
@@ -27634,7 +27753,8 @@
           "key": "company-box-nextcloud.request-handler-move",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "request_handler-update-permissions",
@@ -27674,7 +27794,8 @@
           "key": "company-box-nextcloud.request-handler-unshare",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "destructive"
         },
         {
           "ref": "users-get-current-user",
@@ -27734,7 +27855,8 @@
           "key": "company-box-nextcloud.users-add-user",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "users-get-users-details",
@@ -31317,7 +31439,8 @@
           "key": "company-box-pretix.scheduled-exports-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "scheduled_exports.get",
@@ -31437,7 +31560,8 @@
           "key": "company-box-pretix.sendmail-rules-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "bulk"
         },
         {
           "ref": "sendmail_rules.get",
@@ -31457,7 +31581,8 @@
           "key": "company-box-pretix.sendmail-rules-replace",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "bulk"
         },
         {
           "ref": "sendmail_rules.delete",
@@ -31477,7 +31602,8 @@
           "key": "company-box-pretix.sendmail-rules-update",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "bulk"
         },
         {
           "ref": "settings.get",
@@ -31497,7 +31623,8 @@
           "key": "company-box-pretix.settings-update",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "money"
         },
         {
           "ref": "shredders.list",
@@ -31997,7 +32124,8 @@
           "key": "company-box-pretix.waitinglistentries-send-voucher",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "money"
         },
         {
           "ref": "exporters.list_organizer",
@@ -32057,7 +32185,8 @@
           "key": "company-box-pretix.giftcards-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "money"
         },
         {
           "ref": "giftcards_transactions.get",
@@ -32117,7 +32246,8 @@
           "key": "company-box-pretix.giftcards-transact",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "money"
         },
         {
           "ref": "giftcards_transactions.list",
@@ -32507,7 +32637,8 @@
           "key": "company-box-pretix.scheduled-exports-create-organizer",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "scheduled_exports.get_organizer",
@@ -32627,7 +32758,8 @@
           "key": "company-box-pretix.settings-update-organizer",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "money"
         },
         {
           "ref": "subevents.list_organizer",
@@ -32897,7 +33029,8 @@
           "key": "company-box-pretix.webhooks-create",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "webhooks.get",
@@ -32917,7 +33050,8 @@
           "key": "company-box-pretix.webhooks-replace",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "webhooks.delete",
@@ -32937,7 +33071,8 @@
           "key": "company-box-pretix.webhooks-update",
           "capability": "connector.dispatch",
           "outward": true,
-          "destructive": false
+          "destructive": false,
+          "sensitiveFamily": "access-sharing"
         },
         {
           "ref": "upload.create",

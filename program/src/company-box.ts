@@ -170,6 +170,14 @@ export const CompanyBoxEntrySchema = z
     destructive: z.array(z.string().trim().min(1).max(300)).max(500).default([]),
     /** Patterns for POST/PUT/… operations that only read (search, GraphQL queries). */
     reads: z.array(z.string().trim().min(1).max(300)).max(500).default([]),
+    /**
+     * Hand-reviewed hold family per outward operation (operationId or `METHOD /path`, exact), for semantics the
+     * tool-name words miss (listmonk `testCampaignById` mails many people: bulk). Held in Assistant mode like the
+     * word families; destructive and money cannot be turned off. Every key must name an exposed outward operation.
+     */
+    sensitiveFamilies: z
+      .record(z.string().trim().min(1).max(300), z.enum(["destructive", "money", "access-sharing", "bulk"]))
+      .default({}),
     exposure: z.enum(["auto", "direct", "discovery"]).default("auto"),
     excluded: z.array(ExclusionSchema).max(5_000).default([]),
   })
@@ -257,6 +265,8 @@ export type CompanyBoxOperation = CompanyBoxRisk & {
   validateArguments: ArgumentValidator;
   toolSchema: JsonSchema;
   schemaTruncated: boolean;
+  /** Hand-reviewed hold family for Assistant mode (entry `sensitiveFamilies`). */
+  sensitiveFamily?: CompanyBoxSensitiveFamily;
 };
 
 export type CompanyBoxCoverageItem = {
@@ -271,7 +281,11 @@ export type CompanyBoxCoverageItem = {
   capability?: ConnectorCapability;
   outward?: boolean;
   destructive?: boolean;
+  /** Hand-reviewed hold family (entry `sensitiveFamilies`). */
+  sensitiveFamily?: CompanyBoxSensitiveFamily;
 };
+
+export type CompanyBoxSensitiveFamily = "destructive" | "money" | "access-sharing" | "bulk";
 
 type CompiledBase = {
   entry: CompanyBoxEntry;
@@ -445,6 +459,7 @@ function compileOpenApi(
     exposedIndexes.map((index) => document.operations[index]!),
   );
   const patterns = { outward: entry.outward, destructive: entry.destructive, reads: entry.reads };
+  const familyMatched = new Set<string>();
   const coverage: CompanyBoxCoverageItem[] = new Array(document.operations.length);
   const operations: CompanyBoxOperation[] = [];
   for (const [index, reason] of excludedAt) {
@@ -462,6 +477,12 @@ function compileOpenApi(
     const operation = document.operations[index]!;
     const key = keys[position]!;
     const risk = operationRisk(operation, patterns);
+    const familyKey = Object.keys(entry.sensitiveFamilies).find((ref) => exclusionMatches(ref, operation));
+    const sensitiveFamily = familyKey ? entry.sensitiveFamilies[familyKey] : undefined;
+    if (familyKey) {
+      familyMatched.add(familyKey);
+      if (!risk.outward) errors.push(`sensitiveFamilies "${familyKey}" names ${operation.ref}, which is not outward.`);
+    }
     try {
       const reserved = operation.parameters.find(
         (parameter) =>
@@ -505,6 +526,7 @@ function compileOpenApi(
         toolSchema: tool.schema,
         schemaTruncated: tool.truncated,
         ...risk,
+        ...(sensitiveFamily ? { sensitiveFamily } : {}),
       };
       operations.push(compiled);
       coverage[index] = {
@@ -516,6 +538,7 @@ function compileOpenApi(
         capability: risk.capability,
         outward: risk.outward,
         destructive: risk.destructive,
+        ...(sensitiveFamily ? { sensitiveFamily } : {}),
       };
       if (operation.unsupportedParameters.length) {
         warnings.push(
@@ -533,6 +556,9 @@ function compileOpenApi(
       errors.push(`${operation.ref}: ${error instanceof Error ? error.message : String(error)}`);
     }
   });
+  for (const ref of Object.keys(entry.sensitiveFamilies)) {
+    if (!familyMatched.has(ref)) errors.push(`sensitiveFamilies "${ref}" names no exposed operation.`);
+  }
   for (const [kind, list] of [["outward", entry.outward], ["destructive", entry.destructive], ["reads", entry.reads]] as const) {
     for (const pattern of list) {
       if (!document.operations.some((operation) => operationPatternMatches(pattern, operation))) {
